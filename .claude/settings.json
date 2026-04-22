@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm dev *)",
+      "Bash(curl -sS -o /tmp/freelane-login.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -sS -o /dev/null -w '%{http_code}' -L http://localhost:3000__TRACKED_VAR__)",
+      "Bash(/usr/bin/curl -sS -o /dev/null -w \"%{http_code}\\\\n\" -L http://localhost:3000/payments)",
+      "Bash(/usr/bin/curl -sS -o /dev/null -w \"%{http_code}\\\\n\" -L http://localhost:3000/dashboard)",
+      "Bash(/usr/bin/curl -sS -o /dev/null -w \"%{http_code}\\\\n\" -L http://localhost:3000/clients)",
+      "Bash(/usr/bin/curl -sS -o /dev/null -w \"%{http_code}\\\\n\" -L http://localhost:3000/invoices)",
+      "Bash(/usr/bin/curl -sS -o /dev/null -w \"%{http_code}\\\\n\" -L http://localhost:3000/settings)",
+      "Bash(pnpm tsc *)",
+      "Bash(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' -L http://localhost:3000__TRACKED_VAR__)",
+      "Bash(grep -rn \"Button render={<Link\\\\|Button\\\\s*$\" \"/Volumes/Second Mac/Desktop/Projects/Finance/src\")",
+      "Bash(kill 85984 85990)",
+      "Bash(pnpm build *)",
+      "Bash(git check-ignore *)",
+      "Bash(git add *)"
+    ]
+  }
+}
