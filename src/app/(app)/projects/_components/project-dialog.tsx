@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Trash2, Plus, Bookmark, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -61,6 +62,7 @@ export function ProjectDialog({
   project?: Project;
   defaultStatus?: ProjectStatus;
 }) {
+  const router = useRouter();
   const [state, setState] = useState<Partial<Project>>({});
   const [payments, setPayments] = useState<Payment[]>([]);
   const [pending, start] = useTransition();
@@ -128,6 +130,7 @@ export function ProjectDialog({
           toast.success("Project created");
         }
         onOpenChange(false);
+        router.refresh();
       } catch (err: unknown) {
         toast.error((err as Error).message);
       }
@@ -141,6 +144,7 @@ export function ProjectDialog({
       await deleteProject(project.id);
       toast.success("Project deleted");
       onOpenChange(false);
+      router.refresh();
     } catch (err: unknown) {
       toast.error((err as Error).message);
     }
@@ -177,6 +181,7 @@ export function ProjectDialog({
                   try {
                     await deleteProjectTemplate(id);
                     toast.success("Template deleted");
+                    router.refresh();
                   } catch (err: unknown) {
                     toast.error((err as Error).message);
                   }
@@ -360,6 +365,7 @@ export function ProjectDialog({
                           toast.success(`Template "${templateName}" saved`);
                           setShowSaveTemplate(false);
                           setTemplateName("");
+                          router.refresh();
                         } catch (err: unknown) {
                           toast.error((err as Error).message);
                         }
@@ -404,6 +410,7 @@ function PaymentsSection({
   payments: Payment[];
   onRefresh: () => void;
 }) {
+  const router = useRouter();
   const [amount, setAmount] = useState("");
   const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState("");
@@ -433,6 +440,7 @@ function PaymentsSection({
         setAmount("");
         setMethod("");
         onRefresh();
+        router.refresh();
         toast.success("Payment logged");
       } catch (err: unknown) {
         toast.error((err as Error).message);
@@ -444,6 +452,7 @@ function PaymentsSection({
     try {
       await deletePayment(id);
       onRefresh();
+      router.refresh();
       toast.success("Payment removed");
     } catch (err: unknown) {
       toast.error((err as Error).message);

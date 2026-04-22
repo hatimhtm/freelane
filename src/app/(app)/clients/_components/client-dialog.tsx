@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ export function ClientDialog({
   onOpenChange: (v: boolean) => void;
   client?: Client;
 }) {
+  const router = useRouter();
   const [state, setState] = useState<Partial<Client>>({});
   const [events, setEvents] = useState<ActivityEvent[] | null>(null);
   const [pending, start] = useTransition();
@@ -84,6 +86,7 @@ export function ClientDialog({
           toast.success("Client added");
         }
         onOpenChange(false);
+        router.refresh();
       } catch (err: unknown) {
         toast.error((err as Error).message);
       }

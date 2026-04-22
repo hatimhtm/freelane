@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ export function CurrenciesForm({
   rates: ExchangeRate[];
   currencies: Currency[];
 }) {
+  const router = useRouter();
   const [base, setBase] = useState(settings?.base_currency ?? "PHP");
   const [local, setLocal] = useState<Record<string, string>>(() =>
     Object.fromEntries(rates.map((r) => [r.code, String(r.rate_to_base)])),
@@ -40,6 +42,7 @@ export function CurrenciesForm({
     try {
       await updateSettings({ base_currency: next });
       toast.success(`Base set to ${next}`);
+      router.refresh();
     } catch (err: unknown) {
       toast.error((err as Error).message);
     }
@@ -59,6 +62,7 @@ export function CurrenciesForm({
       try {
         await upsertExchangeRate(code, value);
         toast.success(`${code} rate saved`);
+        router.refresh();
       } catch (err: unknown) {
         toast.error((err as Error).message);
       }
@@ -74,6 +78,7 @@ export function CurrenciesForm({
         return next;
       });
       toast.success(`${code} removed`);
+      router.refresh();
     } catch (err: unknown) {
       toast.error((err as Error).message);
     }

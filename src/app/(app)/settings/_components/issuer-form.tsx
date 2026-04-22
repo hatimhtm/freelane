@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { updateSettings } from "@/lib/data/actions";
 import type { Settings } from "@/lib/supabase/types";
 
 export function IssuerForm({ settings }: { settings: Settings | null }) {
+  const router = useRouter();
   const [state, setState] = useState({
     issuer_name: settings?.issuer_name ?? "",
     issuer_role: settings?.issuer_role ?? "",
@@ -26,6 +28,7 @@ export function IssuerForm({ settings }: { settings: Settings | null }) {
       try {
         await updateSettings(state);
         toast.success("Profile saved");
+        router.refresh();
       } catch (err: unknown) {
         toast.error((err as Error).message);
       }

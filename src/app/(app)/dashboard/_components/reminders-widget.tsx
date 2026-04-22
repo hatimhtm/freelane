@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
@@ -18,6 +19,7 @@ type ReminderItem = {
 };
 
 export function RemindersWidget({ items }: { items: ReminderItem[] }) {
+  const router = useRouter();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [pending, start] = useTransition();
 
@@ -34,6 +36,7 @@ export function RemindersWidget({ items }: { items: ReminderItem[] }) {
       try {
         await markInvoiceReminded(id);
         toast.success("Marked as followed up");
+        router.refresh();
       } catch (err: unknown) {
         toast.error((err as Error).message);
         setDismissed((prev) => {

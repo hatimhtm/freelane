@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -36,6 +37,7 @@ export function KanbanBoard({
   payments: Payment[];
   templates: ProjectTemplate[];
 }) {
+  const router = useRouter();
   const [projects, setProjects] = useState(initial);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
@@ -98,6 +100,7 @@ export function KanbanBoard({
 
     try {
       await updateProjectStatus(project.id, nextStatus);
+      router.refresh();
     } catch (err: unknown) {
       toast.error((err as Error).message);
       setProjects(initial);

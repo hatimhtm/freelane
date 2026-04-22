@@ -189,9 +189,11 @@ export function InvoiceEditor({
           const res = await createInvoice(payload);
           toast.success("Invoice saved");
           if (!options.stayOnPage) router.push(`/invoices/${res.id}`);
+          else router.refresh();
         } else if (invoice) {
           await updateInvoice(invoice.id, payload);
           toast.success("Invoice updated");
+          router.refresh();
         }
       } catch (err: unknown) {
         toast.error((err as Error).message);
@@ -206,6 +208,7 @@ export function InvoiceEditor({
       await deleteInvoice(invoice.id);
       toast.success("Invoice deleted");
       router.push("/invoices");
+      router.refresh();
     } catch (err: unknown) {
       toast.error((err as Error).message);
     }

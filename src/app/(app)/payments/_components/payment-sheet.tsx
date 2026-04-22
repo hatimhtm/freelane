@@ -56,6 +56,9 @@ export function PaymentSheet({
   const [notes, setNotes] = useState("");
   const [pending, start] = useTransition();
 
+  // Helper to call .refresh() after any mutation
+  const refresh = () => router.refresh();
+
   useEffect(() => {
     if (payment) {
       setMethod(payment.method ?? "");
@@ -79,6 +82,7 @@ export function PaymentSheet({
       try {
         await updatePayment(payment.id, { method, reference, notes });
         toast.success("Payment updated");
+        refresh();
       } catch (err: unknown) {
         toast.error((err as Error).message);
       }
@@ -106,6 +110,7 @@ export function PaymentSheet({
       await deletePayment(payment.id);
       toast.success("Payment deleted");
       onOpenChange(false);
+      refresh();
     } catch (err: unknown) {
       toast.error((err as Error).message);
     }

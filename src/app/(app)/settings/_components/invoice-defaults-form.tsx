@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { updateSettings } from "@/lib/data/actions";
 import type { Settings } from "@/lib/supabase/types";
 
 export function InvoiceDefaultsForm({ settings }: { settings: Settings | null }) {
+  const router = useRouter();
   const [state, setState] = useState({
     invoice_number_format: settings?.invoice_number_format ?? "YYYY-NNN",
     invoice_show_tva_note: settings?.invoice_show_tva_note ?? true,
@@ -27,6 +29,7 @@ export function InvoiceDefaultsForm({ settings }: { settings: Settings | null })
       try {
         await updateSettings(state);
         toast.success("Defaults saved");
+        router.refresh();
       } catch (err: unknown) {
         toast.error((err as Error).message);
       }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { ArrowUpRight, MoreVertical, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -41,6 +42,7 @@ export function ClientList({
   clients: Enriched[];
   openNew?: boolean;
 }) {
+  const router = useRouter();
   const [newOpen, setNewOpen] = useState(openNew ?? false);
   const [editing, setEditing] = useState<Client | null>(null);
 
@@ -50,6 +52,7 @@ export function ClientList({
     try {
       await archiveClient(id, next);
       toast.success(next ? "Client archived" : "Client unarchived");
+      router.refresh();
     } catch (err: unknown) {
       toast.error((err as Error).message);
     }
@@ -60,6 +63,7 @@ export function ClientList({
     try {
       await deleteClient(id);
       toast.success("Client deleted");
+      router.refresh();
     } catch (err: unknown) {
       toast.error((err as Error).message);
     }
