@@ -117,12 +117,30 @@ export type ProjectInput = {
 
 export async function createProject(input: ProjectInput) {
   const { supabase, userId } = await userOrThrow();
+  const status = input.status ?? "unpaid";
+  const extras: Record<string, unknown> = {};
+  if (status === "paid") extras.completed_at = new Date().toISOString().slice(0, 10);
+
   const { error, data } = await supabase
     .from("projects")
-    .insert({ ...input, user_id: userId, status: input.status ?? "quoted" })
+    .insert({ ...input, ...extras, user_id: userId, status })
     .select("id")
     .single();
   if (error) throw error;
+
+  // Creating a project directly in "paid" status (unusual but possible) should
+  // also log a payment so the dashboard credits the earnings.
+  if (status === "paid" && input.amount > 0) {
+    await supabase.from("payments").insert({
+      user_id: userId,
+      project_id: data.id as string,
+      amount: input.amount,
+      currency: input.currency,
+      paid_at: new Date().toISOString().slice(0, 10),
+      method: "Marked paid",
+    });
+  }
+
   await logEvent({
     userId,
     kind: "project.created",
@@ -130,9 +148,10 @@ export async function createProject(input: ProjectInput) {
     entityType: "project",
     entityId: data.id as string,
     clientId: input.client_id,
-    metadata: { amount: input.amount, currency: input.currency, status: input.status ?? "quoted" },
+    metadata: { amount: input.amount, currency: input.currency, status },
   });
   revalidatePath("/projects");
+  revalidatePath("/payments");
   revalidatePath("/dashboard");
   return data;
 }
@@ -157,13 +176,41 @@ export async function updateProjectStatus(id: string, status: ProjectStatus, kan
   const { supabase, userId } = await userOrThrow();
   const patch: Record<string, unknown> = { status };
   if (typeof kanbanPosition === "number") patch.kanban_position = kanbanPosition;
+  if (status === "paid") patch.completed_at = new Date().toISOString().slice(0, 10);
   const { error } = await supabase.from("projects").update(patch).eq("id", id);
   if (error) throw error;
+
   const { data: project } = await supabase
     .from("projects")
-    .select("title,client_id")
+    .select("*")
     .eq("id", id)
     .maybeSingle();
+
+  // When status flips to "paid", auto-create a payment for any outstanding
+  // amount so the dashboard totals, charts, and top-clients all reflect it.
+  // Without this, the payments table stays empty and the project shows up
+  // in "Pending" instead of "Earned".
+  if (status === "paid" && project) {
+    const { data: existingPayments } = await supabase
+      .from("payments")
+      .select("amount,currency")
+      .eq("project_id", id);
+    const paid = (existingPayments ?? [])
+      .filter((p) => p.currency === project.currency)
+      .reduce((s, p) => s + Number(p.amount), 0);
+    const outstanding = Number(project.amount) - paid;
+    if (outstanding > 0) {
+      await supabase.from("payments").insert({
+        user_id: userId,
+        project_id: id,
+        amount: outstanding,
+        currency: project.currency,
+        paid_at: new Date().toISOString().slice(0, 10),
+        method: "Marked paid",
+      });
+    }
+  }
+
   await logEvent({
     userId,
     kind: "project.status_changed",
@@ -174,6 +221,7 @@ export async function updateProjectStatus(id: string, status: ProjectStatus, kan
     metadata: { status },
   });
   revalidatePath("/projects");
+  revalidatePath("/payments");
   revalidatePath("/dashboard");
 }
 
