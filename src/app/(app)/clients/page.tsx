@@ -1,11 +1,9 @@
-import { Suspense } from "react";
-import { Plus, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Users } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { getClients } from "@/lib/data/queries";
 import { createClient as createSupabase } from "@/lib/supabase/server";
-import { ClientList } from "./_components/client-list";
+import { ClientList, ClientNewButton } from "./_components/client-list";
 
 export const metadata = { title: "Clients" };
 
@@ -43,9 +41,7 @@ export default async function ClientsPage({
       <PageHeader
         title="Clients"
         description="Your billing presets — add once, reuse on every invoice."
-        actions={
-          <ClientList.NewButton />
-        }
+        actions={<ClientNewButton />}
       />
 
       <div className="mt-8">
@@ -54,12 +50,10 @@ export default async function ClientsPage({
             icon={Users}
             title="No clients yet"
             description="Add the companies or people you invoice. Their details live here and auto-fill when you create invoices."
-            action={<ClientList.NewButton />}
+            action={<ClientNewButton openInitial={params.new === "1"} />}
           />
         ) : (
-          <Suspense>
-            <ClientList clients={enriched} openNew={params.new === "1"} />
-          </Suspense>
+          <ClientList clients={enriched} openNew={params.new === "1"} />
         )}
       </div>
     </div>

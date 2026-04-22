@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { MoreVertical, Plus, ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, MoreVertical, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -14,10 +15,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ClientDialog } from "./client-dialog";
 import { archiveClient, deleteClient } from "@/lib/data/actions";
-import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import type { Client } from "@/lib/supabase/types";
 
 type Enriched = Client & { projectCount: number; paidTotal: number };
+
+export function ClientNewButton({ openInitial }: { openInitial?: boolean }) {
+  const [open, setOpen] = useState(openInitial ?? false);
+  useEffect(() => { if (openInitial) setOpen(true); }, [openInitial]);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>
+        <Plus className="mr-1.5 h-4 w-4" />
+        New client
+      </Button>
+      <ClientDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
 
 export function ClientList({
   clients,
@@ -26,17 +41,15 @@ export function ClientList({
   clients: Enriched[];
   openNew?: boolean;
 }) {
-  const [open, setOpen] = useState(openNew ?? false);
+  const [newOpen, setNewOpen] = useState(openNew ?? false);
   const [editing, setEditing] = useState<Client | null>(null);
 
-  useEffect(() => {
-    if (openNew) setOpen(true);
-  }, [openNew]);
+  useEffect(() => { if (openNew) setNewOpen(true); }, [openNew]);
 
-  async function onArchive(id: string) {
+  async function onArchive(id: string, next: boolean) {
     try {
-      await archiveClient(id, true);
-      toast.success("Client archived");
+      await archiveClient(id, next);
+      toast.success(next ? "Client archived" : "Client unarchived");
     } catch (err: unknown) {
       toast.error((err as Error).message);
     }
@@ -64,47 +77,48 @@ export function ClientList({
           >
             <Card
               role="button"
+              tabIndex={0}
               onClick={() => setEditing(c)}
-              className="group relative cursor-pointer p-5 transition-all hover:border-border hover:shadow-md"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setEditing(c);
+                }
+              }}
+              className={cn(
+                "group relative cursor-pointer p-5 transition-all hover:-translate-y-0.5 hover:border-border hover:shadow-md",
+                c.archived && "opacity-60",
+              )}
             >
               <div className="flex items-start justify-between">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2.5">
-                    <Avatar name={c.name} />
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{c.name}</div>
-                      {c.company && (
-                        <div className="truncate text-xs text-muted-foreground">
-                          {c.company}
-                        </div>
-                      )}
-                    </div>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Avatar name={c.name} />
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{c.name}</div>
+                    {c.company && (
+                      <div className="truncate text-xs text-muted-foreground">
+                        {c.company}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    }
+                    aria-label="Open client menu"
+                    className={cn(
+                      "grid h-7 w-7 place-items-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover:opacity-100 data-[popup-open]:opacity-100 data-[popup-open]:bg-muted",
+                    )}
+                    onClick={(e) => e.stopPropagation()}
                   >
                     <MoreVertical className="h-4 w-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenuItem onSelect={() => setEditing(c)}>Edit</DropdownMenuItem>
-                    {!c.archived ? (
-                      <DropdownMenuItem onSelect={() => onArchive(c.id)}>Archive</DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem onSelect={() => archiveClient(c.id, false)}>
-                        Unarchive
-                      </DropdownMenuItem>
-                    )}
+                    <DropdownMenuItem onClick={() => setEditing(c)}>Edit</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onArchive(c.id, !c.archived)}>
+                      {c.archived ? "Unarchive" : "Archive"}
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-destructive" onSelect={() => onDelete(c.id)}>
+                    <DropdownMenuItem variant="destructive" onClick={() => onDelete(c.id)}>
                       Delete
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -126,8 +140,8 @@ export function ClientList({
                 </div>
               </div>
 
-              {(c.ice || c.rc) && (
-                <div className="mt-4 flex flex-wrap gap-1.5 text-[10px]">
+              {(c.ice || c.rc || c.default_currency) && (
+                <div className="mt-4 flex flex-wrap gap-1.5">
                   {c.ice && <Chip>ICE {c.ice}</Chip>}
                   {c.rc && <Chip>RC {c.rc}</Chip>}
                   {c.default_currency && <Chip>{c.default_currency}</Chip>}
@@ -142,7 +156,7 @@ export function ClientList({
         ))}
       </div>
 
-      <ClientDialog open={open} onOpenChange={setOpen} />
+      <ClientDialog open={newOpen} onOpenChange={setNewOpen} />
       <ClientDialog
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
@@ -173,21 +187,8 @@ function Avatar({ name }: { name: string }) {
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-muted-foreground">
+    <span className="rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground">
       {children}
     </span>
   );
 }
-
-ClientList.NewButton = function NewButton() {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button onClick={() => setOpen(true)}>
-        <Plus className="mr-1.5 h-4 w-4" />
-        New client
-      </Button>
-      <ClientDialog open={open} onOpenChange={setOpen} />
-    </>
-  );
-};

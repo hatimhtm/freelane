@@ -1,10 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { motion } from "motion/react";
-import { LogOut, Settings as SettingsIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import Link from "next/link";
+import { LogOut, Settings as SettingsIcon, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,23 +27,17 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Account"
-        className={cn(
-          buttonVariants({ variant: "ghost", size: "icon" }),
-          "group/avatar relative rounded-full transition-all hover:scale-105",
-        )}
+        className="group inline-flex h-9 w-9 items-center justify-center rounded-full outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring/50 data-[popup-open]:ring-2 data-[popup-open]:ring-[var(--brand)]/40"
       >
-        <motion.span
-          whileTap={{ scale: 0.9 }}
-          className="relative block h-7 w-7 rounded-full bg-gradient-to-br from-[#9d6bff] to-[#5b9dff] shadow-inner shadow-white/20"
-        >
-          <span className="absolute inset-0 rounded-full ring-0 ring-[var(--brand)]/0 transition-all group-hover/avatar:ring-2 group-hover/avatar:ring-[var(--brand)]/40" />
-        </motion.span>
+        <span className="relative grid h-7 w-7 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#9d6bff] to-[#5b9dff] text-white shadow-inner shadow-white/20 transition-transform group-hover:scale-105 group-active:scale-95">
+          <User className="h-3.5 w-3.5 opacity-90" />
+        </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
-          Signed in
+        <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          Freelane
         </DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => router.push("/settings")}>
+        <DropdownMenuItem render={<Link href="/settings" />}>
           <SettingsIcon className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>

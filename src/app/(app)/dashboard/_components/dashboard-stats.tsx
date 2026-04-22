@@ -65,7 +65,7 @@ export function DashboardStats({
           currency={baseCurrency}
           icon={TrendingUp}
           tone="brand"
-          delay={0.08}
+          delay={0.04}
         />
         <SecondaryStat
           label="Overdue"
@@ -73,7 +73,7 @@ export function DashboardStats({
           currency={baseCurrency}
           icon={AlertCircle}
           tone="rose"
-          delay={0.12}
+          delay={0.06}
         />
         <SecondaryStat
           label="Due in 30 days"
@@ -81,7 +81,7 @@ export function DashboardStats({
           currency={baseCurrency}
           icon={Clock}
           tone="amber"
-          delay={0.16}
+          delay={0.08}
         />
       </div>
 
@@ -89,7 +89,7 @@ export function DashboardStats({
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
           className="lg:col-span-2"
         >
           <Card className="overflow-hidden">
@@ -139,7 +139,7 @@ export function DashboardStats({
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.25 }}
+          transition={{ duration: 0.3, delay: 0.12 }}
         >
           <Card className="h-full p-6">
             <div className="text-sm font-medium text-muted-foreground">Top clients</div>
@@ -193,7 +193,7 @@ export function DashboardStats({
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.3 }}
+        transition={{ duration: 0.3, delay: 0.14 }}
       >
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between">
@@ -235,7 +235,7 @@ function HeroPending({ value, currency }: { value: number; currency: CurrencyCod
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+      transition={{ duration: 0.3 }}
     >
       <Card className="group relative h-full overflow-hidden border-[var(--brand)]/30 p-6">
         <div className="pointer-events-none absolute inset-0 brand-glow-strong opacity-80" />
@@ -289,7 +289,7 @@ function SecondaryStat({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay }}
+      transition={{ duration: 0.3, delay }}
     >
       <Card className="group relative h-full overflow-hidden p-5">
         <div
