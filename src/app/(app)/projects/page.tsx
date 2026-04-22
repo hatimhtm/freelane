@@ -1,11 +1,10 @@
 import { Plus, KanbanSquare } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { getProjectsWithClients } from "@/lib/data/queries";
 import { KanbanBoard } from "./_components/kanban-board";
 import { ProjectNewButton } from "./_components/project-new-button";
-import Link from "next/link";
 
 export const metadata = { title: "Projects" };
 
@@ -32,10 +31,10 @@ export default async function ProjectsPage({
             title="Add a client first"
             description="Projects belong to clients — add at least one before you create a project."
             action={
-              <Button nativeButton={false} render={<Link href="/clients?new=1" />}>
+              <LinkButton href="/clients?new=1">
                 <Plus className="mr-1.5 h-4 w-4" />
                 Add client
-              </Button>
+              </LinkButton>
             }
           />
         ) : (

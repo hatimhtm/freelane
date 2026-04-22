@@ -2,12 +2,12 @@
 
 import { useMemo, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Download, Plus, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -249,9 +249,9 @@ export function InvoiceEditor({
     <div className="mx-auto max-w-6xl p-6 lg:p-10">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button nativeButton={false} render={<Link href="/invoices" />} variant="ghost" size="icon">
+          <LinkButton href="/invoices" variant="ghost" size="icon">
             <ArrowLeft className="h-4 w-4" />
-          </Button>
+          </LinkButton>
           <div>
             <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               {mode === "new" ? "New invoice" : "Invoice"}

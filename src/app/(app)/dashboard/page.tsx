@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { Plus, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { getDashboardData } from "@/lib/data/queries";
@@ -125,10 +124,10 @@ export default async function DashboardPage() {
         title={firstName ? `Welcome back, ${firstName}.` : "Dashboard"}
         description="Your ledger at a glance."
         actions={
-          <Button nativeButton={false} render={<Link href="/projects?new=1" />}>
+          <LinkButton href="/projects?new=1">
             <Plus className="mr-1.5 h-4 w-4" />
             New project
-          </Button>
+          </LinkButton>
         }
       />
 
@@ -140,10 +139,10 @@ export default async function DashboardPage() {
             description="Once you add a client and a project, Freelane will track payments, compute totals, and keep your invoices in sync."
             action={
               <div className="flex gap-2">
-                <Button nativeButton={false} render={<Link href="/clients?new=1" />}>Add a client</Button>
-                <Button nativeButton={false} render={<Link href="/settings" />} variant="outline">
+                <LinkButton href="/clients?new=1">Add a client</LinkButton>
+                <LinkButton href="/settings" variant="outline">
                   Set up profile
-                </Button>
+                </LinkButton>
               </div>
             }
           />

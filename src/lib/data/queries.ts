@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth";
 import type {
   Client,
   Project,
@@ -10,16 +11,20 @@ import type {
   Currency,
 } from "@/lib/supabase/types";
 
+async function userOrThrow() {
+  const user = await getAuthUser();
+  if (!user) throw new Error("Unauthenticated");
+  return user;
+}
+
 export async function getSession() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   return { supabase, user };
 }
 
 export async function getDashboardData() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthenticated");
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
 
   const [settings, projects, payments, rates, clients, currencies] = await Promise.all([
     supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
@@ -27,7 +32,7 @@ export async function getDashboardData() {
     supabase.from("payments").select("*").eq("user_id", user.id).order("paid_at", { ascending: false }),
     supabase.from("exchange_rates").select("*").eq("user_id", user.id),
     supabase.from("clients").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
-    supabase.schema("finance").from("currencies").select("*"),
+    supabase.from("currencies").select("*"),
   ]);
 
   return {
@@ -41,9 +46,7 @@ export async function getDashboardData() {
 }
 
 export async function getClients() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthenticated");
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
   const { data } = await supabase
     .from("clients")
     .select("*")
@@ -54,9 +57,7 @@ export async function getClients() {
 }
 
 export async function getProjectsWithClients() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthenticated");
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
 
   const [projects, clients, payments, categories] = await Promise.all([
     supabase.from("projects").select("*").eq("user_id", user.id)
@@ -75,9 +76,7 @@ export async function getProjectsWithClients() {
 }
 
 export async function getSettings() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthenticated");
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
   const [settings, rates, currencies] = await Promise.all([
     supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
     supabase.from("exchange_rates").select("*").eq("user_id", user.id).order("code"),
@@ -91,9 +90,7 @@ export async function getSettings() {
 }
 
 export async function getInvoicesWithClients() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthenticated");
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
   const [invoices, clients] = await Promise.all([
     supabase.from("invoices").select("*").eq("user_id", user.id).order("issue_date", { ascending: false }),
     supabase.from("clients").select("*").eq("user_id", user.id).order("name"),

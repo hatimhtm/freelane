@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useTransition, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ExternalLink, FileText, Sparkles, Trash2 } from "lucide-react";
+import { LinkButton } from "@/components/ui/link-button";
 import {
   Sheet,
   SheetContent,
@@ -189,16 +189,15 @@ export function PaymentSheet({
                 <div className="mb-3 text-xs text-muted-foreground">
                   This payment is linked to an invoice.
                 </div>
-                <Button
-                  nativeButton={false}
-                  render={<Link href={`/invoices/${invoice.id}`} />}
+                <LinkButton
+                  href={`/invoices/${invoice.id}`}
                   variant="outline"
                   className="w-full"
                   onClick={() => onOpenChange(false)}
                 >
                   <ExternalLink className="mr-2 h-3.5 w-3.5" />
                   Open {invoice.invoice_number}
-                </Button>
+                </LinkButton>
               </>
             ) : (
               <>

@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { FileText, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { getInvoicesWithClients } from "@/lib/data/queries";
@@ -19,10 +18,10 @@ export default async function InvoicesPage() {
         description="Draft, issue, and export PDFs that mirror your branded template."
         actions={
           clients.length > 0 && (
-            <Button nativeButton={false} render={<Link href="/invoices/new" />}>
+            <LinkButton href="/invoices/new">
               <Plus className="mr-1.5 h-4 w-4" />
               New invoice
-            </Button>
+            </LinkButton>
           )
         }
       />
@@ -33,9 +32,7 @@ export default async function InvoicesPage() {
             icon={FileText}
             title="Add a client first"
             description="Invoices use your saved client details. Add one to get started."
-            action={
-              <Button nativeButton={false} render={<Link href="/clients?new=1" />}>Add client</Button>
-            }
+            action={<LinkButton href="/clients?new=1">Add client</LinkButton>}
           />
         ) : invoices.length === 0 ? (
           <EmptyState
@@ -43,10 +40,10 @@ export default async function InvoicesPage() {
             title="No invoices yet"
             description="Create your first invoice — it'll use your template automatically."
             action={
-              <Button nativeButton={false} render={<Link href="/invoices/new" />}>
+              <LinkButton href="/invoices/new">
                 <Plus className="mr-1.5 h-4 w-4" />
                 New invoice
-              </Button>
+              </LinkButton>
             }
           />
         ) : (
