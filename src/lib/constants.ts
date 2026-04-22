@@ -9,12 +9,9 @@ export const APP_TAGLINE = "Track every freelance coin.";
 export const BASE_CURRENCY_FALLBACK = "PHP";
 
 export const KANBAN_COLUMNS = [
-  { id: "quoted",          label: "Quoted",          tone: "neutral" },
-  { id: "in_progress",     label: "In progress",     tone: "brand"   },
-  { id: "invoiced",        label: "Invoiced",        tone: "amber"   },
-  { id: "partially_paid",  label: "Partial",         tone: "cyan"    },
+  { id: "unpaid",          label: "Unpaid",          tone: "neutral" },
+  { id: "partially_paid",  label: "Partially paid",  tone: "cyan"    },
   { id: "paid",            label: "Paid",            tone: "success" },
-  { id: "overdue",         label: "Overdue",         tone: "danger"  },
 ] as const;
 
 export type KanbanColumnId = typeof KANBAN_COLUMNS[number]["id"];

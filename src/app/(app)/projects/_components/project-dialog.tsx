@@ -52,7 +52,7 @@ export function ProjectDialog({
   clients,
   templates = [],
   project,
-  defaultStatus = "quoted",
+  defaultStatus = "unpaid",
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;

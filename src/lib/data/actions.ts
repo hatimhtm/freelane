@@ -228,10 +228,11 @@ export async function addPayment(input: PaymentInput) {
     const paid = (payments ?? [])
       .filter((p) => p.currency === project.currency)
       .reduce((sum, p) => sum + Number(p.amount), 0);
-    let nextStatus: ProjectStatus = project.status;
+    let nextStatus: ProjectStatus;
     if (paid >= Number(project.amount)) nextStatus = "paid";
     else if (paid > 0) nextStatus = "partially_paid";
-    if (nextStatus !== project.status) {
+    else nextStatus = "unpaid";
+    if (nextStatus !== project.status && project.status !== "archived") {
       await supabase.from("projects").update({ status: nextStatus }).eq("id", project.id);
     }
   }
@@ -265,8 +266,36 @@ export async function updatePayment(
 
 export async function deletePayment(id: string) {
   const { supabase } = await userOrThrow();
+
+  // Grab the project id before deleting so we can recompute status afterwards.
+  const { data: payment } = await supabase
+    .from("payments")
+    .select("project_id")
+    .eq("id", id)
+    .maybeSingle();
+
   const { error } = await supabase.from("payments").delete().eq("id", id);
   if (error) throw error;
+
+  if (payment?.project_id) {
+    const [{ data: project }, { data: remaining }] = await Promise.all([
+      supabase.from("projects").select("*").eq("id", payment.project_id).maybeSingle(),
+      supabase.from("payments").select("amount,currency").eq("project_id", payment.project_id),
+    ]);
+    if (project && project.status !== "archived") {
+      const paid = (remaining ?? [])
+        .filter((p) => p.currency === project.currency)
+        .reduce((s, p) => s + Number(p.amount), 0);
+      let nextStatus: ProjectStatus;
+      if (paid >= Number(project.amount)) nextStatus = "paid";
+      else if (paid > 0) nextStatus = "partially_paid";
+      else nextStatus = "unpaid";
+      if (nextStatus !== project.status) {
+        await supabase.from("projects").update({ status: nextStatus }).eq("id", project.id);
+      }
+    }
+  }
+
   revalidatePath("/projects");
   revalidatePath("/payments");
   revalidatePath("/dashboard");

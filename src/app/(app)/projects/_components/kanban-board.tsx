@@ -39,7 +39,7 @@ export function KanbanBoard({
   const [projects, setProjects] = useState(initial);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
-  const [defaultStatus, setDefaultStatus] = useState<ProjectStatus>("quoted");
+  const [defaultStatus, setDefaultStatus] = useState<ProjectStatus>("unpaid");
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));

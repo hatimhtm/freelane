@@ -2,12 +2,9 @@
 // Can be regenerated via `pnpm dlx supabase gen types --schema finance` later.
 
 export type ProjectStatus =
-  | "quoted"
-  | "in_progress"
-  | "invoiced"
+  | "unpaid"
   | "partially_paid"
   | "paid"
-  | "overdue"
   | "archived";
 
 export type InvoiceStatus = "draft" | "issued" | "sent" | "paid" | "void";
