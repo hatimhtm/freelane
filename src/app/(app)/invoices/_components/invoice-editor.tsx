@@ -281,6 +281,7 @@ export function InvoiceEditor({
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Client">
               <Select
+                items={clients.map((c) => ({ value: c.id, label: c.name }))}
                 value={state.client_id}
                 onValueChange={(v) => {
                   if (!v) return;
@@ -292,8 +293,8 @@ export function InvoiceEditor({
                   }));
                 }}
               >
-                <SelectTrigger>
-                  <SelectValue />
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Pick a client" />
                 </SelectTrigger>
                 <SelectContent>
                   {clients.map((c) => (
@@ -326,13 +327,14 @@ export function InvoiceEditor({
             </Field>
             <Field label="Currency">
               <Select
+                items={CURRENCIES.map((c) => ({ value: c, label: c }))}
                 value={state.currency}
                 onValueChange={(v) => {
                   if (!v) return;
                   setState((p) => ({ ...p, currency: v }));
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

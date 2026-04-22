@@ -195,6 +195,7 @@ export function ProjectDialog({
             <div className="grid grid-cols-2 gap-4">
               <Field label="Client" required>
                 <Select
+                  items={clients.map((c) => ({ value: c.id, label: c.name }))}
                   value={state.client_id}
                   onValueChange={(v) => {
                     const c = clients.find((x) => x.id === v);
@@ -202,7 +203,7 @@ export function ProjectDialog({
                     if (c?.default_currency && !project) update("currency", c.default_currency);
                   }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Pick a client" />
                   </SelectTrigger>
                   <SelectContent>
@@ -216,10 +217,11 @@ export function ProjectDialog({
               </Field>
               <Field label="Status">
                 <Select
+                  items={KANBAN_COLUMNS.map((c) => ({ value: c.id, label: c.label }))}
                   value={state.status as string}
                   onValueChange={(v) => update("status", v as ProjectStatus)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -246,10 +248,11 @@ export function ProjectDialog({
               </Field>
               <Field label="Currency">
                 <Select
+                  items={CURRENCIES.map((c) => ({ value: c, label: c }))}
                   value={state.currency}
                   onValueChange={(v) => update("currency", v)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

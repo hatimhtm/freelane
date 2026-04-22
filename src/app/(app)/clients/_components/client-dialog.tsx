@@ -137,10 +137,11 @@ export function ClientDialog({
 
             <Field label="Default currency">
               <Select
+                items={CURRENCIES.map((c) => ({ value: c, label: c }))}
                 value={state.default_currency ?? undefined}
                 onValueChange={(v) => update("default_currency", v)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Pick a currency" />
                 </SelectTrigger>
                 <SelectContent>

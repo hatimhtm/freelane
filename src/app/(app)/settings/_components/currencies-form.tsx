@@ -89,7 +89,11 @@ export function CurrenciesForm({
       <div>
         <Label className="text-xs font-medium text-muted-foreground">Base currency</Label>
         <div className="mt-1.5 flex items-center gap-2">
-          <Select value={base} onValueChange={saveBase}>
+          <Select
+            items={currencies.map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+            value={base}
+            onValueChange={saveBase}
+          >
             <SelectTrigger className="w-40">
               <SelectValue />
             </SelectTrigger>
@@ -113,7 +117,10 @@ export function CurrenciesForm({
             Exchange rates to {base}
           </Label>
           {availableToAdd.length > 0 && (
-            <Select onValueChange={addCurrency}>
+            <Select
+              items={availableToAdd.map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+              onValueChange={addCurrency}
+            >
               <SelectTrigger className="h-8 w-40 text-xs">
                 <SelectValue placeholder="Add currency…" />
               </SelectTrigger>
