@@ -7,6 +7,7 @@ import { toBase } from "@/lib/money";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import { DashboardStats } from "./_components/dashboard-stats";
 import { RemindersWidget } from "./_components/reminders-widget";
+import { NextStepBanner } from "./_components/next-step-banner";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 
 const DAY_MS = 86_400_000;
@@ -19,13 +20,16 @@ export default async function DashboardPage() {
   const baseCurrency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
   const today = new Date();
   const startOfYear = new Date(today.getFullYear(), 0, 1);
-  const in30Days = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const in30Days = new Date(today.getTime() + 30 * DAY_MS);
 
+  const hasClients = clients.length > 0;
+  const hasProjects = projects.length > 0;
+
+  // Totals (computed for everything, safe at zero)
   const paymentsInBase = payments.map((p) => ({
     ...p,
     base: toBase(Number(p.amount), p.currency as CurrencyCode, rates),
   }));
-
   const totalEarnedYTD = paymentsInBase
     .filter((p) => new Date(p.paid_at) >= startOfYear)
     .reduce((s, p) => s + p.base, 0);
@@ -37,13 +41,11 @@ export default async function DashboardPage() {
     const outstanding = Math.max(0, Number(project.amount) - paid);
     return { project, outstanding };
   });
-
   const outstandingBase = outstandingByProject.reduce(
     (sum, { project, outstanding }) =>
       sum + toBase(outstanding, project.currency as CurrencyCode, rates),
     0,
   );
-
   const overdueBase = outstandingByProject
     .filter(({ project }) => {
       if (!project.due_date) return false;
@@ -51,11 +53,10 @@ export default async function DashboardPage() {
       return new Date(project.due_date) < today;
     })
     .reduce(
-      (sum, { project, outstanding }) =>
-        sum + toBase(outstanding, project.currency as CurrencyCode, rates),
+      (s, { project, outstanding }) =>
+        s + toBase(outstanding, project.currency as CurrencyCode, rates),
       0,
     );
-
   const next30Base = outstandingByProject
     .filter(({ project }) => {
       if (!project.due_date) return false;
@@ -64,8 +65,8 @@ export default async function DashboardPage() {
       return d >= today && d <= in30Days;
     })
     .reduce(
-      (sum, { project, outstanding }) =>
-        sum + toBase(outstanding, project.currency as CurrencyCode, rates),
+      (s, { project, outstanding }) =>
+        s + toBase(outstanding, project.currency as CurrencyCode, rates),
       0,
     );
 
@@ -102,22 +103,18 @@ export default async function DashboardPage() {
       .map((x) => ({ ...x, value: Math.round(x.value) }));
   })();
 
-  const recentPayments = payments
-    .slice(0, 6)
-    .map((p) => {
-      const project = projects.find((pr) => pr.id === p.project_id);
-      const client = project ? clients.find((c) => c.id === project.client_id) : null;
-      return {
-        id: p.id,
-        amount: Number(p.amount),
-        currency: p.currency as CurrencyCode,
-        paid_at: p.paid_at,
-        project_title: project?.title ?? "—",
-        client_name: client?.name ?? "—",
-      };
-    });
-
-  const noData = projects.length === 0 && payments.length === 0;
+  const recentPayments = payments.slice(0, 6).map((p) => {
+    const project = projects.find((pr) => pr.id === p.project_id);
+    const client = project ? clients.find((c) => c.id === project.client_id) : null;
+    return {
+      id: p.id,
+      amount: Number(p.amount),
+      currency: p.currency as CurrencyCode,
+      paid_at: p.paid_at,
+      project_title: project?.title ?? "—",
+      client_name: client?.name ?? "—",
+    };
+  });
 
   const firstName = settings?.issuer_name?.split(" ")[0];
 
@@ -139,26 +136,29 @@ export default async function DashboardPage() {
         description="Your ledger at a glance."
         actions={
           <div className="flex items-center gap-2">
-            <LinkButton href={`/year/${today.getFullYear()}`} variant="ghost">
-              <Sparkles className="mr-1.5 h-4 w-4 text-[var(--chart-3)]" />
-              {today.getFullYear()} in review
-            </LinkButton>
-            <LinkButton href="/projects?new=1">
-              <Plus className="mr-1.5 h-4 w-4" />
-              New project
-            </LinkButton>
+            {hasProjects && (
+              <LinkButton href={`/year/${today.getFullYear()}`} variant="ghost">
+                <Sparkles className="mr-1.5 h-4 w-4 text-[var(--chart-3)]" />
+                {today.getFullYear()} in review
+              </LinkButton>
+            )}
+            {hasClients ? (
+              <LinkButton href="/projects?new=1">
+                <Plus className="mr-1.5 h-4 w-4" />
+                New project
+              </LinkButton>
+            ) : (
+              <LinkButton href="/clients?new=1">
+                <Plus className="mr-1.5 h-4 w-4" />
+                Add client
+              </LinkButton>
+            )}
           </div>
         }
       />
 
-      {reminders.length > 0 && (
-        <div className="mt-6">
-          <RemindersWidget items={reminders} />
-        </div>
-      )}
-
-      <div className="mt-8">
-        {noData ? (
+      {!hasClients ? (
+        <div className="mt-8">
           <EmptyState
             icon={Users}
             title="Start by adding your first client"
@@ -172,19 +172,40 @@ export default async function DashboardPage() {
               </div>
             }
           />
-        ) : (
-          <DashboardStats
-            baseCurrency={baseCurrency}
-            totalEarnedYTD={totalEarnedYTD}
-            outstanding={outstandingBase}
-            overdue={overdueBase}
-            next30={next30Base}
-            monthlyRevenue={monthlyRevenue}
-            clientDistribution={clientDistribution}
-            recentPayments={recentPayments}
-          />
-        )}
-      </div>
+        </div>
+      ) : (
+        <>
+          {!hasProjects && (
+            <div className="mt-6">
+              <NextStepBanner
+                title="Create your first project"
+                description="Projects hold the amount and the work. Once one exists, your dashboard starts filling in."
+                href="/projects?new=1"
+                cta="New project"
+              />
+            </div>
+          )}
+
+          {reminders.length > 0 && (
+            <div className="mt-6">
+              <RemindersWidget items={reminders} />
+            </div>
+          )}
+
+          <div className="mt-6">
+            <DashboardStats
+              baseCurrency={baseCurrency}
+              totalEarnedYTD={totalEarnedYTD}
+              outstanding={outstandingBase}
+              overdue={overdueBase}
+              next30={next30Base}
+              monthlyRevenue={monthlyRevenue}
+              clientDistribution={clientDistribution}
+              recentPayments={recentPayments}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
