@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createClientRecord, updateClientRecord } from "@/lib/data/actions";
-import type { Client } from "@/lib/supabase/types";
+import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
+import type { ActivityEvent, Client } from "@/lib/supabase/types";
 
 const CURRENCIES = ["PHP", "MAD", "USD", "EUR", "CNY"];
 
@@ -37,11 +39,29 @@ export function ClientDialog({
   client?: Client;
 }) {
   const [state, setState] = useState<Partial<Client>>({});
+  const [events, setEvents] = useState<ActivityEvent[] | null>(null);
   const [pending, start] = useTransition();
 
   useEffect(() => {
-    if (open) setState(client ?? {});
+    if (!open) return;
+    setState(client ?? {});
+    if (client) {
+      void loadEvents(client.id);
+    } else {
+      setEvents(null);
+    }
   }, [open, client]);
+
+  async function loadEvents(clientId: string) {
+    const supabase = createBrowserSupabase();
+    const { data } = await supabase
+      .from("events")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    setEvents((data ?? []) as ActivityEvent[]);
+  }
 
   function update<K extends keyof Client>(key: K, value: Client[K] | null | undefined) {
     setState((prev) => ({ ...prev, [key]: value }));
@@ -222,6 +242,44 @@ export function ClientDialog({
                 placeholder="Anything worth remembering about this client…"
               />
             </Field>
+
+            {client && events && events.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Activity
+                    </div>
+                    <div className="text-[10px] text-muted-foreground/70">
+                      Last {events.length}
+                    </div>
+                  </div>
+                  <ol className="relative ml-2 space-y-2.5 border-l border-border/60 pl-4">
+                    {events.map((event, i) => (
+                      <motion.li
+                        key={event.id}
+                        initial={{ opacity: 0, x: -4 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.2, delay: i * 0.02 }}
+                        className="relative text-sm"
+                      >
+                        <span className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-[var(--brand)]/60 ring-2 ring-background" />
+                        <div className="flex items-baseline justify-between gap-2">
+                          <div className="min-w-0 flex-1 truncate">{event.title}</div>
+                          <div className="shrink-0 text-xs text-muted-foreground/70 tabular">
+                            {new Date(event.created_at).toLocaleDateString(undefined, {
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          </div>
+                        </div>
+                      </motion.li>
+                    ))}
+                  </ol>
+                </div>
+              </>
+            )}
           </div>
 
           <SheetFooter className="mt-auto border-t border-border/60 bg-background/70 backdrop-blur">

@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { KANBAN_COLUMNS, type KanbanColumnId } from "@/lib/constants";
-import type { Client, Payment, Project, ProjectStatus } from "@/lib/supabase/types";
+import type { Client, Payment, Project, ProjectStatus, ProjectTemplate } from "@/lib/supabase/types";
 import { ProjectCard } from "./project-card";
 import { ProjectDialog } from "./project-dialog";
 import { updateProjectStatus } from "@/lib/data/actions";
@@ -29,10 +29,12 @@ export function KanbanBoard({
   projects: initial,
   clients,
   payments,
+  templates,
 }: {
   projects: Project[];
   clients: Client[];
   payments: Payment[];
+  templates: ProjectTemplate[];
 }) {
   const [projects, setProjects] = useState(initial);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -154,6 +156,7 @@ export function KanbanBoard({
           if (!v) setEditing(null);
         }}
         clients={clients}
+        templates={templates}
         project={editing ?? undefined}
         defaultStatus={defaultStatus}
       />

@@ -17,6 +17,7 @@ export function InvoiceDefaultsForm({ settings }: { settings: Settings | null })
     invoice_tva_note: settings?.invoice_tva_note ?? "TVA non applicable (Freelance sans statut)",
     invoice_footer: settings?.invoice_footer ?? "Merci pour votre confiance !",
     invoice_language: settings?.invoice_language ?? "fr",
+    invoice_reminder_days: settings?.invoice_reminder_days ?? 7,
   });
   const [pending, start] = useTransition();
 
@@ -82,6 +83,25 @@ export function InvoiceDefaultsForm({ settings }: { settings: Settings | null })
           value={state.invoice_footer}
           onChange={(e) => setState((s) => ({ ...s, invoice_footer: e.target.value }))}
         />
+      </Field>
+
+      <Field label="Nudge me when an invoice has been unpaid for…">
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={1}
+            max={180}
+            value={state.invoice_reminder_days}
+            onChange={(e) =>
+              setState((s) => ({ ...s, invoice_reminder_days: Number(e.target.value) || 1 }))
+            }
+            className="w-24"
+          />
+          <span className="text-sm text-muted-foreground">days</span>
+        </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Unpaid invoices older than this show on the dashboard with a follow-up button.
+        </p>
       </Field>
 
       <div className="flex justify-end">

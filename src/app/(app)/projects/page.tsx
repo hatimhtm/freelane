@@ -14,14 +14,14 @@ export default async function ProjectsPage({
   searchParams: Promise<{ new?: string }>;
 }) {
   const params = await searchParams;
-  const { projects, clients, payments } = await getProjectsWithClients();
+  const { projects, clients, payments, templates } = await getProjectsWithClients();
 
   return (
     <div className="mx-auto max-w-[1400px] p-6 lg:p-10">
       <PageHeader
         title="Projects"
         description="Drag a card between lanes to update its status."
-        actions={<ProjectNewButton clients={clients} openInitial={params.new === "1"} />}
+        actions={<ProjectNewButton clients={clients} templates={templates} openInitial={params.new === "1"} />}
       />
 
       <div className="mt-8">
@@ -38,7 +38,7 @@ export default async function ProjectsPage({
             }
           />
         ) : (
-          <KanbanBoard projects={projects} clients={clients} payments={payments} />
+          <KanbanBoard projects={projects} clients={clients} payments={payments} templates={templates} />
         )}
       </div>
     </div>

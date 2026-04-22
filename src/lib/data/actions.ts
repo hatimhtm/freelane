@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { logEvent } from "@/lib/data/events";
 import type { ProjectStatus } from "@/lib/supabase/types";
 
 async function userOrThrow() {
@@ -39,6 +40,14 @@ export async function createClientRecord(input: ClientInput) {
     .select("id")
     .single();
   if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "client.created",
+    title: `Added client · ${input.name}`,
+    entityType: "client",
+    entityId: data.id as string,
+    clientId: data.id as string,
+  });
   revalidatePath("/clients");
   revalidatePath("/projects");
   revalidatePath("/dashboard");
@@ -46,24 +55,48 @@ export async function createClientRecord(input: ClientInput) {
 }
 
 export async function updateClientRecord(id: string, input: Partial<ClientInput>) {
-  const { supabase } = await userOrThrow();
+  const { supabase, userId } = await userOrThrow();
   const { error } = await supabase.from("clients").update(input).eq("id", id);
   if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "client.updated",
+    title: `Updated client · ${input.name ?? ""}`.trim(),
+    entityType: "client",
+    entityId: id,
+    clientId: id,
+  });
   revalidatePath("/clients");
   revalidatePath("/projects");
 }
 
 export async function archiveClient(id: string, archived = true) {
-  const { supabase } = await userOrThrow();
+  const { supabase, userId } = await userOrThrow();
   const { error } = await supabase.from("clients").update({ archived }).eq("id", id);
   if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "client.archived",
+    title: archived ? "Archived client" : "Unarchived client",
+    entityType: "client",
+    entityId: id,
+    clientId: id,
+    metadata: { archived },
+  });
   revalidatePath("/clients");
 }
 
 export async function deleteClient(id: string) {
-  const { supabase } = await userOrThrow();
+  const { supabase, userId } = await userOrThrow();
   const { error } = await supabase.from("clients").delete().eq("id", id);
   if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "client.deleted",
+    title: "Deleted client",
+    entityType: "client",
+    entityId: id,
+  });
   revalidatePath("/clients");
   revalidatePath("/projects");
   revalidatePath("/dashboard");
@@ -90,33 +123,77 @@ export async function createProject(input: ProjectInput) {
     .select("id")
     .single();
   if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "project.created",
+    title: `New project · ${input.title}`,
+    entityType: "project",
+    entityId: data.id as string,
+    clientId: input.client_id,
+    metadata: { amount: input.amount, currency: input.currency, status: input.status ?? "quoted" },
+  });
   revalidatePath("/projects");
   revalidatePath("/dashboard");
   return data;
 }
 
 export async function updateProject(id: string, input: Partial<ProjectInput>) {
-  const { supabase } = await userOrThrow();
+  const { supabase, userId } = await userOrThrow();
   const { error } = await supabase.from("projects").update(input).eq("id", id);
   if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "project.updated",
+    title: `Updated project${input.title ? ` · ${input.title}` : ""}`,
+    entityType: "project",
+    entityId: id,
+    clientId: input.client_id,
+  });
   revalidatePath("/projects");
   revalidatePath("/dashboard");
 }
 
 export async function updateProjectStatus(id: string, status: ProjectStatus, kanbanPosition?: number) {
-  const { supabase } = await userOrThrow();
+  const { supabase, userId } = await userOrThrow();
   const patch: Record<string, unknown> = { status };
   if (typeof kanbanPosition === "number") patch.kanban_position = kanbanPosition;
   const { error } = await supabase.from("projects").update(patch).eq("id", id);
   if (error) throw error;
+  const { data: project } = await supabase
+    .from("projects")
+    .select("title,client_id")
+    .eq("id", id)
+    .maybeSingle();
+  await logEvent({
+    userId,
+    kind: "project.status_changed",
+    title: `${project?.title ?? "Project"} → ${status.replace("_", " ")}`,
+    entityType: "project",
+    entityId: id,
+    clientId: project?.client_id as string | undefined,
+    metadata: { status },
+  });
   revalidatePath("/projects");
   revalidatePath("/dashboard");
 }
 
 export async function deleteProject(id: string) {
-  const { supabase } = await userOrThrow();
+  const { supabase, userId } = await userOrThrow();
+  const { data: project } = await supabase
+    .from("projects")
+    .select("title,client_id")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabase.from("projects").delete().eq("id", id);
   if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "project.deleted",
+    title: `Deleted project · ${project?.title ?? ""}`.trim(),
+    entityType: "project",
+    entityId: id,
+    clientId: project?.client_id as string | undefined,
+  });
   revalidatePath("/projects");
   revalidatePath("/dashboard");
 }
@@ -135,9 +212,11 @@ export type PaymentInput = {
 export async function addPayment(input: PaymentInput) {
   const { supabase, userId } = await userOrThrow();
 
-  const { error: payErr } = await supabase
+  const { error: payErr, data: paymentRow } = await supabase
     .from("payments")
-    .insert({ ...input, user_id: userId });
+    .insert({ ...input, user_id: userId })
+    .select("id")
+    .single();
   if (payErr) throw payErr;
 
   // Recompute project status based on new totals (only for same-currency payments).
@@ -157,7 +236,18 @@ export async function addPayment(input: PaymentInput) {
     }
   }
 
+  await logEvent({
+    userId,
+    kind: "payment.added",
+    title: `Payment · ${input.currency} ${Number(input.amount).toFixed(2)} on ${project?.title ?? ""}`.trim(),
+    entityType: "payment",
+    entityId: paymentRow?.id as string | undefined,
+    clientId: project?.client_id as string | undefined,
+    metadata: { amount: input.amount, currency: input.currency, project_id: input.project_id },
+  });
+
   revalidatePath("/projects");
+  revalidatePath("/payments");
   revalidatePath("/dashboard");
 }
 
@@ -314,6 +404,46 @@ export async function deleteExchangeRate(code: string) {
   revalidatePath("/dashboard");
 }
 
+// ───────────────────────────────────────── Project templates ──
+export type ProjectTemplateInput = {
+  name: string;
+  title_template?: string | null;
+  description_template?: string | null;
+  default_amount?: number | null;
+  default_currency?: string | null;
+  default_client_id?: string | null;
+  default_tags?: string[];
+};
+
+export async function createProjectTemplate(input: ProjectTemplateInput) {
+  const { supabase, userId } = await userOrThrow();
+  const { error, data } = await supabase
+    .from("project_templates")
+    .insert({ ...input, user_id: userId })
+    .select("id")
+    .single();
+  if (error) throw error;
+  revalidatePath("/projects");
+  revalidatePath("/settings");
+  return data;
+}
+
+export async function updateProjectTemplate(id: string, input: Partial<ProjectTemplateInput>) {
+  const { supabase } = await userOrThrow();
+  const { error } = await supabase.from("project_templates").update(input).eq("id", id);
+  if (error) throw error;
+  revalidatePath("/projects");
+  revalidatePath("/settings");
+}
+
+export async function deleteProjectTemplate(id: string) {
+  const { supabase } = await userOrThrow();
+  const { error } = await supabase.from("project_templates").delete().eq("id", id);
+  if (error) throw error;
+  revalidatePath("/projects");
+  revalidatePath("/settings");
+}
+
 // ───────────────────────────────────────── Invoices ──
 export type InvoiceInput = {
   client_id: string;
@@ -343,8 +473,41 @@ export async function createInvoice(input: InvoiceInput) {
     .select("id")
     .single();
   if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "invoice.created",
+    title: `Invoice · ${input.invoice_number}`,
+    entityType: "invoice",
+    entityId: data.id as string,
+    clientId: input.client_id,
+    metadata: { total: input.total, currency: input.currency },
+  });
   revalidatePath("/invoices");
   return data;
+}
+
+export async function markInvoiceReminded(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("invoices")
+    .update({ last_reminded_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .select("invoice_number,client_id")
+    .eq("id", id)
+    .maybeSingle();
+  await logEvent({
+    userId,
+    kind: "invoice.reminded",
+    title: `Nudged ${invoice?.invoice_number ?? "invoice"}`,
+    entityType: "invoice",
+    entityId: id,
+    clientId: invoice?.client_id as string | undefined,
+  });
+  revalidatePath("/invoices");
+  revalidatePath("/dashboard");
 }
 
 export async function updateInvoice(id: string, input: Partial<InvoiceInput>) {

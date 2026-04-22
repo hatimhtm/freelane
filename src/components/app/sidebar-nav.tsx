@@ -10,6 +10,7 @@ import {
   FileText,
   Settings,
   Wallet,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
@@ -20,6 +21,7 @@ const NAV = [
   { href: "/payments",  label: "Payments",  icon: Wallet         },
   { href: "/clients",   label: "Clients",   icon: Users          },
   { href: "/invoices",  label: "Invoices",  icon: FileText       },
+  { href: "/activity",  label: "Activity",  icon: Activity       },
   { href: "/settings",  label: "Settings",  icon: Settings       },
 ];
 

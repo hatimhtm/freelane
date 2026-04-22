@@ -1,4 +1,4 @@
-import { Plus, Users } from "lucide-react";
+import { Plus, Sparkles, Users } from "lucide-react";
 import { LinkButton } from "@/components/ui/link-button";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -6,12 +6,15 @@ import { getDashboardData } from "@/lib/data/queries";
 import { toBase } from "@/lib/money";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import { DashboardStats } from "./_components/dashboard-stats";
+import { RemindersWidget } from "./_components/reminders-widget";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
+
+const DAY_MS = 86_400_000;
 
 export const metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
-  const { settings, projects, payments, rates, clients } = await getDashboardData();
+  const { settings, projects, payments, rates, clients, invoices } = await getDashboardData();
 
   const baseCurrency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
   const today = new Date();
@@ -118,18 +121,41 @@ export default async function DashboardPage() {
 
   const firstName = settings?.issuer_name?.split(" ")[0];
 
+  const reminderDays = settings?.invoice_reminder_days ?? 7;
+  const reminders = invoices
+    .filter((inv) => inv.status === "issued" || inv.status === "sent")
+    .map((inv) => {
+      const baseline = inv.last_reminded_at ?? inv.issue_date;
+      const ageDays = Math.floor((today.getTime() - new Date(baseline).getTime()) / DAY_MS);
+      return { invoice: inv, client: clients.find((c) => c.id === inv.client_id), ageDays };
+    })
+    .filter((r) => r.ageDays >= reminderDays)
+    .sort((a, b) => b.ageDays - a.ageDays);
+
   return (
     <div className="mx-auto max-w-7xl p-6 lg:p-10">
       <PageHeader
         title={firstName ? `Welcome back, ${firstName}.` : "Dashboard"}
         description="Your ledger at a glance."
         actions={
-          <LinkButton href="/projects?new=1">
-            <Plus className="mr-1.5 h-4 w-4" />
-            New project
-          </LinkButton>
+          <div className="flex items-center gap-2">
+            <LinkButton href={`/year/${today.getFullYear()}`} variant="ghost">
+              <Sparkles className="mr-1.5 h-4 w-4 text-[var(--chart-3)]" />
+              {today.getFullYear()} in review
+            </LinkButton>
+            <LinkButton href="/projects?new=1">
+              <Plus className="mr-1.5 h-4 w-4" />
+              New project
+            </LinkButton>
+          </div>
         }
       />
+
+      {reminders.length > 0 && (
+        <div className="mt-6">
+          <RemindersWidget items={reminders} />
+        </div>
+      )}
 
       <div className="mt-8">
         {noData ? (

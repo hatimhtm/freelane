@@ -4,6 +4,7 @@ import { IssuerForm } from "./_components/issuer-form";
 import { InvoiceDefaultsForm } from "./_components/invoice-defaults-form";
 import { CurrenciesForm } from "./_components/currencies-form";
 import { AppearanceForm } from "./_components/appearance-form";
+import { DataForm } from "./_components/data-form";
 
 export const metadata = { title: "Settings" };
 
@@ -40,6 +41,13 @@ export default async function SettingsPage() {
 
         <Section title="Appearance" hint="Switch between dark and light.">
           <AppearanceForm settings={settings} />
+        </Section>
+
+        <Section
+          title="Data"
+          hint="Download a snapshot of everything. Freelane never emails or uploads anything on its own."
+        >
+          <DataForm />
         </Section>
       </div>
     </div>

@@ -42,9 +42,30 @@ export interface Settings {
   invoice_footer: string | null;
   invoice_accent_color: string | null;
   invoice_language: string;
+  invoice_reminder_days: number;
   theme: string;
   created_at: string;
   updated_at: string;
+}
+
+export type EventKind =
+  | "client.created" | "client.updated" | "client.archived" | "client.deleted"
+  | "project.created" | "project.updated" | "project.status_changed" | "project.deleted"
+  | "payment.added" | "payment.updated" | "payment.removed"
+  | "invoice.created" | "invoice.updated" | "invoice.reminded" | "invoice.deleted"
+  | "template.created" | "template.deleted"
+  | "settings.updated";
+
+export interface ActivityEvent {
+  id: string;
+  user_id: string;
+  kind: EventKind;
+  entity_type: string | null;
+  entity_id: string | null;
+  client_id: string | null;
+  title: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface Client {
@@ -78,6 +99,20 @@ export interface Category {
   client_id: string | null;
   name: string;
   created_at: string;
+}
+
+export interface ProjectTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  title_template: string | null;
+  description_template: string | null;
+  default_amount: number | null;
+  default_currency: CurrencyCode | null;
+  default_client_id: string | null;
+  default_tags: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Project {
@@ -142,6 +177,7 @@ export interface Invoice {
   footer: string | null;
   notes: string | null;
   language: string;
+  last_reminded_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -169,6 +205,8 @@ export type Database = {
       payments:          Table<Payment>;
       invoices:          Table<Invoice>;
       invoice_projects:  Table<{ invoice_id: string; project_id: string }>;
+      project_templates: Table<ProjectTemplate>;
+      events:            Table<ActivityEvent>;
     };
     Views: {
       project_totals: View<{

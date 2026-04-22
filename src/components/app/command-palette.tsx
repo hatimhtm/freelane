@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Activity,
   Calendar,
   FileText,
   KanbanSquare,
@@ -10,6 +11,7 @@ import {
   Plus,
   Search,
   Settings,
+  Sparkles,
   Users,
   Wallet,
 } from "lucide-react";
@@ -81,6 +83,10 @@ export function CommandTrigger() {
               <FileText className="mr-2 h-4 w-4" />
               Invoices
             </CommandItem>
+            <CommandItem onSelect={() => go("/activity")}>
+              <Activity className="mr-2 h-4 w-4" />
+              Activity
+            </CommandItem>
             <CommandItem onSelect={() => go("/settings")}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
@@ -103,6 +109,10 @@ export function CommandTrigger() {
             <CommandItem onSelect={() => go("/settings#rates")}>
               <Calendar className="mr-2 h-4 w-4" />
               Update exchange rates
+            </CommandItem>
+            <CommandItem onSelect={() => go(`/year/${new Date().getFullYear()}`)}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              {new Date().getFullYear()} in review
             </CommandItem>
           </CommandGroup>
         </CommandList>

@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Bookmark, X } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,13 +27,21 @@ import { Separator } from "@/components/ui/separator";
 import {
   addPayment,
   createProject,
+  createProjectTemplate,
   deletePayment,
   deleteProject,
+  deleteProjectTemplate,
   updateProject,
 } from "@/lib/data/actions";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { KANBAN_COLUMNS } from "@/lib/constants";
-import type { Client, Payment, Project, ProjectStatus } from "@/lib/supabase/types";
+import type {
+  Client,
+  Payment,
+  Project,
+  ProjectStatus,
+  ProjectTemplate,
+} from "@/lib/supabase/types";
 import { formatMoney } from "@/lib/money";
 
 const CURRENCIES = ["PHP", "MAD", "USD", "EUR", "CNY"];
@@ -41,18 +50,22 @@ export function ProjectDialog({
   open,
   onOpenChange,
   clients,
+  templates = [],
   project,
   defaultStatus = "quoted",
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   clients: Client[];
+  templates?: ProjectTemplate[];
   project?: Project;
   defaultStatus?: ProjectStatus;
 }) {
   const [state, setState] = useState<Partial<Project>>({});
   const [payments, setPayments] = useState<Payment[]>([]);
   const [pending, start] = useTransition();
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -145,6 +158,31 @@ export function ProjectDialog({
           </SheetHeader>
 
           <div className="grid gap-5 px-4 py-6">
+            {!project && (
+              <TemplatePicker
+                templates={templates}
+                onApply={(t) => {
+                  setState((prev) => ({
+                    ...prev,
+                    title: t.title_template ?? prev.title,
+                    description: t.description_template ?? prev.description,
+                    amount: t.default_amount ?? prev.amount,
+                    currency: t.default_currency ?? prev.currency,
+                    client_id: t.default_client_id ?? prev.client_id,
+                    tags: t.default_tags?.length ? t.default_tags : prev.tags,
+                  }));
+                  toast.success(`Applied "${t.name}"`);
+                }}
+                onDelete={async (id) => {
+                  try {
+                    await deleteProjectTemplate(id);
+                    toast.success("Template deleted");
+                  } catch (err: unknown) {
+                    toast.error((err as Error).message);
+                  }
+                }}
+              />
+            )}
             <Field label="Title" required>
               <Input
                 value={state.title ?? ""}
@@ -260,7 +298,85 @@ export function ProjectDialog({
                 <Trash2 className="mr-1.5 h-4 w-4" />
                 Delete
               </Button>
-            ) : <span />}
+            ) : (
+              <AnimatePresence mode="wait">
+                {!showSaveTemplate ? (
+                  <motion.div
+                    key="btn"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        if (!state.title?.trim()) {
+                          toast.error("Add a title first");
+                          return;
+                        }
+                        setTemplateName(state.title ?? "");
+                        setShowSaveTemplate(true);
+                      }}
+                      disabled={!state.title?.trim()}
+                    >
+                      <Bookmark className="mr-1.5 h-4 w-4" />
+                      Save as template
+                    </Button>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="input"
+                    initial={{ opacity: 0, x: -4 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -4 }}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Input
+                      value={templateName}
+                      onChange={(e) => setTemplateName(e.target.value)}
+                      placeholder="Template name"
+                      autoFocus
+                      className="h-8 w-44"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={async () => {
+                        if (!templateName.trim()) return;
+                        try {
+                          await createProjectTemplate({
+                            name: templateName.trim(),
+                            title_template: state.title ?? null,
+                            description_template: state.description ?? null,
+                            default_amount: state.amount ?? null,
+                            default_currency: state.currency ?? null,
+                            default_client_id: state.client_id ?? null,
+                            default_tags: state.tags ?? [],
+                          });
+                          toast.success(`Template "${templateName}" saved`);
+                          setShowSaveTemplate(false);
+                          setTemplateName("");
+                        } catch (err: unknown) {
+                          toast.error((err as Error).message);
+                        }
+                      }}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setShowSaveTemplate(false)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
             <div className="flex gap-2">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
@@ -390,6 +506,59 @@ function PaymentsSection({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function TemplatePicker({
+  templates,
+  onApply,
+  onDelete,
+}: {
+  templates: ProjectTemplate[];
+  onApply: (template: ProjectTemplate) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (templates.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Bookmark className="h-3 w-3" />
+        Start from a template
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <AnimatePresence mode="popLayout">
+          {templates.map((t) => (
+            <motion.div
+              key={t.id}
+              layout
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="group relative"
+            >
+              <button
+                type="button"
+                onClick={() => onApply(t)}
+                className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 pr-7 text-xs font-medium transition-all hover:border-[var(--brand)]/40 hover:bg-[var(--brand)]/10"
+              >
+                {t.name}
+              </button>
+              <button
+                type="button"
+                aria-label="Delete template"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(`Delete template "${t.name}"?`)) onDelete(t.id);
+                }}
+                className="absolute right-1 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
