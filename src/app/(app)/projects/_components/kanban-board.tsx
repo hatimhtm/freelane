@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { startTransition, useMemo, useOptimistic, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -27,7 +27,7 @@ import { ProjectDialog } from "./project-dialog";
 import { updateProjectStatus } from "@/lib/data/actions";
 
 export function KanbanBoard({
-  projects: initial,
+  projects: serverProjects,
   clients,
   payments,
   templates,
@@ -38,7 +38,14 @@ export function KanbanBoard({
   templates: ProjectTemplate[];
 }) {
   const router = useRouter();
-  const [projects, setProjects] = useState(initial);
+  // Base list comes from server props — no `useState(initial)` so new projects
+  // from router.refresh() show up immediately. Drag-drop gets an optimistic
+  // overlay via useOptimistic that auto-clears once the transition settles.
+  const [projects, applyOptimisticStatus] = useOptimistic(
+    serverProjects,
+    (state: Project[], patch: { id: string; status: ProjectStatus }) =>
+      state.map((p) => (p.id === patch.id ? { ...p, status: patch.status } : p)),
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
   const [defaultStatus, setDefaultStatus] = useState<ProjectStatus>("unpaid");
@@ -92,19 +99,16 @@ export function KanbanBoard({
 
     if (from === to) return; // same column, no-op
 
-    // Optimistic update
     const nextStatus = to as ProjectStatus;
-    setProjects((prev) =>
-      prev.map((p) => (p.id === project.id ? { ...p, status: nextStatus } : p)),
-    );
-
-    try {
-      await updateProjectStatus(project.id, nextStatus);
-      router.refresh();
-    } catch (err: unknown) {
-      toast.error((err as Error).message);
-      setProjects(initial);
-    }
+    startTransition(async () => {
+      applyOptimisticStatus({ id: project.id, status: nextStatus });
+      try {
+        await updateProjectStatus(project.id, nextStatus);
+        router.refresh();
+      } catch (err: unknown) {
+        toast.error((err as Error).message);
+      }
+    });
   }
 
   const active = activeId ? projects.find((p) => p.id === activeId) : null;
