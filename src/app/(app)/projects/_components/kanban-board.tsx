@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useMemo, useOptimistic, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -25,6 +26,24 @@ import type { Client, Payment, Project, ProjectStatus, ProjectTemplate } from "@
 import { ProjectCard } from "./project-card";
 import { ProjectDialog } from "./project-dialog";
 import { updateProjectStatus } from "@/lib/data/actions";
+
+// Paid projects auto-hide from the kanban after this many days — they're
+// already visible on the payments page and dashboard recent-payments list, so
+// keeping them on the kanban just adds clutter. Older paid rows are not
+// archived in the DB — only filtered from the view.
+const PAID_VISIBLE_DAYS = 3;
+const DAY_MS = 86_400_000;
+
+/** Best-effort "when did this project become paid". Falls back through:
+ *  completed_at  →  the most recent payment's paid_at  →  updated_at. */
+function paidSince(project: Project, payments: Payment[]): number | null {
+  if (project.completed_at) return new Date(project.completed_at).getTime();
+  const latest = payments
+    .map((p) => new Date(p.paid_at).getTime())
+    .sort((a, b) => b - a)[0];
+  if (latest) return latest;
+  return project.updated_at ? new Date(project.updated_at).getTime() : null;
+}
 
 export function KanbanBoard({
   projects: serverProjects,
@@ -53,16 +72,6 @@ export function KanbanBoard({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
-  const columns = useMemo(() => {
-    const map: Record<string, Project[]> = {};
-    KANBAN_COLUMNS.forEach((c) => (map[c.id] = []));
-    projects.forEach((p) => {
-      if (p.status === "archived") return;
-      (map[p.status] ??= []).push(p);
-    });
-    return map;
-  }, [projects]);
-
   const paymentsById = useMemo(() => {
     const map = new Map<string, Payment[]>();
     payments.forEach((p) => {
@@ -72,6 +81,28 @@ export function KanbanBoard({
     });
     return map;
   }, [payments]);
+
+  // `hiddenPaidCount` is the number of paid projects older than the grace
+  // window — rendered as a small "+N older" hint at the bottom of the Paid
+  // column so the user knows they exist (and where to find them).
+  const { columns, hiddenPaidCount } = useMemo(() => {
+    const map: Record<string, Project[]> = {};
+    KANBAN_COLUMNS.forEach((c) => (map[c.id] = []));
+    const cutoff = Date.now() - PAID_VISIBLE_DAYS * DAY_MS;
+    let hidden = 0;
+    projects.forEach((p) => {
+      if (p.status === "archived") return;
+      if (p.status === "paid") {
+        const ts = paidSince(p, paymentsById.get(p.id) ?? []);
+        if (ts !== null && ts < cutoff) {
+          hidden += 1;
+          return;
+        }
+      }
+      (map[p.status] ??= []).push(p);
+    });
+    return { columns: map, hiddenPaidCount: hidden };
+  }, [projects, paymentsById]);
 
   const clientsById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
 
@@ -127,6 +158,7 @@ export function KanbanBoard({
               key={col.id}
               column={col}
               projects={columns[col.id] ?? []}
+              hiddenPaidCount={col.id === "paid" ? hiddenPaidCount : 0}
               clientsById={clientsById}
               paymentsById={paymentsById}
               onOpenNew={() => {
@@ -174,6 +206,7 @@ export function KanbanBoard({
 function Column({
   column,
   projects,
+  hiddenPaidCount,
   clientsById,
   paymentsById,
   onOpenNew,
@@ -181,6 +214,7 @@ function Column({
 }: {
   column: (typeof KANBAN_COLUMNS)[number];
   projects: Project[];
+  hiddenPaidCount: number;
   clientsById: Map<string, Client>;
   paymentsById: Map<string, Payment[]>;
   onOpenNew: () => void;
@@ -246,6 +280,16 @@ function Column({
             <Plus className="h-3 w-3" />
             Add project
           </motion.button>
+        )}
+
+        {hiddenPaidCount > 0 && (
+          <Link
+            href="/payments"
+            className="mt-1 flex items-center justify-center rounded-md px-2 py-2 text-[11px] text-muted-foreground/70 transition-colors hover:bg-muted/40 hover:text-foreground"
+            title={`${hiddenPaidCount} paid project${hiddenPaidCount === 1 ? "" : "s"} older than ${PAID_VISIBLE_DAYS} days — view them on the payments page.`}
+          >
+            +{hiddenPaidCount} older · in Payments →
+          </Link>
         )}
       </div>
     </div>
