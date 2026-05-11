@@ -9,6 +9,7 @@ import type {
   Invoice,
   Category,
   Currency,
+  Expense,
   ProjectTemplate,
   ActivityEvent,
 } from "@/lib/supabase/types";
@@ -28,15 +29,17 @@ export async function getSession() {
 export async function getDashboardData() {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
 
-  const [settings, projects, payments, rates, clients, currencies, invoices] = await Promise.all([
-    supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
-    supabase.from("projects").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
-    supabase.from("payments").select("*").eq("user_id", user.id).order("paid_at", { ascending: false }),
-    supabase.from("exchange_rates").select("*").eq("user_id", user.id),
-    supabase.from("clients").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
-    supabase.from("currencies").select("*"),
-    supabase.from("invoices").select("*").eq("user_id", user.id).order("issue_date", { ascending: false }),
-  ]);
+  const [settings, projects, payments, rates, clients, currencies, invoices, expenses] =
+    await Promise.all([
+      supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
+      supabase.from("projects").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
+      supabase.from("payments").select("*").eq("user_id", user.id).order("paid_at", { ascending: false }),
+      supabase.from("exchange_rates").select("*").eq("user_id", user.id),
+      supabase.from("clients").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
+      supabase.from("currencies").select("*"),
+      supabase.from("invoices").select("*").eq("user_id", user.id).order("issue_date", { ascending: false }),
+      supabase.from("expenses").select("*").eq("user_id", user.id).order("spent_at", { ascending: false }),
+    ]);
 
   return {
     settings: (settings.data ?? null) as Settings | null,
@@ -46,6 +49,21 @@ export async function getDashboardData() {
     clients:  (clients.data ?? []) as Client[],
     currencies: (currencies.data ?? []) as Currency[],
     invoices: (invoices.data ?? []) as Invoice[],
+    expenses: (expenses.data ?? []) as Expense[],
+  };
+}
+
+export async function getExpensesPage() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [expenses, currencies, settings] = await Promise.all([
+    supabase.from("expenses").select("*").eq("user_id", user.id).order("spent_at", { ascending: false }),
+    supabase.from("currencies").select("*").order("code"),
+    supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
+  ]);
+  return {
+    expenses: (expenses.data ?? []) as Expense[],
+    currencies: (currencies.data ?? []) as Currency[],
+    settings: (settings.data ?? null) as Settings | null,
   };
 }
 

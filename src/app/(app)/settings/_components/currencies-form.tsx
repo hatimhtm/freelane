@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { updateSettings, upsertExchangeRate, deleteExchangeRate } from "@/lib/data/actions";
+import {
+  deleteExchangeRate,
+  refreshExchangeRatesFromAPI,
+  updateSettings,
+  upsertExchangeRate,
+} from "@/lib/data/actions";
 import type { Currency, ExchangeRate, Settings } from "@/lib/supabase/types";
 
 export function CurrenciesForm({
@@ -89,6 +94,22 @@ export function CurrenciesForm({
     setLocal((prev) => ({ ...prev, [code]: "1" }));
   }
 
+  function refreshFromAPI() {
+    start(async () => {
+      try {
+        const result = await refreshExchangeRatesFromAPI();
+        if (result.updated === 0) {
+          toast.info("Nothing to refresh — add a currency first.");
+        } else {
+          toast.success(`Refreshed ${result.updated} rate${result.updated === 1 ? "" : "s"} from frankfurter.app`);
+          router.refresh();
+        }
+      } catch (err: unknown) {
+        toast.error((err as Error).message);
+      }
+    });
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -121,23 +142,35 @@ export function CurrenciesForm({
           <Label className="text-xs font-medium text-muted-foreground">
             Exchange rates to {base}
           </Label>
-          {availableToAdd.length > 0 && (
-            <Select
-              items={availableToAdd.map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
-              onValueChange={addCurrency}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={refreshFromAPI}
+              disabled={pending || Object.keys(local).length === 0}
             >
-              <SelectTrigger className="h-8 w-40 text-xs">
-                <SelectValue placeholder="Add currency…" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableToAdd.map((c) => (
-                  <SelectItem key={c.code} value={c.code}>
-                    {c.code} · {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+              <RefreshCw className={`h-3.5 w-3.5 ${pending ? "animate-spin" : ""}`} />
+              {pending ? "Refreshing…" : "Refresh from API"}
+            </Button>
+            {availableToAdd.length > 0 && (
+              <Select
+                items={availableToAdd.map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+                onValueChange={addCurrency}
+              >
+                <SelectTrigger className="h-8 w-40 text-xs">
+                  <SelectValue placeholder="Add currency…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableToAdd.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.code} · {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
 
         <div className="overflow-hidden rounded-xl border border-border/60">
@@ -205,7 +238,16 @@ export function CurrenciesForm({
           </table>
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Rates are yours — update them when the market moves. Freelane never auto-fetches.
+          Edit rates by hand, or pull live mid-market rates from{" "}
+          <a
+            href="https://www.frankfurter.app"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            frankfurter.app
+          </a>{" "}
+          (free, ECB-sourced, no API key).
         </p>
       </div>
     </div>

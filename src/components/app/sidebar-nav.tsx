@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import {
-  LayoutDashboard,
-  KanbanSquare,
-  Users,
-  FileText,
-  Settings,
-  Wallet,
   Activity,
+  FileText,
+  KanbanSquare,
+  LayoutDashboard,
+  Receipt,
+  Settings,
+  Users,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
@@ -19,6 +20,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects",  label: "Projects",  icon: KanbanSquare   },
   { href: "/payments",  label: "Payments",  icon: Wallet         },
+  { href: "/expenses",  label: "Expenses",  icon: Receipt        },
   { href: "/clients",   label: "Clients",   icon: Users          },
   { href: "/invoices",  label: "Invoices",  icon: FileText       },
   { href: "/activity",  label: "Activity",  icon: Activity       },

@@ -481,6 +481,59 @@ export async function deleteExchangeRate(code: string) {
   revalidatePath("/dashboard");
 }
 
+/**
+ * Refresh exchange rates from frankfurter.app (free, no API key, ECB-sourced).
+ * Updates `rate_to_base` for every currency the user has configured EXCEPT
+ * their base currency (which stays at 1.0 by definition).
+ *
+ * Frankfurter returns rates relative to a single base currency:
+ *   https://api.frankfurter.app/latest?base=USD
+ * We pass the user's base currency as `base` and read `rates[code]` for each
+ * configured non-base code. PHP/MAD/CNY are all supported by frankfurter.
+ */
+export async function refreshExchangeRatesFromAPI() {
+  const { supabase, userId } = await userOrThrow();
+
+  const [settingsResult, ratesResult] = await Promise.all([
+    supabase.from("settings").select("base_currency").eq("user_id", userId).maybeSingle(),
+    supabase.from("exchange_rates").select("code").eq("user_id", userId),
+  ]);
+
+  const baseCurrency = settingsResult.data?.base_currency ?? "USD";
+  const codes = (ratesResult.data ?? []).map((r) => r.code).filter((c) => c !== baseCurrency);
+
+  if (codes.length === 0) return { updated: 0, base: baseCurrency };
+
+  const url = `https://api.frankfurter.app/latest?base=${baseCurrency}&symbols=${codes.join(",")}`;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`frankfurter.app returned HTTP ${response.status}`);
+  }
+  const json = (await response.json()) as { rates?: Record<string, number> };
+  const fxRates = json.rates ?? {};
+
+  // frankfurter returns "1 base = X target"; our schema stores "1 target = N base",
+  // i.e. the inverse. So rate_to_base = 1 / fxRates[code].
+  const updates = codes
+    .filter((code) => typeof fxRates[code] === "number" && fxRates[code] > 0)
+    .map((code) => ({
+      user_id: userId,
+      code,
+      rate_to_base: 1 / fxRates[code],
+    }));
+
+  if (updates.length > 0) {
+    const { error } = await supabase
+      .from("exchange_rates")
+      .upsert(updates, { onConflict: "user_id,code" });
+    if (error) throw error;
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/dashboard");
+  return { updated: updates.length, base: baseCurrency };
+}
+
 // ───────────────────────────────────────── Project templates ──
 export type ProjectTemplateInput = {
   name: string;
@@ -600,4 +653,53 @@ export async function deleteInvoice(id: string) {
   const { error } = await supabase.from("invoices").delete().eq("id", id);
   if (error) throw error;
   revalidatePath("/invoices");
+}
+
+// ───────────────────────────────────────── Expenses ──
+export type ExpenseInput = {
+  spent_at?: string;
+  description: string;
+  amount: number;
+  currency: string;
+  category?: string | null;
+  vendor?: string | null;
+  notes?: string | null;
+};
+
+export async function createExpense(input: ExpenseInput) {
+  const { supabase, userId } = await userOrThrow();
+  const { error, data } = await supabase
+    .from("expenses")
+    .insert({
+      user_id: userId,
+      spent_at: input.spent_at ?? new Date().toISOString().slice(0, 10),
+      description: input.description,
+      amount: input.amount,
+      currency: input.currency,
+      category: input.category ?? null,
+      vendor: input.vendor ?? null,
+      notes: input.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return data;
+}
+
+export async function updateExpense(id: string, input: Partial<ExpenseInput>) {
+  const { supabase } = await userOrThrow();
+  const { error } = await supabase.from("expenses").update(input).eq("id", id);
+  if (error) throw error;
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+}
+
+export async function deleteExpense(id: string) {
+  const { supabase } = await userOrThrow();
+  const { error } = await supabase.from("expenses").delete().eq("id", id);
+  if (error) throw error;
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
 }

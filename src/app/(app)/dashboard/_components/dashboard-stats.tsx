@@ -13,7 +13,16 @@ import {
   Tooltip,
   XAxis,
 } from "recharts";
-import { ArrowUpRight, Clock, TrendingUp, AlertCircle } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowDownRight,
+  ArrowUpRight,
+  CalendarDays,
+  Clock,
+  Hourglass,
+  TrendingUp,
+  UserX,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { formatMoney } from "@/lib/money";
 import type { CurrencyCode } from "@/lib/supabase/types";
@@ -21,10 +30,15 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   baseCurrency: CurrencyCode;
+  totalEarnedMTD: number;
+  earnedLastMonth: number;
+  monthOverMonthDelta: number | null;
   totalEarnedYTD: number;
   outstanding: number;
   overdue: number;
   next30: number;
+  avgDaysToPayment: number | null;
+  biggestDebtor: { name: string; outstanding: number } | null;
   monthlyRevenue: { month: string; total: number }[];
   clientDistribution: { name: string; value: number }[];
   recentPayments: {
@@ -47,10 +61,15 @@ const PIE_COLORS = [
 
 export function DashboardStats({
   baseCurrency,
+  totalEarnedMTD,
+  earnedLastMonth,
+  monthOverMonthDelta,
   totalEarnedYTD,
   outstanding,
   overdue,
   next30,
+  avgDaysToPayment,
+  biggestDebtor,
   monthlyRevenue,
   clientDistribution,
   recentPayments,
@@ -59,13 +78,11 @@ export function DashboardStats({
     <div className="space-y-6">
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
         <HeroPending value={outstanding} currency={baseCurrency} />
-        <SecondaryStat
-          label="Earned this year"
-          value={totalEarnedYTD}
+        <EarnedThisMonthStat
+          value={totalEarnedMTD}
+          lastMonth={earnedLastMonth}
+          delta={monthOverMonthDelta}
           currency={baseCurrency}
-          icon={TrendingUp}
-          tone="brand"
-          delay={0.04}
         />
         <SecondaryStat
           label="Overdue"
@@ -84,6 +101,13 @@ export function DashboardStats({
           delay={0.08}
         />
       </div>
+
+      <InsightsStrip
+        avgDaysToPayment={avgDaysToPayment}
+        biggestDebtor={biggestDebtor}
+        totalEarnedYTD={totalEarnedYTD}
+        currency={baseCurrency}
+      />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <motion.div
@@ -325,6 +349,159 @@ function SecondaryStat({
         </div>
       </Card>
     </motion.div>
+  );
+}
+
+function EarnedThisMonthStat({
+  value,
+  lastMonth,
+  delta,
+  currency,
+}: {
+  value: number;
+  lastMonth: number;
+  delta: number | null;
+  currency: CurrencyCode;
+}) {
+  // Display % delta vs last month. Null = no baseline (first month, or last month was zero).
+  const showDelta = delta !== null && Math.abs(delta) >= 0.001;
+  const positive = (delta ?? 0) >= 0;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.04 }}
+    >
+      <Card className="group relative h-full overflow-hidden p-5">
+        <div className="pointer-events-none absolute inset-x-0 -top-px h-px bg-gradient-to-r from-[var(--chart-1)] to-[var(--chart-1)]/60 opacity-60 transition-opacity group-hover:opacity-100" />
+        <div className="flex items-start justify-between">
+          <div className="min-w-0">
+            <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Earned this month
+            </div>
+            <div className="mt-2 text-[24px] font-semibold tracking-tight tabular">
+              <NumberFlow
+                value={value}
+                format={{
+                  style: "currency",
+                  currency: currency === "PHP" ? "PHP" : currency,
+                  maximumFractionDigits: 0,
+                }}
+              />
+            </div>
+            {showDelta ? (
+              <div
+                className={cn(
+                  "mt-1 inline-flex items-center gap-1 text-xs font-medium tabular",
+                  positive ? "text-emerald-500" : "text-rose-500",
+                )}
+              >
+                {positive ? (
+                  <ArrowUpRight className="h-3 w-3" />
+                ) : (
+                  <ArrowDownRight className="h-3 w-3" />
+                )}
+                {(positive ? "+" : "") + (delta! * 100).toFixed(0)}% vs last month
+              </div>
+            ) : lastMonth > 0 ? (
+              <div className="mt-1 text-xs text-muted-foreground tabular">
+                flat vs last month
+              </div>
+            ) : (
+              <div className="mt-1 text-xs text-muted-foreground tabular">
+                first month of income
+              </div>
+            )}
+          </div>
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-[var(--chart-1)] to-[var(--chart-1)]/60 text-white shadow-sm">
+            <TrendingUp className="h-4 w-4" />
+          </div>
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
+function InsightsStrip({
+  avgDaysToPayment,
+  biggestDebtor,
+  totalEarnedYTD,
+  currency,
+}: {
+  avgDaysToPayment: number | null;
+  biggestDebtor: { name: string; outstanding: number } | null;
+  totalEarnedYTD: number;
+  currency: CurrencyCode;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.1 }}
+    >
+      <Card className="p-5">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <InsightCell
+            icon={Hourglass}
+            label="Avg. days to payment"
+            value={
+              avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"
+            }
+            hint={
+              avgDaysToPayment !== null
+                ? "Quote → first payment, paid projects only"
+                : "No paid projects yet"
+            }
+          />
+          <InsightCell
+            icon={UserX}
+            label="Biggest debtor"
+            value={biggestDebtor?.name ?? "—"}
+            hint={
+              biggestDebtor
+                ? `${formatMoney(biggestDebtor.outstanding, currency, { compact: true })} outstanding`
+                : "Nobody owes you"
+            }
+          />
+          <InsightCell
+            icon={CalendarDays}
+            label={`Earned in ${new Date().getFullYear()}`}
+            value={formatMoney(totalEarnedYTD, currency, { compact: true })}
+            hint="Year to date"
+          />
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
+function InsightCell({
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted/60 text-muted-foreground">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {label}
+        </div>
+        <div className="mt-0.5 truncate text-base font-semibold tracking-tight tabular">
+          {value}
+        </div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>
+      </div>
+    </div>
   );
 }
 

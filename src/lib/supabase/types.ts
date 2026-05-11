@@ -146,6 +146,20 @@ export interface Payment {
   created_at: string;
 }
 
+export interface Expense {
+  id: string;
+  user_id: string;
+  spent_at: string;
+  description: string;
+  amount: number;
+  currency: CurrencyCode;
+  category: string | null;
+  vendor: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface LineItem {
   description: string;
   quantity: number;
@@ -200,6 +214,7 @@ export type Database = {
       categories:        Table<Category>;
       projects:          Table<Project>;
       payments:          Table<Payment>;
+      expenses:          Table<Expense>;
       invoices:          Table<Invoice>;
       invoice_projects:  Table<{ invoice_id: string; project_id: string }>;
       project_templates: Table<ProjectTemplate>;

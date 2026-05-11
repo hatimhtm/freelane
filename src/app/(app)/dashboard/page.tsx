@@ -19,6 +19,9 @@ export default async function DashboardPage() {
 
   const baseCurrency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
   const today = new Date();
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0, 23, 59, 59);
   const startOfYear = new Date(today.getFullYear(), 0, 1);
   const in30Days = new Date(today.getTime() + 30 * DAY_MS);
 
@@ -30,9 +33,46 @@ export default async function DashboardPage() {
     ...p,
     base: toBase(Number(p.amount), p.currency as CurrencyCode, rates),
   }));
+
+  // Monthly is the hero — that's how freelancers actually think about cashflow.
+  const totalEarnedMTD = paymentsInBase
+    .filter((p) => new Date(p.paid_at) >= startOfMonth)
+    .reduce((s, p) => s + p.base, 0);
+
+  const earnedLastMonth = paymentsInBase
+    .filter((p) => {
+      const d = new Date(p.paid_at);
+      return d >= startOfLastMonth && d <= endOfLastMonth;
+    })
+    .reduce((s, p) => s + p.base, 0);
+
+  // Null when no comparison baseline (avoids division-by-zero + meaningless "+∞" UI).
+  const monthOverMonthDelta = earnedLastMonth > 0
+    ? (totalEarnedMTD - earnedLastMonth) / earnedLastMonth
+    : null;
+
   const totalEarnedYTD = paymentsInBase
     .filter((p) => new Date(p.paid_at) >= startOfYear)
     .reduce((s, p) => s + p.base, 0);
+
+  // Average days from quote to first payment, across PAID projects only.
+  // (Projects that are still open would skew the average toward "never".)
+  const daysToPayment = projects
+    .filter((p) => p.quoted_at && p.status === "paid")
+    .map((p) => {
+      const firstPayment = payments
+        .filter((pay) => pay.project_id === p.id)
+        .map((pay) => new Date(pay.paid_at).getTime())
+        .sort((a, b) => a - b)[0];
+      if (!firstPayment) return null;
+      const start = new Date(p.quoted_at!).getTime();
+      return Math.max(0, (firstPayment - start) / DAY_MS);
+    })
+    .filter((n): n is number => n !== null);
+
+  const avgDaysToPayment = daysToPayment.length > 0
+    ? daysToPayment.reduce((a, b) => a + b, 0) / daysToPayment.length
+    : null;
 
   const outstandingByProject = projects.map((project) => {
     const paid = payments
@@ -101,6 +141,22 @@ export default async function DashboardPage() {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5)
       .map((x) => ({ ...x, value: Math.round(x.value) }));
+  })();
+
+  // Biggest debtor — the single client with the largest outstanding total
+  // across all their unpaid projects. Most actionable view for chasing money.
+  const biggestDebtor = (() => {
+    const byClient = new Map<string, { name: string; outstanding: number }>();
+    outstandingByProject.forEach(({ project, outstanding }) => {
+      if (project.status === "paid" || outstanding <= 0) return;
+      const client = clients.find((c) => c.id === project.client_id);
+      const name = client?.name ?? "Unknown";
+      const inBase = toBase(outstanding, project.currency as CurrencyCode, rates);
+      const entry = byClient.get(project.client_id) ?? { name, outstanding: 0 };
+      entry.outstanding += inBase;
+      byClient.set(project.client_id, entry);
+    });
+    return Array.from(byClient.values()).sort((a, b) => b.outstanding - a.outstanding)[0] ?? null;
   })();
 
   const recentPayments = payments.slice(0, 6).map((p) => {
@@ -195,10 +251,15 @@ export default async function DashboardPage() {
           <div className="mt-6">
             <DashboardStats
               baseCurrency={baseCurrency}
+              totalEarnedMTD={totalEarnedMTD}
+              earnedLastMonth={earnedLastMonth}
+              monthOverMonthDelta={monthOverMonthDelta}
               totalEarnedYTD={totalEarnedYTD}
               outstanding={outstandingBase}
               overdue={overdueBase}
               next30={next30Base}
+              avgDaysToPayment={avgDaysToPayment}
+              biggestDebtor={biggestDebtor}
               monthlyRevenue={monthlyRevenue}
               clientDistribution={clientDistribution}
               recentPayments={recentPayments}
