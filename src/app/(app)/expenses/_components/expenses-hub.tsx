@@ -8,7 +8,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -93,13 +93,11 @@ export function ExpensesHub({
           </div>
         </Card>
         <div className="flex items-end justify-end">
+          <Button onClick={() => setCreating(true)}>
+            {triggerIcon}
+            {triggerLabel}
+          </Button>
           <Dialog open={creating} onOpenChange={setCreating}>
-            <DialogTrigger asChild>
-              <Button>
-                {triggerIcon}
-                {triggerLabel}
-              </Button>
-            </DialogTrigger>
             <ExpenseDialog
               currencies={currencies}
               defaultCurrency={baseCurrency}
