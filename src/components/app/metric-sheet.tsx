@@ -78,7 +78,11 @@ export function MetricSheetProvider({ children }: { children: React.ReactNode })
       <Sheet open={isOpen} onOpenChange={(o) => setIsOpen(o)}>
         <SheetContent
           side="right"
-          className="w-full gap-0 overflow-x-hidden p-0 sm:max-w-none sm:w-[94vw] md:w-[78vw] lg:w-[56vw] xl:w-[50vw]"
+          /* Inline style beats SheetContent's baked data-[side=right] width
+             classes (tailwind-merge can't dedupe across variant prefixes).
+             Full-width on phones, ~half the screen on anything roomy. */
+          style={{ width: "min(92vw, max(560px, 50vw))", maxWidth: "none" }}
+          className="gap-0 overflow-x-hidden p-0"
         >
           <div className="sticky top-0 z-10 border-b border-border/60 bg-popover/85 px-5 py-4 backdrop-blur-xl sm:px-7">
             <div className="display-eyebrow text-muted-foreground">Metric</div>
