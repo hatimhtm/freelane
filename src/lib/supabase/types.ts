@@ -292,6 +292,7 @@ export type Database = {
       payment_steps:        Table<PaymentStep>;
       payment_methods:      Table<PaymentMethod>;
       client_memory_entries: Table<ClientMemoryEntry>;
+      ai_focus_cache:       Table<{ user_id: string; insights: unknown; generated_at: string }>;
       expenses:             Table<Expense>;
       invoices:             Table<Invoice>;
       invoice_projects:     Table<{ invoice_id: string; project_id: string }>;

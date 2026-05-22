@@ -1,4 +1,3 @@
-import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/app/user-menu";
 import { CommandTrigger } from "@/components/app/command-palette";
 import { MobileNav } from "@/components/app/mobile-nav";
@@ -11,7 +10,6 @@ export function TopBar() {
         <CommandTrigger />
       </div>
       <div className="flex items-center gap-1">
-        <ThemeToggle />
         <UserMenu />
       </div>
     </header>

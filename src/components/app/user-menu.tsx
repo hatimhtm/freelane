@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { LogOut, Settings as SettingsIcon, User } from "lucide-react";
 import {
   DropdownMenu,
@@ -37,7 +36,7 @@ export function UserMenu() {
         <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Freelane
         </DropdownMenuLabel>
-        <DropdownMenuItem render={<Link href="/settings" />}>
+        <DropdownMenuItem onClick={() => router.push("/settings")}>
           <SettingsIcon className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>

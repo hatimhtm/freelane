@@ -16,10 +16,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ClientDialog } from "./client-dialog";
 import { archiveClient, deleteClient } from "@/lib/data/actions";
+import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import type { Client } from "@/lib/supabase/types";
+import type { Client, CurrencyCode } from "@/lib/supabase/types";
 
-type Enriched = Client & { projectCount: number; paidTotal: number };
+type Enriched = Client & {
+  projectCount: number;
+  openCount: number;
+  paidBase: number;
+  feesBase: number;
+  outstandingBase: number;
+  lastPaidAt: string | null;
+  hasMemory: boolean;
+  watch: string[];
+  facts: string[];
+};
 
 export function ClientNewButton({ openInitial }: { openInitial?: boolean }) {
   const [open, setOpen] = useState(openInitial ?? false);
@@ -37,9 +48,11 @@ export function ClientNewButton({ openInitial }: { openInitial?: boolean }) {
 
 export function ClientList({
   clients,
+  baseCurrency,
   openNew,
 }: {
   clients: Enriched[];
+  baseCurrency: CurrencyCode;
   openNew?: boolean;
 }) {
   const router = useRouter();
@@ -129,28 +142,49 @@ export function ClientList({
                 </DropdownMenu>
               </div>
 
-              <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+              <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
                 <div>
-                  <div className="text-xs text-muted-foreground">Projects</div>
-                  <div className="font-medium tabular">{c.projectCount}</div>
+                  <div className="text-xs text-muted-foreground">Landed</div>
+                  <div className="font-medium tabular">
+                    {c.paidBase > 0 ? formatMoney(c.paidBase, baseCurrency, { compact: true }) : "—"}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Paid</div>
+                  <div className="text-xs text-muted-foreground">Outstanding</div>
+                  <div className={cn("font-medium tabular", c.outstandingBase > 0 ? "text-[var(--overdue)]" : "text-muted-foreground")}>
+                    {c.outstandingBase > 0 ? formatMoney(c.outstandingBase, baseCurrency, { compact: true }) : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Projects</div>
                   <div className="font-medium tabular">
-                    {c.paidTotal > 0
-                      ? new Intl.NumberFormat("en", { maximumFractionDigits: 0 }).format(c.paidTotal)
-                      : "—"}
+                    {c.projectCount}
+                    {c.openCount > 0 && <span className="text-xs text-muted-foreground"> · {c.openCount} open</span>}
                   </div>
                 </div>
               </div>
 
-              {(c.ice || c.rc || c.default_currency) && (
-                <div className="mt-4 flex flex-wrap gap-1.5">
-                  {c.ice && <Chip>ICE {c.ice}</Chip>}
-                  {c.rc && <Chip>RC {c.rc}</Chip>}
-                  {c.default_currency && <Chip>{c.default_currency}</Chip>}
+              {/* AI memory tags — the watch flags (red) say the most at a glance. */}
+              {(c.watch.length > 0 || c.facts.length > 0) && (
+                <div className="mt-4 flex flex-wrap items-center gap-1.5">
+                  {c.watch.map((w, idx) => (
+                    <span key={`w${idx}`} className="truncate rounded-full bg-[var(--overdue)]/12 px-2 py-0.5 text-[10px] font-medium text-[var(--overdue)]">
+                      {w}
+                    </span>
+                  ))}
+                  {c.watch.length === 0 && c.facts.map((f, idx) => (
+                    <span key={`f${idx}`} className="truncate rounded-full border border-[var(--brand)]/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {f}
+                    </span>
+                  ))}
                 </div>
               )}
+
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                {c.default_currency && <Chip>{c.default_currency}</Chip>}
+                {c.feesBase > 0 && <Chip>{formatMoney(c.feesBase, baseCurrency, { compact: true })} fees</Chip>}
+                {c.lastPaidAt && <Chip>last {new Date(c.lastPaidAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</Chip>}
+              </div>
 
               <div className="pointer-events-none absolute right-4 top-4 opacity-0 transition-opacity group-hover:opacity-100">
                 <ArrowUpRight className="h-4 w-4 text-muted-foreground" />

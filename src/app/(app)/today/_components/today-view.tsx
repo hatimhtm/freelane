@@ -7,11 +7,13 @@ import { motion } from "motion/react";
 import { Card } from "@/components/ui/card";
 import { MastheadStat, MetricTile, DeltaChip } from "@/components/stats/stat";
 import { AiPanel } from "@/components/app/ai-panel";
+import { TodaysFocus } from "@/components/app/todays-focus";
 import { BlockedMoneyList, type BlockedRow } from "@/components/app/blocked-money-list";
 import { Reveal } from "@/components/motion/reveal";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { CurrencyCode } from "@/lib/supabase/types";
+import type { MoneyInsight } from "@/lib/ai/actions";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -44,6 +46,8 @@ export function TodayView({
   situation,
   year,
   aiEnabled,
+  focusInsights,
+  focusGeneratedAt,
 }: {
   firstName: string | null;
   currency: CurrencyCode;
@@ -60,6 +64,8 @@ export function TodayView({
   situation: string;
   year: number;
   aiEnabled: boolean;
+  focusInsights: MoneyInsight[];
+  focusGeneratedAt: string | null;
 }) {
   // Time-aware greeting computed on the client so it matches the user's clock.
   const [greeting, setGreeting] = useState("Welcome back");
@@ -115,7 +121,7 @@ export function TodayView({
                 today&apos;s rates — moves with FX until paid.
               </p>
               <Link
-                href="/projects"
+                href="/metric/outstanding"
                 className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline"
               >
                 View outstanding <ArrowUpRight className="size-3" />
@@ -123,6 +129,13 @@ export function TodayView({
             </Card>
           </Reveal>
         </section>
+
+        {/* Today's Focus — proactive, cached, auto-refreshing */}
+        {aiEnabled && (
+          <Reveal delay={0.24}>
+            <TodaysFocus initialInsights={focusInsights} initialGeneratedAt={focusGeneratedAt} enabled={aiEnabled} />
+          </Reveal>
+        )}
 
         {/* BIG Ask-your-money centerpiece */}
         {aiEnabled && (
@@ -152,25 +165,26 @@ export function TodayView({
             delta={metrics.wowDelta}
             hint="landed · WoW"
             icon={CalendarRange}
+            href="/metric/landed"
             delay={0.02}
           />
-          <Link href="/projects" className="block">
-            <MetricTile
-              label="Outstanding"
-              value={pendingTotal}
-              currency={currency}
-              hint={`${pendingCount} open ${pendingCount === 1 ? "project" : "projects"}`}
-              icon={Hourglass}
-              accent
-              delay={0.05}
-            />
-          </Link>
+          <MetricTile
+            label="Outstanding"
+            value={pendingTotal}
+            currency={currency}
+            hint={`${pendingCount} open ${pendingCount === 1 ? "project" : "projects"}`}
+            icon={Hourglass}
+            accent
+            href="/metric/outstanding"
+            delay={0.05}
+          />
           <MetricTile
             label="Fees this month"
             value={metrics.feesMtd}
             currency={currency}
             hint="rails + FX markup"
             icon={Receipt}
+            href="/metric/fees"
             delay={0.08}
           />
           <MetricTile
@@ -178,27 +192,26 @@ export function TodayView({
             text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
             hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
             icon={Hourglass}
+            href="/metric/avg-days"
             delay={0.11}
           />
-          <Link href="/clients" className="block">
-            <MetricTile
-              label="Biggest debtor"
-              text={biggestDebtor?.name ?? "—"}
-              hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
-              icon={UserX}
-              delay={0.14}
-            />
-          </Link>
-          <Link href={`/year/${year}`} className="block">
-            <MetricTile
-              label={`Year to date`}
-              value={metrics.ytd}
-              currency={currency}
-              hint={`${year} so far`}
-              icon={CalendarRange}
-              delay={0.17}
-            />
-          </Link>
+          <MetricTile
+            label="Biggest debtor"
+            text={biggestDebtor?.name ?? "—"}
+            hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
+            icon={UserX}
+            href="/metric/debtor"
+            delay={0.14}
+          />
+          <MetricTile
+            label={`Year to date`}
+            value={metrics.ytd}
+            currency={currency}
+            hint={`${year} so far`}
+            icon={CalendarRange}
+            href="/metric/landed"
+            delay={0.17}
+          />
         </section>
 
         {/* What needs you + recent payments */}

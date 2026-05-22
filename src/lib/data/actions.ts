@@ -440,7 +440,9 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   revalidatePath("/pending");
-  return { id: paymentRow.id as string };
+  // clientId returned so the UI can re-consolidate this client's AI memory
+  // out-of-band — the memory keeps learning as money moves.
+  return { id: paymentRow.id as string, clientId: project.client_id as string };
 }
 
 // Legacy single-hop quick-add (project sheet). Snapshots lock fields + writes

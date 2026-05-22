@@ -7,6 +7,7 @@ import {
   dailySeries,
 } from "@/lib/dashboard-calc";
 import { hasGemini } from "@/lib/ai/gemini";
+import { readFocusCache } from "@/lib/ai/actions";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { BlockedRow } from "@/components/app/blocked-money-list";
@@ -17,7 +18,11 @@ const DAY_MS = 86_400_000;
 export const metadata = { title: "Today" };
 
 export default async function TodayPage() {
-  const { settings, projects, payments, rates, clients, methods } = await getDashboardData();
+  const aiEnabled = hasGemini();
+  const [{ settings, projects, payments, rates, clients, methods }, focus] = await Promise.all([
+    getDashboardData(),
+    aiEnabled ? readFocusCache() : Promise.resolve({ insights: [], generatedAt: null }),
+  ]);
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
   const recurringFee = methods.reduce((s, m) => s + Number(m.monthly_fee_php ?? 0), 0);
@@ -108,7 +113,9 @@ export default async function TodayPage() {
       recent={recent}
       situation={situation}
       year={new Date().getFullYear()}
-      aiEnabled={hasGemini()}
+      aiEnabled={aiEnabled}
+      focusInsights={focus.insights}
+      focusGeneratedAt={focus.generatedAt}
     />
   );
 }

@@ -107,25 +107,27 @@ export function DashboardView({
         <div className="mt-10 space-y-10">
           {/* Hero: masthead + pending panel */}
           <section className="grid items-end gap-8 lg:grid-cols-[1.5fr_1fr]">
-            <MastheadStat
-              eyebrow="Landed this month"
-              value={metrics.mtd}
-              currency={currency}
-              delta={metrics.momDelta}
-              series={series}
-              support={
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span>
-                    <span className="font-medium text-foreground">{formatMoney(metrics.wtd, currency, { compact: true })}</span> this week
+            <Link href="/metric/landed" className="block lift -m-2 rounded-xl p-2">
+              <MastheadStat
+                eyebrow="Landed this month"
+                value={metrics.mtd}
+                currency={currency}
+                delta={metrics.momDelta}
+                series={series}
+                support={
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span>
+                      <span className="font-medium text-foreground">{formatMoney(metrics.wtd, currency, { compact: true })}</span> this week
+                    </span>
+                    {metrics.wowDelta !== null && <DeltaChip delta={metrics.wowDelta} suffix="WoW" />}
+                    <span className="text-muted-foreground/40">·</span>
+                    <span>
+                      <span className="font-medium text-foreground">{formatMoney(metrics.ytd, currency, { compact: true })}</span> in {year}
+                    </span>
                   </span>
-                  {metrics.wowDelta !== null && <DeltaChip delta={metrics.wowDelta} suffix="WoW" />}
-                  <span className="text-muted-foreground/40">·</span>
-                  <span>
-                    <span className="font-medium text-foreground">{formatMoney(metrics.ytd, currency, { compact: true })}</span> in {year}
-                  </span>
-                </span>
-              }
-            />
+                }
+              />
+            </Link>
             <PendingPanel total={pendingTotal} count={pendingCount} currency={currency} />
           </section>
 
@@ -134,34 +136,31 @@ export function DashboardView({
 
           {/* Metric tiles */}
           <section className="grid gap-4 sm:grid-cols-3">
-            <Link href="/payments" className="block">
-              <MetricTile
-                label="Fees this month"
-                value={metrics.feesMtd}
-                currency={currency}
-                icon={Receipt}
-                hint="rails + FX markup"
-                delay={0.02}
-              />
-            </Link>
-            <Link href="/projects" className="block">
-              <MetricTile
-                label="Avg days to payment"
-                text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
-                icon={Hourglass}
-                hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
-                delay={0.06}
-              />
-            </Link>
-            <Link href="/projects" className="block">
-              <MetricTile
-                label="Biggest debtor"
-                text={biggestDebtor?.name ?? "—"}
-                icon={UserX}
-                hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
-                delay={0.1}
-              />
-            </Link>
+            <MetricTile
+              label="Fees this month"
+              value={metrics.feesMtd}
+              currency={currency}
+              icon={Receipt}
+              hint="rails + FX markup"
+              href="/metric/fees"
+              delay={0.02}
+            />
+            <MetricTile
+              label="Avg days to payment"
+              text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
+              icon={Hourglass}
+              hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
+              href="/metric/avg-days"
+              delay={0.06}
+            />
+            <MetricTile
+              label="Biggest debtor"
+              text={biggestDebtor?.name ?? "—"}
+              icon={UserX}
+              hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
+              href="/metric/debtor"
+              delay={0.1}
+            />
           </section>
 
           {/* Ask your money */}
@@ -273,7 +272,7 @@ function PendingPanel({ total, count, currency }: { total: number; count: number
         <p className="mt-2 text-xs text-muted-foreground">
           Across {count} open {count === 1 ? "project" : "projects"}, valued at today&apos;s rates — moves with FX until paid.
         </p>
-        <Link href="/projects" className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline">
+        <Link href="/metric/outstanding" className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline">
           View outstanding <ArrowUpRight className="size-3" />
         </Link>
       </Card>

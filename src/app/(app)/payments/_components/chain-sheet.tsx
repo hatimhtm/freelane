@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/money";
 import { playLanded } from "@/lib/sound";
-import { addPaymentWithChain, refreshRatesIfStale } from "@/lib/data/actions";
+import { addPaymentWithChain, consolidateClientMemoryAction, refreshRatesIfStale } from "@/lib/data/actions";
 import type { CurrencyCode } from "@/lib/supabase/types";
 
 type ProjectOpt = { id: string; title: string; currency: CurrencyCode; clientName: string; outstanding: number };
@@ -66,19 +66,20 @@ export function ChainSheet({
 
   const project = projects.find((p) => p.id === projectId);
 
-  // Reset when opened: select the deep-linked project (or the first), one step
-  // pre-filled with its outstanding amount in its own currency → out in base.
-  // Also pull fresh FX so the preview values the payment at today's rate.
+  // Reset when opened. Nothing is preselected — the user picks the project and
+  // method themselves. The ONLY exception is a deep-link from the kanban
+  // (dragging a card to Paid), where the project is known: then we select it
+  // and prefill its outstanding amount. Always pull fresh FX for the preview.
   useEffect(() => {
     if (!open) return;
-    const p = projects.find((x) => x.id === defaultProjectId) ?? projects[0];
-    setProjectId(p?.id ?? "");
+    const deepLinked = defaultProjectId ? projects.find((x) => x.id === defaultProjectId) : undefined;
+    setProjectId(deepLinked?.id ?? "");
     setPaidAt(new Date().toISOString().slice(0, 10));
     setSteps([
       {
-        method_id: methods[0]?.id ?? null,
-        amount_in: p && p.outstanding > 0 ? String(p.outstanding) : "",
-        currency_in: p?.currency ?? baseCurrency,
+        method_id: null,
+        amount_in: deepLinked && deepLinked.outstanding > 0 ? String(deepLinked.outstanding) : "",
+        currency_in: deepLinked?.currency ?? baseCurrency,
         amount_out: "",
         currency_out: baseCurrency,
       },
@@ -111,7 +112,7 @@ export function ChainSheet({
       return [
         ...prev,
         {
-          method_id: methods[0]?.id ?? null,
+          method_id: null,
           amount_in: last?.amount_out ?? "",
           currency_in: last?.currency_out ?? baseCurrency,
           amount_out: "",
@@ -145,11 +146,13 @@ export function ChainSheet({
     }
     start(async () => {
       try {
-        await addPaymentWithChain({ project_id: projectId, paid_at: paidAt, steps: parsed });
+        const res = await addPaymentWithChain({ project_id: projectId, paid_at: paidAt, steps: parsed });
         playLanded();
         toast.success(`Logged · ${formatMoney(preview.net, baseCurrency)} landed`);
         onOpenChange(false);
         router.refresh();
+        // Let the client's AI memory learn from this new transaction (out-of-band).
+        if (res?.clientId) consolidateClientMemoryAction(res.clientId).then(() => router.refresh()).catch(() => {});
       } catch (err) {
         toast.error((err as Error).message);
       }

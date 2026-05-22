@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { motion } from "motion/react";
 import { MoneyFlow } from "@/components/ui/money-flow";
@@ -84,6 +85,7 @@ export function MetricTile({
   icon: Icon,
   accent = false,
   delay = 0,
+  href,
 }: {
   label: string;
   value?: number;
@@ -94,14 +96,15 @@ export function MetricTile({
   icon?: React.ComponentType<{ className?: string }>;
   accent?: boolean;
   delay?: number;
+  href?: string;
 }) {
-  return (
+  const card = (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay, ease: EASE }}
       className={cn(
-        "lift rounded-xl border bg-card p-5",
+        "lift h-full rounded-xl border bg-card p-5",
         accent ? "border-foreground/15" : "border-border/70",
       )}
     >
@@ -126,6 +129,15 @@ export function MetricTile({
       </div>
     </motion.div>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="block h-full">
+        {card}
+      </Link>
+    );
+  }
+  return card;
 }
 
 export function DeltaChip({ delta, suffix = "vs last month" }: { delta: number; suffix?: string }) {
