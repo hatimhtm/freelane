@@ -66,11 +66,11 @@ export default async function YearPage({
   });
 
   const totalBase = paymentsInYear.reduce(
-    (s, p) => s + toBase(Number(p.amount), p.currency as CurrencyCode, rs),
+    (s, p) => s + Number(p.net_amount_base ?? toBase(Number(p.amount), p.currency as CurrencyCode, rs)),
     0,
   );
   const totalPrev = paymentsPrev.reduce(
-    (s, p) => s + toBase(Number(p.amount), p.currency as CurrencyCode, rs),
+    (s, p) => s + Number(p.net_amount_base ?? toBase(Number(p.amount), p.currency as CurrencyCode, rs)),
     0,
   );
 
@@ -97,7 +97,7 @@ export default async function YearPage({
         const d = new Date(p.paid_at);
         return d >= monthStart && d < monthEnd;
       })
-      .reduce((s, p) => s + toBase(Number(p.amount), p.currency as CurrencyCode, rs), 0);
+      .reduce((s, p) => s + Number(p.net_amount_base ?? toBase(Number(p.amount), p.currency as CurrencyCode, rs)), 0);
     return {
       month: monthStart.toLocaleString("en", { month: "short" }),
       total: Math.round(total),
@@ -114,7 +114,7 @@ export default async function YearPage({
   paymentsInYear.forEach((p) => {
     const project = prs.find((pr) => pr.id === p.project_id);
     if (!project) return;
-    const base_amount = toBase(Number(p.amount), p.currency as CurrencyCode, rs);
+    const base_amount = Number(p.net_amount_base ?? toBase(Number(p.amount), p.currency as CurrencyCode, rs));
     clientTotals.set(
       project.client_id,
       (clientTotals.get(project.client_id) ?? 0) + base_amount,
@@ -152,10 +152,10 @@ export default async function YearPage({
           {year - 1}
         </Link>
         <div className="text-center">
-          <div className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
+          <div className="display-eyebrow text-muted-foreground">
             Year in review
           </div>
-          <div className="mt-1 bg-gradient-to-br from-[#9d6bff] via-[var(--foreground)] to-[#5b9dff] bg-clip-text text-[56px] font-semibold leading-none tracking-tight text-transparent sm:text-[72px]">
+          <div className="display-numeric mt-1 text-[64px] leading-none sm:text-[88px]">
             {year}
           </div>
         </div>

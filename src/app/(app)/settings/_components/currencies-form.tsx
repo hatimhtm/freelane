@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  createCurrency,
   deleteExchangeRate,
   refreshExchangeRatesFromAPI,
   updateSettings,
@@ -249,6 +250,40 @@ export function CurrenciesForm({
           </a>{" "}
           (free, ECB-sourced, no API key).
         </p>
+
+        <NewCurrency onCreated={() => router.refresh()} />
+      </div>
+    </div>
+  );
+}
+
+function NewCurrency({ onCreated }: { onCreated: () => void }) {
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [pending, start] = useTransition();
+
+  function add() {
+    if (!/^[A-Za-z]{3}$/.test(code.trim())) { toast.error("Code must be 3 letters (e.g. GBP)"); return; }
+    if (!name.trim()) { toast.error("Add a name"); return; }
+    start(async () => {
+      try {
+        await createCurrency({ code: code.trim(), name: name.trim() });
+        toast.success(`${code.toUpperCase()} added`);
+        setCode(""); setName("");
+        onCreated();
+      } catch (err) { toast.error((err as Error).message); }
+    });
+  }
+
+  return (
+    <div className="mt-4 flex flex-wrap items-end gap-2 border-t border-border/50 pt-4">
+      <div>
+        <Label className="text-xs font-medium text-muted-foreground">New currency</Label>
+        <div className="mt-1.5 flex items-center gap-2">
+          <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 3))} placeholder="GBP" className="h-8 w-20 uppercase" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="British Pound" className="h-8 w-44" />
+          <Button size="sm" variant="outline" className="h-8" onClick={add} disabled={pending}>{pending ? "Adding…" : "Add"}</Button>
+        </div>
       </div>
     </div>
   );

@@ -4,14 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
-  Calendar,
-  FileText,
-  KanbanSquare,
+  CalendarRange,
+  FolderKanban,
   LayoutDashboard,
   Plus,
+  RefreshCw,
   Search,
   Settings,
-  Sparkles,
+  Sun,
   Users,
   Wallet,
 } from "lucide-react";
@@ -49,26 +49,30 @@ export function CommandTrigger() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="group inline-flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-background px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="group inline-flex h-9 items-center gap-2 rounded-[6px] border border-border/70 bg-background px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         <Search className="h-3.5 w-3.5" />
-        <span>Search or jump to…</span>
-        <kbd className="ml-4 inline-flex items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+        <span className="hidden sm:inline">Search or jump to…</span>
+        <kbd className="ml-2 hidden items-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-flex">
           ⌘K
         </kbd>
       </button>
 
       <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput placeholder="Search clients, projects, invoices…" />
+        <CommandInput placeholder="Search clients, projects, payments…" />
         <CommandList>
           <CommandEmpty>No results.</CommandEmpty>
           <CommandGroup heading="Navigate">
+            <CommandItem onSelect={() => go("/today")}>
+              <Sun className="mr-2 h-4 w-4" />
+              Today
+            </CommandItem>
             <CommandItem onSelect={() => go("/dashboard")}>
               <LayoutDashboard className="mr-2 h-4 w-4" />
               Dashboard
             </CommandItem>
             <CommandItem onSelect={() => go("/projects")}>
-              <KanbanSquare className="mr-2 h-4 w-4" />
+              <FolderKanban className="mr-2 h-4 w-4" />
               Projects
             </CommandItem>
             <CommandItem onSelect={() => go("/payments")}>
@@ -78,10 +82,6 @@ export function CommandTrigger() {
             <CommandItem onSelect={() => go("/clients")}>
               <Users className="mr-2 h-4 w-4" />
               Clients
-            </CommandItem>
-            <CommandItem onSelect={() => go("/invoices")}>
-              <FileText className="mr-2 h-4 w-4" />
-              Invoices
             </CommandItem>
             <CommandItem onSelect={() => go("/activity")}>
               <Activity className="mr-2 h-4 w-4" />
@@ -102,16 +102,16 @@ export function CommandTrigger() {
               <Plus className="mr-2 h-4 w-4" />
               New project
             </CommandItem>
-            <CommandItem onSelect={() => go("/invoices?new=1")}>
+            <CommandItem onSelect={() => go("/payments?new=1")}>
               <Plus className="mr-2 h-4 w-4" />
-              New invoice
+              Log a payment
             </CommandItem>
             <CommandItem onSelect={() => go("/settings#rates")}>
-              <Calendar className="mr-2 h-4 w-4" />
+              <RefreshCw className="mr-2 h-4 w-4" />
               Update exchange rates
             </CommandItem>
             <CommandItem onSelect={() => go(`/year/${new Date().getFullYear()}`)}>
-              <Sparkles className="mr-2 h-4 w-4" />
+              <CalendarRange className="mr-2 h-4 w-4" />
               {new Date().getFullYear()} in review
             </CommandItem>
           </CommandGroup>

@@ -29,7 +29,7 @@ export function UserMenu() {
         aria-label="Account"
         className="group inline-flex h-9 w-9 items-center justify-center rounded-full outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring/50 data-[popup-open]:ring-2 data-[popup-open]:ring-[var(--brand)]/40"
       >
-        <span className="relative grid h-7 w-7 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#9d6bff] to-[#5b9dff] text-white shadow-inner shadow-white/20 transition-transform group-hover:scale-105 group-active:scale-95">
+        <span className="relative grid h-7 w-7 place-items-center overflow-hidden rounded-full bg-[var(--ink)] text-[var(--paper)] transition-transform group-hover:scale-105 group-active:scale-95">
           <User className="h-3.5 w-3.5 opacity-90" />
         </span>
       </DropdownMenuTrigger>

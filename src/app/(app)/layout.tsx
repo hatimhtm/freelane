@@ -4,6 +4,7 @@ import { SidebarNav } from "@/components/app/sidebar-nav";
 import { TopBar } from "@/components/app/top-bar";
 import { PageTransition } from "@/components/app/page-transition";
 import { BackgroundOrbs } from "@/components/app/background-orbs";
+import { FxAutoRefresh } from "@/components/app/fx-auto-refresh";
 
 export default async function AppLayout({
   children,
@@ -16,6 +17,7 @@ export default async function AppLayout({
   return (
     <div className="relative flex min-h-dvh bg-background">
       <BackgroundOrbs />
+      <FxAutoRefresh />
       <SidebarNav />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />

@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/app/page-header";
 import { getSettings } from "@/lib/data/queries";
 import { IssuerForm } from "./_components/issuer-form";
-import { InvoiceDefaultsForm } from "./_components/invoice-defaults-form";
+import { MethodsForm } from "./_components/methods-form";
 import { CurrenciesForm } from "./_components/currencies-form";
 import { AppearanceForm } from "./_components/appearance-form";
 import { DataForm } from "./_components/data-form";
@@ -9,7 +9,7 @@ import { DataForm } from "./_components/data-form";
 export const metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
-  const { settings, rates, currencies } = await getSettings();
+  const { settings, rates, currencies, methods } = await getSettings();
 
   return (
     <div className="mx-auto max-w-4xl p-6 lg:p-10">
@@ -19,18 +19,21 @@ export default async function SettingsPage() {
       />
 
       <div className="mt-8 space-y-6">
-        <Section title="Issuer profile" hint="Appears on every invoice you send.">
+        <Section title="Your profile" hint="Your name greets you on Today; used as context for the AI.">
           <IssuerForm settings={settings} />
         </Section>
 
-        <Section title="Invoice defaults" hint="Numbering, footer, and the TVA note.">
-          <InvoiceDefaultsForm settings={settings} />
+        <Section
+          title="Payment methods"
+          hint="The rails money reaches you through. Add a monthly fee where one applies — it's subtracted from each month's landed total."
+        >
+          <MethodsForm methods={methods} currencies={currencies} baseCurrency={settings?.base_currency ?? "PHP"} />
         </Section>
 
         <Section
           id="rates"
           title="Currencies & exchange rates"
-          hint="Freelane converts every amount to your base currency using these rates. You set them manually."
+          hint="Freelane values unpaid balances at these rates. Pull live mid-market rates, or set them by hand."
         >
           <CurrenciesForm
             settings={settings}

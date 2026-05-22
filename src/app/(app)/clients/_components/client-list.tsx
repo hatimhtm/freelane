@@ -82,11 +82,11 @@ export function ClientList({
             <Card
               role="button"
               tabIndex={0}
-              onClick={() => setEditing(c)}
+              onClick={() => router.push(`/clients/${c.id}`)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  setEditing(c);
+                  router.push(`/clients/${c.id}`);
                 }
               }}
               className={cn(

@@ -4,6 +4,15 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ───────────────────────────────────────────────────────────────────────────
+   Freelane design system — "editorial paper".
+
+   The brief: astronomical, not just pretty. Warm paper instead of stark white,
+   one display serif used ~4 places, acid lime used once per screen. Reference
+   points: Mercury, Stripe Press, Linear, Things 3, Apple Wallet. No aurora, no
+   glassmorphism, no 8px-radius generic-SaaS tells.
+   ─────────────────────────────────────────────────────────────────────────── */
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -31,6 +40,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-overdue: var(--overdue);
   --color-success: var(--success);
   --color-warning: var(--warning);
 
@@ -49,116 +59,129 @@
 
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  /* Radius scale — 4px rows/inputs, 12px cards, 20px sheets. Never 8px. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
+  --radius-4xl: 28px;
 }
 
-/* ───────────────────────────────────────────────── Light mode ── */
+/* ───────────────────────────────────────────── Light — "creamy paper" ── */
 :root {
   --radius: 0.75rem;
 
-  --background: oklch(0.99 0.003 100);
-  --foreground: oklch(0.17 0.015 270);
+  --paper: oklch(0.974 0.007 84);
+  --ink:   oklch(0.19 0.006 70);
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.17 0.015 270);
+  --background: oklch(0.974 0.007 84);   /* #FAF8F3 warm paper */
+  --foreground: oklch(0.19 0.006 70);    /* #1A1814 ink */
 
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.17 0.015 270);
+  --card: oklch(0.987 0.005 84);          /* a hair lighter than paper */
+  --card-foreground: oklch(0.19 0.006 70);
 
-  --primary: oklch(0.55 0.22 280);
-  --primary-foreground: oklch(0.99 0 0);
+  --popover: oklch(0.992 0.004 84);
+  --popover-foreground: oklch(0.19 0.006 70);
 
-  --secondary: oklch(0.96 0.008 280);
-  --secondary-foreground: oklch(0.25 0.02 280);
+  --primary: oklch(0.24 0.008 70);        /* near-ink primary (buttons) */
+  --primary-foreground: oklch(0.975 0.007 84);
 
-  --muted: oklch(0.97 0.005 270);
-  --muted-foreground: oklch(0.5 0.015 270);
+  --secondary: oklch(0.945 0.009 82);
+  --secondary-foreground: oklch(0.28 0.01 70);
 
-  --accent: oklch(0.96 0.012 290);
-  --accent-foreground: oklch(0.25 0.025 285);
+  --muted: oklch(0.945 0.009 82);
+  --muted-foreground: oklch(0.52 0.012 75); /* #6B645A warm grey */
 
-  --destructive: oklch(0.58 0.22 25);
-  --success: oklch(0.62 0.17 155);
-  --warning: oklch(0.78 0.16 75);
+  --accent: oklch(0.93 0.012 86);
+  --accent-foreground: oklch(0.28 0.01 70);
 
-  --border: oklch(0.9 0.008 270);
-  --input: oklch(0.92 0.006 270);
-  --ring: oklch(0.55 0.22 280);
+  --destructive: oklch(0.57 0.14 36);     /* terracotta, not alarm-red */
+  --overdue: oklch(0.57 0.14 36);
+  --success: oklch(0.58 0.11 150);
+  --warning: oklch(0.72 0.13 75);
 
-  --chart-1: oklch(0.6 0.22 280);   /* violet */
-  --chart-2: oklch(0.68 0.15 200);  /* cyan */
-  --chart-3: oklch(0.78 0.16 75);   /* amber */
-  --chart-4: oklch(0.65 0.2 10);    /* rose */
-  --chart-5: oklch(0.62 0.17 155);  /* emerald */
+  --border: oklch(0.9 0.009 80);
+  --input: oklch(0.91 0.008 80);
+  --ring: oklch(0.62 0.02 80);
 
-  --sidebar: oklch(0.98 0.005 280);
-  --sidebar-foreground: oklch(0.25 0.02 275);
-  --sidebar-primary: oklch(0.55 0.22 280);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.95 0.012 285);
-  --sidebar-accent-foreground: oklch(0.25 0.025 285);
-  --sidebar-border: oklch(0.9 0.008 275);
-  --sidebar-ring: oklch(0.55 0.22 280);
+  /* Editorial earthy chart set — money-green leads. */
+  --chart-1: oklch(0.56 0.11 152);  /* sage / money */
+  --chart-2: oklch(0.58 0.09 232);  /* slate blue */
+  --chart-3: oklch(0.7 0.12 72);    /* ochre */
+  --chart-4: oklch(0.57 0.14 36);   /* terracotta */
+  --chart-5: oklch(0.5 0.06 310);   /* muted plum */
 
-  --brand: oklch(0.55 0.22 280);
-  --brand-foreground: oklch(0.99 0 0);
+  --sidebar: oklch(0.962 0.008 84);
+  --sidebar-foreground: oklch(0.3 0.008 70);
+  --sidebar-primary: oklch(0.24 0.008 70);
+  --sidebar-primary-foreground: oklch(0.975 0.007 84);
+  --sidebar-accent: oklch(0.93 0.012 84);
+  --sidebar-accent-foreground: oklch(0.24 0.01 70);
+  --sidebar-border: oklch(0.9 0.009 80);
+  --sidebar-ring: oklch(0.62 0.02 80);
+
+  /* Signature acid lime. Use ONCE per screen — active state / "paid" pill. */
+  --brand: oklch(0.93 0.23 124);          /* #CCFF00 */
+  --brand-foreground: oklch(0.22 0.02 120);
 }
 
-/* ─────────────────────────────────────────────────── Dark mode ── */
+/* ───────────────────────────────────────────────── Dark — "warm night" ── */
 .dark {
-  --background: oklch(0.13 0.012 275);
-  --foreground: oklch(0.96 0.003 270);
+  --paper: oklch(0.16 0.005 80);
+  --ink:   oklch(0.96 0.004 84);
 
-  --card: oklch(0.165 0.014 275);
-  --card-foreground: oklch(0.96 0.003 270);
+  --background: oklch(0.15 0.005 80);     /* warm near-black, not blue-black */
+  --foreground: oklch(0.96 0.004 84);
 
-  --popover: oklch(0.18 0.015 275);
-  --popover-foreground: oklch(0.96 0.003 270);
+  --card: oklch(0.185 0.006 80);
+  --card-foreground: oklch(0.96 0.004 84);
 
-  --primary: oklch(0.72 0.2 285);
-  --primary-foreground: oklch(0.15 0.02 275);
+  --popover: oklch(0.2 0.006 80);
+  --popover-foreground: oklch(0.96 0.004 84);
 
-  --secondary: oklch(0.22 0.02 275);
-  --secondary-foreground: oklch(0.96 0.003 270);
+  --primary: oklch(0.96 0.004 84);
+  --primary-foreground: oklch(0.2 0.006 80);
 
-  --muted: oklch(0.2 0.015 275);
-  --muted-foreground: oklch(0.65 0.02 275);
+  --secondary: oklch(0.24 0.006 80);
+  --secondary-foreground: oklch(0.96 0.004 84);
 
-  --accent: oklch(0.25 0.03 285);
-  --accent-foreground: oklch(0.96 0.003 270);
+  --muted: oklch(0.23 0.006 80);
+  --muted-foreground: oklch(0.68 0.01 82);
 
-  --destructive: oklch(0.68 0.21 22);
-  --success: oklch(0.72 0.16 155);
-  --warning: oklch(0.82 0.16 75);
+  --accent: oklch(0.26 0.008 84);
+  --accent-foreground: oklch(0.96 0.004 84);
 
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.72 0.2 285);
+  --destructive: oklch(0.64 0.15 36);
+  --overdue: oklch(0.64 0.15 36);
+  --success: oklch(0.68 0.13 150);
+  --warning: oklch(0.78 0.14 75);
 
-  --chart-1: oklch(0.72 0.2 285);
-  --chart-2: oklch(0.74 0.15 200);
-  --chart-3: oklch(0.82 0.15 75);
-  --chart-4: oklch(0.72 0.18 10);
-  --chart-5: oklch(0.72 0.16 155);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.7 0.02 84);
 
-  --sidebar: oklch(0.115 0.012 275);
-  --sidebar-foreground: oklch(0.85 0.008 275);
-  --sidebar-primary: oklch(0.72 0.2 285);
-  --sidebar-primary-foreground: oklch(0.15 0.02 275);
-  --sidebar-accent: oklch(0.2 0.02 280);
-  --sidebar-accent-foreground: oklch(0.96 0.003 270);
-  --sidebar-border: oklch(1 0 0 / 7%);
-  --sidebar-ring: oklch(0.72 0.2 285);
+  --chart-1: oklch(0.7 0.12 152);
+  --chart-2: oklch(0.68 0.1 232);
+  --chart-3: oklch(0.78 0.13 72);
+  --chart-4: oklch(0.66 0.15 36);
+  --chart-5: oklch(0.64 0.09 310);
 
-  --brand: oklch(0.72 0.2 285);
-  --brand-foreground: oklch(0.15 0.02 275);
+  --sidebar: oklch(0.135 0.005 80);
+  --sidebar-foreground: oklch(0.82 0.006 82);
+  --sidebar-primary: oklch(0.96 0.004 84);
+  --sidebar-primary-foreground: oklch(0.2 0.006 80);
+  --sidebar-accent: oklch(0.23 0.006 80);
+  --sidebar-accent-foreground: oklch(0.96 0.004 84);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.7 0.02 84);
+
+  --brand: oklch(0.92 0.22 124);
+  --brand-foreground: oklch(0.2 0.02 120);
 }
 
 @layer base {
@@ -167,60 +190,114 @@
   }
   html {
     @apply font-sans antialiased;
-    font-feature-settings: "cv11", "ss01", "ss03";
+    font-feature-settings: "cv11", "ss01";
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-background text-foreground;
     font-variant-ligatures: common-ligatures;
   }
-  /* Tabular numerals for money */
+  ::selection {
+    background-color: oklch(from var(--brand) l c h / 0.35);
+    color: var(--ink);
+  }
+  /* Tabular numerals for every money figure. */
   .tabular {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
   }
-  /* Selection — matches brand */
-  ::selection {
-    background-color: oklch(from var(--brand) l c h / 0.3);
+}
+
+/* ───────────────────────────────────── Editorial type system (use sparingly) ── */
+@layer base {
+  .font-display {
+    font-family: var(--font-display), ui-serif, "GT Sectra", Georgia, serif;
+    font-feature-settings: "ss01", "kern", "calt";
+  }
+  /* Masthead headline — magazine title energy. */
+  .display-headline {
+    font-family: var(--font-display), ui-serif, Georgia, serif;
+    font-weight: 480;
+    font-variation-settings: "opsz" 144, "SOFT" 40, "WONK" 0;
+    letter-spacing: -0.025em;
+    line-height: 0.95;
+    text-wrap: balance;
+  }
+  /* Hero stat number — tabular, soft axis up for friendlier curves at scale. */
+  .display-numeric {
+    font-family: var(--font-display), ui-serif, Georgia, serif;
+    font-weight: 420;
+    font-variation-settings: "opsz" 144, "SOFT" 80, "WONK" 0;
+    font-feature-settings: "tnum", "lnum";
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  /* Small-caps eyebrow over a hero block. */
+  .display-eyebrow {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    line-height: 1;
   }
 }
 
 @layer utilities {
-  /* Ambient glow used behind brand surfaces */
-  .brand-glow {
-    background-image: radial-gradient(
-      circle at 30% 20%,
-      oklch(from var(--brand) l c h / 0.18),
-      transparent 60%
-    );
+  /* Subtle paper grain — barely-there texture so the background isn't flat. */
+  .paper-grain { position: relative; }
+  .paper-grain::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
-  .brand-glow-strong {
-    background-image:
-      radial-gradient(circle at 20% 0%, oklch(from var(--brand) l c h / 0.35), transparent 55%),
-      radial-gradient(circle at 80% 100%, oklch(0.72 0.18 200 / 0.25), transparent 55%);
-  }
-  /* Subtle grid backdrop for landing & empty states */
+  .dark .paper-grain::before { opacity: 0.04; }
+
+  /* Hairline grid backdrop for empty states (very faint). */
   .bg-grid {
     background-image:
-      linear-gradient(to right, oklch(from var(--foreground) l c h / 0.04) 1px, transparent 1px),
-      linear-gradient(to bottom, oklch(from var(--foreground) l c h / 0.04) 1px, transparent 1px);
-    background-size: 32px 32px;
+      linear-gradient(to right, oklch(from var(--foreground) l c h / 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(from var(--foreground) l c h / 0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
   }
-  .dark .bg-grid {
-    background-image:
-      linear-gradient(to right, oklch(from var(--foreground) l c h / 0.06) 1px, transparent 1px),
-      linear-gradient(to bottom, oklch(from var(--foreground) l c h / 0.06) 1px, transparent 1px);
+
+  /* Card lift on hover — a 2px rise + soft ink-tinted shadow. */
+  .lift {
+    transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 280ms cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 200ms ease;
   }
-  /* Glass card */
+  .lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 34px -16px oklch(from var(--ink) l c h / 0.22);
+  }
+
+  /* Marker underline for a single keyword in editorial copy. */
+  .ink-underline {
+    background-image: linear-gradient(transparent 68%, oklch(from var(--brand) l c h / 0.55) 68%);
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    padding: 0 1px;
+  }
+
+  /* Legacy class names kept so un-migrated surfaces still compile; restyled
+     to the new system (no more aurora). Removed as each surface is rewritten. */
   .glass {
-    background-color: oklch(from var(--card) l c h / 0.72);
-    backdrop-filter: blur(14px) saturate(1.2);
-    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    background-color: oklch(from var(--card) l c h / 0.8);
+    backdrop-filter: blur(10px) saturate(1.1);
+    -webkit-backdrop-filter: blur(10px) saturate(1.1);
   }
-  /* Quiet scrollbars */
-  .scroll-muted {
-    scrollbar-width: thin;
-    scrollbar-color: var(--muted-foreground) transparent;
+  .brand-glow,
+  .brand-glow-strong {
+    background-image: radial-gradient(circle at 30% 0%, oklch(from var(--brand) l c h / 0.06), transparent 60%);
   }
+
+  /* Quiet scrollbars. */
+  .scroll-muted { scrollbar-width: thin; scrollbar-color: var(--muted-foreground) transparent; }
   .scroll-muted::-webkit-scrollbar { width: 8px; height: 8px; }
   .scroll-muted::-webkit-scrollbar-thumb {
     background-color: oklch(from var(--muted-foreground) l c h / 0.3);
@@ -231,25 +308,36 @@
   }
 }
 
-/* ─────────────────────────────── Keyframes (motion accents) ── */
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+/* ───────────────────────────────────────────────────── Motion primitives ── */
+@layer utilities {
+  @keyframes fl-fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .fade-up { animation: fl-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-fade-in-up { animation: fl-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+  @keyframes fl-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  .animate-shimmer {
+    background-image: linear-gradient(90deg, transparent, oklch(from var(--foreground) l c h / 0.07), transparent);
+    background-size: 200% 100%;
+    animation: fl-shimmer 1.6s linear infinite;
+  }
+
+  @keyframes fl-breathe { 0%, 100% { opacity: 0.5; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.06); } }
+  .animate-breathe { animation: fl-breathe 3.6s ease-in-out infinite; }
+
+  /* Sparkline path draw-in (toggled by IntersectionObserver adding .is-in). */
+  .spark-path { stroke-dasharray: var(--len, 1000); stroke-dashoffset: var(--len, 1000); }
+  .spark-path.is-in { transition: stroke-dashoffset 0.7s cubic-bezier(0.16, 1, 0.3, 1); stroke-dashoffset: 0; }
 }
-@keyframes shimmer {
-  0%   { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-.animate-fade-in-up {
-  animation: fade-in-up 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both;
-}
-.animate-shimmer {
-  background-image: linear-gradient(
-    90deg,
-    transparent,
-    oklch(from var(--foreground) l c h / 0.08),
-    transparent
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.6s linear infinite;
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .spark-path { stroke-dashoffset: 0 !important; }
 }

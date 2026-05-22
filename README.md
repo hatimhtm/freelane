@@ -6,16 +6,27 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/PERSONAL_TOOL-SHOWCASE-1A1A1A?style=for-the-badge&labelColor=1A1A1A&color=CCFF00" alt="Personal tool — showcase" />
+  <img src="https://img.shields.io/badge/PERSONAL_TOOL-PRIVATE-1A1A1A?style=for-the-badge&labelColor=1A1A1A&color=CCFF00" alt="Personal tool — private" />
   <img src="https://img.shields.io/badge/Next.js-16-1A1A1A?style=for-the-badge&logo=nextdotjs&logoColor=CCFF00" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/React-19-1A1A1A?style=for-the-badge&logo=react&logoColor=CCFF00" alt="React 19" />
   <img src="https://img.shields.io/badge/Supabase-1A1A1A?style=for-the-badge&logo=supabase&logoColor=CCFF00" alt="Supabase" />
+  <img src="https://img.shields.io/badge/Gemini_3_Pro-1A1A1A?style=for-the-badge&logo=googlegemini&logoColor=CCFF00" alt="Gemini 3 Pro" />
   <img src="https://img.shields.io/badge/Tailwind-4-1A1A1A?style=for-the-badge&logo=tailwindcss&logoColor=CCFF00" alt="Tailwind 4" />
 </p>
 
 <p align="center">
-  <em><strong>My personal freelance ledger.</strong> A single-user Next.js 16 dashboard for tracking clients, projects, payments, expenses, and invoices across 5 currencies. ~10k LOC of source, all auth gated behind one password against a hidden Supabase user. The repo is here for inspection (and as part of my portfolio) — not as a product. There's no signup, no public deployment URL in this repo, and no roadmap for general use.</em>
+  <em><strong>My personal freelance money tracker.</strong> Built for getting paid from abroad: it tracks the <strong>net pesos that actually land</strong> after every transfer fee and FX cut, learns which payout route costs me least, and keeps a living memory of every client — with Gemini 3 Pro wired across the surface. Single-user, private, paper-and-ink editorial UI. Not a product — a tool I open every morning.</em>
 </p>
+
+---
+
+### `/// THE IDEA`
+
+I invoice clients abroad (CNY, USD, EUR…) and settle into pesos. The number that matters isn't what I billed — it's what **landed** in my wallet after Wise/Payoneer/banks/crypto took their cut. Freelane is built around that:
+
+- **Unpaid money floats** with the market — an open balance is valued at today's FX rate, because that's what I'm still owed.
+- **The moment I get paid, the peso amount is locked forever.** I record the exact chain it took to reach me (e.g. bank → crypto exchange → GCash), and the fee falls out of the math automatically. Future FX swings never touch a settled payment.
+- **Every payment is a chain.** One hop or five — each step's fee is captured, so Freelane can tell me which *route* is actually cheapest over time.
 
 ---
 
@@ -23,60 +34,55 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Dashboard (the part you open every morning)                      │
-│ ├ Outstanding hero (every unpaid balance, converted to base FX)  │
-│ ├ Earned this month + MoM delta                                  │
-│ ├ Overdue · Due in 30 days                                       │
-│ ├ Insights strip: avg days-to-payment · biggest debtor · YTD     │
-│ ├ 6-month revenue chart · top-client pie · recent payments       │
-│ └ Reminders widget for stale invoices                            │
+│ Today (the ritual screen)                                        │
+│ └ One number, one situational line, one action. ⌘K to jump.      │
 ├──────────────────────────────────────────────────────────────────┤
-│ Pipeline (kanban)            │ Invoices                          │
-│ ├ 3 columns: unpaid /        │ ├ Auto-numbered (YYYY-NNN)        │
-│ │   partially paid / paid    │ ├ Snapshots issuer + client       │
-│ ├ Drag a card → status flips │ │   at issue time                 │
-│ ├ "Days open" badge on each  │ ├ React-PDF renderer (fr/en)      │
-│ └ Per-project payment log    │ └ "Send reminder" with throttle   │
+│ Dashboard (monthly-first)                                        │
+│ ├ Landed this month — Mercury-style masthead + MoM / WoW         │
+│ ├ Outstanding (floats with FX) · fees this month · avg days·     │
+│ ├ Ask your money — Gemini Q&A + on-demand insights               │
+│ ├ Revenue (6-mo, draws in on scroll) · top clients               │
+│ ├ Blocked money — open balances ranked by amount × days waiting  │
+│ └ Cheapest ways to get paid — per-chain effective-fee leaderboard│
 ├──────────────────────────────────────────────────────────────────┤
-│ Expenses (new in 2.0)        │ Settings                          │
-│ ├ Date · vendor · category   │ ├ Issuer profile                  │
-│ ├ Multi-currency             │ ├ FX rates (manual or auto from   │
-│ ├ Subtotals + monthly        │ │   frankfurter.app — free, ECB)  │
-│ └ Subtracted from MTD on the │ ├ Invoice defaults (TVA note,     │
-│   dashboard                  │ │   accent, footer, reminder days)│
-│                              │ ├ Backup download (JSON dump)     │
-│                              │ └ Appearance (theme, locale)      │
+│ Payments                       │ Projects                        │
+│ ├ Chain entry (always-chain,   │ ├ Rich list, ranked by urgency  │
+│ │   1 row by default)          │ ├ Flag a project overdue (manual)│
+│ ├ Per-payment fee % chips      │ ├ Board view (kanban) on toggle │
+│ ├ Method leaderboard           │ └ Unpaid / Partial / Paid       │
+│ └ Expandable chain breakdown   │                                 │
+├──────────────────────────────────────────────────────────────────┤
+│ Clients                        │ Settings                        │
+│ ├ Per-client landed/outstanding│ ├ Payment methods (+ monthly fee)│
+│ ├ Living memory (Gemini folds  │ ├ Currencies & FX (auto-refresh)│
+│ │   your notes into a doc)     │ ├ Add/delete any currency       │
+│ └ Draft a nudge (tone-matched) │ └ Theme + sound/haptics         │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### `/// 2.0 — WHY THIS REWRITE`
+### `/// THE AI (Gemini 3 Pro, server-side only)`
 
-1.x focused on **annual income** as the hero metric. As a freelancer that's the wrong cadence — cashflow happens monthly. 2.0 promotes **monthly earned** to the top, adds a **month-over-month delta** (rendered green/red), and demotes YTD to a smaller insights strip below.
+- **Ask your money** — natural-language Q&A grounded in a full snapshot of the ledger ("who's slowest to pay me?", "which route is cheapest for CNY?").
+- **Insights** — 1–3 concrete, numbers-cited picks: cheaper payout route, fee anomalies, who to chase, a cashflow read. JSON-schema-locked, no fluff.
+- **Living client memory** — drop a sentence about a client; Gemini folds it into a consolidated doc (summary · facts · watch flags) that informs everything else. Non-blocking — the note saves instantly.
+- **Draft a nudge** — a follow-up message for an unpaid balance, tone-matched to that client's memory (casual with a long-time boss, formal with someone new).
 
-Also new:
-
-- **Average days to payment** — quote-to-first-payment latency, paid projects only. Single most useful cashflow signal.
-- **Biggest debtor** — the one client to chase first.
-- **Auto-FX refresh** — pulls mid-market rates from [frankfurter.app](https://www.frankfurter.app) (free, ECB, no API key) instead of relying on hand-edited numbers that go stale.
-- **Expenses tracking** — the tagline says "every freelance coin" but 1.x only tracked income. Now it tracks both.
-- **Mobile drawer** — sidebar was desktop-only; added a hamburger + Sheet-based mobile nav.
+The key never ships to the browser. All Gemini calls are server actions reading `process.env.GEMINI_API_KEY`.
 
 ---
 
 ### `/// STACK`
 
 ```
-Next.js 16  · React 19  · TypeScript
-Tailwind 4  · motion    · @number-flow/react
+Next.js 16  · React 19  · TypeScript  · Turbopack
+Tailwind 4  · motion    · @number-flow/react · recharts
 Supabase (Postgres + Auth + RLS) · @supabase/ssr
-recharts    · react-hook-form    · zod
-@dnd-kit    · @react-pdf/renderer
-shadcn/ui   · cmdk     · sonner
+@dnd-kit    · @google/genai (Gemini 3 Pro) · cmdk · sonner
 ```
 
-Hosted on Vercel. Single-user auth via a hidden Supabase user; the password gate on `/` calls `signInWithPassword` with a fixed email constant (`HIDDEN_OWNER_EMAIL`).
+**Design:** warm paper (`#FAF8F3`) over stark white, ink `#1A1814`, one editorial serif (Fraunces) reserved for hero numbers, a single acid-lime accent per screen, terracotta for overdue. Charts draw in on scroll; a soft tick + haptic when a payment lands. Hosted on Vercel, single-user via a password gate against a hidden Supabase user.
 
 ---
 
@@ -86,67 +92,44 @@ Hosted on Vercel. Single-user auth via a hidden Supabase user; the password gate
 src/
 ├── app/
 │   ├── (auth)/login/                     password gate (single-user)
-│   └── (app)/                            authenticated routes
-│       ├── dashboard/                    hero stats + charts + insights
-│       ├── projects/                     kanban + project dialog
-│       ├── payments/                     payments hub
-│       ├── expenses/                     expenses page (new in 2.0)
-│       ├── invoices/                     invoice list + editor + PDF
-│       ├── clients/                      clients CRUD
-│       ├── activity/                     event log
-│       └── settings/                     issuer, currencies, defaults
-├── components/
-│   ├── app/                              sidebar, top-bar, mobile-nav, command palette
-│   └── ui/                               shadcn primitives
+│   └── (app)/
+│       ├── today/                        the ritual screen (root →)
+│       ├── dashboard/                    monthly hero + AI + charts
+│       ├── projects/                     blocked-money list + board
+│       ├── payments/                     chain entry + fee leaderboard
+│       ├── clients/[id]/                 detail + living memory
+│       ├── activity/  settings/  year/   log · methods/FX · recap
+├── components/{stats,app,motion,ui,brand}
 ├── lib/
-│   ├── data/{queries,actions,events}.ts  server-side data layer
-│   ├── supabase/{server,client,types}.ts ssr clients + TS types
-│   ├── money.ts                          format / convert / toBase
-│   ├── invoice-number.ts                 auto-numbering
-│   ├── constants.ts                      app-wide constants
-│   └── auth.ts                           cached getAuthUser
-└── proxy.ts                              middleware for auth refresh
+│   ├── data/{queries,actions,events}.ts  server data layer
+│   ├── ai/{gemini,actions,client-memory}.ts  Gemini 3 Pro
+│   ├── payment-chain.ts                  per-chain fee math + leaderboard
+│   ├── dashboard-calc.ts                 cashflow / outstanding / series
+│   ├── money.ts · sound.ts · constants.ts
+│   └── supabase/{server,client,types}.ts
+└── proxy.ts                              auth-refresh middleware
 
-supabase/migrations/                      0001 .. 0009 (numbered, append-only)
+supabase/migrations/                      0001 .. 0014 (numbered, append-only)
 ```
 
 ---
 
-### `/// SETUP (for forking your own copy)`
+### `/// SETUP`
 
-If you actually want to run this — it's source-available, but you'll be setting up your own everything.
-
-1. **Supabase**: create a new project. Run the migrations in `supabase/migrations/0001..0009` in order via the SQL editor. Edit `0003_seed_owner.sql` first to set `:'owner_uuid'` to your Supabase auth user UUID.
-2. **Create the hidden user** in Supabase Auth: email `owner@freelane.local`, password is whatever you'll type on the unlock screen.
-3. **Env**:
-   ```bash
-   cp .env.example .env.local
-   # fill in NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY
-   ```
-4. **Run**:
-   ```bash
-   pnpm install
-   pnpm dev
-   ```
+1. **Supabase** — run `supabase/migrations/0001..0014` in order in the SQL editor. Create the hidden user (`owner@freelane.local`) in Auth; set its UUID in `0003_seed_owner.sql`.
+2. **Env** — copy `.env.example` → `.env.local` and fill `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `GEMINI_API_KEY` (get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)). On Vercel these live in Project Settings → Environment Variables. **Never commit the key** (`.env*` is gitignored).
+3. **Run** — `pnpm install && pnpm dev`.
 
 ---
 
-### `/// WHY YOU PROBABLY DON'T WANT TO USE THIS`
+### `/// NOTES`
 
-- **Single-user by design.** The login is a password gate against a hardcoded email constant. No signups, no multi-tenancy, no team support. Adding any of that is a non-trivial rewrite.
-- **No tests.** This is a tool I open every morning. I notice when it breaks. That's "the test plan." For a real product you'd want at minimum Playwright on the critical flows.
-- **No issues being accepted.** If you find a bug while reading the code, by all means open a discussion — but feature requests will be closed.
-- **Pure personal opinions** baked in: invoice template is French-first, base currency defaults to PHP, exchange rates assume you're somewhere with multiple income currencies. Configurable but unapologetically defaulted to my situation.
-
----
+- **Single-user by design** — a password gate against a hardcoded hidden email. No signups, no multi-tenancy.
+- **Paid amounts are immutable** — once a payment's net is recorded it's frozen; only unpaid balances re-value with FX.
+- **Overdue is manual** — nothing is flagged late until I say so.
+- **No invoices, no expenses, no taxes** — this tracks money in and the fees on the way; that's the whole job.
 
 <p align="center">
   <a href="https://hatimelhassak.is-a.dev"><img src="https://img.shields.io/badge/PORTFOLIO-1A1A1A?style=for-the-badge&logo=vercel&logoColor=CCFF00" alt="Portfolio" /></a>
-  <a href="https://cal.com/hatimelhassak/engineering-discovery"><img src="https://img.shields.io/badge/BOOK_A_CALL-CCFF00?style=for-the-badge&logo=googlecalendar&logoColor=1A1A1A" alt="Book a call" /></a>
   <a href="https://www.linkedin.com/in/hatim-elhassak/"><img src="https://img.shields.io/badge/LINKEDIN-1A1A1A?style=for-the-badge&logo=linkedin&logoColor=CCFF00" alt="LinkedIn" /></a>
-  <a href="mailto:hatimelhassak.official@gmail.com"><img src="https://img.shields.io/badge/EMAIL-1A1A1A?style=for-the-badge&logo=gmail&logoColor=CCFF00" alt="Email" /></a>
-</p>
-
-<p align="center">
-  <code>///&nbsp;&nbsp;OPEN FOR NEW WORK&nbsp;&nbsp;///&nbsp;&nbsp;CONTRACT &amp; FREELANCE&nbsp;&nbsp;///&nbsp;&nbsp;REMOTE WORLDWIDE&nbsp;&nbsp;///</code>
 </p>

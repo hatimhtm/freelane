@@ -47,8 +47,19 @@ const META: Record<EventKind, KindMeta> = {
   "template.created": { icon: Bookmark, tone: "neutral" },
   "template.deleted": { icon: Trash2,   tone: "rose"    },
 
+  "method.created":  { icon: Plus,    tone: "brand"   },
+  "method.updated":  { icon: Pencil,  tone: "neutral" },
+  "method.archived": { icon: Archive, tone: "neutral" },
+
+  "project.flagged":   { icon: Bell,       tone: "amber"   },
+  "project.unflagged": { icon: ArrowRight, tone: "neutral" },
+
+  "client.memory_added": { icon: Pencil, tone: "neutral" },
+
   "settings.updated": { icon: SettingsIcon, tone: "neutral" },
 };
+
+const FALLBACK_META: KindMeta = { icon: ArrowRight, tone: "neutral" };
 
 const TONE_STYLES: Record<KindMeta["tone"], { ring: string; text: string; bg: string }> = {
   brand:   { ring: "ring-[var(--chart-1)]/25", text: "text-[var(--chart-1)]", bg: "bg-[var(--chart-1)]/12" },
@@ -89,7 +100,7 @@ export function ActivityFeed({
 
           <ol className="relative ml-3 space-y-0 border-l border-border/60">
             {group.events.map((event, i) => {
-              const meta = META[event.kind as EventKind] ?? META["settings.updated"];
+              const meta = META[event.kind as EventKind] ?? FALLBACK_META;
               const Icon = meta.icon;
               const tone = TONE_STYLES[meta.tone];
               const clientName = event.client_id ? clientsById.get(event.client_id) : null;

@@ -100,7 +100,7 @@ export function ClientDialog({
           <SheetHeader>
             <SheetTitle>{client ? "Edit client" : "New client"}</SheetTitle>
             <SheetDescription>
-              Everything here auto-fills when you create invoices for this client.
+              Who they are, how they pay, and a line of context for the AI.
             </SheetDescription>
           </SheetHeader>
 
@@ -118,6 +118,13 @@ export function ClientDialog({
                 value={state.company ?? ""}
                 onChange={(e) => update("company", e.target.value)}
                 placeholder="Acme SARL"
+              />
+            </Field>
+            <Field label="Short description">
+              <Input
+                value={state.short_description ?? ""}
+                onChange={(e) => update("short_description", e.target.value)}
+                placeholder="Boss · recurring iOS work · pays in CNY, often late"
               />
             </Field>
             <div className="grid grid-cols-2 gap-4">

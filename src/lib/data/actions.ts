@@ -29,14 +29,34 @@ export type ClientInput = {
   email?: string;
   phone?: string;
   default_currency?: string;
+  accent_color?: string;
+  short_description?: string;
   notes?: string;
 };
+
+// Only these columns may be written from the client form. Whitelisting fixes
+// the edit bug: the dialog used to send the whole row (id/user_id/created_at/
+// updated_at), and writing the primary key + audit timestamps back made the
+// update silently no-op / confuse the touch trigger. Never trust the payload.
+const CLIENT_WRITABLE = [
+  "name", "company", "address", "city", "country", "ice", "rc", "tax_id",
+  "bank_name", "bank_account", "iban", "swift", "email", "phone",
+  "default_currency", "accent_color", "short_description", "notes",
+] as const;
+
+function pickClientFields(input: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const key of CLIENT_WRITABLE) {
+    if (key in input) out[key] = input[key];
+  }
+  return out;
+}
 
 export async function createClientRecord(input: ClientInput) {
   const { supabase, userId } = await userOrThrow();
   const { error, data } = await supabase
     .from("clients")
-    .insert({ ...input, user_id: userId })
+    .insert({ ...pickClientFields(input), user_id: userId })
     .select("id")
     .single();
   if (error) throw error;
@@ -56,7 +76,8 @@ export async function createClientRecord(input: ClientInput) {
 
 export async function updateClientRecord(id: string, input: Partial<ClientInput>) {
   const { supabase, userId } = await userOrThrow();
-  const { error } = await supabase.from("clients").update(input).eq("id", id);
+  const patch = pickClientFields(input);
+  const { error } = await supabase.from("clients").update(patch).eq("id", id).eq("user_id", userId);
   if (error) throw error;
   await logEvent({
     userId,
@@ -67,6 +88,7 @@ export async function updateClientRecord(id: string, input: Partial<ClientInput>
     clientId: id,
   });
   revalidatePath("/clients");
+  revalidatePath(`/clients/${id}`);
   revalidatePath("/projects");
 }
 
@@ -172,44 +194,23 @@ export async function updateProject(id: string, input: Partial<ProjectInput>) {
   revalidatePath("/dashboard");
 }
 
+// Set status directly (kanban override). Does NOT fabricate a payment anymore —
+// money is recorded only via addPaymentWithChain, where the exact landed PHP is
+// entered. Flipping to "paid" with no payments on file is allowed (manual
+// override) but the dashboard's earned totals come from real payment rows.
 export async function updateProjectStatus(id: string, status: ProjectStatus, kanbanPosition?: number) {
   const { supabase, userId } = await userOrThrow();
   const patch: Record<string, unknown> = { status };
   if (typeof kanbanPosition === "number") patch.kanban_position = kanbanPosition;
   if (status === "paid") patch.completed_at = new Date().toISOString().slice(0, 10);
-  const { error } = await supabase.from("projects").update(patch).eq("id", id);
+  const { error } = await supabase.from("projects").update(patch).eq("id", id).eq("user_id", userId);
   if (error) throw error;
 
   const { data: project } = await supabase
     .from("projects")
-    .select("*")
+    .select("title,client_id")
     .eq("id", id)
     .maybeSingle();
-
-  // When status flips to "paid", auto-create a payment for any outstanding
-  // amount so the dashboard totals, charts, and top-clients all reflect it.
-  // Without this, the payments table stays empty and the project shows up
-  // in "Pending" instead of "Earned".
-  if (status === "paid" && project) {
-    const { data: existingPayments } = await supabase
-      .from("payments")
-      .select("amount,currency")
-      .eq("project_id", id);
-    const paid = (existingPayments ?? [])
-      .filter((p) => p.currency === project.currency)
-      .reduce((s, p) => s + Number(p.amount), 0);
-    const outstanding = Number(project.amount) - paid;
-    if (outstanding > 0) {
-      await supabase.from("payments").insert({
-        user_id: userId,
-        project_id: id,
-        amount: outstanding,
-        currency: project.currency,
-        paid_at: new Date().toISOString().slice(0, 10),
-        method: "Marked paid",
-      });
-    }
-  }
 
   await logEvent({
     userId,
@@ -222,6 +223,38 @@ export async function updateProjectStatus(id: string, status: ProjectStatus, kan
   });
   revalidatePath("/projects");
   revalidatePath("/payments");
+  revalidatePath("/dashboard");
+  revalidatePath("/pending");
+}
+
+// ───────────────────────────────────────── Overdue flags (manual only) ──
+export async function flagProjectOverdue(id: string, reason?: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      flagged_overdue: true,
+      flagged_overdue_at: new Date().toISOString(),
+      flagged_overdue_reason: reason ?? null,
+    })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({ userId, kind: "project.flagged", title: "Flagged overdue", entityType: "project", entityId: id });
+  revalidatePath("/pending");
+  revalidatePath("/dashboard");
+}
+
+export async function unflagProjectOverdue(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("projects")
+    .update({ flagged_overdue: false, flagged_overdue_at: null, flagged_overdue_reason: null })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({ userId, kind: "project.unflagged", title: "Cleared overdue flag", entityType: "project", entityId: id });
+  revalidatePath("/pending");
   revalidatePath("/dashboard");
 }
 
@@ -247,6 +280,56 @@ export async function deleteProject(id: string) {
 }
 
 // ───────────────────────────────────────── Payments ──
+//
+// Every payment is a CHAIN of one or more hops. The simple case is a single
+// hop (client → my PHP wallet). A complex case chains rails (bank → crypto
+// exchange → wallet). The final hop's PHP output is the locked landed amount;
+// it never re-floats with the market once saved (fx_locked = true).
+
+type RatePair = { code: string; rate_to_base: number };
+
+function toBaseAmount(amount: number, currency: string, rates: RatePair[]): number {
+  const r = rates.find((x) => x.code === currency)?.rate_to_base ?? 1;
+  return amount * r;
+}
+
+// Recompute a project's payment status from same-currency payment totals.
+// (Mixed-currency partials fall through to base comparison.)
+async function recomputeProjectStatus(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+) {
+  const [{ data: project }, { data: payments }, { data: rates }] = await Promise.all([
+    supabase.from("projects").select("*").eq("id", projectId).maybeSingle(),
+    supabase.from("payments").select("amount,currency,gross_at_market_base").eq("project_id", projectId),
+    supabase.from("exchange_rates").select("code,rate_to_base"),
+  ]);
+  if (!project || project.status === "archived") return project ?? null;
+
+  const sameCurrency = (payments ?? []).filter((p) => p.currency === project.currency);
+  const mixed = (payments ?? []).length !== sameCurrency.length;
+
+  let paidRatio: number;
+  if (mixed) {
+    // Compare in base currency when payments span currencies.
+    const projectBase = toBaseAmount(Number(project.amount), project.currency, (rates ?? []) as RatePair[]);
+    const paidBase = (payments ?? []).reduce(
+      (s, p) => s + Number(p.gross_at_market_base ?? toBaseAmount(Number(p.amount), p.currency, (rates ?? []) as RatePair[])),
+      0,
+    );
+    paidRatio = projectBase > 0 ? paidBase / projectBase : 0;
+  } else {
+    const paid = sameCurrency.reduce((s, p) => s + Number(p.amount), 0);
+    paidRatio = Number(project.amount) > 0 ? paid / Number(project.amount) : 0;
+  }
+
+  const nextStatus: ProjectStatus = paidRatio >= 1 ? "paid" : paidRatio > 0 ? "partially_paid" : "unpaid";
+  if (nextStatus !== project.status) {
+    await supabase.from("projects").update({ status: nextStatus }).eq("id", project.id);
+  }
+  return project;
+}
+
 export type PaymentInput = {
   project_id: string;
   amount: number;
@@ -257,47 +340,126 @@ export type PaymentInput = {
   notes?: string;
 };
 
-export async function addPayment(input: PaymentInput) {
-  const { supabase, userId } = await userOrThrow();
+export type ChainStepInput = {
+  method_id: string | null;
+  amount_in: number;
+  currency_in: string;
+  amount_out: number;
+  currency_out: string;
+  notes?: string;
+};
 
-  const { error: payErr, data: paymentRow } = await supabase
+export type PaymentChainInput = {
+  project_id: string;
+  paid_at: string;
+  steps: ChainStepInput[];
+  reference?: string;
+  notes?: string;
+};
+
+// The canonical "I got paid" action. Takes the full chain, snapshots the
+// market value + the implied total fee, and locks the landed PHP.
+export async function addPaymentWithChain(input: PaymentChainInput) {
+  const { supabase, userId } = await userOrThrow();
+  if (!input.steps.length) throw new Error("A payment needs at least one step.");
+
+  const first = input.steps[0];
+  const final = input.steps[input.steps.length - 1];
+
+  const [{ data: project }, { data: settings }, { data: rates }] = await Promise.all([
+    supabase.from("projects").select("*").eq("id", input.project_id).single(),
+    supabase.from("settings").select("base_currency").eq("user_id", userId).maybeSingle(),
+    supabase.from("exchange_rates").select("code,rate_to_base").eq("user_id", userId),
+  ]);
+  if (!project) throw new Error("Project not found");
+  const baseCurrency = settings?.base_currency ?? "PHP";
+  const rateRows = (rates ?? []) as RatePair[];
+
+  // net = the final hop's output, expressed in base currency (PHP).
+  const netBase =
+    final.currency_out === baseCurrency
+      ? Number(final.amount_out)
+      : toBaseAmount(Number(final.amount_out), final.currency_out, rateRows);
+  // gross = what the first hop was worth at mid-market today (the "no-fee" value).
+  const grossBase = toBaseAmount(Number(first.amount_in), first.currency_in, rateRows);
+  const feeBase = Math.max(0, grossBase - netBase);
+
+  const { data: paymentRow, error: payErr } = await supabase
     .from("payments")
-    .insert({ ...input, user_id: userId })
+    .insert({
+      user_id: userId,
+      project_id: input.project_id,
+      amount: first.amount_in,
+      currency: first.currency_in,
+      paid_at: input.paid_at,
+      reference: input.reference ?? null,
+      notes: input.notes ?? null,
+      net_amount_base: Math.round(netBase * 100) / 100,
+      gross_at_market_base: Math.round(grossBase * 100) / 100,
+      implied_fee_base: Math.round(feeBase * 100) / 100,
+      fx_locked: true,
+    })
     .select("id")
     .single();
-  if (payErr) throw payErr;
+  if (payErr || !paymentRow) throw payErr ?? new Error("Failed to save payment");
 
-  // Recompute project status based on new totals (only for same-currency payments).
-  const [{ data: project }, { data: payments }] = await Promise.all([
-    supabase.from("projects").select("*").eq("id", input.project_id).single(),
-    supabase.from("payments").select("amount,currency").eq("project_id", input.project_id),
-  ]);
-  if (project) {
-    const paid = (payments ?? [])
-      .filter((p) => p.currency === project.currency)
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-    let nextStatus: ProjectStatus;
-    if (paid >= Number(project.amount)) nextStatus = "paid";
-    else if (paid > 0) nextStatus = "partially_paid";
-    else nextStatus = "unpaid";
-    if (nextStatus !== project.status && project.status !== "archived") {
-      await supabase.from("projects").update({ status: nextStatus }).eq("id", project.id);
-    }
-  }
+  const stepRows = input.steps.map((s, i) => ({
+    payment_id: paymentRow.id,
+    step_order: i + 1,
+    method_id: s.method_id,
+    amount_in: s.amount_in,
+    currency_in: s.currency_in,
+    amount_out: s.amount_out,
+    currency_out: s.currency_out,
+    is_final: i === input.steps.length - 1,
+    notes: s.notes ?? null,
+  }));
+  const { error: stepErr } = await supabase.from("payment_steps").insert(stepRows);
+  if (stepErr) throw stepErr;
+
+  await recomputeProjectStatus(supabase, input.project_id);
 
   await logEvent({
     userId,
     kind: "payment.added",
-    title: `Payment · ${input.currency} ${Number(input.amount).toFixed(2)} on ${project?.title ?? ""}`.trim(),
+    title: `Payment · ${first.currency_in} ${Number(first.amount_in).toFixed(2)} → ₱${netBase.toFixed(0)} net on ${project.title}`,
     entityType: "payment",
-    entityId: paymentRow?.id as string | undefined,
-    clientId: project?.client_id as string | undefined,
-    metadata: { amount: input.amount, currency: input.currency, project_id: input.project_id },
+    entityId: paymentRow.id as string,
+    clientId: project.client_id as string,
+    metadata: {
+      net_base: netBase,
+      gross_base: grossBase,
+      fee_base: feeBase,
+      steps: input.steps.length,
+      project_id: input.project_id,
+    },
   });
 
   revalidatePath("/projects");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
+  revalidatePath("/pending");
+  return { id: paymentRow.id as string };
+}
+
+// Legacy single-hop quick-add (project sheet). Snapshots lock fields + writes
+// a 1-step chain so it produces valid new-schema data.
+export async function addPayment(input: PaymentInput) {
+  return addPaymentWithChain({
+    project_id: input.project_id,
+    paid_at: input.paid_at,
+    reference: input.reference,
+    notes: input.notes,
+    steps: [
+      {
+        method_id: null,
+        amount_in: input.amount,
+        currency_in: input.currency,
+        amount_out: input.amount,
+        currency_out: input.currency,
+      },
+    ],
+  });
 }
 
 export async function updatePayment(
@@ -322,31 +484,18 @@ export async function deletePayment(id: string) {
     .eq("id", id)
     .maybeSingle();
 
+  // payment_steps cascade-delete via FK.
   const { error } = await supabase.from("payments").delete().eq("id", id);
   if (error) throw error;
 
   if (payment?.project_id) {
-    const [{ data: project }, { data: remaining }] = await Promise.all([
-      supabase.from("projects").select("*").eq("id", payment.project_id).maybeSingle(),
-      supabase.from("payments").select("amount,currency").eq("project_id", payment.project_id),
-    ]);
-    if (project && project.status !== "archived") {
-      const paid = (remaining ?? [])
-        .filter((p) => p.currency === project.currency)
-        .reduce((s, p) => s + Number(p.amount), 0);
-      let nextStatus: ProjectStatus;
-      if (paid >= Number(project.amount)) nextStatus = "paid";
-      else if (paid > 0) nextStatus = "partially_paid";
-      else nextStatus = "unpaid";
-      if (nextStatus !== project.status) {
-        await supabase.from("projects").update({ status: nextStatus }).eq("id", project.id);
-      }
-    }
+    await recomputeProjectStatus(supabase, payment.project_id);
   }
 
   revalidatePath("/projects");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
+  revalidatePath("/pending");
 }
 
 // Creates a draft invoice pre-filled from a payment (single line item = the payment)
@@ -479,6 +628,52 @@ export async function deleteExchangeRate(code: string) {
   if (error) throw error;
   revalidatePath("/settings");
   revalidatePath("/dashboard");
+}
+
+// ───────────────────────────────────────── Currencies ──
+// Global reference list. Add a currency before setting its rate.
+export async function createCurrency(input: { code: string; name: string; symbol?: string }) {
+  const { supabase } = await userOrThrow();
+  const code = input.code.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) throw new Error("Currency code must be 3 letters (e.g. GBP).");
+  const { error } = await supabase
+    .from("currencies")
+    .upsert({ code, name: input.name.trim(), symbol: input.symbol?.trim() || code }, { onConflict: "code" });
+  if (error) throw error;
+  revalidatePath("/settings");
+}
+
+export async function deleteCurrency(code: string) {
+  const { supabase } = await userOrThrow();
+  const { error } = await supabase.from("currencies").delete().eq("code", code);
+  // FK RESTRICT: a currency in use by a rate/project/payment can't be deleted.
+  if (error) throw new Error("Can't delete — this currency is still used by a rate, project, or payment.");
+  revalidatePath("/settings");
+}
+
+// "Automatic exchange rate": only hits frankfurter when stored rates are older
+// than maxAgeHours. Called fire-and-forget from the app shell on mount
+// (throttled client-side), so unpaid balances are always valued at fresh rates
+// without a cron. Paid amounts are locked and never touched.
+export async function refreshRatesIfStale(maxAgeHours = 24) {
+  const { supabase, userId } = await userOrThrow();
+  const { data } = await supabase
+    .from("exchange_rates")
+    .select("updated_at")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (data?.updated_at) {
+    const ageHours = (Date.now() - new Date(data.updated_at).getTime()) / 3_600_000;
+    if (ageHours < maxAgeHours) return { refreshed: false };
+  }
+  try {
+    const res = await refreshExchangeRatesFromAPI();
+    return { refreshed: (res?.updated ?? 0) > 0 };
+  } catch {
+    return { refreshed: false };
+  }
 }
 
 /**
@@ -702,4 +897,106 @@ export async function deleteExpense(id: string) {
   if (error) throw error;
   revalidatePath("/expenses");
   revalidatePath("/dashboard");
+}
+
+// ───────────────────────────────────────── Payment methods ──
+export type PaymentMethodInput = {
+  name: string;
+  kind?: string;
+  currency_in?: string | null;
+  currency_out?: string | null;
+  monthly_fee_php?: number;
+  notes?: string | null;
+};
+
+export async function createPaymentMethod(input: PaymentMethodInput) {
+  const { supabase, userId } = await userOrThrow();
+  const { error, data } = await supabase
+    .from("payment_methods")
+    .insert({
+      user_id: userId,
+      name: input.name,
+      kind: input.kind ?? "wallet",
+      currency_in: input.currency_in ?? null,
+      currency_out: input.currency_out ?? null,
+      monthly_fee_php: input.monthly_fee_php ?? 0,
+      notes: input.notes ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  await logEvent({ userId, kind: "method.created", title: `Added method · ${input.name}`, entityType: "payment_method", entityId: data.id as string });
+  revalidatePath("/settings");
+  revalidatePath("/payments");
+  return data;
+}
+
+export async function updatePaymentMethod(id: string, input: Partial<PaymentMethodInput>) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase.from("payment_methods").update(input).eq("id", id).eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({ userId, kind: "method.updated", title: `Updated method${input.name ? ` · ${input.name}` : ""}`, entityType: "payment_method", entityId: id });
+  revalidatePath("/settings");
+  revalidatePath("/payments");
+}
+
+export async function archivePaymentMethod(id: string, archived = true) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase.from("payment_methods").update({ archived }).eq("id", id).eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({ userId, kind: "method.archived", title: archived ? "Archived method" : "Restored method", entityType: "payment_method", entityId: id });
+  revalidatePath("/settings");
+  revalidatePath("/payments");
+}
+
+// Hard delete. Past payment_steps that used this method keep their amounts but
+// lose the label (FK is ON DELETE SET NULL → they read as "Untagged" in the
+// leaderboard). Prefer archive unless you really want it gone.
+export async function deletePaymentMethod(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase.from("payment_methods").delete().eq("id", id).eq("user_id", userId);
+  if (error) throw error;
+  revalidatePath("/settings");
+  revalidatePath("/payments");
+}
+
+// ───────────────────────────────────────── Client memory ──
+//
+// Raw entry is stored, then Gemini folds all unconsolidated notes into the
+// client's living memory_consolidated doc (best-effort; no-op without a key).
+export async function addClientMemoryEntry(clientId: string, content: string) {
+  const { supabase, userId } = await userOrThrow();
+  const trimmed = content.trim();
+  if (!trimmed) throw new Error("Write something first.");
+  const { error, data } = await supabase
+    .from("client_memory_entries")
+    .insert({ user_id: userId, client_id: clientId, content: trimmed })
+    .select("id")
+    .single();
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "client.memory_added",
+    title: "Added to client memory",
+    entityType: "client",
+    entityId: clientId,
+    clientId,
+  });
+  revalidatePath(`/clients/${clientId}`);
+  return data;
+}
+
+// Slower companion the UI fires AFTER the note appears — keeps "add note"
+// instant while Gemini consolidates the living memory in its own request.
+export async function consolidateClientMemoryAction(clientId: string) {
+  const { consolidateClientMemory } = await import("@/lib/ai/client-memory");
+  await consolidateClientMemory(clientId);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+export async function deleteClientMemoryEntry(id: string, clientId: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase.from("client_memory_entries").delete().eq("id", id).eq("user_id", userId);
+  if (error) throw error;
+  revalidatePath(`/clients/${clientId}`);
 }

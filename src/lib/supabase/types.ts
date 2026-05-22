@@ -9,6 +9,14 @@ export type ProjectStatus =
 
 export type InvoiceStatus = "draft" | "issued" | "sent" | "paid" | "void";
 
+export type PaymentMethodKind =
+  | "bank"
+  | "wallet"
+  | "exchange"
+  | "crypto"
+  | "cash"
+  | "other";
+
 export type CurrencyCode = "PHP" | "MAD" | "USD" | "EUR" | "CNY" | (string & {});
 
 export interface Currency {
@@ -51,6 +59,9 @@ export type EventKind =
   | "payment.added" | "payment.updated" | "payment.removed"
   | "invoice.created" | "invoice.updated" | "invoice.reminded" | "invoice.deleted"
   | "template.created" | "template.deleted"
+  | "method.created" | "method.updated" | "method.archived"
+  | "project.flagged" | "project.unflagged"
+  | "client.memory_added"
   | "settings.updated";
 
 export interface ActivityEvent {
@@ -85,9 +96,32 @@ export interface Client {
   default_currency: CurrencyCode | null;
   accent_color: string | null;
   notes: string | null;
+  // Short one-liner shown on cards + fed to Gemini as quick context.
+  short_description: string | null;
+  // Gemini-managed living memory. Loose shape — see ClientMemoryConsolidated.
+  memory_consolidated: ClientMemoryConsolidated;
   archived: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// Gemini consolidates raw client_memory_entries into this single doc per client.
+export interface ClientMemoryConsolidated {
+  summary?: string;
+  facts?: string[];
+  watch?: string[];
+  preferences?: Record<string, string>;
+  updated_at?: string;
+  entry_count?: number;
+}
+
+export interface ClientMemoryEntry {
+  id: string;
+  user_id: string;
+  client_id: string;
+  content: string;
+  consolidated_at: string | null;
+  created_at: string;
 }
 
 export interface Category {
@@ -128,6 +162,10 @@ export interface Project {
   completed_at: string | null;
   tags: string[];
   notes: string | null;
+  // Manual-only overdue flag. Nothing is "overdue" until you say so.
+  flagged_overdue: boolean;
+  flagged_overdue_at: string | null;
+  flagged_overdue_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -137,13 +175,50 @@ export interface Payment {
   user_id: string;
   project_id: string;
   invoice_id: string | null;
+  // `amount`/`currency` = what was owed, in the project's currency.
   amount: number;
   currency: CurrencyCode;
   paid_at: string;
+  // Legacy free-text method label. The structured rail lives in payment_steps.
   method: string | null;
   reference: string | null;
   notes: string | null;
+  // Lock fields (migration 0011). Once fx_locked, dashboard uses net_amount_base
+  // directly and never recomputes against market FX.
+  net_amount_base: number | null;
+  gross_at_market_base: number | null;
+  implied_fee_base: number | null;
+  fx_locked: boolean;
   created_at: string;
+}
+
+// One hop in a payment chain. Most payments have a single step.
+export interface PaymentStep {
+  id: string;
+  payment_id: string;
+  step_order: number;
+  method_id: string | null;
+  amount_in: number;
+  currency_in: CurrencyCode;
+  amount_out: number;
+  currency_out: CurrencyCode;
+  is_final: boolean;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface PaymentMethod {
+  id: string;
+  user_id: string;
+  name: string;
+  kind: PaymentMethodKind;
+  currency_in: CurrencyCode | null;
+  currency_out: CurrencyCode | null;
+  monthly_fee_php: number;
+  notes: string | null;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Expense {
@@ -207,18 +282,21 @@ type View<T> = { Row: T; Relationships: [] };
 export type Database = {
   finance: {
     Tables: {
-      currencies:        Table<Currency>;
-      exchange_rates:    Table<ExchangeRate>;
-      settings:          Table<Settings>;
-      clients:           Table<Client>;
-      categories:        Table<Category>;
-      projects:          Table<Project>;
-      payments:          Table<Payment>;
-      expenses:          Table<Expense>;
-      invoices:          Table<Invoice>;
-      invoice_projects:  Table<{ invoice_id: string; project_id: string }>;
-      project_templates: Table<ProjectTemplate>;
-      events:            Table<ActivityEvent>;
+      currencies:           Table<Currency>;
+      exchange_rates:       Table<ExchangeRate>;
+      settings:             Table<Settings>;
+      clients:              Table<Client>;
+      categories:           Table<Category>;
+      projects:             Table<Project>;
+      payments:             Table<Payment>;
+      payment_steps:        Table<PaymentStep>;
+      payment_methods:      Table<PaymentMethod>;
+      client_memory_entries: Table<ClientMemoryEntry>;
+      expenses:             Table<Expense>;
+      invoices:             Table<Invoice>;
+      invoice_projects:     Table<{ invoice_id: string; project_id: string }>;
+      project_templates:    Table<ProjectTemplate>;
+      events:               Table<ActivityEvent>;
     };
     Views: {
       project_totals: View<{
@@ -234,6 +312,7 @@ export type Database = {
     Enums: {
       project_status: ProjectStatus;
       invoice_status: InvoiceStatus;
+      payment_method_kind: PaymentMethodKind;
     };
     CompositeTypes: { [_ in never]: never };
   };

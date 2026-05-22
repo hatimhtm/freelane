@@ -40,7 +40,7 @@ export default async function ClientsPage({
     <div className="mx-auto max-w-6xl p-6 lg:p-10">
       <PageHeader
         title="Clients"
-        description="Your billing presets — add once, reuse on every invoice."
+        description="Who pays you. Open one to build its memory and see what's owed."
         actions={<ClientNewButton />}
       />
 
