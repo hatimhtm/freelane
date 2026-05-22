@@ -15,20 +15,14 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#11100c",
     theme_color: "#15140f",
     icons: [
-      // SVG mark — scalable; covers any/maskable for crisp dock rendering.
-      // Next serves these from app/icon.svg and app/apple-icon.svg.
-      {
-        src: "/icon.svg",
-        type: "image/svg+xml",
-        sizes: "any",
-        purpose: "any",
-      },
-      {
-        src: "/apple-icon.svg",
-        type: "image/svg+xml",
-        sizes: "any",
-        purpose: "maskable",
-      },
+      // Raster PNGs — Chrome's install prompt and the OS dock ignore SVG
+      // "any" icons and fall back to a generic glyph, so ship real 192/512
+      // PNGs (+ a full-bleed maskable for adaptive/round masks).
+      { src: "/icon-192.png", type: "image/png", sizes: "192x192", purpose: "any" },
+      { src: "/icon-512.png", type: "image/png", sizes: "512x512", purpose: "any" },
+      { src: "/icon-maskable-512.png", type: "image/png", sizes: "512x512", purpose: "maskable" },
+      // SVG kept as a scalable extra for browsers that prefer it.
+      { src: "/icon.svg", type: "image/svg+xml", sizes: "any", purpose: "any" },
     ],
   };
 }
