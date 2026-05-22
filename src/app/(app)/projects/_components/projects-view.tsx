@@ -36,7 +36,7 @@ export function ProjectsView({
   currency: CurrencyCode;
   openNew?: boolean;
 }) {
-  const [view, setView] = useState<"list" | "board">("list");
+  const [view, setView] = useState<"list" | "board">("board");
   const [dialogOpen, setDialogOpen] = useState(openNew ?? false);
   const [editing, setEditing] = useState<Project | null>(null);
   const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);

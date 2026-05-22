@@ -25,10 +25,10 @@ import {
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/money";
 import { playLanded } from "@/lib/sound";
-import { addPaymentWithChain } from "@/lib/data/actions";
+import { addPaymentWithChain, refreshRatesIfStale } from "@/lib/data/actions";
 import type { CurrencyCode } from "@/lib/supabase/types";
 
-type ProjectOpt = { id: string; title: string; currency: CurrencyCode; clientName: string };
+type ProjectOpt = { id: string; title: string; currency: CurrencyCode; clientName: string; outstanding: number };
 type Rate = { code: string; rate_to_base: number };
 
 type Step = {
@@ -47,6 +47,7 @@ export function ChainSheet({
   currencies,
   rates,
   baseCurrency,
+  defaultProjectId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -55,6 +56,7 @@ export function ChainSheet({
   currencies: string[];
   rates: Rate[];
   baseCurrency: CurrencyCode;
+  defaultProjectId?: string;
 }) {
   const router = useRouter();
   const [projectId, setProjectId] = useState<string>("");
@@ -64,21 +66,24 @@ export function ChainSheet({
 
   const project = projects.find((p) => p.id === projectId);
 
-  // Reset when opened: one step, in the project's currency → out in PHP.
+  // Reset when opened: select the deep-linked project (or the first), one step
+  // pre-filled with its outstanding amount in its own currency → out in base.
+  // Also pull fresh FX so the preview values the payment at today's rate.
   useEffect(() => {
     if (!open) return;
-    const p = projects[0];
+    const p = projects.find((x) => x.id === defaultProjectId) ?? projects[0];
     setProjectId(p?.id ?? "");
     setPaidAt(new Date().toISOString().slice(0, 10));
     setSteps([
       {
         method_id: methods[0]?.id ?? null,
-        amount_in: "",
+        amount_in: p && p.outstanding > 0 ? String(p.outstanding) : "",
         currency_in: p?.currency ?? baseCurrency,
         amount_out: "",
         currency_out: baseCurrency,
       },
     ]);
+    refreshRatesIfStale(6).then((r) => { if (r.refreshed) router.refresh(); }).catch(() => {});
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toBase(amount: number, currency: string): number {
@@ -122,7 +127,7 @@ export function ChainSheet({
   function onProjectChange(id: string) {
     setProjectId(id);
     const p = projects.find((x) => x.id === id);
-    if (p) setStep(0, { currency_in: p.currency });
+    if (p) setStep(0, { currency_in: p.currency, amount_in: p.outstanding > 0 ? String(p.outstanding) : "" });
   }
 
   function save() {
@@ -164,7 +169,11 @@ export function ChainSheet({
         <div className="grid gap-5 px-4 py-6">
           <div className="grid grid-cols-2 gap-4">
             <Field label="Project">
-              <Select value={projectId} onValueChange={(v) => v && onProjectChange(v)}>
+              <Select
+                items={projects.map((p) => ({ value: p.id, label: `${p.title}${p.clientName ? ` · ${p.clientName}` : ""}` }))}
+                value={projectId}
+                onValueChange={(v) => v && onProjectChange(v)}
+              >
                 <SelectTrigger className="w-full"><SelectValue placeholder="Pick a project" /></SelectTrigger>
                 <SelectContent>
                   {projects.map((p) => (
@@ -191,17 +200,20 @@ export function ChainSheet({
                 {steps.map((s, i) => (
                   <motion.div
                     key={i}
-                    layout
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 32 }}
-                    className="overflow-hidden rounded-xl border border-border/60 bg-muted/30 p-3"
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                    className="rounded-xl border border-border/60 bg-muted/30 p-3"
                   >
                     <div className="mb-2 flex items-center justify-between">
                       <span className="inline-flex size-5 items-center justify-center rounded-full bg-foreground/10 font-mono text-[10px]">{i + 1}</span>
                       <div className="flex-1 px-2">
-                        <Select value={s.method_id ?? ""} onValueChange={(v) => setStep(i, { method_id: v || null })}>
+                        <Select
+                          items={methods.map((m) => ({ value: m.id, label: m.name }))}
+                          value={s.method_id ?? ""}
+                          onValueChange={(v) => setStep(i, { method_id: v || null })}
+                        >
                           <SelectTrigger className="h-10 sm:h-8 w-full text-xs"><SelectValue placeholder="Method" /></SelectTrigger>
                           <SelectContent>
                             {methods.map((m) => (<SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>))}
@@ -282,7 +294,7 @@ function AmountCurrency({
         onChange={(e) => onAmount(e.target.value)}
         className="h-11 sm:h-9 flex-1 text-right tabular"
       />
-      <Select value={currency} onValueChange={(v) => v && onCurrency(v)}>
+      <Select items={currencies.map((c) => ({ value: c, label: c }))} value={currency} onValueChange={(v) => v && onCurrency(v)}>
         <SelectTrigger className="h-11 sm:h-9 w-[72px] sm:w-[88px] shrink-0"><SelectValue /></SelectTrigger>
         <SelectContent>
           {currencies.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}

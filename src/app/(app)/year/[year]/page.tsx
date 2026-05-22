@@ -128,13 +128,18 @@ export default async function YearPage({
       total: Math.round(total),
     }));
 
-  // Biggest single project (by total amount)
+  // Biggest single project by VALUE in base currency — not the raw number
+  // (¥500 must not outrank a $300 project).
   const biggestProject = prs
     .filter((p) => {
       const d = new Date(p.updated_at);
       return d >= yearStart && d < yearEnd;
     })
-    .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+    .sort(
+      (a, b) =>
+        toBase(Number(b.amount), b.currency as CurrencyCode, rs) -
+        toBase(Number(a.amount), a.currency as CurrencyCode, rs),
+    )[0];
   const biggestProjectClient = biggestProject
     ? cs.find((c) => c.id === biggestProject.client_id)
     : null;

@@ -10,10 +10,10 @@ export const metadata = { title: "Payments" };
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ new?: string }>;
+  searchParams: Promise<{ new?: string; project?: string }>;
 }) {
   const params = await searchParams;
-  const { payments, stepsByPayment, projects, clients, rates, methods, settings } = await getPaymentsData();
+  const { payments, stepsByPayment, projects, clients, rates, methods, settings, currencies } = await getPaymentsData();
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
 
   const methodsById = new Map<string, PaymentMethod>(methods.map((m) => [m.id, m]));
@@ -57,11 +57,27 @@ export default async function PaymentsPage({
     .filter((p) => new Date(p.paid_at) >= startMonth)
     .reduce((s, p) => s + Number(p.implied_fee_base ?? 0), 0);
 
+  // Outstanding (native) per project, so the chain form can prefill the amount.
+  const outstandingByProject = new Map<string, number>();
+  for (const p of projects) {
+    const paid = payments
+      .filter((pay) => pay.project_id === p.id && pay.currency === p.currency)
+      .reduce((s, pay) => s + Number(pay.amount), 0);
+    outstandingByProject.set(p.id, Math.max(0, Number(p.amount) - paid));
+  }
+  const toOpt = (p: typeof projects[number]) => ({
+    id: p.id,
+    title: p.title,
+    currency: p.currency as CurrencyCode,
+    clientName: clientsById.get(p.client_id)?.name ?? "",
+    outstanding: outstandingByProject.get(p.id) ?? 0,
+  });
+
   // Projects that still have a balance, for the chain form's project picker.
   const openProjects = projects
     .filter((p) => p.status === "unpaid" || p.status === "partially_paid")
-    .map((p) => ({ id: p.id, title: p.title, currency: p.currency as CurrencyCode, clientName: clientsById.get(p.client_id)?.name ?? "" }));
-  const allProjects = projects.map((p) => ({ id: p.id, title: p.title, currency: p.currency as CurrencyCode, clientName: clientsById.get(p.client_id)?.name ?? "" }));
+    .map(toOpt);
+  const allProjects = projects.map(toOpt);
 
   return (
     <PaymentsView
@@ -74,8 +90,10 @@ export default async function PaymentsPage({
       methods={methods.filter((m) => !m.archived).map((m) => ({ id: m.id, name: m.name }))}
       openProjects={openProjects}
       allProjects={allProjects}
+      allCurrencies={currencies.map((c) => c.code)}
       rates={rates.map((r) => ({ code: r.code, rate_to_base: Number(r.rate_to_base) }))}
-      openNew={params.new === "1"}
+      openNew={params.new === "1" || !!params.project}
+      defaultProjectId={params.project}
     />
   );
 }

@@ -131,6 +131,15 @@ export function KanbanBoard({
     if (from === to) return; // same column, no-op
 
     const nextStatus = to as ProjectStatus;
+
+    // Moving a card to "Paid" means money arrived — open the log-payment form
+    // (prefilled to this project) instead of silently flipping status. Status
+    // settles to paid once the logged payment covers the balance.
+    if (nextStatus === "paid" && from !== "paid") {
+      router.push(`/payments?new=1&project=${project.id}`);
+      return;
+    }
+
     startTransition(async () => {
       applyOptimisticStatus({ id: project.id, status: nextStatus });
       try {

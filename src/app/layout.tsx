@@ -30,6 +30,13 @@ export const metadata: Metadata = {
   },
   description: "Every peso you earn — landed, pending, and where the fees went.",
   applicationName: "Freelane",
+  // Next auto-links app/manifest.ts, but declaring it keeps intent explicit.
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Freelane",
+  },
   icons: {
     icon: "/icon.svg",
     apple: "/apple-icon.svg",

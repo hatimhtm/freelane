@@ -422,7 +422,7 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
   await logEvent({
     userId,
     kind: "payment.added",
-    title: `Payment · ${first.currency_in} ${Number(first.amount_in).toFixed(2)} → ₱${netBase.toFixed(0)} net on ${project.title}`,
+    title: `Payment · ${first.currency_in} ${Number(first.amount_in).toFixed(2)} → ${baseCurrency} ${netBase.toFixed(0)} net on ${project.title}`,
     entityType: "payment",
     entityId: paymentRow.id as string,
     clientId: project.client_id as string,
@@ -435,6 +435,7 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
     },
   });
 
+  revalidatePath("/today");
   revalidatePath("/projects");
   revalidatePath("/payments");
   revalidatePath("/dashboard");

@@ -38,6 +38,8 @@ export type PaymentRow = {
   steps: ChainStepView[];
 };
 
+type ChainProject = { id: string; title: string; currency: CurrencyCode; clientName: string; outstanding: number };
+
 export function PaymentsView({
   rows,
   leaderboard,
@@ -48,8 +50,10 @@ export function PaymentsView({
   methods,
   openProjects,
   allProjects,
+  allCurrencies,
   rates,
   openNew,
+  defaultProjectId,
 }: {
   rows: PaymentRow[];
   leaderboard: MethodLeaderboardRow[];
@@ -58,15 +62,18 @@ export function PaymentsView({
   lifetime: number;
   feesThisMonth: number;
   methods: { id: string; name: string }[];
-  openProjects: { id: string; title: string; currency: CurrencyCode; clientName: string }[];
-  allProjects: { id: string; title: string; currency: CurrencyCode; clientName: string }[];
+  openProjects: ChainProject[];
+  allProjects: ChainProject[];
+  allCurrencies: string[];
   rates: { code: string; rate_to_base: number }[];
   openNew?: boolean;
+  defaultProjectId?: string;
 }) {
   const [sheetOpen, setSheetOpen] = useState(openNew ?? false);
+  // Every currency that exists, base first — so newly-added ones are selectable.
   const currencies = useMemo(
-    () => Array.from(new Set([currency, ...rates.map((r) => r.code)])),
-    [currency, rates],
+    () => Array.from(new Set([currency, ...allCurrencies])),
+    [currency, allCurrencies],
   );
   const formProjects = openProjects.length > 0 ? openProjects : allProjects;
 
@@ -119,6 +126,7 @@ export function PaymentsView({
         currencies={currencies}
         rates={rates}
         baseCurrency={currency}
+        defaultProjectId={defaultProjectId}
       />
     </div>
   );

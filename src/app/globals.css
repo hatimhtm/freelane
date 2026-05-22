@@ -2,7 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* `dark:` utilities trigger under any dark-palette theme. */
+@custom-variant dark (&:is(.theme-graphite *, .theme-midnight *, .theme-carbon *, .dark *));
 
 /* ───────────────────────────────────────────────────────────────────────────
    Freelane design system — "editorial paper".
@@ -72,49 +73,282 @@
   --radius-4xl: 28px;
 }
 
-/* ───────────────────────────────────────────── Light — "creamy paper" ── */
-:root {
-  --radius: 0.75rem;
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME PALETTES
 
+   Each theme is a COMPLETE, standalone var block applied via a `.theme-*`
+   class (next-themes attribute="class"). A theme = a full palette; it does not
+   depend on light/dark. `:root` mirrors Graphite as the fallback default.
+
+   Every theme defines the SAME set of var names. Invariants across all themes:
+     • --overdue stays a terracotta / red-orange
+     • --success stays a green
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Shared, theme-independent token. */
+:root { --radius: 0.75rem; }
+
+/* ─────────────────────────────────────── Graphite — cool neutral dark (DEFAULT) ── */
+:root,
+.theme-graphite {
+  --paper: oklch(0.18 0 0);
+  --ink:   oklch(0.97 0 0);
+
+  --background: oklch(0.165 0 0);          /* near-black, true grey */
+  --foreground: oklch(0.97 0 0);
+
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.97 0 0);
+
+  --popover: oklch(0.225 0 0);
+  --popover-foreground: oklch(0.97 0 0);
+
+  --primary: oklch(0.97 0 0);
+  --primary-foreground: oklch(0.2 0 0);
+
+  --secondary: oklch(0.26 0 0);
+  --secondary-foreground: oklch(0.97 0 0);
+
+  --muted: oklch(0.255 0 0);
+  --muted-foreground: oklch(0.68 0 0);
+
+  --accent: oklch(0.285 0 0);
+  --accent-foreground: oklch(0.97 0 0);
+
+  --destructive: oklch(0.64 0.15 36);
+  --overdue: oklch(0.64 0.15 36);          /* terracotta */
+  --success: oklch(0.68 0.13 150);         /* green */
+  --warning: oklch(0.78 0.14 75);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.7 0 0);
+
+  --chart-1: oklch(0.7 0.12 152);
+  --chart-2: oklch(0.68 0.1 232);
+  --chart-3: oklch(0.78 0.13 72);
+  --chart-4: oklch(0.66 0.15 36);
+  --chart-5: oklch(0.64 0.09 310);
+
+  --sidebar: oklch(0.145 0 0);
+  --sidebar-foreground: oklch(0.82 0 0);
+  --sidebar-primary: oklch(0.97 0 0);
+  --sidebar-primary-foreground: oklch(0.2 0 0);
+  --sidebar-accent: oklch(0.255 0 0);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.7 0 0);
+
+  /* Signature acid lime. */
+  --brand: oklch(0.92 0.22 124);           /* #CCFF00-ish */
+  --brand-foreground: oklch(0.2 0.02 120);
+}
+
+/* ─────────────────────────────────────── Midnight — deep indigo / navy dark ── */
+.theme-midnight {
+  --paper: oklch(0.19 0.03 264);
+  --ink:   oklch(0.96 0.01 264);
+
+  --background: oklch(0.17 0.035 264);     /* deep indigo near-black */
+  --foreground: oklch(0.96 0.01 264);
+
+  --card: oklch(0.215 0.04 264);
+  --card-foreground: oklch(0.96 0.01 264);
+
+  --popover: oklch(0.235 0.042 264);
+  --popover-foreground: oklch(0.96 0.01 264);
+
+  --primary: oklch(0.96 0.01 264);
+  --primary-foreground: oklch(0.2 0.04 264);
+
+  --secondary: oklch(0.27 0.045 264);
+  --secondary-foreground: oklch(0.96 0.01 264);
+
+  --muted: oklch(0.26 0.04 264);
+  --muted-foreground: oklch(0.7 0.03 264);
+
+  --accent: oklch(0.3 0.05 264);
+  --accent-foreground: oklch(0.96 0.01 264);
+
+  --destructive: oklch(0.64 0.15 36);
+  --overdue: oklch(0.64 0.15 36);          /* terracotta */
+  --success: oklch(0.7 0.13 152);          /* green */
+  --warning: oklch(0.79 0.14 78);
+
+  --border: oklch(0.85 0.05 264 / 12%);
+  --input: oklch(0.85 0.05 264 / 16%);
+  --ring: oklch(0.62 0.16 264);
+
+  --chart-1: oklch(0.68 0.16 264);
+  --chart-2: oklch(0.72 0.13 200);
+  --chart-3: oklch(0.78 0.13 300);
+  --chart-4: oklch(0.66 0.15 36);
+  --chart-5: oklch(0.7 0.13 152);
+
+  --sidebar: oklch(0.15 0.035 264);
+  --sidebar-foreground: oklch(0.82 0.02 264);
+  --sidebar-primary: oklch(0.7 0.16 264);
+  --sidebar-primary-foreground: oklch(0.18 0.04 264);
+  --sidebar-accent: oklch(0.27 0.045 264);
+  --sidebar-accent-foreground: oklch(0.96 0.01 264);
+  --sidebar-border: oklch(0.85 0.05 264 / 10%);
+  --sidebar-ring: oklch(0.62 0.16 264);
+
+  /* Electric indigo / violet accent. */
+  --brand: oklch(0.62 0.22 270);
+  --brand-foreground: oklch(0.98 0.01 270);
+}
+
+/* ─────────────────────────────────────── Slate — cool light (NOT warm) ── */
+.theme-slate {
+  --paper: oklch(0.975 0.004 250);
+  --ink:   oklch(0.22 0.015 255);
+
+  --background: oklch(0.975 0.004 250);    /* clean cool grey-white */
+  --foreground: oklch(0.22 0.015 255);
+
+  --card: oklch(0.992 0.003 250);
+  --card-foreground: oklch(0.22 0.015 255);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.015 255);
+
+  --primary: oklch(0.28 0.02 255);
+  --primary-foreground: oklch(0.98 0.004 250);
+
+  --secondary: oklch(0.94 0.006 250);
+  --secondary-foreground: oklch(0.3 0.02 255);
+
+  --muted: oklch(0.94 0.006 250);
+  --muted-foreground: oklch(0.5 0.018 255);
+
+  --accent: oklch(0.925 0.01 250);
+  --accent-foreground: oklch(0.3 0.02 255);
+
+  --destructive: oklch(0.57 0.16 32);
+  --overdue: oklch(0.57 0.16 32);          /* terracotta */
+  --success: oklch(0.56 0.12 150);         /* green */
+  --warning: oklch(0.7 0.13 75);
+
+  --border: oklch(0.9 0.008 250);
+  --input: oklch(0.91 0.008 250);
+  --ring: oklch(0.6 0.04 255);
+
+  --chart-1: oklch(0.55 0.13 250);
+  --chart-2: oklch(0.58 0.11 200);
+  --chart-3: oklch(0.6 0.13 290);
+  --chart-4: oklch(0.57 0.15 32);
+  --chart-5: oklch(0.56 0.12 150);
+
+  --sidebar: oklch(0.96 0.005 250);
+  --sidebar-foreground: oklch(0.32 0.018 255);
+  --sidebar-primary: oklch(0.28 0.02 255);
+  --sidebar-primary-foreground: oklch(0.98 0.004 250);
+  --sidebar-accent: oklch(0.925 0.01 250);
+  --sidebar-accent-foreground: oklch(0.28 0.02 255);
+  --sidebar-border: oklch(0.9 0.008 250);
+  --sidebar-ring: oklch(0.6 0.04 255);
+
+  /* Confident slate-blue accent. */
+  --brand: oklch(0.55 0.16 255);
+  --brand-foreground: oklch(0.98 0.01 255);
+}
+
+/* ─────────────────────────────────────── Arctic — bright crisp cool white ── */
+.theme-arctic {
+  --paper: oklch(0.99 0.004 230);
+  --ink:   oklch(0.21 0.02 245);
+
+  --background: oklch(0.995 0.003 230);    /* near-pure crisp white, cool */
+  --foreground: oklch(0.21 0.02 245);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 245);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.02 245);
+
+  --primary: oklch(0.5 0.16 240);
+  --primary-foreground: oklch(0.99 0.005 230);
+
+  --secondary: oklch(0.955 0.01 230);
+  --secondary-foreground: oklch(0.28 0.02 245);
+
+  --muted: oklch(0.955 0.01 230);
+  --muted-foreground: oklch(0.5 0.025 240);
+
+  --accent: oklch(0.93 0.025 230);
+  --accent-foreground: oklch(0.28 0.04 240);
+
+  --destructive: oklch(0.58 0.17 30);
+  --overdue: oklch(0.58 0.17 30);          /* terracotta */
+  --success: oklch(0.58 0.13 152);         /* green */
+  --warning: oklch(0.72 0.14 75);
+
+  --border: oklch(0.9 0.012 230);
+  --input: oklch(0.91 0.012 230);
+  --ring: oklch(0.55 0.16 240);
+
+  --chart-1: oklch(0.55 0.16 240);
+  --chart-2: oklch(0.62 0.13 200);
+  --chart-3: oklch(0.6 0.14 280);
+  --chart-4: oklch(0.58 0.16 30);
+  --chart-5: oklch(0.58 0.13 152);
+
+  --sidebar: oklch(0.975 0.008 230);
+  --sidebar-foreground: oklch(0.3 0.02 245);
+  --sidebar-primary: oklch(0.5 0.16 240);
+  --sidebar-primary-foreground: oklch(0.99 0.005 230);
+  --sidebar-accent: oklch(0.93 0.025 230);
+  --sidebar-accent-foreground: oklch(0.3 0.04 240);
+  --sidebar-border: oklch(0.9 0.012 230);
+  --sidebar-ring: oklch(0.55 0.16 240);
+
+  /* Cool icy blue accent. */
+  --brand: oklch(0.62 0.18 235);
+  --brand-foreground: oklch(0.99 0.01 235);
+}
+
+/* ─────────────────────────────────────── Paper — original warm paper (light) ── */
+.theme-paper {
   --paper: oklch(0.974 0.007 84);
   --ink:   oklch(0.19 0.006 70);
 
-  --background: oklch(0.974 0.007 84);   /* #FAF8F3 warm paper */
-  --foreground: oklch(0.19 0.006 70);    /* #1A1814 ink */
+  --background: oklch(0.974 0.007 84);     /* #FAF8F3 warm paper */
+  --foreground: oklch(0.19 0.006 70);      /* #1A1814 ink */
 
-  --card: oklch(0.987 0.005 84);          /* a hair lighter than paper */
+  --card: oklch(0.987 0.005 84);
   --card-foreground: oklch(0.19 0.006 70);
 
   --popover: oklch(0.992 0.004 84);
   --popover-foreground: oklch(0.19 0.006 70);
 
-  --primary: oklch(0.24 0.008 70);        /* near-ink primary (buttons) */
+  --primary: oklch(0.24 0.008 70);
   --primary-foreground: oklch(0.975 0.007 84);
 
   --secondary: oklch(0.945 0.009 82);
   --secondary-foreground: oklch(0.28 0.01 70);
 
   --muted: oklch(0.945 0.009 82);
-  --muted-foreground: oklch(0.52 0.012 75); /* #6B645A warm grey */
+  --muted-foreground: oklch(0.52 0.012 75);
 
   --accent: oklch(0.93 0.012 86);
   --accent-foreground: oklch(0.28 0.01 70);
 
-  --destructive: oklch(0.57 0.14 36);     /* terracotta, not alarm-red */
-  --overdue: oklch(0.57 0.14 36);
-  --success: oklch(0.58 0.11 150);
+  --destructive: oklch(0.57 0.14 36);      /* terracotta */
+  --overdue: oklch(0.57 0.14 36);          /* terracotta */
+  --success: oklch(0.58 0.11 150);         /* green */
   --warning: oklch(0.72 0.13 75);
 
   --border: oklch(0.9 0.009 80);
   --input: oklch(0.91 0.008 80);
   --ring: oklch(0.62 0.02 80);
 
-  /* Editorial earthy chart set — money-green leads. */
-  --chart-1: oklch(0.56 0.11 152);  /* sage / money */
-  --chart-2: oklch(0.58 0.09 232);  /* slate blue */
-  --chart-3: oklch(0.7 0.12 72);    /* ochre */
-  --chart-4: oklch(0.57 0.14 36);   /* terracotta */
-  --chart-5: oklch(0.5 0.06 310);   /* muted plum */
+  --chart-1: oklch(0.56 0.11 152);
+  --chart-2: oklch(0.58 0.09 232);
+  --chart-3: oklch(0.7 0.12 72);
+  --chart-4: oklch(0.57 0.14 36);
+  --chart-5: oklch(0.5 0.06 310);
 
   --sidebar: oklch(0.962 0.008 84);
   --sidebar-foreground: oklch(0.3 0.008 70);
@@ -125,63 +359,64 @@
   --sidebar-border: oklch(0.9 0.009 80);
   --sidebar-ring: oklch(0.62 0.02 80);
 
-  /* Signature acid lime. Use ONCE per screen — active state / "paid" pill. */
-  --brand: oklch(0.93 0.23 124);          /* #CCFF00 */
+  /* Signature acid lime. */
+  --brand: oklch(0.93 0.23 124);           /* #CCFF00 */
   --brand-foreground: oklch(0.22 0.02 120);
 }
 
-/* ───────────────────────────────────────────────── Dark — "warm night" ── */
-.dark {
-  --paper: oklch(0.16 0.005 80);
-  --ink:   oklch(0.96 0.004 84);
+/* ─────────────────────────────────────── Carbon — pure mono near-black ── */
+.theme-carbon {
+  --paper: oklch(0.145 0 0);
+  --ink:   oklch(0.985 0 0);
 
-  --background: oklch(0.15 0.005 80);     /* warm near-black, not blue-black */
-  --foreground: oklch(0.96 0.004 84);
+  --background: oklch(0.12 0 0);           /* pure mono near-black */
+  --foreground: oklch(0.985 0 0);
 
-  --card: oklch(0.185 0.006 80);
-  --card-foreground: oklch(0.96 0.004 84);
+  --card: oklch(0.16 0 0);
+  --card-foreground: oklch(0.985 0 0);
 
-  --popover: oklch(0.2 0.006 80);
-  --popover-foreground: oklch(0.96 0.004 84);
+  --popover: oklch(0.18 0 0);
+  --popover-foreground: oklch(0.985 0 0);
 
-  --primary: oklch(0.96 0.004 84);
-  --primary-foreground: oklch(0.2 0.006 80);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.14 0 0);
 
-  --secondary: oklch(0.24 0.006 80);
-  --secondary-foreground: oklch(0.96 0.004 84);
+  --secondary: oklch(0.22 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
 
-  --muted: oklch(0.23 0.006 80);
-  --muted-foreground: oklch(0.68 0.01 82);
+  --muted: oklch(0.21 0 0);
+  --muted-foreground: oklch(0.65 0 0);
 
-  --accent: oklch(0.26 0.008 84);
-  --accent-foreground: oklch(0.96 0.004 84);
+  --accent: oklch(0.24 0 0);
+  --accent-foreground: oklch(0.985 0 0);
 
-  --destructive: oklch(0.64 0.15 36);
-  --overdue: oklch(0.64 0.15 36);
-  --success: oklch(0.68 0.13 150);
-  --warning: oklch(0.78 0.14 75);
+  --destructive: oklch(0.63 0.15 36);
+  --overdue: oklch(0.63 0.15 36);          /* terracotta */
+  --success: oklch(0.67 0.13 150);         /* green */
+  --warning: oklch(0.77 0.14 75);
 
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 13%);
-  --ring: oklch(0.7 0.02 84);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.72 0 0);
 
-  --chart-1: oklch(0.7 0.12 152);
-  --chart-2: oklch(0.68 0.1 232);
-  --chart-3: oklch(0.78 0.13 72);
+  --chart-1: oklch(0.85 0 0);
+  --chart-2: oklch(0.7 0 0);
+  --chart-3: oklch(0.55 0 0);
   --chart-4: oklch(0.66 0.15 36);
-  --chart-5: oklch(0.64 0.09 310);
+  --chart-5: oklch(0.67 0.13 150);
 
-  --sidebar: oklch(0.135 0.005 80);
-  --sidebar-foreground: oklch(0.82 0.006 82);
-  --sidebar-primary: oklch(0.96 0.004 84);
-  --sidebar-primary-foreground: oklch(0.2 0.006 80);
-  --sidebar-accent: oklch(0.23 0.006 80);
-  --sidebar-accent-foreground: oklch(0.96 0.004 84);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.7 0.02 84);
+  --sidebar: oklch(0.1 0 0);
+  --sidebar-foreground: oklch(0.8 0 0);
+  --sidebar-primary: oklch(0.985 0 0);
+  --sidebar-primary-foreground: oklch(0.14 0 0);
+  --sidebar-accent: oklch(0.21 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.72 0 0);
 
-  --brand: oklch(0.92 0.22 124);
-  --brand-foreground: oklch(0.2 0.02 120);
+  /* Pure white accent — true monochrome. */
+  --brand: oklch(0.98 0 0);
+  --brand-foreground: oklch(0.14 0 0);
 }
 
 @layer base {
@@ -255,7 +490,9 @@
     opacity: 0.025;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
-  .dark .paper-grain::before { opacity: 0.04; }
+  .theme-graphite .paper-grain::before,
+  .theme-midnight .paper-grain::before,
+  .theme-carbon .paper-grain::before { opacity: 0.04; }
 
   /* Hairline grid backdrop for empty states (very faint). */
   .bg-grid {

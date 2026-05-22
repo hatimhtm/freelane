@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, CalendarRange, Hourglass, Plus, Receipt, UserX, Users } from "lucide-react";
+import { AlarmClock, ArrowUpRight, CalendarRange, Hourglass, Plus, Receipt, TrendingDown, UserX, Users } from "lucide-react";
 import { motion } from "motion/react";
 import { Card } from "@/components/ui/card";
 import { LinkButton } from "@/components/ui/link-button";
 import { EmptyState } from "@/components/app/empty-state";
 import { MastheadStat, MetricTile, DeltaChip } from "@/components/stats/stat";
-import { RevenueChart } from "@/components/stats/revenue-chart";
+import { TrendAreaChart } from "@/components/stats/trend-area-chart";
+import { DonutChart } from "@/components/stats/donut-chart";
+import { BarsChart } from "@/components/stats/bars-chart";
 import { BlockedMoneyList, type BlockedRow } from "@/components/app/blocked-money-list";
 import { MethodLeaderboard } from "@/components/app/method-leaderboard";
 import { AiPanel } from "@/components/app/ai-panel";
@@ -38,6 +40,12 @@ export function DashboardView({
   series,
   leaderboard,
   recent,
+  incomeByClient,
+  netVsFee,
+  incomeByCurrency,
+  feesByMethod,
+  feesYtd,
+  longestOutstanding,
   year,
   aiEnabled,
 }: {
@@ -56,6 +64,12 @@ export function DashboardView({
   series: number[];
   leaderboard: MethodLeaderboardRow[];
   recent: { id: string; net: number; paidAt: string; projectTitle: string; clientName: string }[];
+  incomeByClient: { name: string; value: number }[];
+  netVsFee: { month: string; net: number; fee: number }[];
+  incomeByCurrency: { code: string; value: number }[];
+  feesByMethod: { name: string; value: number }[];
+  feesYtd: number;
+  longestOutstanding: { projectTitle: string; clientName: string; daysAged: number; outstandingBase: number } | null;
   year: number;
   aiEnabled: boolean;
 }) {
@@ -115,30 +129,39 @@ export function DashboardView({
             <PendingPanel total={pendingTotal} count={pendingCount} currency={currency} />
           </section>
 
+          {/* This month vs last comparison strip */}
+          <ComparisonStrip metrics={metrics} feesYtd={feesYtd} currency={currency} />
+
           {/* Metric tiles */}
           <section className="grid gap-4 sm:grid-cols-3">
-            <MetricTile
-              label="Fees this month"
-              value={metrics.feesMtd}
-              currency={currency}
-              icon={Receipt}
-              hint="rails + FX markup"
-              delay={0.02}
-            />
-            <MetricTile
-              label="Avg days to payment"
-              text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
-              icon={Hourglass}
-              hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
-              delay={0.06}
-            />
-            <MetricTile
-              label="Biggest debtor"
-              text={biggestDebtor?.name ?? "—"}
-              icon={UserX}
-              hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
-              delay={0.1}
-            />
+            <Link href="/payments" className="block">
+              <MetricTile
+                label="Fees this month"
+                value={metrics.feesMtd}
+                currency={currency}
+                icon={Receipt}
+                hint="rails + FX markup"
+                delay={0.02}
+              />
+            </Link>
+            <Link href="/projects" className="block">
+              <MetricTile
+                label="Avg days to payment"
+                text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
+                icon={Hourglass}
+                hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
+                delay={0.06}
+              />
+            </Link>
+            <Link href="/projects" className="block">
+              <MetricTile
+                label="Biggest debtor"
+                text={biggestDebtor?.name ?? "—"}
+                icon={UserX}
+                hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
+                delay={0.1}
+              />
+            </Link>
           </section>
 
           {/* Ask your money */}
@@ -146,22 +169,46 @@ export function DashboardView({
 
           {/* Revenue + top clients */}
           <section className="grid gap-4 lg:grid-cols-3">
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }} className="lg:col-span-2">
-              <Card className="overflow-hidden p-6">
-                <div className="text-sm font-medium">Revenue</div>
-                <div className="text-xs text-muted-foreground">Last 6 months · landed {currency}</div>
-                <div className="mt-4">
-                  <RevenueChart data={revenue} currency={currency} />
-                </div>
-              </Card>
-            </motion.div>
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}>
-              <Card className="h-full p-6">
-                <div className="text-sm font-medium">Top clients</div>
-                <div className="text-xs text-muted-foreground">{`By landed ${currency}`}</div>
-                <TopClients data={topClients} currency={currency} />
-              </Card>
-            </motion.div>
+            <ChartCard className="lg:col-span-2" title="Revenue" subtitle={`Last 6 months · landed ${currency}`}>
+              <TrendAreaChart data={revenue} currency={currency} />
+            </ChartCard>
+            <ChartCard delay={0.06} title="Top clients" subtitle={`By landed ${currency}`}>
+              <TopClients data={topClients} currency={currency} />
+            </ChartCard>
+          </section>
+
+          {/* Donut + net vs fee bars */}
+          <section className="grid gap-4 lg:grid-cols-2">
+            <ChartCard title="Income by client" subtitle="Top 5 + other · landed">
+              <div className="mt-4">
+                <DonutChart data={incomeByClient} currency={currency} />
+              </div>
+            </ChartCard>
+            <ChartCard delay={0.06} title="Net vs fees" subtitle="Last 6 months · what you keep vs lose">
+              <div className="mt-4">
+                <BarsChart
+                  data={netVsFee}
+                  series={[
+                    { key: "net", label: "Net", color: "var(--chart-1)" },
+                    { key: "fee", label: "Fees", color: "var(--chart-4)" },
+                  ]}
+                  currency={currency}
+                />
+              </div>
+            </ChartCard>
+          </section>
+
+          {/* Income by currency + fees by method + longest outstanding */}
+          <section className="grid gap-4 lg:grid-cols-3">
+            <ChartCard title="Income by currency" subtitle={`${year} · landed ${currency}`}>
+              <CurrencyBreakdown data={incomeByCurrency} currency={currency} />
+            </ChartCard>
+            <ChartCard delay={0.05} title="Where fees went" subtitle={`${year} · by payment chain`}>
+              <FeesByMethod data={feesByMethod} total={feesYtd} currency={currency} />
+            </ChartCard>
+            <ChartCard delay={0.1} title="Longest outstanding" subtitle="Oldest open balance">
+              <LongestOutstanding row={longestOutstanding} currency={currency} />
+            </ChartCard>
           </section>
 
           {/* Blocked money + leaderboard */}
@@ -261,6 +308,172 @@ function TopClients({ data, currency }: { data: { name: string; value: number }[
         </li>
       ))}
     </ol>
+  );
+}
+
+const EASE = [0.16, 1, 0.3, 1] as const;
+
+function ChartCard({
+  title,
+  subtitle,
+  children,
+  className,
+  delay = 0,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+  className?: string;
+  delay?: number;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay, ease: EASE }}
+      className={className}
+    >
+      <Card className="h-full overflow-hidden p-6">
+        <div className="text-sm font-medium">{title}</div>
+        <div className="text-xs text-muted-foreground">{subtitle}</div>
+        {children}
+      </Card>
+    </motion.div>
+  );
+}
+
+function ComparisonStrip({
+  metrics,
+  feesYtd,
+  currency,
+}: {
+  metrics: Metrics;
+  feesYtd: number;
+  currency: CurrencyCode;
+}) {
+  const items: { label: string; now: number; prev: number; delta: number | null; prevLabel: string }[] = [
+    { label: "This month", now: metrics.mtd, prev: metrics.lastMonth, delta: metrics.momDelta, prevLabel: "last month" },
+    { label: "This week", now: metrics.wtd, prev: metrics.lastWeek, delta: metrics.wowDelta, prevLabel: "last week" },
+  ];
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: EASE }}
+      className="grid gap-4 sm:grid-cols-3"
+    >
+      {items.map((it) => (
+        <div key={it.label} className="rounded-xl border border-border/70 bg-card p-5">
+          <div className="display-eyebrow text-muted-foreground">{it.label}</div>
+          <div className="mt-2 text-[22px] font-semibold tracking-tight tabular">
+            {formatMoney(it.now, currency, { compact: true })}
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+            {it.delta !== null ? <DeltaChip delta={it.delta} suffix={`vs ${it.prevLabel}`} /> : <span>no prior data</span>}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground tabular">
+            {formatMoney(it.prev, currency, { compact: true })} {it.prevLabel}
+          </div>
+        </div>
+      ))}
+      <Link href="/payments" className="block rounded-xl border border-border/70 bg-card p-5 transition-colors hover:bg-muted/40">
+        <div className="display-eyebrow flex items-center gap-1.5 text-muted-foreground">
+          <TrendingDown className="size-3.5" /> Fees this year
+        </div>
+        <div className="mt-2 text-[22px] font-semibold tracking-tight tabular">
+          {formatMoney(feesYtd, currency, { compact: true })}
+        </div>
+        <div className="mt-1 text-xs text-muted-foreground">total rails + FX lost to date</div>
+        <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-foreground">
+          Trim your fees <ArrowUpRight className="size-3" />
+        </span>
+      </Link>
+    </motion.section>
+  );
+}
+
+function CurrencyBreakdown({ data, currency }: { data: { code: string; value: number }[]; currency: CurrencyCode }) {
+  if (data.length === 0) {
+    return <div className="mt-8 text-center text-sm text-muted-foreground">No income yet this year.</div>;
+  }
+  const max = Math.max(...data.map((d) => d.value), 1);
+  const palette = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
+  return (
+    <ol className="mt-4 space-y-3">
+      {data.map((c, i) => (
+        <li key={c.code}>
+          <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+            <span className="font-medium">{c.code}</span>
+            <span className="shrink-0 tabular text-muted-foreground">{formatMoney(c.value, currency, { compact: true })}</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${(c.value / max) * 100}%` }}
+              transition={{ duration: 0.8, delay: 0.2 + i * 0.08, ease: EASE }}
+              className="h-full rounded-full"
+              style={{ background: palette[i % palette.length] }}
+            />
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function FeesByMethod({ data, total, currency }: { data: { name: string; value: number }[]; total: number; currency: CurrencyCode }) {
+  if (data.length === 0) {
+    return <div className="mt-8 text-center text-sm text-muted-foreground">No fees recorded this year.</div>;
+  }
+  const max = Math.max(...data.map((d) => d.value), 1);
+  return (
+    <ol className="mt-4 space-y-3">
+      {data.map((c, i) => (
+        <li key={c.name}>
+          <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+            <span className="min-w-0 truncate font-medium">{c.name}</span>
+            <span className="shrink-0 tabular text-muted-foreground">
+              {formatMoney(c.value, currency, { compact: true })}
+              {total > 0 && <span className="ml-1 text-[11px]">· {((c.value / total) * 100).toFixed(0)}%</span>}
+            </span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${(c.value / max) * 100}%` }}
+              transition={{ duration: 0.8, delay: 0.2 + i * 0.08, ease: EASE }}
+              className="h-full rounded-full bg-[var(--chart-4)]"
+            />
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function LongestOutstanding({
+  row,
+  currency,
+}: {
+  row: { projectTitle: string; clientName: string; daysAged: number; outstandingBase: number } | null;
+  currency: CurrencyCode;
+}) {
+  if (!row) {
+    return <div className="mt-8 text-center text-sm text-muted-foreground">Nothing outstanding. Clean slate.</div>;
+  }
+  return (
+    <Link href="/projects" className="mt-4 block">
+      <div className="flex items-center gap-2 text-[var(--overdue)]">
+        <AlarmClock className="size-4" />
+        <span className="display-numeric tabular text-2xl">{row.daysAged}d</span>
+        <span className="text-xs text-muted-foreground">waiting</span>
+      </div>
+      <div className="mt-3 truncate text-sm font-medium">{row.projectTitle}</div>
+      <div className="truncate text-xs text-muted-foreground">{row.clientName}</div>
+      <div className="mt-2 text-sm font-semibold tabular">
+        {formatMoney(row.outstandingBase, currency, { compact: true })} <span className="text-xs font-normal text-muted-foreground">owed</span>
+      </div>
+    </Link>
   );
 }
 
