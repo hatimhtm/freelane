@@ -102,7 +102,7 @@ export function TrendAreaChart({
               }
             />
             <Area
-              type="monotone"
+              type="natural"
               dataKey="total"
               stroke="var(--chart-1)"
               strokeWidth={2.25}

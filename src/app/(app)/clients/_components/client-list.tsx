@@ -84,13 +84,14 @@ export function ClientList({
 
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {clients.map((c, i) => (
           <motion.div
             key={c.id}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: i * 0.03 }}
+            className="h-full"
           >
             <Card
               role="button"
@@ -103,7 +104,7 @@ export function ClientList({
                 }
               }}
               className={cn(
-                "group relative cursor-pointer p-5 transition-all hover:-translate-y-0.5 hover:border-border hover:shadow-md",
+                "group relative flex h-full flex-col p-5 cursor-pointer transition-all hover:-translate-y-0.5 hover:border-border hover:shadow-md",
                 c.archived && "opacity-60",
               )}
             >
@@ -180,7 +181,7 @@ export function ClientList({
                 </div>
               )}
 
-              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
                 {c.default_currency && <Chip>{c.default_currency}</Chip>}
                 {c.feesBase > 0 && <Chip>{formatMoney(c.feesBase, baseCurrency, { compact: true })} fees</Chip>}
                 {c.lastPaidAt && <Chip>last {new Date(c.lastPaidAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</Chip>}

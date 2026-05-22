@@ -2,6 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// Catmull-Rom → cubic-bezier so the line reads soft and hand-drawn rather than
+// straight ruler segments. Tension keeps it gentle without overshooting wildly.
+function smoothPath(points: readonly (readonly [number, number])[]): string {
+  if (points.length < 2) return "";
+  const t = 0.2;
+  const d = [`M${points[0][0].toFixed(1)},${points[0][1].toFixed(1)}`];
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) * t;
+    const c1y = p1[1] + (p2[1] - p0[1]) * t;
+    const c2x = p2[0] - (p3[0] - p1[0]) * t;
+    const c2y = p2[1] - (p3[1] - p1[1]) * t;
+    d.push(
+      `C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`,
+    );
+  }
+  return d.join(" ");
+}
+
 // SVG sparkline that draws its line in when it scrolls into view (once).
 // The path uses the .spark-path utility; we set --len to its measured length
 // so the dash animation runs the right distance.
@@ -64,7 +86,7 @@ export function Sparkline({
     return [x, y] as const;
   });
 
-  const line = points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const line = smoothPath(points);
   const area = `${line} L${width},${height} L0,${height} Z`;
 
   return (

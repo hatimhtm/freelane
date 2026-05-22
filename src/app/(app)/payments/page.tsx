@@ -26,7 +26,7 @@ export default async function PaymentsPage({
     const steps = sortedSteps(stepsByPayment.get(p.id) ?? []);
     const project = projectsById.get(p.project_id);
     const client = project ? clientsById.get(project.client_id) : undefined;
-    const { fee, pct, net } = paymentFee(p);
+    const { fee, pct, net, gross } = paymentFee(p);
     return {
       id: p.id,
       projectTitle: project?.title ?? "—",
@@ -35,6 +35,7 @@ export default async function PaymentsPage({
       amountIn: Number(p.amount),
       currencyIn: p.currency as CurrencyCode,
       netBase: net,
+      grossBase: gross,
       feeBase: fee,
       feePct: pct,
       signature: chainSignature(steps, methodsById),

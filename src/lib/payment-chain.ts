@@ -73,8 +73,9 @@ export interface MethodLeaderboardRow {
   signature: string;
   count: number;
   volumeBase: number; // total gross routed through this chain
-  feeBase: number;    // total fee paid
-  effectivePct: number;
+  feeBase: number;    // total fee paid (absolute)
+  avgFeeBase: number; // average fee per payment (absolute)
+  effectivePct: number; // volume-weighted: total fee / total gross (not a mean of %s)
   monthlyFeesBase: number; // recurring method fees attributable to this chain
 }
 
@@ -98,6 +99,7 @@ export function methodLeaderboard(
       count: 0,
       volumeBase: 0,
       feeBase: 0,
+      avgFeeBase: 0,
       effectivePct: 0,
       monthlyFeesBase: 0,
     };
@@ -113,6 +115,7 @@ export function methodLeaderboard(
 
   for (const [signature, row] of rows) {
     row.effectivePct = row.volumeBase > 0 ? row.feeBase / row.volumeBase : 0;
+    row.avgFeeBase = row.count > 0 ? row.feeBase / row.count : 0;
     // Recurring monthly fees of the distinct rails this chain uses — a chain
     // can look cheap per-transaction yet carry a fixed monthly cost.
     const ids = methodsBySignature.get(signature) ?? new Set<string>();

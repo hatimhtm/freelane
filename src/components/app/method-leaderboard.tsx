@@ -57,8 +57,12 @@ export function MethodLeaderboard({
               </div>
             </div>
             <div className="shrink-0 text-right">
-              <div className="text-base font-semibold tabular">{(row.effectivePct * 100).toFixed(1)}%</div>
-              <div className="text-[11px] text-muted-foreground">eff. fee</div>
+              <div className="text-base font-semibold tabular text-[var(--overdue)]">
+                {formatMoney(row.feeBase, baseCurrency, { compact: true })}
+              </div>
+              <div className="text-[11px] text-muted-foreground tabular">
+                {(row.effectivePct * 100).toFixed(1)}% eff · {formatMoney(row.avgFeeBase, baseCurrency, { compact: true })}/pmt
+              </div>
             </div>
           </motion.div>
         );

@@ -1,16 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { ChevronDown, Plus, Wallet } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { MetricTile } from "@/components/stats/stat";
 import { MethodLeaderboard } from "@/components/app/method-leaderboard";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { setPaymentReceived, consolidateClientMemoryAction } from "@/lib/data/actions";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { MethodLeaderboardRow } from "@/lib/payment-chain";
 import { ChainSheet } from "./chain-sheet";
@@ -32,6 +36,7 @@ export type PaymentRow = {
   amountIn: number;
   currencyIn: CurrencyCode;
   netBase: number;
+  grossBase: number;
   feeBase: number;
   feePct: number;
   signature: string;
@@ -133,8 +138,27 @@ export function PaymentsView({
 }
 
 function PaymentItem({ row, baseCurrency, last, index }: { row: PaymentRow; baseCurrency: CurrencyCode; last: boolean; index: number }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [val, setVal] = useState(String(Math.round(row.netBase)));
+  const [saving, setSaving] = useState(false);
   const multi = row.steps.length > 1;
+
+  async function saveReceived() {
+    const net = Number(val);
+    if (!Number.isFinite(net) || net < 0) { toast.error("Enter the amount you actually received"); return; }
+    setSaving(true);
+    try {
+      const res = await setPaymentReceived(row.id, net);
+      toast.success("Updated — fee recalculated");
+      if (res.clientId) void consolidateClientMemoryAction(res.clientId);
+      router.refresh();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className={cn(!last && "border-b border-border/50")}>
@@ -188,6 +212,29 @@ function PaymentItem({ row, baseCurrency, last, index }: { row: PaymentRow; base
                 <span className="tabular font-medium text-[var(--overdue)]">
                   {formatMoney(row.feeBase, baseCurrency, { compact: true })} ({(row.feePct * 100).toFixed(1)}%)
                 </span>
+              </div>
+
+              {/* Backfill / correct the real amount received — fee is gross − net,
+                  never a guessed %. Works on old payments that never had one. */}
+              <div className="mt-1 rounded-lg border border-border/50 bg-card/70 p-3">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span className="font-medium text-foreground">Actual received (net, {baseCurrency})</span>
+                  <span className="tabular">owed {formatMoney(row.grossBase, baseCurrency, { compact: true })}</span>
+                </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    value={val}
+                    onChange={(e) => setVal(e.target.value)}
+                    className="h-8 w-36 text-sm tabular"
+                  />
+                  <Button size="sm" className="h-8" disabled={saving} onClick={saveReceived}>
+                    {saving ? "Saving…" : "Save"}
+                  </Button>
+                  <span className="text-[11px] text-muted-foreground">fee recalculates automatically</span>
+                </div>
               </div>
             </div>
           </motion.div>
