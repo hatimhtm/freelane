@@ -573,7 +573,7 @@ function PaymentEditRow({
   const NONE = "__none__";
   const [open, setOpen] = useState(false);
   const [methodId, setMethodId] = useState(currentMethodId ?? NONE);
-  const [feeUnknown, setFeeUnknown] = useState(false);
+  const [feeUnknown, setFeeUnknown] = useState(payment.fee_unknown ?? false);
   const [net, setNet] = useState(
     payment.net_amount_base != null ? String(Math.round(Number(payment.net_amount_base))) : "",
   );

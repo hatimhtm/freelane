@@ -189,6 +189,9 @@ export interface Payment {
   gross_at_market_base: number | null;
   implied_fee_base: number | null;
   fx_locked: boolean;
+  // When true the fee is unknown and the fee algorithm (leaderboard, fee
+  // stats) skips this payment entirely instead of counting it as a real 0.
+  fee_unknown: boolean;
   created_at: string;
 }
 

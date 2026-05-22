@@ -112,7 +112,8 @@ ${payments.slice(0, 15).map((p) => {
     const title = projectsById.get(p.project_id)?.title ?? "?";
     const quoted = projectsById.get(p.project_id)?.quoted_at;
     const lag = quoted ? Math.round((new Date(p.paid_at).getTime() - new Date(quoted).getTime()) / 86_400_000) : null;
-    return `   • ${p.paid_at}: ${title} via ${sig} → ${formatMoney(Number(p.net_amount_base ?? 0), currency, { compact: true })} net (fee ${formatMoney(Number(p.implied_fee_base ?? 0), currency, { compact: true })}${lag !== null ? `, ${lag}d after quote` : ""})`;
+    const feeStr = p.fee_unknown ? "fee unknown" : `fee ${formatMoney(Number(p.implied_fee_base ?? 0), currency, { compact: true })}`;
+    return `   • ${p.paid_at}: ${title} via ${sig} → ${formatMoney(Number(p.net_amount_base ?? 0), currency, { compact: true })} net (${feeStr}${lag !== null ? `, ${lag}d after quote` : ""})`;
   }).join("\n") || "   • none yet"}
 - Open balances:
 ${proj.filter((p) => p.status === "unpaid" || p.status === "partially_paid").map((p) => `   • ${p.title}: ${formatMoney(Number(p.amount), p.currency as CurrencyCode, { compact: true })}${p.quoted_at ? `, quoted ${p.quoted_at}` : ""}`).join("\n") || "   • none"}`;

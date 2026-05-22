@@ -89,6 +89,9 @@ export function methodLeaderboard(
   const methodsBySignature = new Map<string, Set<string>>();
 
   for (const payment of payments) {
+    // Unknown-fee payments are ignored entirely — counting them (even as 0)
+    // would inflate a route's volume and drag its effective fee % down.
+    if (payment.fee_unknown) continue;
     const steps = stepsByPayment.get(payment.id) ?? [];
     const signature = chainSignature(steps, methodsById);
     const { gross, fee } = paymentFee(payment);

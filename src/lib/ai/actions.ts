@@ -80,8 +80,13 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
     const proj = projectsById.get(p.project_id);
     const sig = chainSignature(sortedSteps(stepsByPayment.get(p.id) ?? []), methodsById);
     const gross = Number(p.gross_at_market_base ?? 0);
-    const pct = gross > 0 ? (Number(p.implied_fee_base ?? 0) / gross) * 100 : 0;
-    return `- ${p.paid_at}: ${proj?.title ?? "?"} via ${sig} → ${m(Number(p.net_amount_base ?? 0))} net (fee ${m(Number(p.implied_fee_base ?? 0))}, ${pct.toFixed(1)}%)`;
+    const feeStr = p.fee_unknown
+      ? "fee unknown — excluded from fee stats"
+      : (() => {
+          const pct = gross > 0 ? (Number(p.implied_fee_base ?? 0) / gross) * 100 : 0;
+          return `fee ${m(Number(p.implied_fee_base ?? 0))}, ${pct.toFixed(1)}%`;
+        })();
+    return `- ${p.paid_at}: ${proj?.title ?? "?"} via ${sig} → ${m(Number(p.net_amount_base ?? 0))} net (${feeStr})`;
   });
 
   return `Base currency: ${currency}. Today: ${new Date().toISOString().slice(0, 10)}.

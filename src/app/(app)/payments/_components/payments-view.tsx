@@ -48,6 +48,7 @@ export type PaymentRow = {
   feeBase: number;
   feePct: number;
   methodId: string | null;
+  feeUnknown: boolean;
   signature: string;
   steps: ChainStepView[];
 };
@@ -152,7 +153,7 @@ function PaymentItem({ row, baseCurrency, methods, last, index }: { row: Payment
   const [open, setOpen] = useState(false);
   const [val, setVal] = useState(String(Math.round(row.netBase)));
   const [methodId, setMethodId] = useState<string>(row.methodId ?? NONE);
-  const [feeUnknown, setFeeUnknown] = useState(false);
+  const [feeUnknown, setFeeUnknown] = useState(row.feeUnknown);
   const [saving, setSaving] = useState(false);
   const multi = row.steps.length > 1;
 

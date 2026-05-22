@@ -524,6 +524,8 @@ export async function updatePaymentDetails(
       net_amount_base: Math.round(net * 100) / 100,
       gross_at_market_base: Math.round(gross * 100) / 100,
       implied_fee_base: Math.round(fee * 100) / 100,
+      // Unknown fee → flagged so the fee algorithm skips it (not a real 0).
+      fee_unknown: !!input.feeUnknown,
       fx_locked: true,
     })
     .eq("id", paymentId);
