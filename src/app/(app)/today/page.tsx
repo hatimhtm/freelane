@@ -6,6 +6,7 @@ import {
   topClients,
   dailySeries,
 } from "@/lib/dashboard-calc";
+import { monthlyFeeBase } from "@/lib/payment-chain";
 import { hasGemini } from "@/lib/ai/gemini";
 import { readFocusCache } from "@/lib/ai/actions";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
@@ -25,7 +26,7 @@ export default async function TodayPage() {
   ]);
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
-  const recurringFee = methods.reduce((s, m) => s + Number(m.monthly_fee_php ?? 0), 0);
+  const recurringFee = methods.reduce((s, m) => s + monthlyFeeBase(m, rates), 0);
 
   const metrics = cashflowMetrics(payments, new Date(), recurringFee);
   const rows = outstanding(projects, payments, clients, rates);

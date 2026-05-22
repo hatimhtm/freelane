@@ -7,7 +7,7 @@ import {
   revenueSeries,
   dailySeries,
 } from "@/lib/dashboard-calc";
-import { methodLeaderboard, chainSignature, paymentFee } from "@/lib/payment-chain";
+import { methodLeaderboard, chainSignature, paymentFee, monthlyFeeBase } from "@/lib/payment-chain";
 import { hasGemini } from "@/lib/ai/gemini";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode, PaymentMethod } from "@/lib/supabase/types";
@@ -23,7 +23,7 @@ export default async function DashboardPage() {
     await getDashboardData();
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
-  const recurringFee = methods.reduce((s, m) => s + Number(m.monthly_fee_php ?? 0), 0);
+  const recurringFee = methods.reduce((s, m) => s + monthlyFeeBase(m, rates), 0);
 
   const metrics = cashflowMetrics(payments, new Date(), recurringFee);
   const rows = outstanding(projects, payments, clients, rates);
@@ -66,7 +66,7 @@ export default async function DashboardPage() {
   const avgDaysToPayment = lags.length ? lags.reduce((a, b) => a + b, 0) / lags.length : null;
 
   const methodsById = new Map<string, PaymentMethod>(methods.map((m) => [m.id, m]));
-  const leaderboard = methodLeaderboard(payments, stepsByPayment, methodsById);
+  const leaderboard = methodLeaderboard(payments, stepsByPayment, methodsById, rates);
 
   // ── Donut: landed income by client (top 5 + "Other") ──
   const clientsTop = topClients(payments, projects, clients, 5);

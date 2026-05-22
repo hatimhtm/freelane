@@ -6,7 +6,7 @@ import {
   topClients,
   revenueSeries,
 } from "@/lib/dashboard-calc";
-import { methodLeaderboard, chainSignature, paymentFee } from "@/lib/payment-chain";
+import { methodLeaderboard, chainSignature, paymentFee, monthlyFeeBase } from "@/lib/payment-chain";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode, PaymentMethod } from "@/lib/supabase/types";
 import type { BlockedRow } from "@/components/app/blocked-money-list";
@@ -54,7 +54,7 @@ export async function buildMetricData(key: MetricKey): Promise<MetricData> {
     await getDashboardData();
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
-  const recurringFee = methods.reduce((s, m) => s + Number(m.monthly_fee_php ?? 0), 0);
+  const recurringFee = methods.reduce((s, m) => s + monthlyFeeBase(m, rates), 0);
   const now = new Date();
   const metrics = cashflowMetrics(payments, now, recurringFee);
 
@@ -202,6 +202,7 @@ export async function buildMetricData(key: MetricKey): Promise<MetricData> {
         payments,
         stepsByPayment,
         methodsById,
+        rates,
       );
 
       const highestFee = payments

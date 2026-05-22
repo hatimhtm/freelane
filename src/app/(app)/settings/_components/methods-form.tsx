@@ -82,6 +82,7 @@ export function MethodsForm({ methods, currencies, baseCurrency }: { methods: Pa
       <Dialog open={creating} onOpenChange={setCreating}>
         <MethodDialog
           currencies={currencies}
+          baseCurrency={baseCurrency}
           onSubmit={async (values) => {
             try { await createPaymentMethod(values); toast.success("Method added"); setCreating(false); router.refresh(); }
             catch (err) { toast.error((err as Error).message); }
@@ -93,6 +94,7 @@ export function MethodsForm({ methods, currencies, baseCurrency }: { methods: Pa
           <MethodDialog
             initial={editing}
             currencies={currencies}
+            baseCurrency={baseCurrency}
             onSubmit={async (values) => {
               try { await updatePaymentMethod(editing.id, values); toast.success("Method updated"); setEditing(null); router.refresh(); }
               catch (err) { toast.error((err as Error).message); }
@@ -119,7 +121,7 @@ function MethodRow({ m, baseCurrency, last, onEdit, onArchive, onDelete }: { m: 
           <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{KIND_LABEL[m.kind] ?? m.kind}</span>
         </div>
         <div className="mt-0.5 text-xs text-muted-foreground tabular">
-          {Number(m.monthly_fee_php) > 0 ? `${formatMoney(Number(m.monthly_fee_php), baseCurrency as CurrencyCode, { compact: true })}/mo fee` : "no monthly fee"}
+          {Number(m.monthly_fee_php) > 0 ? `${formatMoney(Number(m.monthly_fee_php), (m.monthly_fee_currency ?? baseCurrency) as CurrencyCode, { compact: true })}/mo fee` : "no monthly fee"}
           {m.currency_in || m.currency_out ? ` · ${m.currency_in ?? "any"} → ${m.currency_out ?? "any"}` : ""}
         </div>
       </div>
@@ -142,15 +144,16 @@ function IconBtn({ children, onClick, label, danger }: { children: React.ReactNo
   );
 }
 
-type MethodValues = { name: string; kind: string; currency_in: string | null; currency_out: string | null; monthly_fee_php: number; notes: string | null };
+type MethodValues = { name: string; kind: string; currency_in: string | null; currency_out: string | null; monthly_fee_php: number; monthly_fee_currency: string | null; notes: string | null };
 
-function MethodDialog({ initial, currencies, onSubmit }: { initial?: PaymentMethod; currencies: Currency[]; onSubmit: (v: MethodValues) => Promise<void> }) {
+function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial?: PaymentMethod; currencies: Currency[]; baseCurrency: string; onSubmit: (v: MethodValues) => Promise<void> }) {
   const [v, setV] = useState({
     name: initial?.name ?? "",
     kind: initial?.kind ?? "wallet",
     currency_in: initial?.currency_in ?? "",
     currency_out: initial?.currency_out ?? "",
     monthly_fee_php: initial?.monthly_fee_php ?? 0,
+    monthly_fee_currency: initial?.monthly_fee_currency ?? baseCurrency,
     notes: initial?.notes ?? "",
   });
   const [pending, start] = useTransition();
@@ -165,6 +168,7 @@ function MethodDialog({ initial, currencies, onSubmit }: { initial?: PaymentMeth
         currency_in: v.currency_in || null,
         currency_out: v.currency_out || null,
         monthly_fee_php: Number(v.monthly_fee_php) || 0,
+        monthly_fee_currency: v.monthly_fee_currency || null,
         notes: v.notes.trim() || null,
       });
     });
@@ -188,7 +192,19 @@ function MethodDialog({ initial, currencies, onSubmit }: { initial?: PaymentMeth
           </div>
           <div>
             <Label className="text-xs">Monthly fee</Label>
-            <Input type="number" inputMode="decimal" step="0.01" value={v.monthly_fee_php} onChange={(e) => setV({ ...v, monthly_fee_php: Number(e.target.value) })} />
+            <div className="flex gap-1.5">
+              <Input className="flex-1" type="number" inputMode="decimal" step="0.01" value={v.monthly_fee_php} onChange={(e) => setV({ ...v, monthly_fee_php: Number(e.target.value) })} />
+              <Select
+                items={currencies.map((c) => ({ value: c.code, label: c.code }))}
+                value={v.monthly_fee_currency}
+                onValueChange={(val) => val && setV({ ...v, monthly_fee_currency: val })}
+              >
+                <SelectTrigger className="w-20 shrink-0"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {currencies.map((c) => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div>
             <Label className="text-xs">Takes (currency in)</Label>

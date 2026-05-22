@@ -1012,6 +1012,7 @@ export type PaymentMethodInput = {
   currency_in?: string | null;
   currency_out?: string | null;
   monthly_fee_php?: number;
+  monthly_fee_currency?: string | null;
   notes?: string | null;
 };
 
@@ -1026,6 +1027,7 @@ export async function createPaymentMethod(input: PaymentMethodInput) {
       currency_in: input.currency_in ?? null,
       currency_out: input.currency_out ?? null,
       monthly_fee_php: input.monthly_fee_php ?? 0,
+      monthly_fee_currency: input.monthly_fee_currency ?? null,
       notes: input.notes ?? null,
     })
     .select("id")

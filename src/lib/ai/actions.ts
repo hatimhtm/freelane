@@ -4,7 +4,7 @@ import { Type } from "@google/genai";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
 import { gemini, MODEL, hasGemini } from "./gemini";
-import { methodLeaderboard, chainSignature, sortedSteps } from "@/lib/payment-chain";
+import { methodLeaderboard, chainSignature, sortedSteps, monthlyFeeBase } from "@/lib/payment-chain";
 import { cashflowMetrics, outstanding } from "@/lib/dashboard-calc";
 import { formatMoney } from "@/lib/money";
 import type {
@@ -58,7 +58,7 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
   const rows = outstanding(projects, payments, clients, rates);
   const projectsById = new Map(projects.map((p) => [p.id, p]));
   const methodsById = new Map(methods.map((m) => [m.id, m]));
-  const leaderboard = methodLeaderboard(payments, stepsByPayment, methodsById);
+  const leaderboard = methodLeaderboard(payments, stepsByPayment, methodsById, rates);
 
   const m = (n: number) => formatMoney(n, currency, { compact: true });
 
@@ -102,7 +102,7 @@ ${rows.slice(0, 10).map((r) => `- ${r.client?.name ?? "?"}: ${r.project.title} $
 PAYMENT ROUTES by effective fee (cheapest first):
 ${leaderboard.slice(0, 8).map((l) => `- ${l.signature}: ${(l.effectivePct * 100).toFixed(1)}% over ${l.count} payments (${m(l.volumeBase)})${l.monthlyFeesBase > 0 ? ` + ${m(l.monthlyFeesBase)}/mo fixed` : ""}`).join("\n") || "- none tagged yet"}
 
-METHODS: ${methods.map((mm) => `${mm.name}${Number(mm.monthly_fee_php) > 0 ? ` (${m(Number(mm.monthly_fee_php))}/mo)` : ""}`).join(", ") || "none"}
+METHODS: ${methods.map((mm) => { const f = monthlyFeeBase(mm, rates); return `${mm.name}${f > 0 ? ` (${m(f)}/mo)` : ""}`; }).join(", ") || "none"}
 
 RECENT PAYMENTS (with chain + fee):
 ${recent.join("\n") || "- none"}`;

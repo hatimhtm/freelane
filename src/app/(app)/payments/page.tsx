@@ -20,7 +20,7 @@ export default async function PaymentsPage({
   const projectsById = new Map(projects.map((p) => [p.id, p]));
   const clientsById = new Map(clients.map((c) => [c.id, c]));
 
-  const leaderboard = methodLeaderboard(payments, stepsByPayment, methodsById);
+  const leaderboard = methodLeaderboard(payments, stepsByPayment, methodsById, rates);
 
   const rows: PaymentRow[] = payments.map((p) => {
     const steps = sortedSteps(stepsByPayment.get(p.id) ?? []);

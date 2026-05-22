@@ -25,6 +25,20 @@ export function paymentFee(payment: Pick<Payment, "gross_at_market_base" | "net_
   return { gross, net, fee, pct };
 }
 
+// A method's recurring monthly fee, converted to base currency. The amount is
+// stored in monthly_fee_php and denominated in monthly_fee_currency (null =
+// already base). Pass rates to convert; without them it's treated as base.
+export function monthlyFeeBase(
+  method: Pick<PaymentMethod, "monthly_fee_php" | "monthly_fee_currency">,
+  rates?: Pick<ExchangeRate, "code" | "rate_to_base">[],
+): number {
+  const amount = Number(method.monthly_fee_php ?? 0);
+  if (amount <= 0) return 0;
+  const cur = method.monthly_fee_currency;
+  if (!cur || !rates) return amount;
+  return toBase(amount, cur as CurrencyCode, rates);
+}
+
 // ───────────────────────────────────────── Chain helpers ──
 
 export function sortedSteps(steps: PaymentStep[]): PaymentStep[] {
@@ -83,6 +97,7 @@ export function methodLeaderboard(
   payments: Payment[],
   stepsByPayment: Map<string, PaymentStep[]>,
   methodsById: Map<string, PaymentMethod>,
+  rates?: Pick<ExchangeRate, "code" | "rate_to_base">[],
 ): MethodLeaderboardRow[] {
   const rows = new Map<string, MethodLeaderboardRow>();
   // distinct method ids per signature → for summing recurring monthly fees
@@ -122,10 +137,10 @@ export function methodLeaderboard(
     // Recurring monthly fees of the distinct rails this chain uses — a chain
     // can look cheap per-transaction yet carry a fixed monthly cost.
     const ids = methodsBySignature.get(signature) ?? new Set<string>();
-    row.monthlyFeesBase = Array.from(ids).reduce(
-      (s, id) => s + Number(methodsById.get(id)?.monthly_fee_php ?? 0),
-      0,
-    );
+    row.monthlyFeesBase = Array.from(ids).reduce((s, id) => {
+      const method = methodsById.get(id);
+      return s + (method ? monthlyFeeBase(method, rates) : 0);
+    }, 0);
   }
 
   // Cheapest first — that's the recommendation order.

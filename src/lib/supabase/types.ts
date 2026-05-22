@@ -217,7 +217,10 @@ export interface PaymentMethod {
   kind: PaymentMethodKind;
   currency_in: CurrencyCode | null;
   currency_out: CurrencyCode | null;
+  // Recurring monthly fee amount, denominated in monthly_fee_currency.
+  // monthly_fee_currency null → the amount is already in the base currency.
   monthly_fee_php: number;
+  monthly_fee_currency: CurrencyCode | null;
   notes: string | null;
   archived: boolean;
   created_at: string;
