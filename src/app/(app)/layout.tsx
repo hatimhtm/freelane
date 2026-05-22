@@ -5,6 +5,7 @@ import { TopBar } from "@/components/app/top-bar";
 import { PageTransition } from "@/components/app/page-transition";
 import { BackgroundOrbs } from "@/components/app/background-orbs";
 import { FxAutoRefresh } from "@/components/app/fx-auto-refresh";
+import { MetricSheetProvider } from "@/components/app/metric-sheet";
 
 export default async function AppLayout({
   children,
@@ -22,7 +23,9 @@ export default async function AppLayout({
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main className="min-w-0 flex-1 scroll-muted overflow-auto">
-          <PageTransition>{children}</PageTransition>
+          <MetricSheetProvider>
+            <PageTransition>{children}</PageTransition>
+          </MetricSheetProvider>
         </main>
       </div>
     </div>

@@ -13,6 +13,7 @@ import { BarsChart } from "@/components/stats/bars-chart";
 import { BlockedMoneyList, type BlockedRow } from "@/components/app/blocked-money-list";
 import { MethodLeaderboard } from "@/components/app/method-leaderboard";
 import { AiPanel } from "@/components/app/ai-panel";
+import { MetricTrigger } from "@/components/app/metric-sheet";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { CurrencyCode } from "@/lib/supabase/types";
@@ -107,7 +108,7 @@ export function DashboardView({
         <div className="mt-10 space-y-10">
           {/* Hero: masthead + pending panel */}
           <section className="grid items-end gap-8 lg:grid-cols-[1.5fr_1fr]">
-            <Link href="/metric/landed" className="block lift -m-2 rounded-xl p-2">
+            <MetricTrigger metricKey="landed" className="lift -m-2 rounded-xl p-2">
               <MastheadStat
                 eyebrow="Landed this month"
                 value={metrics.mtd}
@@ -127,7 +128,7 @@ export function DashboardView({
                   </span>
                 }
               />
-            </Link>
+            </MetricTrigger>
             <PendingPanel total={pendingTotal} count={pendingCount} currency={currency} />
           </section>
 
@@ -136,31 +137,34 @@ export function DashboardView({
 
           {/* Metric tiles */}
           <section className="grid gap-4 sm:grid-cols-3">
-            <MetricTile
-              label="Fees this month"
-              value={metrics.feesMtd}
-              currency={currency}
-              icon={Receipt}
-              hint="rails + FX markup"
-              href="/metric/fees"
-              delay={0.02}
-            />
-            <MetricTile
-              label="Avg days to payment"
-              text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
-              icon={Hourglass}
-              hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
-              href="/metric/avg-days"
-              delay={0.06}
-            />
-            <MetricTile
-              label="Biggest debtor"
-              text={biggestDebtor?.name ?? "—"}
-              icon={UserX}
-              hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
-              href="/metric/debtor"
-              delay={0.1}
-            />
+            <MetricTrigger metricKey="fees" className="h-full">
+              <MetricTile
+                label="Fees this month"
+                value={metrics.feesMtd}
+                currency={currency}
+                icon={Receipt}
+                hint="rails + FX markup"
+                delay={0.02}
+              />
+            </MetricTrigger>
+            <MetricTrigger metricKey="avg-days" className="h-full">
+              <MetricTile
+                label="Avg days to payment"
+                text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
+                icon={Hourglass}
+                hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
+                delay={0.06}
+              />
+            </MetricTrigger>
+            <MetricTrigger metricKey="debtor" className="h-full">
+              <MetricTile
+                label="Biggest debtor"
+                text={biggestDebtor?.name ?? "—"}
+                icon={UserX}
+                hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
+                delay={0.1}
+              />
+            </MetricTrigger>
           </section>
 
           {/* Ask your money */}
@@ -272,9 +276,9 @@ function PendingPanel({ total, count, currency }: { total: number; count: number
         <p className="mt-2 text-xs text-muted-foreground">
           Across {count} open {count === 1 ? "project" : "projects"}, valued at today&apos;s rates — moves with FX until paid.
         </p>
-        <Link href="/metric/outstanding" className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline">
+        <MetricTrigger metricKey="outstanding" className="mt-4 inline-flex w-auto items-center gap-1 text-xs font-medium text-foreground hover:underline">
           View outstanding <ArrowUpRight className="size-3" />
-        </Link>
+        </MetricTrigger>
       </Card>
     </motion.div>
   );

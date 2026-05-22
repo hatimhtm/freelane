@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import { Card } from "@/components/ui/card";
 import { MastheadStat, MetricTile, DeltaChip } from "@/components/stats/stat";
 import { AiPanel } from "@/components/app/ai-panel";
+import { MetricTrigger } from "@/components/app/metric-sheet";
 import { TodaysFocus } from "@/components/app/todays-focus";
 import { BlockedMoneyList, type BlockedRow } from "@/components/app/blocked-money-list";
 import { Reveal } from "@/components/motion/reveal";
@@ -97,16 +98,18 @@ export function TodayView({
       <div className="mt-8 space-y-10">
         {/* Hero: masthead number with daily sparkline */}
         <section className="grid items-end gap-8 lg:grid-cols-[1.6fr_1fr]">
-          <MastheadStat
-            eyebrow="Landed this month"
-            value={metrics.mtd}
-            currency={currency}
-            delta={metrics.momDelta}
-            series={series}
-            support={
-              <span className="text-base leading-snug text-foreground/80">{situation}</span>
-            }
-          />
+          <MetricTrigger metricKey="landed" className="lift -m-2 rounded-xl p-2">
+            <MastheadStat
+              eyebrow="Landed this month"
+              value={metrics.mtd}
+              currency={currency}
+              delta={metrics.momDelta}
+              series={series}
+              support={
+                <span className="text-base leading-snug text-foreground/80">{situation}</span>
+              }
+            />
+          </MetricTrigger>
           <Reveal delay={0.2}>
             <Card className="border-border/70 p-6">
               <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
@@ -120,12 +123,12 @@ export function TodayView({
                 Across {pendingCount} open {pendingCount === 1 ? "project" : "projects"}, valued at
                 today&apos;s rates — moves with FX until paid.
               </p>
-              <Link
-                href="/metric/outstanding"
-                className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline"
+              <MetricTrigger
+                metricKey="outstanding"
+                className="mt-4 inline-flex w-auto items-center gap-1 text-xs font-medium text-foreground hover:underline"
               >
                 View outstanding <ArrowUpRight className="size-3" />
-              </Link>
+              </MetricTrigger>
             </Card>
           </Reveal>
         </section>
@@ -158,60 +161,66 @@ export function TodayView({
 
         {/* Richer metric grid */}
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <MetricTile
-            label="This week"
-            value={metrics.wtd}
-            currency={currency}
-            delta={metrics.wowDelta}
-            hint="landed · WoW"
-            icon={CalendarRange}
-            href="/metric/landed"
-            delay={0.02}
-          />
-          <MetricTile
-            label="Outstanding"
-            value={pendingTotal}
-            currency={currency}
-            hint={`${pendingCount} open ${pendingCount === 1 ? "project" : "projects"}`}
-            icon={Hourglass}
-            accent
-            href="/metric/outstanding"
-            delay={0.05}
-          />
-          <MetricTile
-            label="Fees this month"
-            value={metrics.feesMtd}
-            currency={currency}
-            hint="rails + FX markup"
-            icon={Receipt}
-            href="/metric/fees"
-            delay={0.08}
-          />
-          <MetricTile
-            label="Avg days to payment"
-            text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
-            hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
-            icon={Hourglass}
-            href="/metric/avg-days"
-            delay={0.11}
-          />
-          <MetricTile
-            label="Biggest debtor"
-            text={biggestDebtor?.name ?? "—"}
-            hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
-            icon={UserX}
-            href="/metric/debtor"
-            delay={0.14}
-          />
-          <MetricTile
-            label={`Year to date`}
-            value={metrics.ytd}
-            currency={currency}
-            hint={`${year} so far`}
-            icon={CalendarRange}
-            href="/metric/landed"
-            delay={0.17}
-          />
+          <MetricTrigger metricKey="landed" className="h-full">
+            <MetricTile
+              label="This week"
+              value={metrics.wtd}
+              currency={currency}
+              delta={metrics.wowDelta}
+              hint="landed · WoW"
+              icon={CalendarRange}
+              delay={0.02}
+            />
+          </MetricTrigger>
+          <MetricTrigger metricKey="outstanding" className="h-full">
+            <MetricTile
+              label="Outstanding"
+              value={pendingTotal}
+              currency={currency}
+              hint={`${pendingCount} open ${pendingCount === 1 ? "project" : "projects"}`}
+              icon={Hourglass}
+              accent
+              delay={0.05}
+            />
+          </MetricTrigger>
+          <MetricTrigger metricKey="fees" className="h-full">
+            <MetricTile
+              label="Fees this month"
+              value={metrics.feesMtd}
+              currency={currency}
+              hint="rails + FX markup"
+              icon={Receipt}
+              delay={0.08}
+            />
+          </MetricTrigger>
+          <MetricTrigger metricKey="avg-days" className="h-full">
+            <MetricTile
+              label="Avg days to payment"
+              text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
+              hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
+              icon={Hourglass}
+              delay={0.11}
+            />
+          </MetricTrigger>
+          <MetricTrigger metricKey="debtor" className="h-full">
+            <MetricTile
+              label="Biggest debtor"
+              text={biggestDebtor?.name ?? "—"}
+              hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
+              icon={UserX}
+              delay={0.14}
+            />
+          </MetricTrigger>
+          <MetricTrigger metricKey="landed" className="h-full">
+            <MetricTile
+              label={`Year to date`}
+              value={metrics.ytd}
+              currency={currency}
+              hint={`${year} so far`}
+              icon={CalendarRange}
+              delay={0.17}
+            />
+          </MetricTrigger>
         </section>
 
         {/* What needs you + recent payments */}

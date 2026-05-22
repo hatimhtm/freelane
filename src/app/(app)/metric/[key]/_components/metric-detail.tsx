@@ -115,6 +115,22 @@ export type MetricData =
       };
     };
 
+// Just the per-metric breakdown — no page chrome. Reused by the full-page
+// route (deep link) and the half-screen MetricSheet.
+export function MetricDetailBody({ data, className }: { data: MetricData; className?: string }) {
+  return (
+    <div className={cn("space-y-10", className)}>
+      {data.key === "landed" && <LandedDetail d={data.landed} currency={data.currency} />}
+      {data.key === "outstanding" && (
+        <OutstandingDetail d={data.outstanding} currency={data.currency} />
+      )}
+      {data.key === "fees" && <FeesDetail d={data.fees} currency={data.currency} />}
+      {data.key === "avg-days" && <AvgDaysDetail d={data.avgDays} />}
+      {data.key === "debtor" && <DebtorDetail d={data.debtor} currency={data.currency} />}
+    </div>
+  );
+}
+
 export function MetricDetail({
   data,
   title,
@@ -137,15 +153,7 @@ export function MetricDetail({
         <PageHeader title={title} description={description} />
       </div>
 
-      <div className="mt-10 space-y-10">
-        {data.key === "landed" && <LandedDetail d={data.landed} currency={data.currency} />}
-        {data.key === "outstanding" && (
-          <OutstandingDetail d={data.outstanding} currency={data.currency} />
-        )}
-        {data.key === "fees" && <FeesDetail d={data.fees} currency={data.currency} />}
-        {data.key === "avg-days" && <AvgDaysDetail d={data.avgDays} />}
-        {data.key === "debtor" && <DebtorDetail d={data.debtor} currency={data.currency} />}
-      </div>
+      <MetricDetailBody data={data} className="mt-10" />
     </div>
   );
 }
