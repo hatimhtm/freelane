@@ -84,7 +84,7 @@ export function ClientList({
 
   return (
     <>
-      <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid auto-rows-fr items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {clients.map((c, i) => (
           <motion.div
             key={c.id}
@@ -104,7 +104,7 @@ export function ClientList({
                 }
               }}
               className={cn(
-                "group relative flex h-full flex-col p-5 cursor-pointer transition-all hover:-translate-y-0.5 hover:border-border hover:shadow-md",
+                "group relative flex h-full min-h-[15rem] flex-col p-5 cursor-pointer transition-all hover:-translate-y-0.5 hover:border-border hover:shadow-md",
                 c.archived && "opacity-60",
               )}
             >
@@ -165,17 +165,21 @@ export function ClientList({
                 </div>
               </div>
 
-              {/* AI memory tags — the watch flags (red) say the most at a glance. */}
+              {/* AI memory tags — watch flags (red) first, capped at 2 so every
+                  card stays the same height. */}
               {(c.watch.length > 0 || c.facts.length > 0) && (
                 <div className="mt-4 flex flex-wrap items-center gap-1.5">
-                  {c.watch.map((w, idx) => (
-                    <span key={`w${idx}`} className="truncate rounded-full bg-[var(--overdue)]/12 px-2 py-0.5 text-[10px] font-medium text-[var(--overdue)]">
-                      {w}
-                    </span>
-                  ))}
-                  {c.watch.length === 0 && c.facts.map((f, idx) => (
-                    <span key={`f${idx}`} className="truncate rounded-full border border-[var(--brand)]/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      {f}
+                  {(c.watch.length > 0 ? c.watch : c.facts).slice(0, 2).map((t, idx) => (
+                    <span
+                      key={idx}
+                      className={cn(
+                        "max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-medium",
+                        c.watch.length > 0
+                          ? "bg-[var(--overdue)]/12 text-[var(--overdue)]"
+                          : "border border-[var(--brand)]/40 text-muted-foreground",
+                      )}
+                    >
+                      {t}
                     </span>
                   ))}
                 </div>

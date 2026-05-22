@@ -99,8 +99,8 @@ export function BarsChart({
               dataKey={s.key}
               stackId={stacked ? "a" : undefined}
               fill={s.color}
-              radius={stacked ? (i === series.length - 1 ? [7, 7, 0, 0] : [0, 0, 0, 0]) : [7, 7, 7, 7]}
-              maxBarSize={46}
+              radius={stacked ? (i === series.length - 1 ? [12, 12, 0, 0] : [0, 0, 0, 0]) : [12, 12, 12, 12]}
+              maxBarSize={44}
               isAnimationActive={inView && !reduced}
               animationDuration={900}
               animationBegin={i * 120}

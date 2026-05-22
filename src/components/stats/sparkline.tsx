@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 // straight ruler segments. Tension keeps it gentle without overshooting wildly.
 function smoothPath(points: readonly (readonly [number, number])[]): string {
   if (points.length < 2) return "";
-  const t = 0.2;
+  const t = 0.32;
   const d = [`M${points[0][0].toFixed(1)},${points[0][1].toFixed(1)}`];
   for (let i = 0; i < points.length - 1; i++) {
     const p0 = points[i - 1] ?? points[i];
