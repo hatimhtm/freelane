@@ -3,11 +3,12 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Trash2, Plus, Bookmark, X } from "lucide-react";
+import { Trash2, Plus, Bookmark, X, ChevronDown, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Sheet,
@@ -32,6 +33,7 @@ import {
   deletePayment,
   deleteProject,
   deleteProjectTemplate,
+  updatePaymentDetails,
   updateProject,
 } from "@/lib/data/actions";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
@@ -44,6 +46,7 @@ import type {
   ProjectTemplate,
 } from "@/lib/supabase/types";
 import { formatMoney } from "@/lib/money";
+import { cn } from "@/lib/utils";
 
 const CURRENCIES = ["PHP", "MAD", "USD", "EUR", "CNY"];
 
@@ -416,6 +419,43 @@ function PaymentsSection({
   const [method, setMethod] = useState("");
   const [pending, start] = useTransition();
 
+  // Load the medium options + base currency + each payment's current method so
+  // the per-payment editor can preselect and tag the rail.
+  const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
+  const [baseCurrency, setBaseCurrency] = useState("PHP");
+  const [methodByPayment, setMethodByPayment] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    const supabase = createBrowserSupabase();
+    (async () => {
+      const [{ data: m }, { data: s }] = await Promise.all([
+        supabase.from("payment_methods").select("id,name,archived").eq("archived", false).order("name"),
+        supabase.from("settings").select("base_currency").maybeSingle(),
+      ]);
+      setMethods(((m ?? []) as { id: string; name: string }[]).map((x) => ({ id: x.id, name: x.name })));
+      if (s?.base_currency) setBaseCurrency(s.base_currency as string);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (payments.length === 0) return;
+    const supabase = createBrowserSupabase();
+    (async () => {
+      const { data } = await supabase
+        .from("payment_steps")
+        .select("payment_id,method_id,step_order,is_final")
+        .in("payment_id", payments.map((p) => p.id));
+      const map: Record<string, string | null> = {};
+      for (const p of payments) {
+        const steps = ((data ?? []) as { payment_id: string; method_id: string | null; step_order: number; is_final: boolean }[])
+          .filter((s) => s.payment_id === p.id)
+          .sort((a, b) => a.step_order - b.step_order);
+        map[p.id] = (steps.find((s) => s.is_final) ?? steps[steps.length - 1])?.method_id ?? null;
+      }
+      setMethodByPayment(map);
+    })();
+  }, [payments]);
+
   const totalPaid = payments
     .filter((p) => p.currency === project.currency)
     .reduce((s, p) => s + Number(p.amount), 0);
@@ -497,28 +537,139 @@ function PaymentsSection({
       {payments.length > 0 && (
         <ul className="mt-3 divide-y divide-border/60 rounded-lg border border-border/60 bg-muted/30">
           {payments.map((p) => (
-            <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
-              <div>
-                <div className="tabular">{formatMoney(Number(p.amount), p.currency)}</div>
-                <div className="text-xs text-muted-foreground">
-                  {new Date(p.paid_at).toLocaleDateString()}
-                  {p.method && <> · {p.method}</>}
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                onClick={() => onRemove(p.id)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </li>
+            <PaymentEditRow
+              key={p.id}
+              payment={p}
+              methods={methods}
+              baseCurrency={baseCurrency}
+              currentMethodId={methodByPayment[p.id] ?? null}
+              onRemove={() => onRemove(p.id)}
+              onSaved={() => { onRefresh(); router.refresh(); }}
+            />
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+// One past payment, expandable to edit the medium, the actual received, or to
+// mark the fee as unknown (counts as 0). Mirrors the Payments-page editor.
+function PaymentEditRow({
+  payment,
+  methods,
+  baseCurrency,
+  currentMethodId,
+  onRemove,
+  onSaved,
+}: {
+  payment: Payment;
+  methods: { id: string; name: string }[];
+  baseCurrency: string;
+  currentMethodId: string | null;
+  onRemove: () => void;
+  onSaved: () => void;
+}) {
+  const NONE = "__none__";
+  const [open, setOpen] = useState(false);
+  const [methodId, setMethodId] = useState(currentMethodId ?? NONE);
+  const [feeUnknown, setFeeUnknown] = useState(false);
+  const [net, setNet] = useState(
+    payment.net_amount_base != null ? String(Math.round(Number(payment.net_amount_base))) : "",
+  );
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setMethodId(currentMethodId ?? NONE); }, [currentMethodId]);
+
+  const methodName = methods.find((m) => m.id === currentMethodId)?.name;
+
+  async function save() {
+    const n = Number(net);
+    if (!feeUnknown && net !== "" && (!Number.isFinite(n) || n < 0)) {
+      toast.error("Enter the amount you actually received, or tick “I don't know the fee”");
+      return;
+    }
+    setSaving(true);
+    try {
+      await updatePaymentDetails(payment.id, {
+        methodId: methodId === NONE ? null : methodId,
+        netReceivedBase: net === "" ? undefined : n,
+        feeUnknown,
+      });
+      toast.success(feeUnknown ? "Saved — fee counted as 0" : "Payment updated");
+      setOpen(false);
+      onSaved();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <li className="text-sm">
+      <div className="flex items-center justify-between gap-2 px-3 py-2">
+        <button type="button" onClick={() => setOpen((o) => !o)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+          <span className="min-w-0">
+            <span className="tabular">{formatMoney(Number(payment.amount), payment.currency)}</span>
+            <span className="ml-2 text-xs text-muted-foreground">
+              {new Date(payment.paid_at).toLocaleDateString()}
+              {methodName ? <> · {methodName}</> : payment.method ? <> · {payment.method}</> : null}
+            </span>
+          </span>
+        </button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => setOpen((o) => !o)} aria-label="Edit payment">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={onRemove} aria-label="Remove payment">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {open && (
+        <div className="space-y-2.5 px-3 pb-3">
+          <div>
+            <Label className="text-[11px] text-muted-foreground">How you got paid</Label>
+            <Select
+              items={[{ value: NONE, label: "Untagged" }, ...methods.map((m) => ({ value: m.id, label: m.name }))]}
+              value={methodId}
+              onValueChange={(v) => v && setMethodId(v)}
+            >
+              <SelectTrigger className="mt-1 h-8 w-full text-sm"><SelectValue placeholder="Pick a method" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Untagged</SelectItem>
+                {methods.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-[11px] text-muted-foreground">Actual received ({baseCurrency})</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              value={feeUnknown ? "" : net}
+              disabled={feeUnknown}
+              placeholder={feeUnknown ? "fee counted as 0" : "what actually landed"}
+              onChange={(e) => setNet(e.target.value)}
+              className="mt-1 h-8 text-sm tabular"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
+              <Checkbox checked={feeUnknown} onCheckedChange={(c) => setFeeUnknown(c === true)} />
+              I don&apos;t know the fee (count it as 0)
+            </label>
+            <Button type="button" size="sm" className="h-8" disabled={saving} onClick={save}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </li>
   );
 }
 
