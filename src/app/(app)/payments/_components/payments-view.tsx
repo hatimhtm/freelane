@@ -170,7 +170,7 @@ function PaymentItem({ row, baseCurrency, methods, last, index }: { row: Payment
         netReceivedBase: net,
         feeUnknown,
       });
-      toast.success(feeUnknown ? "Saved — fee counted as 0" : "Updated — fee recalculated");
+      toast.success(feeUnknown ? "Saved — fee left out of stats" : "Updated — fee recalculated");
       if (res.clientId) void consolidateClientMemoryAction(res.clientId);
       router.refresh();
     } catch (err) {
@@ -266,7 +266,7 @@ function PaymentItem({ row, baseCurrency, methods, last, index }: { row: Payment
                       step="0.01"
                       value={feeUnknown ? "" : val}
                       disabled={feeUnknown}
-                      placeholder={feeUnknown ? "fee counted as 0" : undefined}
+                      placeholder={feeUnknown ? "fee ignored" : undefined}
                       onChange={(e) => setVal(e.target.value)}
                       className="h-8 w-full text-sm tabular"
                     />
@@ -275,7 +275,7 @@ function PaymentItem({ row, baseCurrency, methods, last, index }: { row: Payment
                 <div className="flex items-center justify-between gap-3">
                   <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
                     <Checkbox checked={feeUnknown} onCheckedChange={(c) => setFeeUnknown(c === true)} />
-                    I don&apos;t know the fee (count it as 0)
+                    I don&apos;t know the fee (leave it out of fee stats)
                   </label>
                   <Button size="sm" className="h-8" disabled={saving} onClick={saveDetails}>
                     {saving ? "Saving…" : "Save"}

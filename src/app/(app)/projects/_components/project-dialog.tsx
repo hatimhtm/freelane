@@ -596,7 +596,7 @@ function PaymentEditRow({
         netReceivedBase: net === "" ? undefined : n,
         feeUnknown,
       });
-      toast.success(feeUnknown ? "Saved — fee counted as 0" : "Payment updated");
+      toast.success(feeUnknown ? "Saved — fee left out of stats" : "Payment updated");
       setOpen(false);
       onSaved();
     } catch (err) {
@@ -653,7 +653,7 @@ function PaymentEditRow({
               step="0.01"
               value={feeUnknown ? "" : net}
               disabled={feeUnknown}
-              placeholder={feeUnknown ? "fee counted as 0" : "what actually landed"}
+              placeholder={feeUnknown ? "fee ignored" : "what actually landed"}
               onChange={(e) => setNet(e.target.value)}
               className="mt-1 h-8 text-sm tabular"
             />
@@ -661,7 +661,7 @@ function PaymentEditRow({
           <div className="flex items-center justify-between gap-2">
             <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
               <Checkbox checked={feeUnknown} onCheckedChange={(c) => setFeeUnknown(c === true)} />
-              I don&apos;t know the fee (count it as 0)
+              I don&apos;t know the fee (leave it out of fee stats)
             </label>
             <Button type="button" size="sm" className="h-8" disabled={saving} onClick={save}>
               {saving ? "Saving…" : "Save"}
