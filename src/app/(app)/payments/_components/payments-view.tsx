@@ -10,11 +10,19 @@ import { EmptyState } from "@/components/app/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MetricTile } from "@/components/stats/stat";
 import { MethodLeaderboard } from "@/components/app/method-leaderboard";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { setPaymentReceived, consolidateClientMemoryAction } from "@/lib/data/actions";
+import { updatePaymentDetails, consolidateClientMemoryAction } from "@/lib/data/actions";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { MethodLeaderboardRow } from "@/lib/payment-chain";
 import { ChainSheet } from "./chain-sheet";
@@ -39,6 +47,7 @@ export type PaymentRow = {
   grossBase: number;
   feeBase: number;
   feePct: number;
+  methodId: string | null;
   signature: string;
   steps: ChainStepView[];
 };
@@ -117,7 +126,7 @@ export function PaymentsView({
         ) : (
           <Card className="overflow-hidden p-0">
             {rows.map((r, i) => (
-              <PaymentItem key={r.id} row={r} baseCurrency={currency} last={i === rows.length - 1} index={i} />
+              <PaymentItem key={r.id} row={r} baseCurrency={currency} methods={methods} last={i === rows.length - 1} index={i} />
             ))}
           </Card>
         )}
@@ -137,20 +146,30 @@ export function PaymentsView({
   );
 }
 
-function PaymentItem({ row, baseCurrency, last, index }: { row: PaymentRow; baseCurrency: CurrencyCode; last: boolean; index: number }) {
+function PaymentItem({ row, baseCurrency, methods, last, index }: { row: PaymentRow; baseCurrency: CurrencyCode; methods: { id: string; name: string }[]; last: boolean; index: number }) {
   const router = useRouter();
+  const NONE = "__none__";
   const [open, setOpen] = useState(false);
   const [val, setVal] = useState(String(Math.round(row.netBase)));
+  const [methodId, setMethodId] = useState<string>(row.methodId ?? NONE);
+  const [feeUnknown, setFeeUnknown] = useState(false);
   const [saving, setSaving] = useState(false);
   const multi = row.steps.length > 1;
 
-  async function saveReceived() {
+  async function saveDetails() {
     const net = Number(val);
-    if (!Number.isFinite(net) || net < 0) { toast.error("Enter the amount you actually received"); return; }
+    if (!feeUnknown && (!Number.isFinite(net) || net < 0)) {
+      toast.error("Enter the amount you actually received, or tick “I don't know the fee”");
+      return;
+    }
     setSaving(true);
     try {
-      const res = await setPaymentReceived(row.id, net);
-      toast.success("Updated — fee recalculated");
+      const res = await updatePaymentDetails(row.id, {
+        methodId: methodId === NONE ? null : methodId,
+        netReceivedBase: net,
+        feeUnknown,
+      });
+      toast.success(feeUnknown ? "Saved — fee counted as 0" : "Updated — fee recalculated");
       if (res.clientId) void consolidateClientMemoryAction(res.clientId);
       router.refresh();
     } catch (err) {
@@ -214,26 +233,52 @@ function PaymentItem({ row, baseCurrency, last, index }: { row: PaymentRow; base
                 </span>
               </div>
 
-              {/* Backfill / correct the real amount received — fee is gross − net,
-                  never a guessed %. Works on old payments that never had one. */}
-              <div className="mt-1 rounded-lg border border-border/50 bg-card/70 p-3">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span className="font-medium text-foreground">Actual received (net, {baseCurrency})</span>
-                  <span className="tabular">owed {formatMoney(row.grossBase, baseCurrency, { compact: true })}</span>
+              {/* Edit a past payment: how you got paid + the real amount that
+                  landed. Fee is gross − net, never a guessed %. Tick "I don't
+                  know the fee" and it counts as 0 instead of guessing. */}
+              <div className="mt-1 space-y-2.5 rounded-lg border border-border/50 bg-card/70 p-3">
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  <div>
+                    <div className="mb-1 text-[11px] font-medium text-foreground">How you got paid</div>
+                    <Select
+                      items={[{ value: NONE, label: "Untagged" }, ...methods.map((m) => ({ value: m.id, label: m.name }))]}
+                      value={methodId}
+                      onValueChange={(v) => v && setMethodId(v)}
+                    >
+                      <SelectTrigger className="h-8 w-full text-sm"><SelectValue placeholder="Pick a method" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>Untagged</SelectItem>
+                        {methods.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <div className="mb-1 flex items-center justify-between text-[11px]">
+                      <span className="font-medium text-foreground">Actual received ({baseCurrency})</span>
+                      <span className="tabular text-muted-foreground">owed {formatMoney(row.grossBase, baseCurrency, { compact: true })}</span>
+                    </div>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      value={feeUnknown ? "" : val}
+                      disabled={feeUnknown}
+                      placeholder={feeUnknown ? "fee counted as 0" : undefined}
+                      onChange={(e) => setVal(e.target.value)}
+                      className="h-8 w-full text-sm tabular"
+                    />
+                  </div>
                 </div>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    value={val}
-                    onChange={(e) => setVal(e.target.value)}
-                    className="h-8 w-36 text-sm tabular"
-                  />
-                  <Button size="sm" className="h-8" disabled={saving} onClick={saveReceived}>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
+                    <Checkbox checked={feeUnknown} onCheckedChange={(c) => setFeeUnknown(c === true)} />
+                    I don&apos;t know the fee (count it as 0)
+                  </label>
+                  <Button size="sm" className="h-8" disabled={saving} onClick={saveDetails}>
                     {saving ? "Saving…" : "Save"}
                   </Button>
-                  <span className="text-[11px] text-muted-foreground">fee recalculates automatically</span>
                 </div>
               </div>
             </div>

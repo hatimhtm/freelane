@@ -477,35 +477,45 @@ export async function updatePayment(
   revalidatePath("/dashboard");
 }
 
-// Record the exact base-currency amount that actually landed for a payment —
-// works on ANY payment, including old ones logged before fee tracking (or the
-// auto "Marked paid" rows). The fee is derived, never guessed by %:
+// Edit a past payment's medium + actual received in one go — works on ANY
+// payment, including old ones logged before fee tracking (or the auto "Marked
+// paid" rows). The fee is derived, never guessed by %:
 //   gross = what you were owed at market  (snapshot if present, else amount×rate)
 //   fee   = gross − net                    (the real money the rails + FX ate)
-// Persisting the computed gross keeps future reads stable.
-export async function setPaymentReceived(paymentId: string, netReceivedBase: number) {
+// feeUnknown: you don't remember the cut → net = gross, so the fee counts as 0
+// instead of inflating from a stale net. Persisting gross keeps reads stable.
+export async function updatePaymentDetails(
+  paymentId: string,
+  input: { methodId?: string | null; netReceivedBase?: number; feeUnknown?: boolean },
+) {
   const { supabase, userId } = await userOrThrow();
 
-  const [{ data: payment }, { data: settings }, { data: rates }] = await Promise.all([
+  const [{ data: payment }, { data: settings }, { data: rates }, { data: steps }] = await Promise.all([
     supabase
       .from("payments")
-      .select("id,project_id,amount,currency,gross_at_market_base")
+      .select("id,project_id,amount,currency,gross_at_market_base,net_amount_base")
       .eq("id", paymentId)
       .single(),
     supabase.from("settings").select("base_currency").eq("user_id", userId).maybeSingle(),
     supabase.from("exchange_rates").select("code,rate_to_base").eq("user_id", userId),
+    supabase.from("payment_steps").select("id,step_order,is_final").eq("payment_id", paymentId),
   ]);
   if (!payment) throw new Error("Payment not found");
 
   const baseCurrency = settings?.base_currency ?? "PHP";
   const rateRows = (rates ?? []) as RatePair[];
 
-  const net = Math.max(0, Number(netReceivedBase) || 0);
   // Use the frozen gross if we have it; otherwise value what was owed at today's rate.
   const gross =
     payment.gross_at_market_base != null
       ? Number(payment.gross_at_market_base)
       : toBaseAmount(Number(payment.amount), payment.currency as CurrencyCode, rateRows);
+
+  // net: "I don't know the fee" → net = gross (fee 0). Else the entered amount,
+  // or the existing net if none was passed.
+  const net = input.feeUnknown
+    ? gross
+    : Math.max(0, Number(input.netReceivedBase ?? payment.net_amount_base ?? gross) || 0);
   const fee = Math.max(0, gross - net);
 
   const { error } = await supabase
@@ -519,6 +529,32 @@ export async function setPaymentReceived(paymentId: string, netReceivedBase: num
     .eq("id", paymentId);
   if (error) throw error;
 
+  // Tag the medium. If the chain has steps, set the method on the final hop;
+  // otherwise create a single tagged step so the leaderboard can group it.
+  if (input.methodId !== undefined) {
+    const ordered = (steps ?? []).slice().sort((a, b) => Number(a.step_order) - Number(b.step_order));
+    if (ordered.length > 0) {
+      const finalStep = ordered.find((s) => s.is_final) ?? ordered[ordered.length - 1];
+      const { error: stepErr } = await supabase
+        .from("payment_steps")
+        .update({ method_id: input.methodId })
+        .eq("id", finalStep.id);
+      if (stepErr) throw stepErr;
+    } else {
+      const { error: stepErr } = await supabase.from("payment_steps").insert({
+        payment_id: paymentId,
+        step_order: 1,
+        method_id: input.methodId,
+        amount_in: payment.amount,
+        currency_in: payment.currency,
+        amount_out: Math.round(net * 100) / 100,
+        currency_out: baseCurrency,
+        is_final: true,
+      });
+      if (stepErr) throw stepErr;
+    }
+  }
+
   const { data: project } = await supabase
     .from("projects")
     .select("client_id,title")
@@ -528,11 +564,11 @@ export async function setPaymentReceived(paymentId: string, netReceivedBase: num
   await logEvent({
     userId,
     kind: "payment.updated",
-    title: `Recorded ${baseCurrency} ${net.toFixed(0)} received${project?.title ? ` on ${project.title}` : ""} · fee ${baseCurrency} ${fee.toFixed(0)}`,
+    title: `Updated payment${project?.title ? ` on ${project.title}` : ""} · received ${baseCurrency} ${net.toFixed(0)}, fee ${baseCurrency} ${fee.toFixed(0)}`,
     entityType: "payment",
     entityId: paymentId,
     clientId: (project?.client_id as string) ?? null,
-    metadata: { net_base: net, gross_base: gross, fee_base: fee },
+    metadata: { net_base: net, gross_base: gross, fee_base: fee, fee_unknown: !!input.feeUnknown },
   });
 
   revalidatePath("/today");

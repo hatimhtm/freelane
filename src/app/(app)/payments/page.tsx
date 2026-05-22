@@ -38,6 +38,7 @@ export default async function PaymentsPage({
       grossBase: gross,
       feeBase: fee,
       feePct: pct,
+      methodId: (steps.find((s) => s.is_final) ?? steps[steps.length - 1])?.method_id ?? null,
       signature: chainSignature(steps, methodsById),
       steps: steps.map<ChainStepView>((s) => ({
         order: s.step_order,
