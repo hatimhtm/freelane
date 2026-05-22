@@ -39,23 +39,34 @@ export function TodaysFocus({
     setLoading(true);
     setError(null);
     try {
-      const res = await getDailyFocus({ force });
+      // Don't let a hung request strand the card on a skeleton forever.
+      const res = await Promise.race([
+        getDailyFocus({ force }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Timed out — try again.")), 75_000),
+        ),
+      ]);
       if (res.ok) {
         setInsights(res.insights);
         setGeneratedAt(res.generatedAt);
       } else {
         setError(res.error ?? "Couldn't generate focus.");
       }
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
   }
 
-  // Auto-generate on open if there's nothing yet or it's gone stale (>24h).
+  // Auto-generate on open when there's nothing yet or it's gone stale (>24h).
   useEffect(() => {
     if (!enabled || ranAuto.current) return;
     ranAuto.current = true;
-    const stale = !generatedAt || Date.now() - new Date(generatedAt).getTime() > 24 * 3_600_000;
+    const stale =
+      insights.length === 0 ||
+      !generatedAt ||
+      Date.now() - new Date(generatedAt).getTime() > 24 * 3_600_000;
     if (stale) void run(false);
   }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 

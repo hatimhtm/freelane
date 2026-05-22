@@ -14,6 +14,7 @@ import { BlockedMoneyList, type BlockedRow } from "@/components/app/blocked-mone
 import { MethodLeaderboard } from "@/components/app/method-leaderboard";
 import { AiPanel } from "@/components/app/ai-panel";
 import { MetricTrigger } from "@/components/app/metric-sheet";
+import type { MetricKey } from "@/lib/metric-data";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { CurrencyCode } from "@/lib/supabase/types";
@@ -172,22 +173,22 @@ export function DashboardView({
 
           {/* Revenue + top clients */}
           <section className="grid gap-4 lg:grid-cols-3">
-            <ChartCard className="lg:col-span-2" title="Revenue" subtitle={`Last 6 months · landed ${currency}`}>
+            <ChartCard className="lg:col-span-2" metricKey="landed" title="Revenue" subtitle={`Last 6 months · landed ${currency}`}>
               <TrendAreaChart data={revenue} currency={currency} />
             </ChartCard>
-            <ChartCard delay={0.06} title="Top clients" subtitle={`By landed ${currency}`}>
+            <ChartCard delay={0.06} metricKey="debtor" title="Top clients" subtitle={`By landed ${currency}`}>
               <TopClients data={topClients} currency={currency} />
             </ChartCard>
           </section>
 
           {/* Donut + net vs fee bars */}
           <section className="grid gap-4 lg:grid-cols-2">
-            <ChartCard title="Income by client" subtitle="Top 5 + other · landed">
+            <ChartCard metricKey="landed" title="Income by client" subtitle="Top 5 + other · landed">
               <div className="mt-4">
                 <DonutChart data={incomeByClient} currency={currency} />
               </div>
             </ChartCard>
-            <ChartCard delay={0.06} title="Net vs fees" subtitle="Last 6 months · what you keep vs lose">
+            <ChartCard delay={0.06} metricKey="fees" title="Net vs fees" subtitle="Last 6 months · what you keep vs lose">
               <div className="mt-4">
                 <BarsChart
                   data={netVsFee}
@@ -203,13 +204,13 @@ export function DashboardView({
 
           {/* Income by currency + fees by method + longest outstanding */}
           <section className="grid gap-4 lg:grid-cols-3">
-            <ChartCard title="Income by currency" subtitle={`${year} · landed ${currency}`}>
+            <ChartCard metricKey="landed" title="Income by currency" subtitle={`${year} · landed ${currency}`}>
               <CurrencyBreakdown data={incomeByCurrency} currency={currency} />
             </ChartCard>
-            <ChartCard delay={0.05} title="Where fees went" subtitle={`${year} · by payment chain`}>
+            <ChartCard delay={0.05} metricKey="fees" title="Where fees went" subtitle={`${year} · by payment chain`}>
               <FeesByMethod data={feesByMethod} total={feesYtd} currency={currency} />
             </ChartCard>
-            <ChartCard delay={0.1} title="Longest outstanding" subtitle="Oldest open balance">
+            <ChartCard delay={0.1} metricKey="outstanding" title="Longest outstanding" subtitle="Oldest open balance">
               <LongestOutstanding row={longestOutstanding} currency={currency} />
             </ChartCard>
           </section>
@@ -265,21 +266,23 @@ function PendingPanel({ total, count, currency }: { total: number; count: number
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
     >
-      <Card className="border-border/70 p-6">
-        <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-[var(--overdue)] animate-breathe" />
-          Outstanding
-        </div>
-        <div className="display-numeric mt-3 text-4xl tabular">
-          {formatMoney(total, currency, { compact: true })}
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Across {count} open {count === 1 ? "project" : "projects"}, valued at today&apos;s rates — moves with FX until paid.
-        </p>
-        <MetricTrigger metricKey="outstanding" className="mt-4 inline-flex w-auto items-center gap-1 text-xs font-medium text-foreground hover:underline">
-          View outstanding <ArrowUpRight className="size-3" />
-        </MetricTrigger>
-      </Card>
+      <MetricTrigger metricKey="outstanding" className="lift rounded-xl">
+        <Card className="border-border/70 p-6">
+          <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-[var(--overdue)] animate-breathe" />
+            Outstanding
+          </div>
+          <div className="display-numeric mt-3 text-4xl tabular">
+            {formatMoney(total, currency, { compact: true })}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Across {count} open {count === 1 ? "project" : "projects"}, valued at today&apos;s rates — moves with FX until paid.
+          </p>
+          <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-foreground">
+            View outstanding <ArrowUpRight className="size-3" />
+          </span>
+        </Card>
+      </MetricTrigger>
     </motion.div>
   );
 }
@@ -322,13 +325,22 @@ function ChartCard({
   children,
   className,
   delay = 0,
+  metricKey,
 }: {
   title: string;
   subtitle: string;
   children: React.ReactNode;
   className?: string;
   delay?: number;
+  metricKey?: MetricKey;
 }) {
+  const card = (
+    <Card className="h-full overflow-hidden p-6">
+      <div className="text-sm font-medium">{title}</div>
+      <div className="text-xs text-muted-foreground">{subtitle}</div>
+      {children}
+    </Card>
+  );
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -336,11 +348,13 @@ function ChartCard({
       transition={{ duration: 0.4, delay, ease: EASE }}
       className={className}
     >
-      <Card className="h-full overflow-hidden p-6">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="text-xs text-muted-foreground">{subtitle}</div>
-        {children}
-      </Card>
+      {metricKey ? (
+        <MetricTrigger metricKey={metricKey} className="h-full lift rounded-xl">
+          {card}
+        </MetricTrigger>
+      ) : (
+        card
+      )}
     </motion.div>
   );
 }
@@ -366,7 +380,7 @@ function ComparisonStrip({
       className="grid gap-4 sm:grid-cols-3"
     >
       {items.map((it) => (
-        <div key={it.label} className="rounded-xl border border-border/70 bg-card p-5">
+        <MetricTrigger key={it.label} metricKey="landed" className="lift rounded-xl border border-border/70 bg-card p-5">
           <div className="display-eyebrow text-muted-foreground">{it.label}</div>
           <div className="mt-2 text-[22px] font-semibold tracking-tight tabular">
             {formatMoney(it.now, currency, { compact: true })}
@@ -377,9 +391,9 @@ function ComparisonStrip({
           <div className="mt-1 text-xs text-muted-foreground tabular">
             {formatMoney(it.prev, currency, { compact: true })} {it.prevLabel}
           </div>
-        </div>
+        </MetricTrigger>
       ))}
-      <Link href="/payments" className="block rounded-xl border border-border/70 bg-card p-5 transition-colors hover:bg-muted/40">
+      <MetricTrigger metricKey="fees" className="lift rounded-xl border border-border/70 bg-card p-5">
         <div className="display-eyebrow flex items-center gap-1.5 text-muted-foreground">
           <TrendingDown className="size-3.5" /> Fees this year
         </div>
@@ -390,7 +404,7 @@ function ComparisonStrip({
         <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-foreground">
           Trim your fees <ArrowUpRight className="size-3" />
         </span>
-      </Link>
+      </MetricTrigger>
     </motion.section>
   );
 }
@@ -465,7 +479,7 @@ function LongestOutstanding({
     return <div className="mt-8 text-center text-sm text-muted-foreground">Nothing outstanding. Clean slate.</div>;
   }
   return (
-    <Link href="/projects" className="mt-4 block">
+    <div className="mt-4">
       <div className="flex items-center gap-2 text-[var(--overdue)]">
         <AlarmClock className="size-4" />
         <span className="display-numeric tabular text-2xl">{row.daysAged}d</span>
@@ -476,7 +490,7 @@ function LongestOutstanding({
       <div className="mt-2 text-sm font-semibold tabular">
         {formatMoney(row.outstandingBase, currency, { compact: true })} <span className="text-xs font-normal text-muted-foreground">owed</span>
       </div>
-    </Link>
+    </div>
   );
 }
 

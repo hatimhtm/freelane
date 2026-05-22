@@ -119,7 +119,7 @@ export type MetricData =
 // route (deep link) and the half-screen MetricSheet.
 export function MetricDetailBody({ data, className }: { data: MetricData; className?: string }) {
   return (
-    <div className={cn("space-y-10", className)}>
+    <div className={cn("@container space-y-10", className)}>
       {data.key === "landed" && <LandedDetail d={data.landed} currency={data.currency} />}
       {data.key === "outstanding" && (
         <OutstandingDetail d={data.outstanding} currency={data.currency} />
@@ -306,7 +306,7 @@ function LandedDetail({
         </div>
       </ChartCard>
 
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="grid gap-4 @3xl:grid-cols-2">
         <ChartCard title="Income by client" subtitle="Top 5 + other · landed">
           <div className="mt-4">
             <DonutChart data={d.incomeByClient} currency={currency} />
@@ -337,7 +337,7 @@ function OutstandingDetail({
   const router = useRouter();
   return (
     <>
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-4 @xl:grid-cols-2">
         <Reveal>
           <Card className="border-border/70 p-6">
             <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
@@ -373,7 +373,7 @@ function OutstandingDetail({
         )}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+      <section className="grid gap-4 @3xl:grid-cols-[1.5fr_1fr]">
         <div>
           <SectionHead title="Open balances" hint="Ranked by amount × days waiting · flag to mark overdue" />
           <BlockedMoneyList
@@ -402,7 +402,7 @@ function FeesDetail({
 }) {
   return (
     <>
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-4 @xl:grid-cols-2">
         <Reveal>
           <Card className="border-border/70 p-6">
             <div className="display-eyebrow text-muted-foreground">Fees this month</div>
@@ -528,7 +528,7 @@ function AvgDaysDetail({
         </div>
       </Reveal>
 
-      <section className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+      <section className="grid gap-4 @3xl:grid-cols-[1.5fr_1fr]">
         <div>
           <SectionHead title="Per project" hint="Quote → first payment, slowest first" />
           <Card className="overflow-hidden p-0">

@@ -111,25 +111,24 @@ export function TodayView({
             />
           </MetricTrigger>
           <Reveal delay={0.2}>
-            <Card className="border-border/70 p-6">
-              <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-[var(--overdue)] animate-breathe" />
-                Outstanding
-              </div>
-              <div className="display-numeric mt-3 text-4xl tabular">
-                {formatMoney(pendingTotal, currency, { compact: true })}
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Across {pendingCount} open {pendingCount === 1 ? "project" : "projects"}, valued at
-                today&apos;s rates — moves with FX until paid.
-              </p>
-              <MetricTrigger
-                metricKey="outstanding"
-                className="mt-4 inline-flex w-auto items-center gap-1 text-xs font-medium text-foreground hover:underline"
-              >
-                View outstanding <ArrowUpRight className="size-3" />
-              </MetricTrigger>
-            </Card>
+            <MetricTrigger metricKey="outstanding" className="lift rounded-xl">
+              <Card className="border-border/70 p-6">
+                <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
+                  <span className="size-1.5 rounded-full bg-[var(--overdue)] animate-breathe" />
+                  Outstanding
+                </div>
+                <div className="display-numeric mt-3 text-4xl tabular">
+                  {formatMoney(pendingTotal, currency, { compact: true })}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Across {pendingCount} open {pendingCount === 1 ? "project" : "projects"}, valued at
+                  today&apos;s rates — moves with FX until paid.
+                </p>
+                <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-foreground">
+                  View outstanding <ArrowUpRight className="size-3" />
+                </span>
+              </Card>
+            </MetricTrigger>
           </Reveal>
         </section>
 
@@ -268,9 +267,11 @@ export function TodayView({
             {topClients.length > 0 && (
               <div className="mt-6">
                 <SectionHead title="Top clients" hint={`By landed ${currency}`} />
-                <Card className="p-5">
-                  <TopClients data={topClients} currency={currency} />
-                </Card>
+                <MetricTrigger metricKey="debtor" className="lift rounded-xl">
+                  <Card className="p-5">
+                    <TopClients data={topClients} currency={currency} />
+                  </Card>
+                </MetricTrigger>
               </div>
             )}
           </div>

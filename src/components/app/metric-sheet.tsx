@@ -78,7 +78,7 @@ export function MetricSheetProvider({ children }: { children: React.ReactNode })
       <Sheet open={isOpen} onOpenChange={(o) => setIsOpen(o)}>
         <SheetContent
           side="right"
-          className="w-full gap-0 p-0 sm:max-w-2xl lg:max-w-3xl xl:max-w-4xl"
+          className="w-full gap-0 overflow-x-hidden p-0 sm:max-w-none sm:w-[94vw] md:w-[78vw] lg:w-[56vw] xl:w-[50vw]"
         >
           <div className="sticky top-0 z-10 border-b border-border/60 bg-popover/85 px-5 py-4 backdrop-blur-xl sm:px-7">
             <div className="display-eyebrow text-muted-foreground">Metric</div>
@@ -93,7 +93,7 @@ export function MetricSheetProvider({ children }: { children: React.ReactNode })
               </Link>
             )}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-12 pt-6 sm:px-7">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pb-12 pt-6 sm:px-7">
             {data ? <MetricDetailBody data={data} /> : <MetricSheetSkeleton />}
           </div>
         </SheetContent>
