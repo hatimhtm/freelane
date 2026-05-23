@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -32,7 +32,8 @@ type ProjectOpt = { id: string; title: string; currency: CurrencyCode; clientNam
 type Rate = { code: string; rate_to_base: number };
 
 type Step = {
-  method_id: string | null;
+  from_method_id: string | null; // source the money came from
+  method_id: string | null;      // destination it landed on
   amount_in: string;
   currency_in: string;
   amount_out: string;
@@ -77,6 +78,7 @@ export function ChainSheet({
     setPaidAt(new Date().toISOString().slice(0, 10));
     setSteps([
       {
+        from_method_id: null,
         method_id: null,
         amount_in: deepLinked && deepLinked.outstanding > 0 ? String(deepLinked.outstanding) : "",
         currency_in: deepLinked?.currency ?? baseCurrency,
@@ -112,6 +114,8 @@ export function ChainSheet({
       return [
         ...prev,
         {
+          // The previous hop's destination is this hop's source.
+          from_method_id: last?.method_id ?? null,
           method_id: null,
           amount_in: last?.amount_out ?? "",
           currency_in: last?.currency_out ?? baseCurrency,
@@ -134,6 +138,7 @@ export function ChainSheet({
   function save() {
     if (!projectId) { toast.error("Pick a project first."); return; }
     const parsed = steps.map((s) => ({
+      from_method_id: s.from_method_id,
       method_id: s.method_id,
       amount_in: Number(s.amount_in),
       currency_in: s.currency_in,
@@ -211,23 +216,26 @@ export function ChainSheet({
                   >
                     <div className="mb-2 flex items-center justify-between">
                       <span className="inline-flex size-5 items-center justify-center rounded-full bg-foreground/10 font-mono text-[10px]">{i + 1}</span>
-                      <div className="flex-1 px-2">
-                        <Select
-                          items={methods.map((m) => ({ value: m.id, label: m.name }))}
-                          value={s.method_id ?? ""}
-                          onValueChange={(v) => setStep(i, { method_id: v || null })}
-                        >
-                          <SelectTrigger className="h-10 sm:h-8 w-full text-xs"><SelectValue placeholder="Method" /></SelectTrigger>
-                          <SelectContent>
-                            {methods.map((m) => (<SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>))}
-                          </SelectContent>
-                        </Select>
-                      </div>
                       {steps.length > 1 && (
                         <button type="button" onClick={() => removeStep(i)} className="grid size-9 sm:size-7 place-items-center text-muted-foreground/50 hover:text-destructive" aria-label="Remove step">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
+                    </div>
+                    <div className="mb-2 grid grid-cols-[1fr_auto_1fr] items-end gap-1.5">
+                      <MethodPicker
+                        label="From"
+                        methods={methods}
+                        value={s.from_method_id}
+                        onChange={(v) => setStep(i, { from_method_id: v })}
+                      />
+                      <ArrowRight className="mb-2.5 h-3.5 w-3.5 text-muted-foreground/50" />
+                      <MethodPicker
+                        label="To"
+                        methods={methods}
+                        value={s.method_id}
+                        onChange={(v) => setStep(i, { method_id: v })}
+                      />
                     </div>
                     <div className="grid grid-cols-[1fr_auto] items-center gap-2">
                       <AmountCurrency
@@ -276,6 +284,28 @@ export function ChainSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function MethodPicker({
+  label, methods, value, onChange,
+}: {
+  label: string; methods: { id: string; name: string }[]; value: string | null; onChange: (v: string | null) => void;
+}) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</Label>
+      <Select
+        items={methods.map((m) => ({ value: m.id, label: m.name }))}
+        value={value ?? ""}
+        onValueChange={(v) => onChange(v || null)}
+      >
+        <SelectTrigger className="h-10 sm:h-9 w-full text-xs"><SelectValue placeholder={label === "From" ? "Source" : "Where it landed"} /></SelectTrigger>
+        <SelectContent>
+          {methods.map((m) => (<SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 

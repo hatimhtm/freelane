@@ -4,6 +4,7 @@ import type {
   Payment,
   PaymentMethod,
   PaymentStep,
+  Withdrawal,
 } from "@/lib/supabase/types";
 import { toBase } from "@/lib/money";
 
@@ -51,17 +52,27 @@ export function finalStep(steps: PaymentStep[]): PaymentStep | null {
 }
 
 // Human-readable label for a chain — the thing the leaderboard groups on.
-//   1 hop  → "Wise"
-//   3 hops → "Bank wire — primary → RedDot → GCash"
+// Each hop is a FROM → TO transfer, so we walk the path of nodes and collapse
+// consecutive duplicates (a hop's destination is usually the next hop's source):
+//   1 hop  → "Wise → coin.ph"
+//   2 hops → "Bank wire — primary → RedDot → GCash"
+// Legacy rows (no from) fall back to just the destination name.
 export function chainSignature(
   steps: PaymentStep[],
   methodsById: Map<string, PaymentMethod>,
 ): string {
   const ordered = sortedSteps(steps);
   if (ordered.length === 0) return "Untagged";
-  return ordered
-    .map((s) => (s.method_id ? methodsById.get(s.method_id)?.name ?? "Untagged" : "Untagged"))
-    .join(" → ");
+  const name = (id: string | null) => (id ? methodsById.get(id)?.name ?? "Untagged" : null);
+  const path: string[] = [];
+  for (const s of ordered) {
+    const from = name(s.from_method_id);
+    const to = name(s.method_id);
+    for (const node of [from, to]) {
+      if (node && path[path.length - 1] !== node) path.push(node);
+    }
+  }
+  return path.length ? path.join(" → ") : "Untagged";
 }
 
 // Per-step fee in base currency, using current rates for cross-currency hops.
@@ -127,7 +138,10 @@ export function methodLeaderboard(
     rows.set(signature, row);
 
     const ids = methodsBySignature.get(signature) ?? new Set<string>();
-    steps.forEach((s) => s.method_id && ids.add(s.method_id));
+    steps.forEach((s) => {
+      if (s.from_method_id) ids.add(s.from_method_id);
+      if (s.method_id) ids.add(s.method_id);
+    });
     methodsBySignature.set(signature, ids);
   }
 
@@ -145,4 +159,56 @@ export function methodLeaderboard(
 
   // Cheapest first — that's the recommendation order.
   return Array.from(rows.values()).sort((a, b) => a.effectivePct - b.effectivePct);
+}
+
+// ───────────────────────────────────────── Holding wallets ──
+//
+// A holding wallet (coin.ph, Cash) carries a running balance. Money RECEIVED
+// into it = the net of every payment whose final chain step lands on this
+// method. Money WITHDRAWN out = the gross of every withdrawal logged against
+// it. The balance is what's still parked there.
+
+export interface HoldingBalanceRow {
+  methodId: string;
+  name: string;
+  received: number;  // total net landed into this wallet (base)
+  withdrawn: number; // total gross moved out (base)
+  balance: number;   // received − withdrawn (base)
+}
+
+// The method a payment ultimately landed on = its final step's method.
+export function landingMethodId(steps: PaymentStep[]): string | null {
+  return finalStep(steps)?.method_id ?? null;
+}
+
+export function holdingBalances(
+  methods: PaymentMethod[],
+  payments: Payment[],
+  stepsByPayment: Map<string, PaymentStep[]>,
+  withdrawals: Withdrawal[],
+): HoldingBalanceRow[] {
+  const holding = methods.filter((m) => m.is_holding);
+  if (holding.length === 0) return [];
+
+  const received = new Map<string, number>();
+  for (const p of payments) {
+    const landedOn = landingMethodId(stepsByPayment.get(p.id) ?? []);
+    if (!landedOn) continue;
+    received.set(landedOn, (received.get(landedOn) ?? 0) + Number(p.net_amount_base ?? 0));
+  }
+
+  const withdrawn = new Map<string, number>();
+  for (const w of withdrawals) {
+    if (!w.from_method_id) continue;
+    withdrawn.set(w.from_method_id, (withdrawn.get(w.from_method_id) ?? 0) + Number(w.gross_base ?? 0));
+  }
+
+  return holding
+    .map((m) => {
+      const r = received.get(m.id) ?? 0;
+      const out = withdrawn.get(m.id) ?? 0;
+      return { methodId: m.id, name: m.name, received: r, withdrawn: out, balance: r - out };
+    })
+    // Show wallets that have ever seen money; hide empty ones to avoid clutter.
+    .filter((row) => row.received > 0 || row.withdrawn > 0);
 }

@@ -13,6 +13,7 @@ import type {
   ProjectTemplate,
   ActivityEvent,
   ClientMemoryEntry,
+  Withdrawal,
 } from "@/lib/supabase/types";
 
 async function userOrThrow() {
@@ -53,7 +54,7 @@ async function fetchStepsByPayment(
 export async function getDashboardData() {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
 
-  const [settings, projects, payments, rates, clients, currencies, methods] =
+  const [settings, projects, payments, rates, clients, currencies, methods, withdrawals] =
     await Promise.all([
       supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
       supabase.from("projects").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
@@ -62,6 +63,7 @@ export async function getDashboardData() {
       supabase.from("clients").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
       supabase.from("currencies").select("*"),
       supabase.from("payment_methods").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
+      supabase.from("withdrawals").select("*").eq("user_id", user.id).order("withdrawn_at", { ascending: false }),
     ]);
 
   const paymentRows = (payments.data ?? []) as Payment[];
@@ -76,6 +78,7 @@ export async function getDashboardData() {
     clients:  (clients.data ?? []) as Client[],
     currencies: (currencies.data ?? []) as Currency[],
     methods:  (methods.data ?? []) as PaymentMethod[],
+    withdrawals: (withdrawals.data ?? []) as Withdrawal[],
   };
 }
 
@@ -102,7 +105,7 @@ export async function getPendingData() {
 // Payments hub: payments + their chains + methods + projects/clients + rates.
 export async function getPaymentsData() {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
-  const [payments, projects, clients, rates, methods, settings, currencies] = await Promise.all([
+  const [payments, projects, clients, rates, methods, settings, currencies, withdrawals] = await Promise.all([
     supabase.from("payments").select("*").eq("user_id", user.id).order("paid_at", { ascending: false }),
     supabase.from("projects").select("*").eq("user_id", user.id),
     supabase.from("clients").select("*").eq("user_id", user.id).order("name"),
@@ -110,6 +113,7 @@ export async function getPaymentsData() {
     supabase.from("payment_methods").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
     supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
     supabase.from("currencies").select("*").order("code"),
+    supabase.from("withdrawals").select("*").eq("user_id", user.id).order("withdrawn_at", { ascending: false }),
   ]);
   const paymentRows = (payments.data ?? []) as Payment[];
   const stepsByPayment = await fetchStepsByPayment(supabase, paymentRows.map((p) => p.id));
@@ -122,6 +126,7 @@ export async function getPaymentsData() {
     methods:  (methods.data ?? []) as PaymentMethod[],
     settings: (settings.data ?? null) as Settings | null,
     currencies: (currencies.data ?? []) as Currency[],
+    withdrawals: (withdrawals.data ?? []) as Withdrawal[],
   };
 }
 

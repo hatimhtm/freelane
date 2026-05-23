@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -119,6 +120,9 @@ function MethodRow({ m, baseCurrency, last, onEdit, onArchive, onDelete }: { m: 
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{m.name}</span>
           <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{KIND_LABEL[m.kind] ?? m.kind}</span>
+          {m.is_holding && (
+            <span className="shrink-0 rounded-full bg-[var(--chart-1)]/12 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--chart-1)]">Holding</span>
+          )}
         </div>
         <div className="mt-0.5 text-xs text-muted-foreground tabular">
           {Number(m.monthly_fee_php) > 0 ? `${formatMoney(Number(m.monthly_fee_php), (m.monthly_fee_currency ?? baseCurrency) as CurrencyCode, { compact: true })}/mo fee` : "no monthly fee"}
@@ -144,7 +148,7 @@ function IconBtn({ children, onClick, label, danger }: { children: React.ReactNo
   );
 }
 
-type MethodValues = { name: string; kind: string; currency_in: string | null; currency_out: string | null; monthly_fee_php: number; monthly_fee_currency: string | null; notes: string | null };
+type MethodValues = { name: string; kind: string; currency_in: string | null; currency_out: string | null; monthly_fee_php: number; monthly_fee_currency: string | null; is_holding: boolean; notes: string | null };
 
 function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial?: PaymentMethod; currencies: Currency[]; baseCurrency: string; onSubmit: (v: MethodValues) => Promise<void> }) {
   const [v, setV] = useState({
@@ -154,6 +158,7 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
     currency_out: initial?.currency_out ?? "",
     monthly_fee_php: initial?.monthly_fee_php ?? 0,
     monthly_fee_currency: initial?.monthly_fee_currency ?? baseCurrency,
+    is_holding: initial?.is_holding ?? false,
     notes: initial?.notes ?? "",
   });
   const [pending, start] = useTransition();
@@ -169,6 +174,7 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
         currency_out: v.currency_out || null,
         monthly_fee_php: Number(v.monthly_fee_php) || 0,
         monthly_fee_currency: v.monthly_fee_currency || null,
+        is_holding: v.is_holding,
         notes: v.notes.trim() || null,
       });
     });
@@ -227,6 +233,15 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
             </Select>
           </div>
         </div>
+        <label className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">Holding wallet</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+              Money I keep a balance in (coin.ph, Cash). It counts as received when it lands, then I log a withdrawal when I move it out.
+            </span>
+          </span>
+          <Switch checked={v.is_holding} onCheckedChange={(c) => setV({ ...v, is_holding: c === true })} className="mt-0.5 shrink-0" />
+        </label>
         <div>
           <Label className="text-xs">Notes</Label>
           <Input value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} placeholder="optional" />

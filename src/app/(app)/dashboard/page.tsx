@@ -7,7 +7,7 @@ import {
   revenueSeries,
   dailySeries,
 } from "@/lib/dashboard-calc";
-import { methodLeaderboard, chainSignature, paymentFee, monthlyFeeBase } from "@/lib/payment-chain";
+import { methodLeaderboard, chainSignature, paymentFee, monthlyFeeBase, holdingBalances } from "@/lib/payment-chain";
 import { hasGemini } from "@/lib/ai/gemini";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode, PaymentMethod } from "@/lib/supabase/types";
@@ -19,13 +19,21 @@ const DAY_MS = 86_400_000;
 export const metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
-  const { settings, projects, payments, rates, clients, methods, stepsByPayment } =
+  const { settings, projects, payments, rates, clients, methods, stepsByPayment, withdrawals } =
     await getDashboardData();
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
   const recurringFee = methods.reduce((s, m) => s + monthlyFeeBase(m, rates), 0);
 
-  const metrics = cashflowMetrics(payments, new Date(), recurringFee);
+  const metrics = cashflowMetrics(payments, new Date(), recurringFee, withdrawals);
+
+  // Money parked in holding wallets (coin.ph, Cash) — received minus withdrawn.
+  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals).map((h) => ({
+    name: h.name,
+    balance: Math.round(h.balance),
+    received: Math.round(h.received),
+    withdrawn: Math.round(h.withdrawn),
+  }));
   const rows = outstanding(projects, payments, clients, rates);
   const pendingTotal = outstandingTotalBase(rows);
 
@@ -98,6 +106,13 @@ export default async function DashboardPage() {
     b.net += Number(p.net_amount_base ?? 0);
     b.fee += Number(p.implied_fee_base ?? 0);
   }
+  // Withdrawal fees are the same fee statistic — add them in the month they hit.
+  for (const w of withdrawals) {
+    const d = new Date(w.withdrawn_at);
+    if (d < barStart) continue;
+    const b = netFeeBuckets.get(d.toLocaleString("en", { month: "short" }));
+    if (b) b.fee += Number(w.fee_base ?? 0);
+  }
   const netVsFee = monthKeys.map((m) => {
     const b = netFeeBuckets.get(m.key)!;
     return { month: m.key, net: Math.round(b.net), fee: Math.round(b.fee) };
@@ -129,6 +144,17 @@ export default async function DashboardPage() {
     if (fee <= 0) continue;
     feeByChain.set(sig, (feeByChain.get(sig) ?? 0) + fee);
   }
+  // Withdrawal fees join the same breakdown, grouped by their wallet → dest route.
+  for (const w of withdrawals) {
+    if (new Date(w.withdrawn_at) < startYear) continue;
+    const fee = Number(w.fee_base ?? 0);
+    if (fee <= 0) continue;
+    const from = w.from_method_id ? methodsById.get(w.from_method_id)?.name ?? "Untagged" : "Untagged";
+    const to = w.to_method_id ? methodsById.get(w.to_method_id)?.name ?? null : null;
+    const sig = to ? `${from} → ${to}` : `${from} withdrawal`;
+    feeByChain.set(sig, (feeByChain.get(sig) ?? 0) + fee);
+  }
+  const feesYtdTotal = Array.from(feeByChain.values()).reduce((s, v) => s + v, 0);
   const feesByMethod = Array.from(feeByChain, ([name, value]) => ({ name, value: Math.round(value) }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 4);
@@ -169,7 +195,8 @@ export default async function DashboardPage() {
       netVsFee={netVsFee}
       incomeByCurrency={incomeByCurrency}
       feesByMethod={feesByMethod}
-      feesYtd={feesByMethod.reduce((s, f) => s + f.value, 0)}
+      feesYtd={Math.round(feesYtdTotal)}
+      holdings={holdings}
       longestOutstanding={
         longestOutstanding
           ? {

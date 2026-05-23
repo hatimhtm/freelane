@@ -62,6 +62,7 @@ export type EventKind =
   | "method.created" | "method.updated" | "method.archived"
   | "project.flagged" | "project.unflagged"
   | "client.memory_added"
+  | "withdrawal.added" | "withdrawal.removed"
   | "settings.updated";
 
 export interface ActivityEvent {
@@ -200,6 +201,10 @@ export interface PaymentStep {
   id: string;
   payment_id: string;
   step_order: number;
+  // Where this hop's money came FROM (source). Null on legacy rows.
+  from_method_id: string | null;
+  // Where it landed for this hop (destination). For the final step this is
+  // "where the payment landed" (drives holding-wallet balances).
   method_id: string | null;
   amount_in: number;
   currency_in: CurrencyCode;
@@ -221,8 +226,28 @@ export interface PaymentMethod {
   // monthly_fee_currency null → the amount is already in the base currency.
   monthly_fee_php: number;
   monthly_fee_currency: CurrencyCode | null;
+  // A wallet I keep a running balance in (coin.ph, Cash). Money that lands here
+  // counts as received but rests until I withdraw it out (see Withdrawal).
+  is_holding: boolean;
   notes: string | null;
   archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// A standalone "I moved money out of a holding wallet" event. Not tied to a
+// project — the money was decoupled the moment it landed. Amounts are in the
+// base currency (PHP). fee_base = gross_base − net_base.
+export interface Withdrawal {
+  id: string;
+  user_id: string;
+  from_method_id: string | null;
+  to_method_id: string | null;
+  withdrawn_at: string;
+  gross_base: number;
+  net_base: number;
+  fee_base: number;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -297,6 +322,7 @@ export type Database = {
       payments:             Table<Payment>;
       payment_steps:        Table<PaymentStep>;
       payment_methods:      Table<PaymentMethod>;
+      withdrawals:          Table<Withdrawal>;
       client_memory_entries: Table<ClientMemoryEntry>;
       ai_focus_cache:       Table<{ user_id: string; insights: unknown; generated_at: string }>;
       expenses:             Table<Expense>;

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AlarmClock, ArrowUpRight, CalendarRange, Hourglass, Plus, Receipt, TrendingDown, UserX, Users } from "lucide-react";
+import { AlarmClock, ArrowDownToLine, ArrowUpRight, CalendarRange, Hourglass, Plus, Receipt, TrendingDown, UserX, Users, Wallet } from "lucide-react";
 import { motion } from "motion/react";
 import { Card } from "@/components/ui/card";
 import { LinkButton } from "@/components/ui/link-button";
@@ -47,6 +47,7 @@ export function DashboardView({
   incomeByCurrency,
   feesByMethod,
   feesYtd,
+  holdings,
   longestOutstanding,
   year,
   aiEnabled,
@@ -71,6 +72,7 @@ export function DashboardView({
   incomeByCurrency: { code: string; value: number }[];
   feesByMethod: { name: string; value: number }[];
   feesYtd: number;
+  holdings: { name: string; balance: number; received: number; withdrawn: number }[];
   longestOutstanding: { projectTitle: string; clientName: string; daysAged: number; outstandingBase: number } | null;
   year: number;
   aiEnabled: boolean;
@@ -167,6 +169,9 @@ export function DashboardView({
               />
             </MetricTrigger>
           </section>
+
+          {/* Held in wallets — money parked in coin.ph / Cash vs. withdrawn */}
+          {holdings.length > 0 && <HeldInWallets holdings={holdings} currency={currency} />}
 
           {/* Ask your money */}
           {aiEnabled && <AiPanel enabled={aiEnabled} />}
@@ -284,6 +289,58 @@ function PendingPanel({ total, count, currency }: { total: number; count: number
         </Card>
       </MetricTrigger>
     </motion.div>
+  );
+}
+
+function HeldInWallets({
+  holdings,
+  currency,
+}: {
+  holdings: { name: string; balance: number; received: number; withdrawn: number }[];
+  currency: CurrencyCode;
+}) {
+  const totalParked = holdings.reduce((s, h) => s + h.balance, 0);
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: EASE }}
+    >
+      <div className="mb-3 flex items-end justify-between">
+        <div>
+          <div className="text-sm font-medium">Held in wallets</div>
+          <div className="text-xs text-muted-foreground">
+            {formatMoney(totalParked, currency, { compact: true })} parked, waiting to be withdrawn
+          </div>
+        </div>
+        <LinkButton href="/payments?withdraw=1" variant="ghost" size="sm">
+          <ArrowDownToLine className="mr-1.5 h-3.5 w-3.5" /> Log withdrawal
+        </LinkButton>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {holdings.map((h, i) => (
+          <motion.div
+            key={h.name}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: i * 0.05, ease: EASE }}
+          >
+            <Card className="p-5">
+              <div className="flex items-center gap-2">
+                <Wallet className="size-4 text-[var(--chart-1)]" />
+                <span className="text-sm font-medium">{h.name}</span>
+              </div>
+              <div className="mt-3 display-numeric text-3xl tabular">{formatMoney(h.balance, currency, { compact: true })}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">parked now</div>
+              <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2 text-[11px] text-muted-foreground tabular">
+                <span>received {formatMoney(h.received, currency, { compact: true })}</span>
+                <span>withdrawn {formatMoney(h.withdrawn, currency, { compact: true })}</span>
+              </div>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+    </motion.section>
   );
 }
 

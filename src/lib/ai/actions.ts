@@ -4,7 +4,7 @@ import { Type } from "@google/genai";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
 import { gemini, MODEL, hasGemini } from "./gemini";
-import { methodLeaderboard, chainSignature, sortedSteps, monthlyFeeBase } from "@/lib/payment-chain";
+import { methodLeaderboard, chainSignature, sortedSteps, monthlyFeeBase, holdingBalances } from "@/lib/payment-chain";
 import { cashflowMetrics, outstanding } from "@/lib/dashboard-calc";
 import { formatMoney } from "@/lib/money";
 import type {
@@ -16,6 +16,7 @@ import type {
   PaymentStep,
   Project,
   Settings,
+  Withdrawal,
 } from "@/lib/supabase/types";
 
 export type MoneyInsight = { title: string; detail: string; kind: "routing" | "anomaly" | "forecast" | "chase" | "note" };
@@ -27,13 +28,14 @@ type DbClient = Awaited<ReturnType<typeof createClient>>;
 // rail cost, recurring fees, and the cashflow numbers. Both "ask your money"
 // and the insights engine read from this, so the AI always sees everything.
 async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<string> {
-  const [settingsR, paymentsR, projectsR, clientsR, ratesR, methodsR] = await Promise.all([
+  const [settingsR, paymentsR, projectsR, clientsR, ratesR, methodsR, withdrawalsR] = await Promise.all([
     supabase.from("settings").select("*").eq("user_id", userId).maybeSingle(),
     supabase.from("payments").select("*").eq("user_id", userId).order("paid_at", { ascending: false }),
     supabase.from("projects").select("*").eq("user_id", userId),
     supabase.from("clients").select("*").eq("user_id", userId),
     supabase.from("exchange_rates").select("*").eq("user_id", userId),
     supabase.from("payment_methods").select("*").eq("user_id", userId),
+    supabase.from("withdrawals").select("*").eq("user_id", userId).order("withdrawn_at", { ascending: false }),
   ]);
   const settings = settingsR.data as Settings | null;
   const currency = (settings?.base_currency ?? "PHP") as CurrencyCode;
@@ -42,6 +44,7 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
   const clients = (clientsR.data ?? []) as Client[];
   const rates = (ratesR.data ?? []) as ExchangeRate[];
   const methods = (methodsR.data ?? []) as PaymentMethod[];
+  const withdrawals = (withdrawalsR.data ?? []) as Withdrawal[];
 
   const stepsRes = await supabase
     .from("payment_steps")
@@ -54,11 +57,12 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
     stepsByPayment.set(s.payment_id, arr);
   });
 
-  const metrics = cashflowMetrics(payments);
+  const metrics = cashflowMetrics(payments, new Date(), 0, withdrawals);
   const rows = outstanding(projects, payments, clients, rates);
   const projectsById = new Map(projects.map((p) => [p.id, p]));
   const methodsById = new Map(methods.map((m) => [m.id, m]));
   const leaderboard = methodLeaderboard(payments, stepsByPayment, methodsById, rates);
+  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals);
 
   const m = (n: number) => formatMoney(n, currency, { compact: true });
 
@@ -103,6 +107,10 @@ PAYMENT ROUTES by effective fee (cheapest first):
 ${leaderboard.slice(0, 8).map((l) => `- ${l.signature}: ${(l.effectivePct * 100).toFixed(1)}% over ${l.count} payments (${m(l.volumeBase)})${l.monthlyFeesBase > 0 ? ` + ${m(l.monthlyFeesBase)}/mo fixed` : ""}`).join("\n") || "- none tagged yet"}
 
 METHODS: ${methods.map((mm) => { const f = monthlyFeeBase(mm, rates); return `${mm.name}${f > 0 ? ` (${m(f)}/mo)` : ""}`; }).join(", ") || "none"}
+
+HELD IN WALLETS (money received but still parked, not yet withdrawn):
+${holdings.length ? holdings.map((h) => `- ${h.name}: ${m(h.balance)} parked (received ${m(h.received)}, withdrawn ${m(h.withdrawn)})`).join("\n") : "- nothing parked"}
+${withdrawals.length ? `WITHDRAWAL FEES: ${m(withdrawals.reduce((s, w) => s + Number(w.fee_base ?? 0), 0))} total across ${withdrawals.length} withdrawals (these count as fees, same as chain fees).` : ""}
 
 RECENT PAYMENTS (with chain + fee):
 ${recent.join("\n") || "- none"}`;

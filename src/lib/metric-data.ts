@@ -50,13 +50,13 @@ export function metricMeta(key: MetricKey) {
 }
 
 export async function buildMetricData(key: MetricKey): Promise<MetricData> {
-  const { settings, projects, payments, rates, clients, methods, stepsByPayment } =
+  const { settings, projects, payments, rates, clients, methods, stepsByPayment, withdrawals } =
     await getDashboardData();
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
   const recurringFee = methods.reduce((s, m) => s + monthlyFeeBase(m, rates), 0);
   const now = new Date();
-  const metrics = cashflowMetrics(payments, now, recurringFee);
+  const metrics = cashflowMetrics(payments, now, recurringFee, withdrawals);
 
   const projectsById = new Map(projects.map((p) => [p.id, p]));
   const clientsById = new Map(clients.map((c) => [c.id, c]));
@@ -174,7 +174,10 @@ export async function buildMetricData(key: MetricKey): Promise<MetricData> {
 
       const feesYtd = payments
         .filter((p) => new Date(p.paid_at) >= startYear)
-        .reduce((s, p) => s + paymentFee(p).fee, 0);
+        .reduce((s, p) => s + paymentFee(p).fee, 0)
+        + withdrawals
+          .filter((w) => new Date(w.withdrawn_at) >= startYear)
+          .reduce((s, w) => s + Number(w.fee_base ?? 0), 0);
 
       const monthsBack = 12;
       const feeStart = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1), 1);
@@ -192,6 +195,13 @@ export async function buildMetricData(key: MetricKey): Promise<MetricData> {
         const k = d.toLocaleString("en", { month: "short" });
         if (!feeBuckets.has(k)) continue;
         feeBuckets.set(k, (feeBuckets.get(k) ?? 0) + paymentFee(p).fee);
+      }
+      for (const w of withdrawals) {
+        const d = new Date(w.withdrawn_at);
+        if (d < feeStart) continue;
+        const k = d.toLocaleString("en", { month: "short" });
+        if (!feeBuckets.has(k)) continue;
+        feeBuckets.set(k, (feeBuckets.get(k) ?? 0) + Number(w.fee_base ?? 0));
       }
       const feesOverTime = monthOrder.map((m) => ({
         month: m,

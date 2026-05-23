@@ -1,4 +1,4 @@
-import type { Client, CurrencyCode, ExchangeRate, Payment, Project } from "@/lib/supabase/types";
+import type { Client, CurrencyCode, ExchangeRate, Payment, Project, Withdrawal } from "@/lib/supabase/types";
 import { toBase } from "@/lib/money";
 
 const DAY_MS = 86_400_000;
@@ -26,6 +26,18 @@ export function feesInRange(payments: Payment[], start: Date, end?: Date): numbe
     .reduce((s, p) => s + Number(p.implied_fee_base ?? 0), 0);
 }
 
+// Withdrawal fees are dated when the money was moved out of a holding wallet.
+// They're the same fee statistic as a payment-chain fee: they add to the fee
+// totals and reduce what counts as "kept" in the month they happened.
+export function withdrawalFeesInRange(withdrawals: Withdrawal[], start: Date, end?: Date): number {
+  return withdrawals
+    .filter((w) => {
+      const d = new Date(w.withdrawn_at);
+      return d >= start && (!end || d <= end);
+    })
+    .reduce((s, w) => s + Number(w.fee_base ?? 0), 0);
+}
+
 function startOfWeek(d: Date): Date {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -34,7 +46,14 @@ function startOfWeek(d: Date): Date {
 }
 
 // Headline cashflow figures. Monthly is the hero; weekly + yearly ride along.
-export function cashflowMetrics(payments: Payment[], now = new Date(), recurringMonthlyFeePhp = 0) {
+// Withdrawal fees are netted out of what was kept (in the month they happened)
+// and rolled into the fee total — the same way payment-chain fees are.
+export function cashflowMetrics(
+  payments: Payment[],
+  now = new Date(),
+  recurringMonthlyFeePhp = 0,
+  withdrawals: Withdrawal[] = [],
+) {
   const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const endLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
@@ -43,14 +62,18 @@ export function cashflowMetrics(payments: Payment[], now = new Date(), recurring
   const startLastWeek = new Date(startWeek.getTime() - 7 * DAY_MS);
   const endLastWeek = new Date(startWeek.getTime() - 1);
 
-  const mtdGross = landedInRange(payments, startMonth);
-  const mtd = Math.max(0, mtdGross - recurringMonthlyFeePhp);
-  const lastMonthGross = landedInRange(payments, startLastMonth, endLastMonth);
-  const lastMonth = Math.max(0, lastMonthGross - recurringMonthlyFeePhp);
-  const wtd = landedInRange(payments, startWeek);
-  const lastWeek = landedInRange(payments, startLastWeek, endLastWeek);
-  const ytd = landedInRange(payments, startYear);
-  const feesMtd = feesInRange(payments, startMonth);
+  const wfMonth = withdrawalFeesInRange(withdrawals, startMonth);
+  const wfLastMonth = withdrawalFeesInRange(withdrawals, startLastMonth, endLastMonth);
+  const wfWeek = withdrawalFeesInRange(withdrawals, startWeek);
+  const wfLastWeek = withdrawalFeesInRange(withdrawals, startLastWeek, endLastWeek);
+  const wfYear = withdrawalFeesInRange(withdrawals, startYear);
+
+  const mtd = Math.max(0, landedInRange(payments, startMonth) - recurringMonthlyFeePhp - wfMonth);
+  const lastMonth = Math.max(0, landedInRange(payments, startLastMonth, endLastMonth) - recurringMonthlyFeePhp - wfLastMonth);
+  const wtd = Math.max(0, landedInRange(payments, startWeek) - wfWeek);
+  const lastWeek = Math.max(0, landedInRange(payments, startLastWeek, endLastWeek) - wfLastWeek);
+  const ytd = Math.max(0, landedInRange(payments, startYear) - wfYear);
+  const feesMtd = feesInRange(payments, startMonth) + wfMonth;
 
   return {
     mtd,

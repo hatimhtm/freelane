@@ -20,7 +20,7 @@ export const metadata = { title: "Today" };
 
 export default async function TodayPage() {
   const aiEnabled = hasGemini();
-  const [{ settings, projects, payments, rates, clients, methods }, focus] = await Promise.all([
+  const [{ settings, projects, payments, rates, clients, methods, withdrawals }, focus] = await Promise.all([
     getDashboardData(),
     aiEnabled ? readFocusCache() : Promise.resolve({ insights: [], generatedAt: null }),
   ]);
@@ -28,7 +28,7 @@ export default async function TodayPage() {
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
   const recurringFee = methods.reduce((s, m) => s + monthlyFeeBase(m, rates), 0);
 
-  const metrics = cashflowMetrics(payments, new Date(), recurringFee);
+  const metrics = cashflowMetrics(payments, new Date(), recurringFee, withdrawals);
   const rows = outstanding(projects, payments, clients, rates);
   const pendingTotal = outstandingTotalBase(rows);
   const series = dailySeries(payments, 30);

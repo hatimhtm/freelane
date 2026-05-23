@@ -15,6 +15,7 @@ import {
   Plus,
   Pencil,
   ArrowRight,
+  ArrowDownToLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ActivityEvent, EventKind } from "@/lib/supabase/types";
@@ -55,6 +56,9 @@ const META: Record<EventKind, KindMeta> = {
   "project.unflagged": { icon: ArrowRight, tone: "neutral" },
 
   "client.memory_added": { icon: Pencil, tone: "neutral" },
+
+  "withdrawal.added":   { icon: ArrowDownToLine, tone: "rose"    },
+  "withdrawal.removed": { icon: Trash2,          tone: "neutral" },
 
   "settings.updated": { icon: SettingsIcon, tone: "neutral" },
 };

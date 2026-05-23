@@ -341,7 +341,8 @@ export type PaymentInput = {
 };
 
 export type ChainStepInput = {
-  method_id: string | null;
+  from_method_id?: string | null; // source the money came from
+  method_id: string | null;       // destination it landed on for this hop
   amount_in: number;
   currency_in: string;
   amount_out: number;
@@ -406,6 +407,7 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
   const stepRows = input.steps.map((s, i) => ({
     payment_id: paymentRow.id,
     step_order: i + 1,
+    from_method_id: s.from_method_id ?? null,
     method_id: s.method_id,
     amount_in: s.amount_in,
     currency_in: s.currency_in,
@@ -486,7 +488,7 @@ export async function updatePayment(
 // instead of inflating from a stale net. Persisting gross keeps reads stable.
 export async function updatePaymentDetails(
   paymentId: string,
-  input: { methodId?: string | null; netReceivedBase?: number; feeUnknown?: boolean },
+  input: { fromMethodId?: string | null; methodId?: string | null; netReceivedBase?: number; feeUnknown?: boolean },
 ) {
   const { supabase, userId } = await userOrThrow();
 
@@ -531,22 +533,33 @@ export async function updatePaymentDetails(
     .eq("id", paymentId);
   if (error) throw error;
 
-  // Tag the medium. If the chain has steps, set the method on the final hop;
-  // otherwise create a single tagged step so the leaderboard can group it.
-  if (input.methodId !== undefined) {
+  // Tag where it came FROM (source, on the first hop) and where it landed (the
+  // final hop's destination). If the chain has steps, update them; otherwise
+  // create a single from → to step so the leaderboard can group it.
+  if (input.methodId !== undefined || input.fromMethodId !== undefined) {
     const ordered = (steps ?? []).slice().sort((a, b) => Number(a.step_order) - Number(b.step_order));
     if (ordered.length > 0) {
-      const finalStep = ordered.find((s) => s.is_final) ?? ordered[ordered.length - 1];
-      const { error: stepErr } = await supabase
-        .from("payment_steps")
-        .update({ method_id: input.methodId })
-        .eq("id", finalStep.id);
-      if (stepErr) throw stepErr;
+      if (input.methodId !== undefined) {
+        const finalStep = ordered.find((s) => s.is_final) ?? ordered[ordered.length - 1];
+        const { error: toErr } = await supabase
+          .from("payment_steps")
+          .update({ method_id: input.methodId })
+          .eq("id", finalStep.id);
+        if (toErr) throw toErr;
+      }
+      if (input.fromMethodId !== undefined) {
+        const { error: fromErr } = await supabase
+          .from("payment_steps")
+          .update({ from_method_id: input.fromMethodId })
+          .eq("id", ordered[0].id);
+        if (fromErr) throw fromErr;
+      }
     } else {
       const { error: stepErr } = await supabase.from("payment_steps").insert({
         payment_id: paymentId,
         step_order: 1,
-        method_id: input.methodId,
+        from_method_id: input.fromMethodId ?? null,
+        method_id: input.methodId ?? null,
         amount_in: payment.amount,
         currency_in: payment.currency,
         amount_out: Math.round(net * 100) / 100,
@@ -1013,6 +1026,7 @@ export type PaymentMethodInput = {
   currency_out?: string | null;
   monthly_fee_php?: number;
   monthly_fee_currency?: string | null;
+  is_holding?: boolean;
   notes?: string | null;
 };
 
@@ -1028,6 +1042,7 @@ export async function createPaymentMethod(input: PaymentMethodInput) {
       currency_out: input.currency_out ?? null,
       monthly_fee_php: input.monthly_fee_php ?? 0,
       monthly_fee_currency: input.monthly_fee_currency ?? null,
+      is_holding: input.is_holding ?? false,
       notes: input.notes ?? null,
     })
     .select("id")
@@ -1066,6 +1081,77 @@ export async function deletePaymentMethod(id: string) {
   if (error) throw error;
   revalidatePath("/settings");
   revalidatePath("/payments");
+}
+
+// ───────────────────────────────────────── Withdrawals ──
+//
+// Moving money OUT of a holding wallet (coin.ph → Cash). Standalone — not tied
+// to any project; the money was decoupled the moment it landed. Same fee math
+// as a payment chain: fee = gross out − net received. The fee reduces what
+// counts as kept (in this month) and joins the fee totals — but it does NOT
+// appear in the receive leaderboard.
+export type WithdrawalInput = {
+  from_method_id: string;
+  to_method_id?: string | null;
+  withdrawn_at: string;
+  gross_base: number; // taken out of the wallet (PHP)
+  net_base: number;   // received into hand/cash (PHP)
+  notes?: string | null;
+};
+
+export async function createWithdrawal(input: WithdrawalInput) {
+  const { supabase, userId } = await userOrThrow();
+  const gross = Math.max(0, Number(input.gross_base) || 0);
+  const net = Math.max(0, Number(input.net_base) || 0);
+  if (gross <= 0) throw new Error("Enter how much you took out.");
+  if (net > gross) throw new Error("Received can't be more than what you took out.");
+  const fee = Math.max(0, gross - net);
+
+  const { error, data } = await supabase
+    .from("withdrawals")
+    .insert({
+      user_id: userId,
+      from_method_id: input.from_method_id,
+      to_method_id: input.to_method_id ?? null,
+      withdrawn_at: input.withdrawn_at,
+      gross_base: Math.round(gross * 100) / 100,
+      net_base: Math.round(net * 100) / 100,
+      fee_base: Math.round(fee * 100) / 100,
+      notes: input.notes ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+
+  const { data: fromMethod } = await supabase
+    .from("payment_methods")
+    .select("name")
+    .eq("id", input.from_method_id)
+    .maybeSingle();
+
+  await logEvent({
+    userId,
+    kind: "withdrawal.added",
+    title: `Withdrew ${(fromMethod?.name as string) ?? "wallet"} · received PHP ${net.toFixed(0)}, fee PHP ${fee.toFixed(0)}`,
+    entityType: "withdrawal",
+    entityId: data.id as string,
+    metadata: { gross_base: gross, net_base: net, fee_base: fee, from_method_id: input.from_method_id },
+  });
+
+  revalidatePath("/today");
+  revalidatePath("/payments");
+  revalidatePath("/dashboard");
+  return data;
+}
+
+export async function deleteWithdrawal(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase.from("withdrawals").delete().eq("id", id).eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({ userId, kind: "withdrawal.removed", title: "Removed a withdrawal", entityType: "withdrawal", entityId: id });
+  revalidatePath("/today");
+  revalidatePath("/payments");
+  revalidatePath("/dashboard");
 }
 
 // ───────────────────────────────────────── Client memory ──
