@@ -1,6 +1,7 @@
 import { getSpendingData } from "@/lib/data/queries";
 import { safeToSpend } from "@/lib/safe-to-spend";
 import { holdingBalances } from "@/lib/payment-chain";
+import { generateSpendingAnomalies } from "@/lib/ai/spending-anomalies";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import { SpendingView, type SpendRow } from "./_components/spending-view";
@@ -84,6 +85,30 @@ export default async function SpendingPage({
 
   const initialMonth = parseMonthParam(params.m) ?? currentMonth();
 
+  // Trailing 6 months feeds the line chart, the small-multiples sparklines,
+  // and the anomaly snapshot. Anchored on `now` (not the navigated month)
+  // because trend context shouldn't shift as the user scrubs back through
+  // history — the right rail is always "what's been happening lately".
+  const now = new Date();
+  const trailingStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  const spendsTrailing6mo = spends.filter((s) => {
+    const t = new Date(s.spent_at).getTime();
+    return t >= trailingStart.getTime();
+  });
+
+  // This-month vs trailing-baseline anomalies. Server-side single call; the
+  // panel skips rendering if the array is empty.
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const spendsThisMonth = spends.filter(
+    (s) => new Date(s.spent_at) >= startOfMonth,
+  );
+  const anomalies = await generateSpendingAnomalies({
+    spendsThisMonth,
+    spendsTrailing6mo,
+    categories: spendCategories,
+    categoryLinks: spendCategoryLinks,
+  });
+
   return (
     <SpendingView
       rows={rows}
@@ -94,8 +119,10 @@ export default async function SpendingPage({
       baseCurrency={baseCurrency}
       safeToSpendBaseline={safeToSpendBaseline}
       recentSpends={spends}
+      spendsTrailing6mo={spendsTrailing6mo}
       spendCategoryLinks={spendCategoryLinks}
       spendItems={spendItems}
+      anomalies={anomalies}
       initialMonth={initialMonth}
       openNew={params.new === "1"}
       defaultCategoryId={params.category}

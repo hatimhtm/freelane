@@ -1,12 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
-import { ArrowDownRight, ArrowUpRight, Plus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Plus, Search } from "lucide-react";
 import NumberFlow from "@number-flow/react";
 import { PageMonthNav, MonthNavStat, type MonthValue } from "@/components/app/page-month-nav";
 import { EmptyState } from "@/components/app/empty-state";
+import { SpendHeatmap } from "@/components/spending/spend-heatmap";
+import { SpendOverTime } from "@/components/spending/spend-over-time";
+import { CategoryTrendSmallMultiples } from "@/components/spending/category-trend-small-multiples";
+import { VendorIntelligence } from "@/components/spending/vendor-intelligence";
+import { SpendAnomaliesPanel } from "@/components/spending/spend-anomalies-panel";
+import { extractVendorToken, vendorSlug } from "@/lib/spending/vendor-extract";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type {
@@ -18,6 +25,7 @@ import type {
   SpendItem,
 } from "@/lib/supabase/types";
 import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
+import type { SpendingAnomaly } from "@/lib/ai/spending-anomalies";
 import { SpendModal, type WalletOpt, type SpendModalDefaults } from "./spend-modal";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -35,6 +43,8 @@ export type SpendRow = {
   businessRelevant: boolean;
 };
 
+type BusinessFilter = "all" | "business" | "personal";
+
 export function SpendingView({
   rows,
   categories,
@@ -44,9 +54,11 @@ export function SpendingView({
   baseCurrency,
   safeToSpendBaseline,
   recentSpends,
+  spendsTrailing6mo,
   spendCategoryLinks,
   spendItems,
   priceIntelCache,
+  anomalies,
   initialMonth,
   openNew,
   defaultCategoryId,
@@ -59,9 +71,11 @@ export function SpendingView({
   baseCurrency: CurrencyCode;
   safeToSpendBaseline: SafeToSpendBreakdown;
   recentSpends: Spend[];
+  spendsTrailing6mo: Spend[];
   spendCategoryLinks: SpendCategoryLink[];
   spendItems: SpendItem[];
   priceIntelCache?: PriceIntelligenceRow[];
+  anomalies: SpendingAnomaly[];
   initialMonth: MonthValue;
   openNew?: boolean;
   defaultCategoryId?: string;
@@ -76,8 +90,9 @@ export function SpendingView({
   const [month, setMonth] = useState<MonthValue>(initialMonth);
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [walletFilter, setWalletFilter] = useState<string>("");
+  const [bizFilter, setBizFilter] = useState<BusinessFilter>("all");
+  const [search, setSearch] = useState<string>("");
 
-  // Hydrate month from URL so back/forward and shared links survive.
   useEffect(() => {
     const m = searchParams.get("m");
     if (!m) return;
@@ -136,6 +151,17 @@ export function SpendingView({
     [rows, prevRange],
   );
 
+  // Heatmap + over-time charts work directly on raw Spend records, so slice
+  // recentSpends to the active month rather than rebuilding from SpendRow.
+  const monthSpends = useMemo(
+    () =>
+      recentSpends.filter((s) => {
+        const t = new Date(s.spent_at).getTime();
+        return t >= monthRange.start && t < monthRange.end;
+      }),
+    [recentSpends, monthRange],
+  );
+
   // Wallet chips reflect actually-used wallets in this month.
   const walletChips = useMemo(() => {
     const used = new Set(monthRows.map((r) => r.walletId));
@@ -143,79 +169,55 @@ export function SpendingView({
   }, [wallets, monthRows]);
 
   const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return monthRows.filter((r) => {
       if (categoryFilter && !r.categoryIds.includes(categoryFilter)) return false;
       if (walletFilter && r.walletId !== walletFilter) return false;
+      if (bizFilter === "business" && !r.businessRelevant) return false;
+      if (bizFilter === "personal" && r.businessRelevant) return false;
+      if (q) {
+        const haystack = `${r.description ?? ""} ${r.walletName}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [monthRows, categoryFilter, walletFilter]);
+  }, [monthRows, categoryFilter, walletFilter, bizFilter, search]);
 
   const monthTotal = monthRows.reduce((s, r) => s + r.amountBase, 0);
   const prevTotal = prevRows.reduce((s, r) => s + r.amountBase, 0);
   const deltaPct = prevTotal > 0 ? ((monthTotal - prevTotal) / prevTotal) * 100 : null;
   const visibleTotal = visible.reduce((s, r) => s + r.amountBase, 0);
-  const isFiltered = !!categoryFilter || !!walletFilter;
+  const isFiltered =
+    !!categoryFilter || !!walletFilter || bizFilter !== "all" || search.trim().length > 0;
 
   // Avg daily uses elapsed days in the active month — for a past month, full
   // month length; for the current month, days-so-far. Past zero noise out.
   const daysElapsed = elapsedDaysOf(month);
   const avgDaily = daysElapsed > 0 ? monthTotal / daysElapsed : 0;
 
-  // Category breakdown: top 5 categories by base total. Untagged rolls up.
-  const categoryStats = useMemo(() => {
-    const tally = new Map<string, number>();
+  // Biggest day — peak daily total within the month, for the stat strip.
+  const biggestDay = useMemo(() => {
+    const byDay = new Map<string, number>();
     for (const r of monthRows) {
-      if (r.categoryIds.length === 0) {
-        tally.set("__untagged", (tally.get("__untagged") ?? 0) + r.amountBase);
-        continue;
-      }
-      // Multi-tag rows split the amount evenly across tags so totals stay honest.
-      const share = r.amountBase / r.categoryIds.length;
-      for (const id of r.categoryIds) {
-        tally.set(id, (tally.get(id) ?? 0) + share);
-      }
+      const key = r.spentAt.slice(0, 10);
+      byDay.set(key, (byDay.get(key) ?? 0) + r.amountBase);
     }
-    const arr = Array.from(tally.entries())
-      .map(([id, value]) => ({
-        id,
-        name: id === "__untagged" ? "Untagged" : categoryNameById.get(id) ?? "Untagged",
-        value,
-      }))
-      .sort((a, b) => b.value - a.value);
-    return arr.slice(0, 5);
-  }, [monthRows, categoryNameById]);
+    let max = 0;
+    for (const v of byDay.values()) if (v > max) max = v;
+    return max;
+  }, [monthRows]);
 
-  // Business vs personal split: simple amountBase tally.
+  // Business share — drives the 5th stat in the strip.
   const businessTotal = monthRows
     .filter((r) => r.businessRelevant)
     .reduce((s, r) => s + r.amountBase, 0);
-  const personalTotal = monthTotal - businessTotal;
-
-  // Top vendors / descriptions: group by lower-cased trimmed description.
-  const topVendors = useMemo(() => {
-    const tally = new Map<string, { label: string; total: number; count: number }>();
-    for (const r of monthRows) {
-      const raw = r.description?.trim();
-      if (!raw) continue;
-      const key = raw.toLowerCase();
-      const cur = tally.get(key);
-      if (cur) {
-        cur.total += r.amountBase;
-        cur.count += 1;
-      } else {
-        tally.set(key, { label: raw, total: r.amountBase, count: 1 });
-      }
-    }
-    return Array.from(tally.values())
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 3);
-  }, [monthRows]);
+  const businessSharePct = monthTotal > 0 ? (businessTotal / monthTotal) * 100 : 0;
 
   const showRecoveryCaption =
     isCurrentMonth(month) && safeToSpendBaseline.inRecovery;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <PageMonthNav
         value={month}
         onChange={setMonthValue}
@@ -224,7 +226,17 @@ export function SpendingView({
           <>
             <MonthNavStat
               label="Spent"
-              value={formatMoney(monthTotal, baseCurrency, { compact: true })}
+              value={
+                <NumberFlow
+                  value={Math.round(monthTotal)}
+                  format={{
+                    style: "currency",
+                    currency: baseCurrency,
+                    maximumFractionDigits: 0,
+                  }}
+                  className="font-fraunces tabular text-base leading-none"
+                />
+              }
             />
             {deltaPct !== null && (
               <MonthNavStat
@@ -242,158 +254,111 @@ export function SpendingView({
                 }
               />
             )}
-            <MonthNavStat
-              label="Avg/day"
-              value={formatMoney(avgDaily, baseCurrency, { compact: true })}
-            />
-            <MonthNavStat label="Spends" value={monthRows.length} />
           </>
         }
       />
 
-      {/* Per-month stats panel — bird's eye stats for the active month. */}
-      <section className="mt-5 grid gap-3 md:grid-cols-3">
-        {/* Hero total + delta */}
-        <div className="paper-grain rounded-[12px] border border-foreground/10 bg-card/40 p-4 md:col-span-1">
-          <div className="display-eyebrow text-muted-foreground">
-            Total spent
-          </div>
-          <motion.div
-            key={`${month.year}-${month.month}`}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, ease: EASE }}
-            className="mt-2"
-          >
-            <NumberFlow
-              value={Math.round(monthTotal)}
-              format={{
-                style: "currency",
-                currency: baseCurrency,
-                maximumFractionDigits: 0,
-              }}
-              transformTiming={{
-                duration: 600,
-                easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-              }}
-              className="font-fraunces display-numeric tabular text-[clamp(36px,5.5vw,52px)] leading-none text-foreground"
+      {showRecoveryCaption && (
+        <div className="mt-4 rounded-[8px] border-l-2 border-[var(--color-warning,theme(colors.orange.400))] bg-foreground/[0.03] py-2 pl-3 pr-3 text-[12px] leading-snug text-muted-foreground">
+          Recovery mode — trailing spend ran ahead of income. Daily floor softened{" "}
+          {formatMoney(safeToSpendBaseline.recoveryDailyTaxBase, baseCurrency, { compact: true })}
+          /day.
+        </div>
+      )}
+
+      {/* Stat strip — compact horizontal row of mini stats. */}
+      <StatStrip
+        items={[
+          { label: "Total", value: formatMoney(monthTotal, baseCurrency, { compact: true }) },
+          deltaPct === null
+            ? { label: "vs prev", value: "—" }
+            : {
+                label: "vs prev",
+                value: `${deltaPct > 0 ? "+" : ""}${deltaPct.toFixed(0)}%`,
+                tone: deltaPct > 0 ? "warning" : "positive",
+              },
+          { label: "Avg/day", value: formatMoney(avgDaily, baseCurrency, { compact: true }) },
+          {
+            label: "Biggest day",
+            value: formatMoney(biggestDay, baseCurrency, { compact: true }),
+          },
+          { label: "Business", value: `${businessSharePct.toFixed(0)}%` },
+        ]}
+      />
+
+      {/* Two-column rhythm: charts on the left, intelligence on the right. */}
+      <section className="mt-5 grid gap-4 lg:grid-cols-5">
+        {/* LEFT (~60%): trend + heatmap */}
+        <div className="space-y-4 lg:col-span-3">
+          <Panel eyebrow="Last 6 months" subtitle="Spend over time, base currency.">
+            <SpendOverTime
+              spends={spendsTrailing6mo}
+              now={new Date()}
+              baseCurrency={baseCurrency}
+              height={160}
             />
-          </motion.div>
-          <div className="mt-3 flex items-baseline gap-2 text-[12px] text-muted-foreground">
-            {deltaPct === null ? (
-              <span>No baseline last month.</span>
-            ) : (
-              <span className="inline-flex items-center gap-1">
-                {deltaPct > 0 ? (
-                  <ArrowUpRight className="h-3 w-3 text-[var(--color-warning,theme(colors.orange.400))]" />
-                ) : (
-                  <ArrowDownRight className="h-3 w-3 text-[var(--color-positive,theme(colors.lime.400))]" />
-                )}
-                <span
-                  className={cn(
-                    "tabular font-medium",
-                    deltaPct > 0
-                      ? "text-[var(--color-warning,theme(colors.orange.400))]"
-                      : "text-[var(--color-positive,theme(colors.lime.400))]",
-                  )}
-                >
-                  {Math.abs(deltaPct).toFixed(0)}%
-                </span>
-                <span>vs {formatMoney(prevTotal, baseCurrency, { compact: true })} prev</span>
-              </span>
-            )}
-          </div>
-          {showRecoveryCaption && (
-            <div className="mt-3 rounded-[8px] border-l-2 border-[var(--color-warning,theme(colors.orange.400))] bg-foreground/[0.03] py-1.5 pl-2 pr-2 text-[11px] leading-snug text-muted-foreground">
-              Recovery mode — trailing spend ran ahead of income. Daily floor
-              softened {formatMoney(safeToSpendBaseline.recoveryDailyTaxBase, baseCurrency, { compact: true })}/day.
-            </div>
-          )}
+          </Panel>
+          <Panel
+            eyebrow={monthHeatmapLabel(month)}
+            subtitle="Daily rhythm — darker means more spent."
+          >
+            <SpendHeatmap
+              spends={monthSpends}
+              year={month.year}
+              month={month.month - 1}
+              baseCurrency={baseCurrency}
+            />
+          </Panel>
         </div>
 
-        {/* Category breakdown — top 5 with mini bars */}
-        <div className="rounded-[12px] border border-foreground/10 bg-card/40 p-4 md:col-span-1">
-          <div className="flex items-baseline justify-between">
-            <div className="display-eyebrow text-muted-foreground">By category</div>
-            <span className="text-[11px] text-muted-foreground/70">top 5</span>
-          </div>
-          {categoryStats.length === 0 ? (
-            <p className="mt-4 text-[12px] text-muted-foreground">Nothing this month.</p>
-          ) : (
-            <ul className="mt-3 space-y-2">
-              {categoryStats.map((c) => {
-                const pct = monthTotal > 0 ? (c.value / monthTotal) * 100 : 0;
-                return (
-                  <li key={c.id} className="space-y-1">
-                    <div className="flex items-baseline justify-between gap-2 text-[12px]">
-                      <span className="truncate text-foreground/85">{c.name}</span>
-                      <span className="tabular text-muted-foreground">
-                        {formatMoney(c.value, baseCurrency, { compact: true })}
-                        <span className="ml-1.5 text-muted-foreground/55">
-                          {pct.toFixed(0)}%
-                        </span>
-                      </span>
-                    </div>
-                    <div className="h-1 overflow-hidden rounded-full bg-foreground/[0.06]">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${pct}%` }}
-                        transition={{ duration: 0.7, ease: EASE }}
-                        className="h-full rounded-full bg-[var(--brand)]"
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+        {/* RIGHT (~40%): categories small-multiples, vendors, anomalies */}
+        <div className="space-y-4 lg:col-span-2">
+          {anomalies.length > 0 && (
+            <Panel eyebrow="What's drifting" subtitle="Numbers that broke their rhythm.">
+              <div className="px-3 pb-3">
+                <SpendAnomaliesPanel anomalies={anomalies} />
+              </div>
+            </Panel>
           )}
-        </div>
-
-        {/* Business vs personal + top vendors */}
-        <div className="rounded-[12px] border border-foreground/10 bg-card/40 p-4 md:col-span-1">
-          <div className="display-eyebrow text-muted-foreground">Mix</div>
-          {monthTotal === 0 ? (
-            <p className="mt-4 text-[12px] text-muted-foreground">Nothing this month.</p>
-          ) : (
-            <div className="mt-3 space-y-3">
-              <BusinessPersonalSplit
-                businessTotal={businessTotal}
-                personalTotal={personalTotal}
-                baseCurrency={baseCurrency}
-              />
-              {topVendors.length > 0 && (
-                <div className="border-t border-foreground/10 pt-3">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
-                    Top vendors
-                  </div>
-                  <ul className="mt-2 space-y-1.5">
-                    {topVendors.map((v) => (
-                      <li
-                        key={v.label}
-                        className="flex items-baseline justify-between gap-2 text-[12px]"
-                      >
-                        <span className="truncate text-foreground/85">{v.label}</span>
-                        <span className="tabular text-muted-foreground">
-                          {formatMoney(v.total, baseCurrency, { compact: true })}
-                          {v.count > 1 && (
-                            <span className="ml-1 text-muted-foreground/55">
-                              ×{v.count}
-                            </span>
-                          )}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
+          <Panel eyebrow="Categories" subtitle="Trailing 6 months, top by spend.">
+            <CategoryTrendSmallMultiples
+              spends={spendsTrailing6mo}
+              categoryLinks={spendCategoryLinks}
+              categories={categories}
+              baseCurrency={baseCurrency}
+              now={new Date()}
+              topN={6}
+            />
+          </Panel>
+          <Panel eyebrow="Top vendors" subtitle="Lifetime pattern, click for detail.">
+            <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} />
+          </Panel>
         </div>
       </section>
 
-      {/* Filters — compact chip rows. Month is the URL, not a chip. */}
-      <section className="mt-5">
+      {/* Filters — compact chip rows + search. */}
+      <section className="mt-6">
         <div className="flex flex-col gap-2">
+          <ChipRow>
+            <Chip active={bizFilter === "all"} onClick={() => setBizFilter("all")}>
+              All
+            </Chip>
+            <Chip
+              active={bizFilter === "business"}
+              onClick={() => setBizFilter("business")}
+            >
+              Business
+            </Chip>
+            <Chip
+              active={bizFilter === "personal"}
+              onClick={() => setBizFilter("personal")}
+            >
+              Personal
+            </Chip>
+            <span className="mx-1 h-5 w-px self-center bg-foreground/10" />
+            <SearchInput value={search} onChange={setSearch} />
+          </ChipRow>
+
           {activeCategories.length > 0 && (
             <ChipRow>
               <Chip active={categoryFilter === ""} onClick={() => setCategoryFilter("")}>
@@ -508,56 +473,91 @@ export function SpendingView({
   );
 }
 
-function BusinessPersonalSplit({
-  businessTotal,
-  personalTotal,
-  baseCurrency,
+function Panel({
+  eyebrow,
+  subtitle,
+  children,
 }: {
-  businessTotal: number;
-  personalTotal: number;
-  baseCurrency: CurrencyCode;
+  eyebrow: string;
+  subtitle?: string;
+  children: React.ReactNode;
 }) {
-  const total = businessTotal + personalTotal;
-  const bizPct = total > 0 ? (businessTotal / total) * 100 : 0;
-  const persPct = 100 - bizPct;
   return (
-    <div className="space-y-2">
-      <div className="flex h-2 overflow-hidden rounded-full bg-foreground/[0.06]">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: `${bizPct}%` }}
-          transition={{ duration: 0.7, ease: EASE }}
-          className="h-full bg-[var(--brand)]"
-        />
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: `${persPct}%` }}
-          transition={{ duration: 0.7, delay: 0.05, ease: EASE }}
-          className="h-full bg-foreground/30"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
-        <div className="flex items-center gap-1.5">
-          <span className="size-2 rounded-[2px] bg-[var(--brand)]" />
-          <span className="text-muted-foreground">Business</span>
-          <span className="ml-auto tabular text-foreground">
-            {formatMoney(businessTotal, baseCurrency, { compact: true })}
+    <div className="rounded-[12px] border border-foreground/10 bg-card/40">
+      <div className="flex items-baseline justify-between gap-3 border-b border-foreground/10 px-3.5 py-2.5">
+        <span className="display-eyebrow text-muted-foreground">{eyebrow}</span>
+        {subtitle && (
+          <span className="text-[11px] text-muted-foreground/70 truncate">
+            {subtitle}
           </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="size-2 rounded-[2px] bg-foreground/30" />
-          <span className="text-muted-foreground">Personal</span>
-          <span className="ml-auto tabular text-foreground">
-            {formatMoney(personalTotal, baseCurrency, { compact: true })}
-          </span>
-        </div>
+        )}
       </div>
+      <div>{children}</div>
     </div>
   );
 }
 
+interface StatItem {
+  label: string;
+  value: string;
+  tone?: "neutral" | "positive" | "warning";
+}
+
+function StatStrip({ items }: { items: StatItem[] }) {
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[12px] border border-foreground/10 bg-foreground/8 sm:grid-cols-3 lg:grid-cols-5">
+      {items.map((item, i) => (
+        <motion.div
+          key={`${item.label}-${i}`}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32, delay: i * 0.04, ease: EASE }}
+          className="flex flex-col gap-1 bg-card/60 px-3.5 py-3"
+        >
+          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+            {item.label}
+          </span>
+          <span
+            className={cn(
+              "font-fraunces tabular text-[20px] leading-none",
+              item.tone === "positive" &&
+                "text-[var(--color-positive,theme(colors.lime.400))]",
+              item.tone === "warning" &&
+                "text-[var(--color-warning,theme(colors.orange.400))]",
+              !item.tone && "text-foreground",
+            )}
+          >
+            {item.value}
+          </span>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+function SearchInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <label className="inline-flex h-7 items-center gap-1.5 rounded-full border border-foreground/15 bg-card/40 px-2.5 text-[12px] text-foreground/80 focus-within:border-foreground/35">
+      <Search className="h-3 w-3 text-muted-foreground" />
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search descriptions"
+        className="w-36 bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/60 sm:w-48"
+      />
+    </label>
+  );
+}
+
 function ChipRow({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap gap-1.5">{children}</div>;
+  return <div className="flex flex-wrap items-center gap-1.5">{children}</div>;
 }
 
 function Chip({
@@ -597,9 +597,17 @@ function SpendItemRow({
   categoryNameById: Map<string, string>;
   index: number;
 }) {
-  const tagNames = row.categoryIds
-    .map((id) => categoryNameById.get(id))
-    .filter((n): n is string => !!n);
+  const tags = row.categoryIds
+    .map((id) => ({ id, name: categoryNameById.get(id) }))
+    .filter((t): t is { id: string; name: string } => !!t.name);
+
+  // Vendor link — only if the description resolves to a known/guessed vendor.
+  const vendorMatch = row.description
+    ? extractVendorToken(row.description)
+    : { vendor: null, confidence: null };
+  const vendorHref = vendorMatch.vendor
+    ? `/spending/vendor/${vendorSlug(vendorMatch.vendor)}`
+    : null;
 
   return (
     <motion.li
@@ -614,11 +622,22 @@ function SpendItemRow({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-[13px] text-foreground">
-            {row.description?.trim() || (
-              <span className="text-muted-foreground/60">—</span>
-            )}
-          </span>
+          {row.description?.trim() ? (
+            vendorHref ? (
+              <Link
+                href={vendorHref}
+                className="truncate text-[13px] text-foreground transition-colors hover:text-[var(--brand)]"
+              >
+                {row.description}
+              </Link>
+            ) : (
+              <span className="truncate text-[13px] text-foreground">
+                {row.description}
+              </span>
+            )
+          ) : (
+            <span className="truncate text-[13px] text-muted-foreground/60">—</span>
+          )}
           {row.businessRelevant && (
             <span
               aria-label="Business-relevant"
@@ -628,12 +647,26 @@ function SpendItemRow({
           )}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
-          <span>{row.walletName}</span>
-          {tagNames.length > 0 && (
+          <span className="rounded-sm bg-foreground/[0.05] px-1.5 py-px text-foreground/80">
+            {row.walletName}
+          </span>
+          {tags.length > 0 && (
             <>
               <span className="text-muted-foreground/40">·</span>
-              <span className="text-muted-foreground/85">
-                {tagNames.join(", ")}
+              <span className="inline-flex flex-wrap gap-x-1 gap-y-0.5">
+                {tags.map((t, i) => (
+                  <span key={t.id}>
+                    <Link
+                      href={`/spending/category/${t.id}`}
+                      className="text-muted-foreground/85 transition-colors hover:text-foreground"
+                    >
+                      {t.name}
+                    </Link>
+                    {i < tags.length - 1 && (
+                      <span className="text-muted-foreground/40">,</span>
+                    )}
+                  </span>
+                ))}
               </span>
             </>
           )}
@@ -716,11 +749,15 @@ function elapsedDaysOf(m: MonthValue): number {
   const nextMonth = new Date(m.year, m.month, 1);
   if (now < monthStart) return 0;
   if (now >= nextMonth) {
-    // Past month — return its full day count.
     return Math.round((nextMonth.getTime() - monthStart.getTime()) / 86_400_000);
   }
-  // Current month — days elapsed including today.
   return now.getDate();
+}
+
+function monthHeatmapLabel(m: MonthValue): string {
+  return new Date(m.year, m.month - 1, 1).toLocaleDateString("en-US", {
+    month: "long",
+  });
 }
 
 function monthSlug({ year, month }: MonthValue): string {
