@@ -36,10 +36,10 @@ import type { SafeToSpendOverlay } from "@/lib/ai/safe-to-spend-ai";
 import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import type { HoldingBalanceRow } from "@/lib/payment-chain";
 import {
-  SpendSheet,
-  type SpendSheetDefaults,
+  SpendModal,
+  type SpendModalDefaults,
   type WalletOpt,
-} from "@/app/(app)/spending/_components/spend-sheet";
+} from "@/app/(app)/spending/_components/spend-modal";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -133,13 +133,13 @@ export function TodayView({
   }, []);
 
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [sheetDefaults, setSheetDefaults] = useState<SpendSheetDefaults | undefined>(undefined);
+  const [sheetDefaults, setSheetDefaults] = useState<SpendModalDefaults | undefined>(undefined);
 
   // Mirrors spending-view: one global event, one sheet — keeps the form's
   // state machine in a single place across screens.
   useEffect(() => {
     function onOpen(e: Event) {
-      const detail = (e as CustomEvent).detail as SpendSheetDefaults | undefined;
+      const detail = (e as CustomEvent).detail as SpendModalDefaults | undefined;
       setSheetDefaults(detail);
       setSheetOpen(true);
     }
@@ -159,7 +159,7 @@ export function TodayView({
   );
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 lg:px-10 lg:py-12">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-5 lg:px-8 lg:py-6">
       {/* Greeting + date */}
       <motion.div
         initial={{ opacity: 0, y: 6 }}
@@ -167,34 +167,33 @@ export function TodayView({
         transition={{ duration: 0.5, ease: EASE }}
         className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
       >
-        <h1 className="display-headline text-3xl md:text-4xl">
+        <h1 className="display-headline text-2xl md:text-3xl">
           {greeting}{firstName ? `, ${firstName}.` : "."}
         </h1>
         <span className="text-xs text-muted-foreground tabular">{today}</span>
       </motion.div>
 
-      {/* Vertical stack — generous whitespace, no nested cards. */}
-      <div className="mt-10 space-y-8">
-        {/* Phase 1.5 alarm only when something is genuinely wrong. */}
+      {/* Phase 1.5 stack — densified, small-window optimized. */}
+      <div className="mt-5 space-y-4">
+        {/* Alarm only when something is genuinely wrong. */}
         {holdings.some((h) => h.balance < 0) && (
           <NegativeWalletAlarm holdings={holdings} />
         )}
 
-        {/* Main hero — Safe-to-spend with Fraunces numeric. 48px below. */}
-        <div className="pb-4">
-          <MorningBriefHero overlay={overlay} />
-        </div>
+        {/* Main hero — Safe-to-spend with Fraunces numeric. */}
+        <MorningBriefHero overlay={overlay} />
 
-        {/* Quick actions — single thin row, no card. */}
-        {sadakaCategoryId && (
-          <div className="flex flex-wrap items-center gap-3">
-            <SadakaQuickLogButton sadakaCategoryId={sadakaCategoryId} />
-          </div>
+        {/* Open AI questions — letter-like surface, only when there are any
+            OR the user can ask for a sweep. */}
+        {aiEnabled && (
+          <Reveal delay={0.06}>
+            <AiQuestionsCard questions={openAiQuestions} />
+          </Reveal>
         )}
 
         {/* Just-landed nudge. Self-dismissing. */}
         {sadakaSuggestion && triggeringPayment && (
-          <Reveal delay={0.05}>
+          <Reveal delay={0.04}>
             <IncomeSadakaSuggestion
               suggestion={sadakaSuggestion}
               triggeringPayment={triggeringPayment}
@@ -203,54 +202,7 @@ export function TodayView({
           </Reveal>
         )}
 
-        {/* Open AI questions — letter-like surface, only when there are any
-            OR the user can ask for a sweep. */}
-        {aiEnabled && (
-          <Reveal delay={0.08}>
-            <AiQuestionsCard questions={openAiQuestions} />
-          </Reveal>
-        )}
-
-        {/* Existing "today's focus" content — preserved verbatim. */}
-        {aiEnabled && (
-          <Reveal delay={0.12}>
-            <TodaysFocus
-              initialInsights={focusInsights}
-              initialGeneratedAt={focusGeneratedAt}
-              enabled={aiEnabled}
-            />
-          </Reveal>
-        )}
-
-        {/* Outstanding situation strip — preserves the "what's the morning
-            picture?" framing without competing with the new hero. */}
-        <section className="grid items-end gap-6 lg:grid-cols-[1.6fr_1fr]">
-          <p className="max-w-prose text-[15px] leading-relaxed text-foreground/75">
-            {situation}
-          </p>
-          <Reveal delay={0.16}>
-            <MetricTrigger metricKey="outstanding" className="lift rounded-xl">
-              <Card className="border-border/70 p-6">
-                <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
-                  <span className="size-1.5 rounded-full bg-[var(--overdue)] animate-breathe" />
-                  Outstanding
-                </div>
-                <div className="display-numeric mt-3 text-4xl tabular">
-                  {formatMoney(pendingTotal, currency, { compact: true })}
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Across {pendingCount} open {pendingCount === 1 ? "project" : "projects"}, valued
-                  at today&apos;s rates — moves with FX until paid.
-                </p>
-                <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-foreground">
-                  View outstanding <ArrowUpRight className="size-3" />
-                </span>
-              </Card>
-            </MetricTrigger>
-          </Reveal>
-        </section>
-
-        {/* Wallet runway — under the focus content, per spec. */}
+        {/* Wallet runway. */}
         <section>
           <SectionHead title="Wallet runway" hint="Balance ÷ trailing 30d burn" />
           <WalletRunwayCard
@@ -271,14 +223,53 @@ export function TodayView({
           />
         </section>
 
-        {/* BIG Ask-your-money centerpiece — preserved. */}
+        {/* Existing "today's focus" content — preserved verbatim. */}
         {aiEnabled && (
-          <Reveal delay={0.2}>
-            <div className="relative overflow-hidden rounded-xl border border-foreground/15 bg-gradient-to-b from-muted/40 to-card p-1.5 sm:p-2">
+          <Reveal delay={0.1}>
+            <TodaysFocus
+              initialInsights={focusInsights}
+              initialGeneratedAt={focusGeneratedAt}
+              enabled={aiEnabled}
+            />
+          </Reveal>
+        )}
+
+        {/* Outstanding situation strip — preserves the "what's the morning
+            picture?" framing without competing with the new hero. */}
+        <section className="grid items-end gap-4 lg:grid-cols-[1.6fr_1fr]">
+          <p className="max-w-prose text-sm leading-relaxed text-foreground/75">
+            {situation}
+          </p>
+          <Reveal delay={0.14}>
+            <MetricTrigger metricKey="outstanding" className="lift rounded-xl">
+              <Card className="border-border/70 p-4">
+                <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
+                  <span className="size-1.5 rounded-full bg-[var(--overdue)] animate-breathe" />
+                  Outstanding
+                </div>
+                <div className="display-numeric mt-2 text-3xl tabular">
+                  {formatMoney(pendingTotal, currency, { compact: true })}
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Across {pendingCount} open {pendingCount === 1 ? "project" : "projects"}, valued
+                  at today&apos;s rates — moves with FX until paid.
+                </p>
+                <span className="mt-2.5 inline-flex items-center gap-1 text-xs font-medium text-foreground">
+                  View outstanding <ArrowUpRight className="size-3" />
+                </span>
+              </Card>
+            </MetricTrigger>
+          </Reveal>
+        </section>
+
+        {/* BIG Ask-your-money centerpiece — preserved, tighter padding. */}
+        {aiEnabled && (
+          <Reveal delay={0.18}>
+            <div className="relative overflow-hidden rounded-xl border border-foreground/15 bg-gradient-to-b from-muted/40 to-card p-1.5">
               <div className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-[var(--brand)]/10 blur-3xl" />
-              <div className="mb-3 flex items-center gap-2 px-4 pt-3">
-                <span className="grid size-7 place-items-center rounded-full bg-foreground text-background">
-                  <Sparkles className="size-3.5" />
+              <div className="mb-2 flex items-center gap-2 px-3 pt-2">
+                <span className="grid size-6 place-items-center rounded-full bg-foreground text-background">
+                  <Sparkles className="size-3" />
                 </span>
                 <div>
                   <div className="display-eyebrow text-muted-foreground">Your money, on demand</div>
@@ -291,7 +282,7 @@ export function TodayView({
         )}
 
         {/* Richer metric grid — preserved. */}
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <MetricTrigger metricKey="landed" className="h-full">
             <MetricTile
               label="Landed this month"
@@ -378,7 +369,7 @@ export function TodayView({
         </section>
 
         {/* What needs you + recent payments */}
-        <section className="grid gap-6 lg:grid-cols-2">
+        <section className="grid gap-4 lg:grid-cols-2">
           <div>
             <SectionHead title="What needs you" hint="Top open balances, ranked" href="/projects" cta="See all" />
             <BlockedMoneyList rows={blocked} baseCurrency={currency} limit={3} />
@@ -387,7 +378,7 @@ export function TodayView({
             <SectionHead title="Recent payments" hint={`Last ${recent.length} landed`} href="/payments" cta="Payments" />
             <Card className="overflow-hidden p-0">
               {recent.length === 0 ? (
-                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                   {hasClients ? "No payments logged yet." : "Add a client to get started."}
                 </div>
               ) : (
@@ -399,7 +390,7 @@ export function TodayView({
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.35, delay: i * 0.04, ease: EASE }}
                       className={cn(
-                        "flex items-center justify-between px-5 py-3.5",
+                        "flex items-center justify-between px-4 py-2.5",
                         i < recent.length - 1 && "border-b border-border/50",
                       )}
                     >
@@ -420,10 +411,10 @@ export function TodayView({
             </Card>
 
             {topClients.length > 0 && (
-              <div className="mt-6">
+              <div className="mt-4">
                 <SectionHead title="Top clients" hint={`By landed ${currency}`} />
                 <MetricTrigger metricKey="debtor" className="lift rounded-xl">
-                  <Card className="p-5">
+                  <Card className="p-4">
                     <TopClients data={topClients} currency={currency} />
                   </Card>
                 </MetricTrigger>
@@ -431,9 +422,16 @@ export function TodayView({
             )}
           </div>
         </section>
+
+        {/* Quick actions — single thin row at the bottom, no card. */}
+        {sadakaCategoryId && (
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <SadakaQuickLogButton sadakaCategoryId={sadakaCategoryId} />
+          </div>
+        )}
       </div>
 
-      <SpendSheet
+      <SpendModal
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         wallets={sheetWallets}
@@ -454,7 +452,7 @@ export function TodayView({
 function TopClients({ data, currency }: { data: { name: string; value: number }[]; currency: CurrencyCode }) {
   const max = Math.max(...data.map((d) => d.value), 1);
   return (
-    <ol className="space-y-3">
+    <ol className="space-y-2.5">
       {data.map((c, i) => (
         <li key={c.name}>
           <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
@@ -480,7 +478,7 @@ function TopClients({ data, currency }: { data: { name: string; value: number }[
 
 function SectionHead({ title, hint, href, cta }: { title: string; hint: string; href?: string; cta?: string }) {
   return (
-    <div className="mb-3 flex items-end justify-between">
+    <div className="mb-2 flex items-end justify-between">
       <div>
         <div className="text-sm font-medium">{title}</div>
         <div className="text-xs text-muted-foreground">{hint}</div>

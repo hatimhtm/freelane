@@ -3,212 +3,164 @@ import {
   cashflowMetrics,
   outstanding,
   outstandingTotalBase,
-  topClients,
-  revenueSeries,
   dailySeries,
 } from "@/lib/dashboard-calc";
-import { methodLeaderboard, chainSignature, paymentFee, monthlyFeeBase, holdingBalances } from "@/lib/payment-chain";
-import { hasGemini } from "@/lib/ai/gemini";
+import { monthlyFeeBase, holdingBalances } from "@/lib/payment-chain";
+import { safeToSpend } from "@/lib/safe-to-spend";
+import { anchorDate, periodKey, expectedBase } from "@/lib/recurring";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
-import type { CurrencyCode, PaymentMethod } from "@/lib/supabase/types";
-import type { BlockedRow } from "@/components/app/blocked-money-list";
-import { DashboardView } from "./_components/dashboard-view";
+import type { CurrencyCode, Spend } from "@/lib/supabase/types";
+import { DashboardView, type AlertRow } from "./_components/dashboard-view";
 
 const DAY_MS = 86_400_000;
+const RECURRING_HORIZON_DAYS = 5;
+const ALERT_LIMIT = 6;
 
 export const metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
-  const { settings, projects, payments, rates, clients, methods, stepsByPayment, withdrawals } =
-    await getDashboardData();
+  const {
+    settings,
+    projects,
+    payments,
+    rates,
+    clients,
+    methods,
+    stepsByPayment,
+    withdrawals,
+    spends,
+    recurring,
+    recurringSkips,
+    loanInstallments,
+    openAiQuestions,
+  } = await getDashboardData();
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
+  const now = new Date();
   const recurringFee = methods.reduce((s, m) => s + monthlyFeeBase(m, rates), 0);
 
-  const metrics = cashflowMetrics(payments, new Date(), recurringFee, withdrawals);
+  // Headline cashflow — month-to-date landed, spent, fees.
+  const metrics = cashflowMetrics(payments, now, recurringFee, withdrawals, spends);
 
-  // Money parked in holding wallets (coin.ph, Cash) — received minus withdrawn.
-  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals).map((h) => ({
-    name: h.name,
-    balance: Math.round(h.balance),
-    received: Math.round(h.received),
-    withdrawn: Math.round(h.withdrawn),
-  }));
-  const rows = outstanding(projects, payments, clients, rates);
-  const pendingTotal = outstandingTotalBase(rows);
+  // Wallet balances — sum across all holding wallets (negative ones drag the
+  // total down honestly so the bird's-eye number doesn't lie).
+  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
+  const walletTotal = Math.round(holdings.reduce((s, h) => s + h.balance, 0));
 
-  const blocked: BlockedRow[] = rows.map((r) => ({
-    projectId: r.project.id,
-    projectTitle: r.project.title,
-    clientName: r.client?.name ?? "—",
-    outstandingNative: r.outstandingNative,
-    currency: r.project.currency as CurrencyCode,
-    outstandingBase: r.outstandingBase,
-    daysAged: r.daysAged,
-    status: r.project.status === "partially_paid" ? "partially_paid" : "unpaid",
-    flagged: r.project.flagged_overdue,
-  }));
+  // Outstanding total — sum of all open project balances at today's rates.
+  const outstandingRows = outstanding(projects, payments, clients, rates);
+  const outstandingTotal = Math.round(outstandingTotalBase(outstandingRows));
 
-  // Biggest debtor — client with the largest outstanding total.
-  const debtById = new Map<string, { name: string; total: number }>();
-  for (const r of rows) {
-    const name = r.client?.name ?? "Unknown";
-    const e = debtById.get(r.project.client_id) ?? { name, total: 0 };
-    e.total += r.outstandingBase;
-    debtById.set(r.project.client_id, e);
-  }
-  const biggestDebtor = Array.from(debtById.values()).sort((a, b) => b.total - a.total)[0] ?? null;
-
-  // Avg quote → first payment, paid projects only.
-  const lags = projects
-    .filter((p) => p.quoted_at && p.status === "paid")
-    .map((p) => {
-      const first = payments
-        .filter((pay) => pay.project_id === p.id)
-        .map((pay) => new Date(pay.paid_at).getTime())
-        .sort((a, b) => a - b)[0];
-      if (!first) return null;
-      return Math.max(0, (first - new Date(p.quoted_at!).getTime()) / DAY_MS);
-    })
-    .filter((n): n is number => n !== null);
-  const avgDaysToPayment = lags.length ? lags.reduce((a, b) => a + b, 0) / lags.length : null;
-
-  const methodsById = new Map<string, PaymentMethod>(methods.map((m) => [m.id, m]));
-  const leaderboard = methodLeaderboard(payments, stepsByPayment, methodsById, rates);
-
-  // ── Donut: landed income by client (top 5 + "Other") ──
-  const clientsTop = topClients(payments, projects, clients, 5);
-  const landedTotalAll = payments.reduce((s, p) => s + Number(p.net_amount_base ?? 0), 0);
-  const topSum = clientsTop.reduce((s, c) => s + c.value, 0);
-  const otherVal = Math.max(0, Math.round(landedTotalAll - topSum));
-  const incomeByClient = [
-    ...clientsTop.map((c) => ({ name: c.name, value: c.value })),
-    ...(otherVal > 0 && clients.length > 5 ? [{ name: "Other", value: otherVal }] : []),
-  ];
-
-  // ── Bars: net landed vs fees, last 6 months ──
-  const now = new Date();
-  const barStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-  const monthKeys: { key: string; date: Date }[] = [];
-  for (let i = 0; i < 6; i++) {
-    const d = new Date(barStart.getFullYear(), barStart.getMonth() + i, 1);
-    monthKeys.push({ key: d.toLocaleString("en", { month: "short" }), date: d });
-  }
-  const netFeeBuckets = new Map<string, { net: number; fee: number }>(
-    monthKeys.map((m) => [m.key, { net: 0, fee: 0 }]),
-  );
-  for (const p of payments) {
-    const d = new Date(p.paid_at);
-    if (d < barStart) continue;
-    const key = d.toLocaleString("en", { month: "short" });
-    const b = netFeeBuckets.get(key);
-    if (!b) continue;
-    b.net += Number(p.net_amount_base ?? 0);
-    b.fee += Number(p.implied_fee_base ?? 0);
-  }
-  // Withdrawal fees are the same fee statistic — add them in the month they hit.
-  for (const w of withdrawals) {
-    const d = new Date(w.withdrawn_at);
-    if (d < barStart) continue;
-    const b = netFeeBuckets.get(d.toLocaleString("en", { month: "short" }));
-    if (b) b.fee += Number(w.fee_base ?? 0);
-  }
-  const netVsFee = monthKeys.map((m) => {
-    const b = netFeeBuckets.get(m.key)!;
-    return { month: m.key, net: Math.round(b.net), fee: Math.round(b.fee) };
+  // Safe-to-spend — full breakdown, but only the headline lands here.
+  const sts = safeToSpend({
+    payments,
+    withdrawals,
+    spends,
+    recurring,
+    recurringSkips,
+    loanInstallments,
+    methods,
+    stepsByPayment,
+    rates,
+    now,
   });
 
-  // ── Income by currency (landed gross, YTD) ──
-  const startYear = new Date(now.getFullYear(), 0, 1);
-  const projectsById = new Map(projects.map((p) => [p.id, p]));
-  const currencyBuckets = new Map<string, number>();
-  for (const p of payments) {
-    if (new Date(p.paid_at) < startYear) continue;
-    const proj = projectsById.get(p.project_id);
-    const cur = (proj?.currency ?? currency) as string;
-    currencyBuckets.set(cur, (currencyBuckets.get(cur) ?? 0) + Number(p.net_amount_base ?? 0));
-  }
-  const incomeByCurrency = Array.from(currencyBuckets, ([code, value]) => ({
-    code,
-    value: Math.round(value),
-  }))
-    .filter((c) => c.value > 0)
-    .sort((a, b) => b.value - a.value);
+  // 30-day pulse — landed and spent series, aligned to today.
+  const landedSeries = dailySeries(payments, 30, now);
+  const spentSeries = dailySpendSeries(spends, 30, now);
 
-  // ── Fees by method/chain (YTD), top 4 ──
-  const feeByChain = new Map<string, number>();
-  for (const p of payments) {
-    if (new Date(p.paid_at) < startYear) continue;
-    const sig = chainSignature(stepsByPayment.get(p.id) ?? [], methodsById);
-    const { fee } = paymentFee(p);
-    if (fee <= 0) continue;
-    feeByChain.set(sig, (feeByChain.get(sig) ?? 0) + fee);
-  }
-  // Withdrawal fees join the same breakdown, grouped by their wallet → dest route.
-  for (const w of withdrawals) {
-    if (new Date(w.withdrawn_at) < startYear) continue;
-    const fee = Number(w.fee_base ?? 0);
-    if (fee <= 0) continue;
-    const from = w.from_method_id ? methodsById.get(w.from_method_id)?.name ?? "Untagged" : "Untagged";
-    const to = w.to_method_id ? methodsById.get(w.to_method_id)?.name ?? null : null;
-    const sig = to ? `${from} → ${to}` : `${from} withdrawal`;
-    feeByChain.set(sig, (feeByChain.get(sig) ?? 0) + fee);
-  }
-  const feesYtdTotal = Array.from(feeByChain.values()).reduce((s, v) => s + v, 0);
-  const feesByMethod = Array.from(feeByChain, ([name, value]) => ({ name, value: Math.round(value) }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 4);
+  // ─────────────────────────────────────────────────────────── ALERTS ──
+  const alerts: AlertRow[] = [];
 
-  // ── Longest outstanding callout ──
-  const longestOutstanding = [...rows].sort((a, b) => b.daysAged - a.daysAged)[0] ?? null;
+  // 1) Negative holding wallets — most urgent first (largest deficit).
+  const negatives = holdings
+    .filter((h) => h.balance < 0)
+    .sort((a, b) => a.balance - b.balance);
+  for (const h of negatives) {
+    alerts.push({
+      kind: "negative-wallet",
+      name: h.name,
+      deficit: Math.abs(Math.round(h.balance)),
+      href: "/payments",
+    });
+  }
 
-  const recent = payments.slice(0, 6).map((p) => {
-    const project = projects.find((pr) => pr.id === p.project_id);
-    const client = project ? clients.find((c) => c.id === project.client_id) : null;
-    return {
-      id: p.id,
-      net: Number(p.net_amount_base ?? 0),
-      paidAt: p.paid_at,
-      projectTitle: project?.title ?? "—",
-      clientName: client?.name ?? "—",
-    };
-  });
+  // 2) Recurring rules whose next anchor lands inside the next 5 days and
+  // haven't been settled for the current period.
+  const dueSoon: { label: string; daysUntil: number; expectedBase: number; currency: CurrencyCode }[] = [];
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  for (const r of recurring) {
+    if (!r.active) continue;
+    const settled = recurringSkips.some(
+      (s) => s.recurring_spend_id === r.id && s.period_key === periodKey(r, now),
+    );
+    if (settled) continue;
+    const anchor = anchorDate(r, now);
+    anchor.setHours(0, 0, 0, 0);
+    const daysUntil = Math.round((anchor.getTime() - today.getTime()) / DAY_MS);
+    if (daysUntil < 0 || daysUntil > RECURRING_HORIZON_DAYS) continue;
+    dueSoon.push({
+      label: r.label,
+      daysUntil,
+      expectedBase: Math.round(expectedBase(r, rates)),
+      currency: r.expected_currency as CurrencyCode,
+    });
+  }
+  dueSoon
+    .sort((a, b) => a.daysUntil - b.daysUntil)
+    .slice(0, 3)
+    .forEach((d) =>
+      alerts.push({
+        kind: "recurring-due",
+        label: d.label,
+        daysUntil: d.daysUntil,
+        expectedBase: d.expectedBase,
+        currency: d.currency,
+        href: "/settings/recurring",
+      }),
+    );
+
+  // 3) Open AI questions — count + first headline as preview.
+  if (openAiQuestions.length > 0) {
+    alerts.push({
+      kind: "ai-questions",
+      count: openAiQuestions.length,
+      preview: openAiQuestions[0]?.question ?? null,
+      href: "/today",
+    });
+  }
 
   return (
     <DashboardView
       firstName={settings?.issuer_name?.split(" ")[0] ?? null}
       currency={currency}
       hasClients={clients.length > 0}
-      hasProjects={projects.length > 0}
-      metrics={metrics}
-      pendingTotal={pendingTotal}
-      pendingCount={rows.length}
-      biggestDebtor={biggestDebtor}
-      avgDaysToPayment={avgDaysToPayment}
-      blocked={blocked}
-      topClients={clientsTop}
-      revenue={revenueSeries(payments, 6)}
-      series={dailySeries(payments, 30)}
-      leaderboard={leaderboard}
-      recent={recent}
-      incomeByClient={incomeByClient}
-      netVsFee={netVsFee}
-      incomeByCurrency={incomeByCurrency}
-      feesByMethod={feesByMethod}
-      feesYtd={Math.round(feesYtdTotal)}
-      holdings={holdings}
-      longestOutstanding={
-        longestOutstanding
-          ? {
-              projectTitle: longestOutstanding.project.title,
-              clientName: longestOutstanding.client?.name ?? "—",
-              daysAged: longestOutstanding.daysAged,
-              outstandingBase: longestOutstanding.outstandingBase,
-            }
-          : null
-      }
-      year={new Date().getFullYear()}
-      aiEnabled={hasGemini()}
+      year={now.getFullYear()}
+      landedMtd={Math.round(metrics.mtd)}
+      spentMtd={Math.round(metrics.spentMtd)}
+      feesMtd={Math.round(metrics.feesMtd)}
+      outstandingTotal={outstandingTotal}
+      walletTotal={walletTotal}
+      safeToday={Math.round(sts.safeTodayBase)}
+      landedSeries={landedSeries}
+      spentSeries={spentSeries}
+      alerts={alerts.slice(0, ALERT_LIMIT)}
     />
   );
+}
+
+// Daily spend totals over the trailing N days (oldest → newest). Mirrors
+// dailySeries() for payments but lives here because nothing else needs it yet.
+function dailySpendSeries(spends: Spend[], days: number, now: Date): number[] {
+  const out = new Array(days).fill(0);
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (days - 1));
+  for (const sp of spends) {
+    const d = new Date(sp.spent_at);
+    const idx = Math.floor((d.getTime() - start.getTime()) / DAY_MS);
+    if (idx >= 0 && idx < days) out[idx] += Number(sp.amount_base ?? 0);
+  }
+  return out;
 }

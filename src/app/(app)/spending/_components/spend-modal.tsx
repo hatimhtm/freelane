@@ -13,12 +13,11 @@ import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  CenterModal,
+  CenterModalBody,
+  CenterModalFooter,
+} from "@/components/ui/center-modal";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -30,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { WalletPickerWithBalance } from "@/components/app/wallet-picker";
 
 import { SafeToSpendImpactDial } from "@/components/app/safe-to-spend-impact-dial";
 import { PriceTypoGuard } from "@/components/app/price-typo-guard";
@@ -67,7 +67,7 @@ export type WalletOpt = {
   balanceBase?: number;
 };
 
-export type SpendSheetDefaults = {
+export type SpendModalDefaults = {
   categoryId?: string;
   amountBase?: number;
   description?: string;
@@ -78,7 +78,7 @@ export type SpendSheetDefaults = {
 
 type ItemRow = { name: string; amount: string };
 
-export function SpendSheet({
+export function SpendModal({
   open,
   onOpenChange,
   wallets,
@@ -105,7 +105,7 @@ export function SpendSheet({
   spendItems: SpendItem[];
   priceIntelCache?: PriceIntelligenceRow[];
   safeToSpendBaseline: SafeToSpendBreakdown;
-  defaults?: SpendSheetDefaults;
+  defaults?: SpendModalDefaults;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -160,6 +160,21 @@ export function SpendSheet({
 
   const selectedWallet = wallets.find((w) => w.id === walletId);
   const selectedWalletBalance = selectedWallet?.balanceBase ?? 0;
+
+  // Sorted wallets + balance map for the inline-balance picker. Holding wallets
+  // float to the top with the richest first — the most likely source.
+  const sortedWallets = useMemo(() => sortWallets(wallets), [wallets]);
+  const walletBalances = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const w of wallets) {
+      if (typeof w.balanceBase === "number") m.set(w.id, w.balanceBase);
+    }
+    return m;
+  }, [wallets]);
+  const walletOptions = useMemo(
+    () => sortedWallets.map((w) => ({ id: w.id, name: w.name })),
+    [sortedWallets],
+  );
 
   // Markov + wallet-bias suggestion strip — purely local + instant. AI fallback
   // would require a server roundtrip and breaks the calm of typing; deferred.
@@ -269,21 +284,15 @@ export function SpendSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-full overflow-y-auto bg-paper text-ink sm:max-w-lg"
-      >
-        <SheetHeader className="px-6 pt-8 pb-2">
-          <div className="display-eyebrow text-ink/55">Log spend</div>
-          <SheetTitle className="mt-3 font-fraunces text-[28px] leading-none tracking-tight text-ink">
-            A moment of money
-          </SheetTitle>
-          <SheetDescription className="sr-only">
-            Record a spend, tag it, and let the math update.
-          </SheetDescription>
-        </SheetHeader>
-
+    <CenterModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Log a spend"
+      description="Record it, tag it, let the math update."
+      size="lg"
+      className="sm:max-w-[560px]"
+    >
+      <CenterModalBody>
         <AnimatePresence initial={false}>
           {error && (
             <motion.div
@@ -291,46 +300,39 @@ export function SpendSheet({
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.28, ease: EASE }}
-              className="mx-6 mt-4 border-l-2 border-[var(--overdue)] bg-paper px-3 py-2 text-[13px] leading-relaxed text-ink/80"
+              transition={{ duration: 0.24, ease: EASE }}
+              className="mb-3 border-l-2 border-[var(--overdue)] bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground/80"
             >
               {error}
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="flex flex-col gap-7 px-6 pt-6 pb-32">
-          <Row label="Wallet">
-            <Select
-              items={wallets.map((w) => ({ value: w.id, label: w.name }))}
-              value={walletId}
-              onValueChange={(v) => v && setWalletId(v)}
-            >
-              <SelectTrigger className="h-10 w-full">
-                <SelectValue placeholder="Pick a wallet" />
-              </SelectTrigger>
-              <SelectContent>
-                {sortWallets(wallets).map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    <span>{w.name}</span>
-                    {w.is_holding && w.balanceBase !== undefined && (
-                      <span className="ml-2 text-ink/50 tabular">
-                        {formatMoney(w.balanceBase, baseCurrency, {
-                          compact: true,
-                        })}
-                      </span>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Row>
+        <div className="grid gap-3 pt-0.5">
+          <div className="grid grid-cols-[1fr_auto] items-start gap-3">
+            <Row label="Wallet">
+              <WalletPickerWithBalance
+                value={walletId}
+                onValueChange={(v) => v && setWalletId(v)}
+                methods={walletOptions}
+                balances={walletBalances}
+                baseCurrency={baseCurrency}
+                placeholder="Pick a wallet"
+              />
+            </Row>
+            <Row label="Date">
+              <Input
+                type="date"
+                value={spentAt}
+                onChange={(e) => setSpentAt(e.target.value)}
+                className="h-8 w-[150px] tabular"
+              />
+            </Row>
+          </div>
 
-          <Hairline />
-
-          <div className="grid grid-cols-[1fr_auto] items-start gap-5">
+          <div className="grid grid-cols-[1fr_auto] items-start gap-3">
             <Row label="Amount">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <Input
                   type="number"
                   inputMode="decimal"
@@ -338,14 +340,14 @@ export function SpendSheet({
                   placeholder="0.00"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="h-11 flex-1 text-right tabular text-[16px]"
+                  className="h-9 flex-1 text-right tabular text-sm"
                 />
                 <Select
                   items={currencies.map((c) => ({ value: c, label: c }))}
                   value={currency}
                   onValueChange={(v) => v && setCurrency(v)}
                 >
-                  <SelectTrigger className="h-11 w-[84px] shrink-0">
+                  <SelectTrigger className="h-9 w-[78px] shrink-0 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -359,7 +361,7 @@ export function SpendSheet({
               </div>
             </Row>
 
-            <div className="pt-7">
+            <div className="pt-[18px]">
               <SafeToSpendImpactDial
                 proposedAmountBase={amountBase}
                 baseline={safeToSpendBaseline}
@@ -374,29 +376,18 @@ export function SpendSheet({
             />
           )}
 
-          <Row label="Date">
-            <Input
-              type="date"
-              value={spentAt}
-              onChange={(e) => setSpentAt(e.target.value)}
-              className="h-10 w-[180px] tabular"
-            />
-          </Row>
-
-          <Hairline />
-
           <Row label="Description">
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What was it"
               rows={2}
-              className="min-h-[44px] resize-none"
+              className="min-h-[40px] resize-none text-sm"
             />
           </Row>
 
           {visibleSuggestions.length > 0 && (
-            <div className="-mt-3">
+            <div className="-mt-1">
               <TagSuggestStrip
                 suggestions={visibleSuggestions}
                 categories={activeCategories}
@@ -419,14 +410,14 @@ export function SpendSheet({
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Anything to remember"
               rows={2}
-              className="min-h-[44px] resize-none"
+              className="min-h-[40px] resize-none text-sm"
             />
           </Row>
 
           <Hairline />
 
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-[13px] font-medium text-ink">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-medium text-foreground">
               Business-relevant
             </span>
             <Switch
@@ -436,7 +427,7 @@ export function SpendSheet({
           </div>
 
           <Row label="VAT" optional>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Input
                 type="number"
                 inputMode="decimal"
@@ -444,9 +435,9 @@ export function SpendSheet({
                 placeholder="0.00"
                 value={vat}
                 onChange={(e) => setVat(e.target.value)}
-                className="h-10 w-40 text-right tabular"
+                className="h-8 w-36 text-right tabular text-sm"
               />
-              <span className="text-[12px] text-ink/55 tabular">
+              <span className="text-[11px] text-muted-foreground tabular">
                 {currency}
               </span>
             </div>
@@ -460,12 +451,12 @@ export function SpendSheet({
               onClick={() => setShowItems((v) => !v)}
               className="group flex w-full items-center justify-between text-left"
             >
-              <span className="text-[13px] font-medium text-ink">
+              <span className="text-xs font-medium text-foreground">
                 Add items
               </span>
               <ChevronDown
                 className={cn(
-                  "h-4 w-4 text-ink/55 transition-transform duration-300 ease-out",
+                  "h-3.5 w-3.5 text-muted-foreground transition-transform duration-300 ease-out",
                   showItems && "rotate-180",
                 )}
               />
@@ -478,10 +469,10 @@ export function SpendSheet({
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.32, ease: EASE }}
+                  transition={{ duration: 0.28, ease: EASE }}
                   className="overflow-hidden"
                 >
-                  <div className="mt-4 flex flex-col gap-4">
+                  <div className="mt-2.5 flex flex-col gap-2.5">
                     <AnimatePresence initial={false}>
                       {items.map((it, i) => (
                         <motion.div
@@ -489,17 +480,17 @@ export function SpendSheet({
                           initial={{ opacity: 0, y: -4 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0 }}
-                          transition={{ duration: 0.24, ease: EASE }}
-                          className="border-l border-ink/10 pl-4"
+                          transition={{ duration: 0.22, ease: EASE }}
+                          className="border-l border-border/60 pl-3"
                         >
-                          <div className="flex items-start gap-2">
+                          <div className="flex items-start gap-1.5">
                             <Input
                               value={it.name}
                               onChange={(e) =>
                                 setItem(i, { name: e.target.value })
                               }
                               placeholder="Item"
-                              className="h-10 flex-1"
+                              className="h-8 flex-1 text-sm"
                             />
                             <Input
                               type="number"
@@ -510,15 +501,15 @@ export function SpendSheet({
                                 setItem(i, { amount: e.target.value })
                               }
                               placeholder="0.00"
-                              className="h-10 w-28 text-right tabular"
+                              className="h-8 w-24 text-right tabular text-sm"
                             />
                             <button
                               type="button"
                               onClick={() => removeItem(i)}
-                              className="grid size-10 place-items-center text-ink/40 transition-colors duration-300 ease-out hover:text-[var(--overdue)]"
+                              className="grid size-8 place-items-center text-muted-foreground/60 transition-colors duration-300 ease-out hover:text-[var(--overdue)]"
                               aria-label="Remove item"
                             >
-                              <X className="h-4 w-4" />
+                              <X className="h-3.5 w-3.5" />
                             </button>
                           </div>
                           {it.name.trim().length > 1 && (
@@ -535,9 +526,9 @@ export function SpendSheet({
                     <button
                       type="button"
                       onClick={addItem}
-                      className="inline-flex h-9 w-fit items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-ink/75 transition-colors duration-300 ease-out hover:bg-ink/[0.05] hover:text-ink"
+                      className="inline-flex h-7 w-fit items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors duration-300 ease-out hover:bg-muted hover:text-foreground"
                     >
-                      <Plus className="h-3.5 w-3.5" />
+                      <Plus className="h-3 w-3" />
                       Add item
                     </button>
                   </div>
@@ -562,39 +553,30 @@ export function SpendSheet({
                         Math.max(1, Math.floor(Number(e.target.value) || 1)),
                       )
                     }
-                    className="h-10 w-20 text-right tabular"
+                    className="h-8 w-20 text-right tabular text-sm"
                   />
-                  <span className="text-[13px] text-ink/55">
+                  <span className="text-xs text-muted-foreground">
                     {coversPeriods === 1 ? "period" : "periods"}
                   </span>
                 </div>
               </Row>
             </>
           )}
-
-          {/* Spacer so the sticky footer never crowds the last field. */}
-          <div className="h-2" />
         </div>
+      </CenterModalBody>
 
-        <div className="sticky bottom-0 border-t border-ink/10 bg-paper/85 px-6 py-4 supports-backdrop-filter:backdrop-blur-md">
-          <button
-            type="button"
-            onClick={save}
-            disabled={pending || !walletId || amountNum <= 0}
-            className={cn(
-              "inline-flex h-11 w-full items-center justify-center rounded-lg text-[14px] font-medium tracking-tight",
-              "bg-[var(--brand)] text-[var(--brand-foreground)]",
-              "transition-[transform,filter,opacity] duration-300 ease-out",
-              "hover:brightness-[0.97] active:translate-y-px",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-            )}
-          >
-            {pending ? "Saving" : "Save spend"}
-          </button>
-        </div>
-      </SheetContent>
-    </Sheet>
+      <CenterModalFooter>
+        <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          Cancel
+        </Button>
+        <Button
+          onClick={save}
+          disabled={pending || !walletId || amountNum <= 0}
+        >
+          {pending ? "Saving…" : "Save spend"}
+        </Button>
+      </CenterModalFooter>
+    </CenterModal>
   );
 }
 
@@ -608,11 +590,11 @@ function Row({
   optional?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-2">
-      <Label className="text-[11px] uppercase tracking-[0.18em] text-ink/55">
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
         {optional && (
-          <span className="ml-1 text-ink/35 normal-case tracking-normal">
+          <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">
             optional
           </span>
         )}
@@ -623,7 +605,7 @@ function Row({
 }
 
 function Hairline() {
-  return <div className="h-px w-full bg-ink/10" />;
+  return <div className="h-px w-full bg-border/60" />;
 }
 
 function CategoryChips({
@@ -637,13 +619,13 @@ function CategoryChips({
 }) {
   if (categories.length === 0) {
     return (
-      <p className="text-[12px] text-ink/55">
+      <p className="text-xs text-muted-foreground">
         No categories yet — add some in settings.
       </p>
     );
   }
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {categories.map((c) => {
         const on = selected.includes(c.id);
         return (
@@ -652,10 +634,10 @@ function CategoryChips({
             type="button"
             onClick={() => onToggle(c.id)}
             className={cn(
-              "rounded-full border-[1.5px] px-3 py-1.5 text-[13px] font-medium transition-colors duration-300 ease-out",
+              "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-300 ease-out",
               on
-                ? "border-ink bg-ink text-paper"
-                : "border-ink/20 text-ink hover:bg-ink/[0.05]",
+                ? "border-foreground bg-foreground text-background"
+                : "border-border/70 text-foreground/80 hover:bg-muted hover:text-foreground",
             )}
           >
             {c.name}

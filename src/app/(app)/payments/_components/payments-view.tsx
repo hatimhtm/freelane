@@ -25,8 +25,8 @@ import { cn } from "@/lib/utils";
 import { updatePaymentDetails, consolidateClientMemoryAction, deleteWithdrawal } from "@/lib/data/actions";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { MethodLeaderboardRow, HoldingBalanceRow } from "@/lib/payment-chain";
-import { ChainSheet } from "./chain-sheet";
-import { WithdrawalSheet } from "./withdrawal-sheet";
+import { ChainModal } from "./chain-modal";
+import { WithdrawalModal } from "./withdrawal-modal";
 
 export type ChainStepView = {
   order: number;
@@ -121,6 +121,12 @@ export function PaymentsView({
     [currency, allCurrencies],
   );
   const formProjects = openProjects.length > 0 ? openProjects : allProjects;
+  // Inline wallet balances for the chain-modal pickers — holding wallets show
+  // their parked amount, non-holding methods omit it.
+  const balancesByMethod = useMemo(
+    () => new Map(holdings.map((h) => [h.methodId, h.balance])),
+    [holdings],
+  );
 
   const landingNames = useMemo(
     () => Array.from(new Set(rows.map((r) => r.landingName))).filter((n) => n && n !== "Untagged"),
@@ -221,18 +227,19 @@ export function PaymentsView({
         )}
       </section>
 
-      <ChainSheet
+      <ChainModal
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         projects={formProjects}
         methods={methods}
+        balances={balancesByMethod}
         currencies={currencies}
         rates={rates}
         baseCurrency={currency}
         defaultProjectId={defaultProjectId}
       />
 
-      <WithdrawalSheet
+      <WithdrawalModal
         open={withdrawOpen}
         onOpenChange={setWithdrawOpen}
         holdingMethods={holdingMethods}

@@ -5,30 +5,21 @@ import { useRouter } from "next/navigation";
 import { ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  CenterModal,
+  CenterModalBody,
+  CenterModalFooter,
+} from "@/components/ui/center-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { WalletPickerWithBalance } from "@/components/app/wallet-picker";
 import { formatMoney } from "@/lib/money";
 import { createWithdrawal } from "@/lib/data/actions";
 import type { CurrencyCode } from "@/lib/supabase/types";
 
 type MethodOpt = { id: string; name: string; balance?: number };
 
-export function WithdrawalSheet({
+export function WithdrawalModal({
   open,
   onOpenChange,
   holdingMethods,
@@ -62,7 +53,17 @@ export function WithdrawalSheet({
     setNet("");
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fromWallet = holdingMethods.find((m) => m.id === fromId);
+  // Balance map shared by both pickers. Holding wallets have known balances;
+  // arbitrary destinations (e.g. Cash) are present without a balance, which the
+  // picker hides gracefully.
+  const balances = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const h of holdingMethods) {
+      if (typeof h.balance === "number") m.set(h.id, h.balance);
+    }
+    return m;
+  }, [holdingMethods]);
+
   const preview = useMemo(() => {
     const g = Number(gross || 0);
     const n = Number(net || 0);
@@ -96,70 +97,53 @@ export function WithdrawalSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto scroll-muted sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>Log a withdrawal</SheetTitle>
-          <SheetDescription>
-            Move money out of a holding wallet. The fee is what you took out minus what you actually received.
-          </SheetDescription>
-        </SheetHeader>
-
-        <div className="grid gap-5 px-4 py-6">
-          <div className="grid grid-cols-2 gap-4">
+    <CenterModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Log a withdrawal"
+      description="Move money out of a holding wallet. The fee is what you took out minus what you actually received."
+      size="md"
+    >
+      <CenterModalBody>
+        <div className="grid gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Field label="From wallet">
-              <Select
-                items={holdingMethods.map((m) => ({ value: m.id, label: m.name }))}
+              <WalletPickerWithBalance
                 value={fromId}
                 onValueChange={(v) => v && setFromId(v)}
-              >
-                <SelectTrigger className="w-full"><SelectValue placeholder="Pick a wallet" /></SelectTrigger>
-                <SelectContent>
-                  {holdingMethods.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                methods={holdingMethods.map(({ id, name }) => ({ id, name }))}
+                balances={balances}
+                baseCurrency={baseCurrency}
+                placeholder="Pick a wallet"
+              />
             </Field>
             <Field label="Date">
               <Input type="date" value={withdrawnAt} onChange={(e) => setWithdrawnAt(e.target.value)} />
             </Field>
           </div>
 
-          {fromWallet?.balance !== undefined && (
-            <p className="-mt-2 text-xs text-muted-foreground">
-              Parked in {fromWallet.name}:{" "}
-              <span className="font-medium text-foreground tabular">{formatMoney(fromWallet.balance, baseCurrency, { compact: true })}</span>
-            </p>
-          )}
-
-          <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
-            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-              <AmountRow label="Out" amount={gross} onAmount={setGross} baseCurrency={baseCurrency} />
-            </div>
+          <div className="rounded-[12px] border border-border/60 bg-muted/30 p-3">
+            <AmountRow label="Out" amount={gross} onAmount={setGross} baseCurrency={baseCurrency} />
             <div className="my-1 flex justify-center text-muted-foreground/50"><ArrowDown className="h-3 w-3" /></div>
-            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-              <AmountRow label="Got" amount={net} onAmount={setNet} baseCurrency={baseCurrency} />
-            </div>
+            <AmountRow label="Got" amount={net} onAmount={setNet} baseCurrency={baseCurrency} />
             <div className="mt-2 border-t border-border/50 pt-2">
               <Field label="To (optional)">
-                <Select
-                  items={destinations.map((m) => ({ value: m.id, label: m.name }))}
+                <WalletPickerWithBalance
                   value={toId}
-                  onValueChange={(v) => setToId(v ?? "")}
-                >
-                  <SelectTrigger className="h-9 w-full text-sm"><SelectValue placeholder="Cash" /></SelectTrigger>
-                  <SelectContent>
-                    {destinations.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onValueChange={setToId}
+                  methods={destinations}
+                  balances={balances}
+                  baseCurrency={baseCurrency}
+                  placeholder="Cash"
+                  includeNone
+                  noneLabel="Cash"
+                  size="sm"
+                />
               </Field>
             </div>
           </div>
 
-          <div className="rounded-xl border border-[var(--overdue)]/40 bg-card p-4">
+          <div className="rounded-[12px] border border-[var(--overdue)]/40 bg-card p-3">
             <div className="flex items-baseline justify-between">
               <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Withdrawal fee</span>
               <span className="text-2xl font-semibold tabular text-[var(--overdue)]">{formatMoney(preview.fee, baseCurrency)}</span>
@@ -170,13 +154,13 @@ export function WithdrawalSheet({
             </div>
           </div>
         </div>
+      </CenterModalBody>
 
-        <SheetFooter className="mt-auto flex-row justify-end gap-2 border-t border-border/60 bg-background/70 backdrop-blur">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={pending}>{pending ? "Saving…" : "Log withdrawal"}</Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+      <CenterModalFooter>
+        <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+        <Button onClick={save} disabled={pending}>{pending ? "Saving…" : "Log withdrawal"}</Button>
+      </CenterModalFooter>
+    </CenterModal>
   );
 }
 
@@ -195,9 +179,9 @@ function AmountRow({
         placeholder="0.00"
         value={amount}
         onChange={(e) => onAmount(e.target.value)}
-        className="h-11 sm:h-9 flex-1 text-right tabular"
+        className="h-9 flex-1 text-right tabular"
       />
-      <span className="grid h-11 sm:h-9 w-[72px] sm:w-[88px] shrink-0 place-items-center rounded-md border border-input bg-muted/40 text-sm text-muted-foreground">{baseCurrency}</span>
+      <span className="grid h-9 w-[72px] sm:w-[88px] shrink-0 place-items-center rounded-md border border-input bg-muted/40 text-sm text-muted-foreground">{baseCurrency}</span>
     </div>
   );
 }

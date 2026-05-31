@@ -124,7 +124,15 @@ export default async function TodayPage() {
   // ── Phase 1.5 surfaces ──
 
   // Wallet balances (holding wallets only) — feeds NegativeWalletAlarm + Runway.
-  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
+  // Defensive: a single malformed row (e.g. an orphan withdrawal with a stale
+  // method_id) shouldn't take the whole Today page down on a revalidate.
+  let holdings: ReturnType<typeof holdingBalances>;
+  try {
+    holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
+  } catch (err) {
+    console.error("Today: holdingBalances threw", err);
+    holdings = [];
+  }
 
   // Trailing 30d spend per wallet → daily burn used by WalletRunwayCard.
   const now = new Date();
@@ -153,27 +161,31 @@ export default async function TodayPage() {
   let sadakaSuggestion: { suggestedBase: number; percent: number; reason: string } | null = null;
   let triggeringPayment: { client: string; net: number; paid_at: string } | null = null;
   if (freshPayment) {
-    const netBase = Number(freshPayment.net_amount_base ?? 0);
-    const project = projects.find((p) => p.id === freshPayment.project_id);
-    const client = project ? clients.find((c) => c.id === project.client_id) : null;
-    const s = suggestSadakaForIncome(netBase, {
-      payments,
-      withdrawals,
-      spends,
-      recurring,
-      recurringSkips,
-      loanInstallments,
-      methods,
-      stepsByPayment,
-      rates,
-    });
-    if (s.suggestedBase > 0) {
-      sadakaSuggestion = { suggestedBase: s.suggestedBase, percent: s.percent, reason: s.reason };
-      triggeringPayment = {
-        client: client?.name ?? "a client",
-        net: netBase,
-        paid_at: freshPayment.paid_at,
-      };
+    try {
+      const netBase = Number(freshPayment.net_amount_base ?? 0);
+      const project = projects.find((p) => p.id === freshPayment.project_id);
+      const client = project ? clients.find((c) => c.id === project.client_id) : null;
+      const s = suggestSadakaForIncome(netBase, {
+        payments,
+        withdrawals,
+        spends,
+        recurring,
+        recurringSkips,
+        loanInstallments,
+        methods,
+        stepsByPayment,
+        rates,
+      });
+      if (s.suggestedBase > 0) {
+        sadakaSuggestion = { suggestedBase: s.suggestedBase, percent: s.percent, reason: s.reason };
+        triggeringPayment = {
+          client: client?.name ?? "a client",
+          net: netBase,
+          paid_at: freshPayment.paid_at,
+        };
+      }
+    } catch (err) {
+      console.error("Today: suggestSadakaForIncome threw", err);
     }
   }
 
@@ -198,17 +210,51 @@ export default async function TodayPage() {
       is_holding: !!m.is_holding,
       balanceBase: m.is_holding ? balanceByMethod.get(m.id) ?? 0 : undefined,
     }));
-  const safeToSpendBaseline = safeToSpend({
-    payments,
-    withdrawals,
-    spends,
-    recurring,
-    recurringSkips,
-    loanInstallments,
-    methods,
-    stepsByPayment,
-    rates,
-  });
+  // safeToSpend is pure math, but it consumes every ledger collection — a
+  // single bad input row (e.g. NaN amount_base from a half-migrated spend)
+  // would crash the whole Today render on revalidate. Catch and fall back to
+  // a "learning" baseline so the UI can still render. The cached overlay
+  // (above) handles the headline number; this baseline is the spend-sheet's
+  // post-spend projection.
+  let safeToSpendBaseline: ReturnType<typeof safeToSpend>;
+  try {
+    safeToSpendBaseline = safeToSpend({
+      payments,
+      withdrawals,
+      spends,
+      recurring,
+      recurringSkips,
+      loanInstallments,
+      methods,
+      stepsByPayment,
+      rates,
+    });
+  } catch (err) {
+    console.error("Today: safeToSpend threw", err);
+    safeToSpendBaseline = {
+      horizonDays: 30,
+      walletBalancesBase: 0,
+      trailingIncomeBase: 0,
+      trailingSpendBase: 0,
+      forwardIncomeProjectionBase: 0,
+      recurringForwardBase: 0,
+      loanForwardBase: 0,
+      feeFloorBase: 0,
+      committedPoolBase: 0,
+      trailingOverspendBase: 0,
+      recoveryDailyTaxBase: 0,
+      inRecovery: false,
+      discretionaryPoolBase: 0,
+      dailyAllowanceBase: 0,
+      stabilityScore: 1,
+      stabilityMultiplier: 1,
+      patternMultiplier: 1,
+      colFloorBase: 0,
+      safeTodayBase: 0,
+      notes: ["safe-to-spend recompute failed — fell back to a calm default."],
+      isLearning: true,
+    };
+  }
 
   return (
     <TodayView

@@ -397,7 +397,7 @@ export async function getYearData() {
   };
 }
 
-// Spending route: every shape needed to render the chain-sheet-style entry +
+// Spending route: every shape needed to render the chain-modal-style entry +
 // the headline totals + filters. Pulls payments/methods/rates so the route can
 // run cashflow math against the same snapshot the Dashboard uses.
 export async function getSpendingData() {

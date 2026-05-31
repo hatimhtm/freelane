@@ -1305,22 +1305,34 @@ export async function createWithdrawal(input: WithdrawalInput) {
     .single();
   if (error) throw error;
 
-  const { data: fromMethod } = await supabase
-    .from("payment_methods")
-    .select("name")
-    .eq("id", input.from_method_id)
-    .maybeSingle();
+  // Side effects from here on are best-effort: the withdrawal itself is
+  // already saved, and the user shouldn't see the whole mutation fail because
+  // an audit log row or cache invalidation hiccupped. Each block is isolated
+  // so one failure doesn't cascade into the next.
+  try {
+    const { data: fromMethod } = await supabase
+      .from("payment_methods")
+      .select("name")
+      .eq("id", input.from_method_id)
+      .maybeSingle();
+    await logEvent({
+      userId,
+      kind: "withdrawal.added",
+      title: `Withdrew ${(fromMethod?.name as string) ?? "wallet"} · received PHP ${net.toFixed(0)}, fee PHP ${fee.toFixed(0)}`,
+      entityType: "withdrawal",
+      entityId: data.id as string,
+      metadata: { gross_base: gross, net_base: net, fee_base: fee, from_method_id: input.from_method_id },
+    });
+  } catch (err) {
+    console.error("createWithdrawal: logEvent failed (non-fatal)", err);
+  }
 
-  await logEvent({
-    userId,
-    kind: "withdrawal.added",
-    title: `Withdrew ${(fromMethod?.name as string) ?? "wallet"} · received PHP ${net.toFixed(0)}, fee PHP ${fee.toFixed(0)}`,
-    entityType: "withdrawal",
-    entityId: data.id as string,
-    metadata: { gross_base: gross, net_base: net, fee_base: fee, from_method_id: input.from_method_id },
-  });
+  try {
+    await invalidateAiSafeSpendCache(userId, supabase);
+  } catch (err) {
+    console.error("createWithdrawal: cache invalidation failed (non-fatal)", err);
+  }
 
-  await invalidateAiSafeSpendCache(userId, supabase);
   revalidatePath("/today");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
