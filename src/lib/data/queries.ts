@@ -43,6 +43,8 @@ import type {
   Milestone,
   QuietReceipt,
   LifeShift,
+  MorningLog,
+  IntentMirror,
 } from "@/lib/supabase/types";
 
 async function userOrThrow() {
@@ -955,4 +957,35 @@ export async function getCulturalCalendars() {
     islamic: (islamic.data ?? []) as IslamicCalendarRow[],
     phCultural: (phCultural.data ?? []) as PhCulturalEventRow[],
   };
+}
+
+// ─────────────────────────── Tier 4 fetchers ──
+
+export async function getTodayMorningLog() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { phtToday } = await import("@/lib/utils");
+  const today = phtToday();
+  const { data } = await supabase
+    .from("morning_log")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("recorded_at", today)
+    .maybeSingle();
+  return (data ?? null) as MorningLog | null;
+}
+
+export async function getCurrentIntentMirror() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { phtToday, phtDateString } = await import("@/lib/utils");
+  const today = new Date(phtToday());
+  const dow = today.getDay() || 7;
+  const monday = new Date(today.getTime() - (dow - 1) * 86_400_000);
+  const weekStarts = phtDateString(monday);
+  const { data } = await supabase
+    .from("intent_mirror")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("week_starts", weekStarts)
+    .maybeSingle();
+  return (data ?? null) as IntentMirror | null;
 }

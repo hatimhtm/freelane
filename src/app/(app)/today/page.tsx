@@ -17,7 +17,12 @@ import { generateForecastStory, type ForecastStory } from "@/lib/ai/forecast-sto
 import { generateSadakaRhythm, type SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
 import { generateEidPrep, type EidPrepRead } from "@/lib/ai/eid-prep";
 import { nextRamadanPeriod, type RamadanPeriod } from "@/lib/islamic-calendar";
-import { getLetters, getMilestones } from "@/lib/data/queries";
+import { getLetters, getMilestones, getTodayMorningLog, getCurrentIntentMirror } from "@/lib/data/queries";
+import { generatePackRhythm, type PackRhythmRead } from "@/lib/ai/pack-rhythm";
+import { generateLateNightRead, type LateNightClusterRead } from "@/lib/ai/late-night-cluster";
+import { generatePostPaydaySurge, type PostPaydaySurgeRead } from "@/lib/ai/post-payday-surge";
+import { generateSleepSpendEcho, type SleepSpendEcho } from "@/lib/ai/sleep-spend-echo";
+import { computeFamilySavings, type FamilySavingsWitness } from "@/lib/family-savings-witness";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { BlockedRow } from "@/components/app/blocked-money-list";
@@ -358,6 +363,54 @@ export default async function TodayPage() {
   const latestLetter = lettersList.find((l) => l.pinned) ?? lettersList[0] ?? null;
   const freshMilestones = milestonesList.filter((m) => m.surfaced).slice(0, 4);
 
+  // Tier 4 reads — body + behavior layer. All best-effort.
+  const familySavings: FamilySavingsWitness = computeFamilySavings({
+    payments,
+    withdrawals,
+    spends,
+    methods,
+    stepsByPayment,
+    rates,
+    now,
+  });
+  let packRhythm: PackRhythmRead | null = null;
+  let lateNight: LateNightClusterRead | null = null;
+  let postPayday: PostPaydaySurgeRead | null = null;
+  let sleepEcho: SleepSpendEcho | null = null;
+  let morningLog: Awaited<ReturnType<typeof getTodayMorningLog>> = null;
+  let intentMirror: Awaited<ReturnType<typeof getCurrentIntentMirror>> = null;
+  try {
+    [morningLog, intentMirror] = await Promise.all([getTodayMorningLog(), getCurrentIntentMirror()]);
+  } catch (err) {
+    console.error("Today: morning/intent fetch threw", err);
+  }
+  try {
+    packRhythm = await generatePackRhythm({ spends, spendCategories, spendCategoryLinks, now });
+  } catch (err) {
+    console.error("Today: generatePackRhythm threw", err);
+  }
+  try {
+    lateNight = await generateLateNightRead({ spends, now });
+  } catch (err) {
+    console.error("Today: generateLateNightRead threw", err);
+  }
+  try {
+    postPayday = await generatePostPaydaySurge({ payments, spends, now });
+  } catch (err) {
+    console.error("Today: generatePostPaydaySurge threw", err);
+  }
+  try {
+    sleepEcho = await generateSleepSpendEcho({
+      morning: morningLog,
+      spends,
+      spendCategories,
+      spendCategoryLinks,
+      now,
+    });
+  } catch (err) {
+    console.error("Today: generateSleepSpendEcho threw", err);
+  }
+
   return (
     <TodayView
       firstName={settings?.issuer_name?.split(" ")[0] ?? null}
@@ -405,6 +458,12 @@ export default async function TodayPage() {
       wifeState={wifeState}
       latestLetter={latestLetter}
       freshMilestones={freshMilestones}
+      familySavings={familySavings}
+      packRhythm={packRhythm}
+      lateNight={lateNight}
+      postPayday={postPayday}
+      sleepEcho={sleepEcho}
+      intentMirror={intentMirror}
     />
   );
 }

@@ -160,6 +160,50 @@ export type LifeShiftKind =
   | "plan_done"
   | (string & {});
 
+// ─────────────────────────── Tier 4 (migrations 0040-0041) ──
+
+export interface MorningLog {
+  id: string;
+  user_id: string;
+  recorded_at: string;
+  slept_hours: number | null;
+  mood_band: number | null;
+  mind_state: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntentMirrorIntentions {
+  focus?: string;
+  family_target_php?: number;
+  watch?: string[];
+  [k: string]: unknown;
+}
+
+export interface IntentMirrorRealitySnapshot {
+  landed_total?: number;
+  spent_total?: number;
+  cigarette_spends?: number;
+  fast_food_spends?: number;
+  household_total?: number;
+  [k: string]: unknown;
+}
+
+export interface IntentMirror {
+  id: string;
+  user_id: string;
+  week_starts: string;
+  intentions: IntentMirrorIntentions;
+  intentions_text: string | null;
+  reality_snapshot: IntentMirrorRealitySnapshot;
+  narrative: string | null;
+  confidence: number;
+  generated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type AiQuestionKind =
   | "clarify_spend"
   | "clarify_payment"
@@ -253,6 +297,8 @@ export type EventKind =
   | "milestone.recorded" | "milestone.replied" | "milestone.deleted"
   | "quiet_receipt.recorded" | "quiet_receipt.replied" | "quiet_receipt.deleted"
   | "life_shift.recorded" | "life_shift.replied" | "life_shift.deleted"
+  | "morning_log.saved"
+  | "intent_mirror.saved" | "intent_mirror.refreshed"
   | "settings.updated";
 
 export interface ActivityEvent {
@@ -1046,6 +1092,8 @@ export type Database = {
       milestones:                  Table<Milestone>;
       quiet_receipts:              Table<QuietReceipt>;
       life_shifts:                 Table<LifeShift>;
+      morning_log:                 Table<MorningLog>;
+      intent_mirror:               Table<IntentMirror>;
       invoices:                    Table<Invoice>;
       invoice_projects:            Table<{ invoice_id: string; project_id: string }>;
       project_templates:           Table<ProjectTemplate>;

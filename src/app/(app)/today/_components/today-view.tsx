@@ -26,6 +26,12 @@ import { RamadanModeBanner } from "@/components/app/ramadan-mode-banner";
 import { SadakaRhythmCard } from "@/components/app/sadaka-rhythm-card";
 import { LatestLetterCard } from "@/components/app/latest-letter-card";
 import { FreshMilestonesCard } from "@/components/app/fresh-milestones-card";
+import { PackRhythmCard } from "@/components/app/pack-rhythm-card";
+import { FamilySavingsWitnessLine } from "@/components/app/family-savings-witness-line";
+import { LateNightClusterCard } from "@/components/app/late-night-cluster-card";
+import { PostPaydaySurgeCard } from "@/components/app/post-payday-surge-card";
+import { SleepSpendEchoCard } from "@/components/app/sleep-spend-echo-card";
+import { JournalMirrorCard } from "@/components/app/journal-mirror-card";
 import { Reveal } from "@/components/motion/reveal";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -35,6 +41,7 @@ import type {
   CurrencyCode,
   EditorialLetter,
   ExchangeRate,
+  IntentMirror,
   IslamicCalendarRow,
   Milestone,
   PhCulturalEventRow,
@@ -53,6 +60,11 @@ import type { ForecastStory } from "@/lib/ai/forecast-storyteller";
 import type { RamadanPeriod } from "@/lib/islamic-calendar";
 import type { EidPrepRead } from "@/lib/ai/eid-prep";
 import type { SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
+import type { PackRhythmRead } from "@/lib/ai/pack-rhythm";
+import type { LateNightClusterRead } from "@/lib/ai/late-night-cluster";
+import type { PostPaydaySurgeRead } from "@/lib/ai/post-payday-surge";
+import type { SleepSpendEcho } from "@/lib/ai/sleep-spend-echo";
+import type { FamilySavingsWitness } from "@/lib/family-savings-witness";
 import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import type { HoldingBalanceRow } from "@/lib/payment-chain";
 import {
@@ -122,6 +134,12 @@ export function TodayView({
   wifeState,
   latestLetter,
   freshMilestones,
+  familySavings,
+  packRhythm,
+  lateNight,
+  postPayday,
+  sleepEcho,
+  intentMirror,
 }: {
   firstName: string | null;
   currency: CurrencyCode;
@@ -168,6 +186,12 @@ export function TodayView({
   wifeState: WifeState | null;
   latestLetter: EditorialLetter | null;
   freshMilestones: Milestone[];
+  familySavings: FamilySavingsWitness;
+  packRhythm: PackRhythmRead | null;
+  lateNight: LateNightClusterRead | null;
+  postPayday: PostPaydaySurgeRead | null;
+  sleepEcho: SleepSpendEcho | null;
+  intentMirror: IntentMirror | null;
 }) {
   const [greeting, setGreeting] = useState("Welcome back");
   useEffect(() => {
@@ -241,6 +265,9 @@ export function TodayView({
         {/* Main hero — Safe-to-spend with Fraunces numeric. */}
         <MorningBriefHero overlay={overlay} />
 
+        {/* Tier 4: Family Savings Witness — 11px line under the hero. */}
+        <FamilySavingsWitnessLine read={familySavings} baseCurrency={currency} />
+
         {/* Forecast Storyteller — next 30 days in Hatim's voice. */}
         {forecastStory && (
           <ForecastStoryCard story={forecastStory} baseCurrency={currency} />
@@ -259,6 +286,21 @@ export function TodayView({
 
         {/* Tier 3: Fresh milestones strip — hides when none surfaced. */}
         <FreshMilestonesCard milestones={freshMilestones} />
+
+        {/* Tier 4: Sleep × Spend Echo (prompt or echo). */}
+        <SleepSpendEchoCard echo={sleepEcho} />
+
+        {/* Tier 4: Weekly intentions + mirror. */}
+        <JournalMirrorCard mirror={intentMirror} />
+
+        {/* Tier 4: Post-Payday Surge — surfaces only when inside the window. */}
+        {postPayday && <PostPaydaySurgeCard read={postPayday} />}
+
+        {/* Tier 4: Late-Night Cluster — surfaces only when threshold crossed. */}
+        {lateNight && <LateNightClusterCard read={lateNight} />}
+
+        {/* Tier 4: Pack Rhythm — sparkline + line. Hides when no data. */}
+        {packRhythm && <PackRhythmCard read={packRhythm} baseCurrency={currency} />}
 
         {/* Tier 2: Wife Preferences glance (only when consolidated). */}
         {wifeState?.preferences_consolidated?.summary && (

@@ -3644,3 +3644,107 @@ export async function deleteQuietReceiptAction(id: string): Promise<void> {
   revalidatePath("/letters");
   revalidatePath("/today");
 }
+
+// ───────────────────────────────────────── Tier 4 (body + behavior) ──
+
+export type MorningLogInput = {
+  recordedAt?: string;
+  sleptHours?: number | null;
+  moodBand?: number | null;
+  mindState?: string | null;
+  notes?: string | null;
+};
+
+export async function saveMorningLogAction(input: MorningLogInput) {
+  const { supabase, userId } = await userOrThrow();
+  const recordedAt = input.recordedAt ?? phtToday();
+  const { error } = await supabase
+    .from("morning_log")
+    .upsert(
+      {
+        user_id: userId,
+        recorded_at: recordedAt,
+        slept_hours: input.sleptHours ?? null,
+        mood_band: input.moodBand ?? null,
+        mind_state: input.mindState ?? null,
+        notes: input.notes ?? null,
+      },
+      { onConflict: "user_id,recorded_at" },
+    );
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "morning_log.saved",
+    title: "Logged the morning",
+    entityType: "morning_log",
+    entityId: userId,
+    metadata: { recorded_at: recordedAt, slept_hours: input.sleptHours, mood_band: input.moodBand },
+  });
+  revalidatePath("/today");
+}
+
+export type IntentMirrorInput = {
+  weekStarts?: string;
+  intentionsText?: string;
+  intentions?: Record<string, unknown>;
+};
+
+export async function saveIntentionsAction(input: IntentMirrorInput) {
+  const { supabase, userId } = await userOrThrow();
+  // Compute Monday of the current PHT week if not provided.
+  let weekStarts = input.weekStarts;
+  if (!weekStarts) {
+    const today = new Date(phtToday());
+    const dow = today.getDay() || 7;
+    const monday = new Date(today.getTime() - (dow - 1) * 86_400_000);
+    weekStarts = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
+  }
+  const { error } = await supabase
+    .from("intent_mirror")
+    .upsert(
+      {
+        user_id: userId,
+        week_starts: weekStarts,
+        intentions: input.intentions ?? {},
+        intentions_text: input.intentionsText ?? null,
+      },
+      { onConflict: "user_id,week_starts" },
+    );
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "intent_mirror.saved",
+    title: "Logged weekly intentions",
+    entityType: "intent_mirror",
+    entityId: userId,
+    metadata: { week_starts: weekStarts },
+  });
+  revalidatePath("/today");
+}
+
+export async function refreshIntentMirrorAction(weekStarts?: string): Promise<{ id: string } | null> {
+  const [{ refreshIntentMirror }, { getDashboardData }] = await Promise.all([
+    import("@/lib/ai/journal-vs-spend-mirror"),
+    import("@/lib/data/queries"),
+  ]);
+  const data = await getDashboardData();
+  const out = await refreshIntentMirror({
+    weekStarts,
+    payments: data.payments,
+    spends: data.spends,
+    spendCategories: data.spendCategories,
+    spendCategoryLinks: data.spendCategoryLinks,
+  });
+  if (out) {
+    await logEvent({
+      userId: out.user_id,
+      kind: "intent_mirror.refreshed",
+      title: "Weekly mirror refreshed",
+      entityType: "intent_mirror",
+      entityId: out.id,
+      metadata: { week_starts: out.week_starts },
+    });
+  }
+  revalidatePath("/today");
+  return out ? { id: out.id } : null;
+}

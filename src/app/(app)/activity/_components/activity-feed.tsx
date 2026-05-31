@@ -10,6 +10,7 @@ import {
   KanbanSquare,
   Receipt,
   Settings as SettingsIcon,
+  Sun,
   Trash2,
   Users,
   Wallet,
@@ -145,6 +146,10 @@ const META: Record<EventKind, KindMeta> = {
   "life_shift.recorded": { icon: Activity, tone: "neutral" },
   "life_shift.replied":  { icon: Pencil,   tone: "neutral" },
   "life_shift.deleted":  { icon: Trash2,   tone: "rose"    },
+
+  "morning_log.saved":      { icon: Sun,   tone: "brand"   },
+  "intent_mirror.saved":    { icon: Brain, tone: "neutral" },
+  "intent_mirror.refreshed":{ icon: Brain, tone: "success" },
 
   "settings.updated": { icon: SettingsIcon, tone: "neutral" },
 };

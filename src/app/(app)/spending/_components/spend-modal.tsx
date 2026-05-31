@@ -35,6 +35,7 @@ import { SafeToSpendImpactDial } from "@/components/app/safe-to-spend-impact-dia
 import { PriceTypoGuard } from "@/components/app/price-typo-guard";
 import { TagSuggestStrip } from "@/components/app/tag-suggest-strip";
 import { PriceIntelLine } from "@/components/app/price-intel-line";
+import { CigaretteCostTranslatorStrip } from "@/components/app/cigarette-cost-translator-strip";
 
 import { createSpend } from "@/lib/data/actions";
 import { formatMoney } from "@/lib/money";
@@ -423,6 +424,13 @@ export function SpendModal({
             />
           </Row>
 
+          {hasCigarettesTagSelected({
+            selected: selectedCategoryIds,
+            categories: activeCategories,
+          }) && amountBase > 0 && (
+            <CigaretteCostTranslatorStrip amountPhp={amountBase} />
+          )}
+
           <Row label="Notes" optional>
             <Textarea
               value={notes}
@@ -638,6 +646,25 @@ function Row({
       {children}
     </div>
   );
+}
+
+// Tier 4: Cigarette Cost Translator triggers when the user has tagged the
+// spend as Cigarettes. Match by category NAME so the user's renamed seed
+// (e.g. "Cigs" or "Smokes") still triggers if they include "cigarette".
+function hasCigarettesTagSelected({
+  selected,
+  categories,
+}: {
+  selected: string[];
+  categories: SpendCategory[];
+}): boolean {
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  for (const id of selected) {
+    const cat = byId.get(id);
+    if (!cat) continue;
+    if (/cigarettes?|smoke/i.test(cat.name)) return true;
+  }
+  return false;
 }
 
 function Hairline() {
