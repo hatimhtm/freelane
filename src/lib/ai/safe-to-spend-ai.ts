@@ -1,4 +1,5 @@
 import "server-only";
+import { phtDateString } from "@/lib/utils";
 import { Type } from "@google/genai";
 import { gemini, MODEL, hasGemini } from "./gemini";
 import { createClient } from "@/lib/supabase/server";
@@ -301,7 +302,7 @@ function buildSnapshot(args: {
       }
       if (anchor < now || anchor > horizonEnd) return null;
       const days = Math.round((anchor.getTime() - now.getTime()) / DAY_MS);
-      return `- ${r.label}: ${m(expectedBase)} on ${anchor.toISOString().slice(0, 10)} (in ${days}d)`;
+      return `- ${r.label}: ${m(expectedBase)} on ${phtDateString(anchor)} (in ${days}d)`;
     })
     .filter(Boolean);
 

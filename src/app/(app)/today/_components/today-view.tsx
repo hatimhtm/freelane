@@ -20,6 +20,10 @@ import { SadakaQuickLogButton } from "@/components/app/sadaka-quick-log-button";
 import { CalmWeatherBanner } from "@/components/app/calm-weather-banner";
 import { TightModeCoach } from "@/components/app/tight-mode-coach";
 import { ForecastStoryCard } from "@/components/app/forecast-story-card";
+import { CulturalOverlay } from "@/components/app/cultural-overlay";
+import { EidPrepCard } from "@/components/app/eid-prep-card";
+import { RamadanModeBanner } from "@/components/app/ramadan-mode-banner";
+import { SadakaRhythmCard } from "@/components/app/sadaka-rhythm-card";
 import { Reveal } from "@/components/motion/reveal";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -28,17 +32,23 @@ import type {
   CalmWeatherState,
   CurrencyCode,
   ExchangeRate,
+  IslamicCalendarRow,
+  PhCulturalEventRow,
   RecurringSpend,
   RecurringSpendSkip,
   Spend,
   SpendCategory,
   SpendCategoryLink,
   SpendItem,
+  WifeState,
 } from "@/lib/supabase/types";
 import type { MoneyInsight } from "@/lib/ai/actions";
 import type { SafeToSpendOverlay } from "@/lib/ai/safe-to-spend-ai";
 import type { TightModeRead } from "@/lib/ai/tight-mode-coach";
 import type { ForecastStory } from "@/lib/ai/forecast-storyteller";
+import type { RamadanPeriod } from "@/lib/islamic-calendar";
+import type { EidPrepRead } from "@/lib/ai/eid-prep";
+import type { SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
 import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import type { HoldingBalanceRow } from "@/lib/payment-chain";
 import {
@@ -100,6 +110,12 @@ export function TodayView({
   calmWeather,
   tightMode,
   forecastStory,
+  islamicCalendar,
+  phCulturalEvents,
+  ramadan,
+  eidPrep,
+  sadaka,
+  wifeState,
 }: {
   firstName: string | null;
   currency: CurrencyCode;
@@ -138,6 +154,12 @@ export function TodayView({
   calmWeather: CalmWeatherState | null;
   tightMode: TightModeRead | null;
   forecastStory: ForecastStory | null;
+  islamicCalendar: IslamicCalendarRow[];
+  phCulturalEvents: PhCulturalEventRow[];
+  ramadan: RamadanPeriod | null;
+  eidPrep: EidPrepRead | null;
+  sadaka: SadakaRhythmRead | null;
+  wifeState: WifeState | null;
 }) {
   const [greeting, setGreeting] = useState("Welcome back");
   useEffect(() => {
@@ -185,12 +207,18 @@ export function TodayView({
         <span className="text-xs text-muted-foreground tabular">{today}</span>
       </motion.div>
 
-      {/* Phase 1.5 + Tier 1 stack — densified, small-window optimized. */}
+      {/* Phase 1.5 + Tier 1 + Tier 2 stack — densified, small-window optimized. */}
       <div className="mt-5 space-y-4">
         {/* Calm Weather Mode — the one honest line under everything. */}
         {calmWeather && (
           <CalmWeatherBanner state={calmWeather} variant="today" />
         )}
+
+        {/* Tier 2: Cultural Overlay — Islamic + PH cultural strip (restricted). */}
+        <CulturalOverlay islamic={islamicCalendar} phCultural={phCulturalEvents} />
+
+        {/* Tier 2: Ramadan Mode banner — renders only in prep window or during. */}
+        <RamadanModeBanner period={ramadan} />
 
         {/* Tight Mode Coach — only renders during storm/gust bands. */}
         {tightMode && tightMode.active && (
@@ -208,6 +236,26 @@ export function TodayView({
         {/* Forecast Storyteller — next 30 days in Hatim's voice. */}
         {forecastStory && (
           <ForecastStoryCard story={forecastStory} baseCurrency={currency} />
+        )}
+
+        {/* Tier 2: Eid Preparation Plan (60d-out, both Eids). */}
+        {eidPrep && eidPrep.windows.map((card) => (
+          <EidPrepCard key={`${card.kind}-${card.date}`} card={card} baseCurrency={currency} />
+        ))}
+
+        {/* Tier 2: Sadaka Rhythm card. */}
+        {sadaka && <SadakaRhythmCard read={sadaka} baseCurrency={currency} />}
+
+        {/* Tier 2: Wife Preferences glance (only when consolidated). */}
+        {wifeState?.preferences_consolidated?.summary && (
+          <section className="rounded-[12px] border border-border/60 bg-card/30 px-3.5 py-3">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Wife preferences
+            </div>
+            <p className="mt-0.5 text-sm leading-snug text-foreground">
+              {String(wifeState.preferences_consolidated.summary)}
+            </p>
+          </section>
         )}
 
         {/* Open AI questions — letter-like surface, only when there are any

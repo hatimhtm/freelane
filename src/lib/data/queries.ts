@@ -30,6 +30,15 @@ import type {
   PlannedSpend,
   CalmWeatherState,
   AppChangelogEntry,
+  Vendor,
+  VendorAlias,
+  SpendVendorLink,
+  PriceDriftObservation,
+  Entity,
+  SpendEntityLink,
+  WifeState,
+  IslamicCalendarRow,
+  PhCulturalEventRow,
 } from "@/lib/supabase/types";
 
 async function userOrThrow() {
@@ -79,6 +88,30 @@ async function fetchSpendCategoryLinks(
     .select("*")
     .in("spend_id", spendIds);
   return (data ?? []) as SpendCategoryLink[];
+}
+
+async function fetchSpendVendorLinks(
+  supabase: DbClient,
+  spendIds: string[],
+): Promise<SpendVendorLink[]> {
+  if (spendIds.length === 0) return [];
+  const { data } = await supabase
+    .from("spend_vendor_links")
+    .select("*")
+    .in("spend_id", spendIds);
+  return (data ?? []) as SpendVendorLink[];
+}
+
+async function fetchSpendEntityLinks(
+  supabase: DbClient,
+  spendIds: string[],
+): Promise<SpendEntityLink[]> {
+  if (spendIds.length === 0) return [];
+  const { data } = await supabase
+    .from("spend_entity_links")
+    .select("*")
+    .in("spend_id", spendIds);
+  return (data ?? []) as SpendEntityLink[];
 }
 
 async function fetchPaymentAllocations(
@@ -140,7 +173,20 @@ export async function getDashboardData() {
 
   const paymentRows = (payments.data ?? []) as Payment[];
   const spendRows = (spends.data ?? []) as Spend[];
-  const [stepsByPayment, spendCategoryLinks, paymentAllocations, spendItems] = await Promise.all([
+  const [
+    stepsByPayment,
+    spendCategoryLinks,
+    paymentAllocations,
+    spendItems,
+    vendors,
+    vendorAliases,
+    spendVendorLinks,
+    entities,
+    spendEntityLinks,
+    wifeState,
+    islamicCalendar,
+    phCulturalEvents,
+  ] = await Promise.all([
     fetchStepsByPayment(supabase, paymentRows.map((p) => p.id)),
     fetchSpendCategoryLinks(supabase, spendRows.map((s) => s.id)),
     fetchPaymentAllocations(supabase, paymentRows.map((p) => p.id)),
@@ -153,6 +199,14 @@ export async function getDashboardData() {
         .order("sort_order");
       return (data ?? []) as SpendItem[];
     })(),
+    supabase.from("vendors").select("*").eq("user_id", user.id).eq("archived", false).order("canonical_name"),
+    supabase.from("vendor_aliases").select("*"),
+    fetchSpendVendorLinks(supabase, spendRows.map((s) => s.id)),
+    supabase.from("entities").select("*").eq("user_id", user.id).eq("archived", false).order("canonical_name"),
+    fetchSpendEntityLinks(supabase, spendRows.map((s) => s.id)),
+    supabase.from("wife_state").select("*").eq("user_id", user.id).maybeSingle(),
+    supabase.from("islamic_calendar").select("*").order("gregorian_date"),
+    supabase.from("ph_cultural_events").select("*").order("gregorian_date"),
   ]);
 
   return {
@@ -177,6 +231,14 @@ export async function getDashboardData() {
     openAiQuestions: (openAiQuestions.data ?? []) as AiQuestion[],
     plannedSpends: (plannedSpends.data ?? []) as PlannedSpend[],
     calmWeather: (calmWeather.data ?? null) as CalmWeatherState | null,
+    vendors: (vendors.data ?? []) as Vendor[],
+    vendorAliases: (vendorAliases.data ?? []) as VendorAlias[],
+    spendVendorLinks,
+    entities: (entities.data ?? []) as Entity[],
+    spendEntityLinks,
+    wifeState: (wifeState.data ?? null) as WifeState | null,
+    islamicCalendar: (islamicCalendar.data ?? []) as IslamicCalendarRow[],
+    phCulturalEvents: (phCulturalEvents.data ?? []) as PhCulturalEventRow[],
   };
 }
 
@@ -709,4 +771,115 @@ export async function getAppChangelog(limit = 50) {
     .order("created_at", { ascending: false })
     .limit(limit);
   return (data ?? []) as AppChangelogEntry[];
+}
+
+// ─────────────────────────── Tier 2 fetchers ──
+
+// All vendors + their aliases + the linked-spend rollup. Drives /vendors.
+export async function getVendorsData() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [vendors, aliases, links, spends, settings] = await Promise.all([
+    supabase.from("vendors").select("*").eq("user_id", user.id).order("archived").order("canonical_name"),
+    supabase.from("vendor_aliases").select("*"),
+    supabase.from("spend_vendor_links").select("*"),
+    supabase.from("spends").select("*").eq("user_id", user.id).order("spent_at", { ascending: false }),
+    supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
+  ]);
+  return {
+    vendors: (vendors.data ?? []) as Vendor[],
+    aliases: (aliases.data ?? []) as VendorAlias[],
+    links: (links.data ?? []) as SpendVendorLink[],
+    spends: (spends.data ?? []) as Spend[],
+    settings: (settings.data ?? null) as Settings | null,
+  };
+}
+
+// Single-vendor detail. Loads spends linked through spend_vendor_links so the
+// detail page can compute heartbeat, drift, absence without a second pass.
+export async function getVendorDetail(vendorId: string) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [vendor, aliases, links, spends, items, settings, drifts] = await Promise.all([
+    supabase.from("vendors").select("*").eq("id", vendorId).eq("user_id", user.id).maybeSingle(),
+    supabase.from("vendor_aliases").select("*").eq("vendor_id", vendorId),
+    supabase.from("spend_vendor_links").select("*").eq("vendor_id", vendorId),
+    supabase.from("spends").select("*").eq("user_id", user.id),
+    (async () => {
+      const { data: linkRows } = await supabase
+        .from("spend_vendor_links")
+        .select("spend_id")
+        .eq("vendor_id", vendorId);
+      const ids = (linkRows ?? []).map((l) => l.spend_id as string);
+      if (ids.length === 0) return [] as SpendItem[];
+      const { data } = await supabase.from("spend_items").select("*").in("spend_id", ids).order("sort_order");
+      return (data ?? []) as SpendItem[];
+    })(),
+    supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
+    supabase.from("price_drift_observations").select("*").eq("vendor_id", vendorId).order("observed_at", { ascending: false }),
+  ]);
+  return {
+    vendor: (vendor.data ?? null) as Vendor | null,
+    aliases: (aliases.data ?? []) as VendorAlias[],
+    links: (links.data ?? []) as SpendVendorLink[],
+    spends: (spends.data ?? []) as Spend[],
+    items,
+    drifts: (drifts.data ?? []) as PriceDriftObservation[],
+    settings: (settings.data ?? null) as Settings | null,
+  };
+}
+
+// All entities + their links. Drives /entities.
+export async function getEntitiesData() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [entities, links, spends, settings] = await Promise.all([
+    supabase.from("entities").select("*").eq("user_id", user.id).order("archived").order("canonical_name"),
+    supabase.from("spend_entity_links").select("*"),
+    supabase.from("spends").select("*").eq("user_id", user.id).order("spent_at", { ascending: false }),
+    supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
+  ]);
+  return {
+    entities: (entities.data ?? []) as Entity[],
+    links: (links.data ?? []) as SpendEntityLink[],
+    spends: (spends.data ?? []) as Spend[],
+    settings: (settings.data ?? null) as Settings | null,
+  };
+}
+
+export async function getEntityDetail(entityId: string) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [entity, links, spends, settings] = await Promise.all([
+    supabase.from("entities").select("*").eq("id", entityId).eq("user_id", user.id).maybeSingle(),
+    supabase.from("spend_entity_links").select("*").eq("entity_id", entityId),
+    supabase.from("spends").select("*").eq("user_id", user.id),
+    supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
+  ]);
+  return {
+    entity: (entity.data ?? null) as Entity | null,
+    links: (links.data ?? []) as SpendEntityLink[],
+    spends: (spends.data ?? []) as Spend[],
+    settings: (settings.data ?? null) as Settings | null,
+  };
+}
+
+// Wife state (one row per user).
+export async function getWifeState() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("wife_state")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  return (data ?? null) as WifeState | null;
+}
+
+// Islamic + PH cultural calendar rows (reference data, RLS=public read).
+export async function getCulturalCalendars() {
+  const supabase = await createClient();
+  const [islamic, phCultural] = await Promise.all([
+    supabase.from("islamic_calendar").select("*").order("gregorian_date"),
+    supabase.from("ph_cultural_events").select("*").order("gregorian_date"),
+  ]);
+  return {
+    islamic: (islamic.data ?? []) as IslamicCalendarRow[],
+    phCultural: (phCultural.data ?? []) as PhCulturalEventRow[],
+  };
 }

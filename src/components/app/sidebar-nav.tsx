@@ -14,6 +14,8 @@ import {
   Settings,
   Calendar,
   Sparkles,
+  Store,
+  HeartHandshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
@@ -25,6 +27,8 @@ const NAV = [
   { href: "/payments",  label: "Payments",  icon: Wallet          },
   { href: "/spending",  label: "Spending",  icon: Receipt         },
   { href: "/plans",     label: "Plans",     icon: Calendar        },
+  { href: "/vendors",   label: "Vendors",   icon: Store           },
+  { href: "/entities",  label: "Entities",  icon: HeartHandshake  },
   { href: "/clients",   label: "Clients",   icon: Users           },
   { href: "/activity",  label: "Activity",  icon: Activity        },
   { href: "/changelog", label: "What's new", icon: Sparkles       },

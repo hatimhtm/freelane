@@ -3,6 +3,7 @@
 import { Type } from "@google/genai";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
+import { phtDateString } from "@/lib/utils";
 import { gemini, MODEL, hasGemini } from "./gemini";
 import { methodLeaderboard, chainSignature, sortedSteps, monthlyFeeBase, holdingBalances } from "@/lib/payment-chain";
 import {
@@ -191,7 +192,7 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
     .map((r) => {
       const expectedBase = toBase(Number(r.expected_amount), r.expected_currency as CurrencyCode, rates);
       const live = pending.find((p) => p.rule.id === r.id);
-      const due = live ? ` · DUE NOW (anchor ${live.anchor.toISOString().slice(0, 10)})` : "";
+      const due = live ? ` · DUE NOW (anchor ${phtDateString(live.anchor)})` : "";
       return `- ${r.label} (${r.schedule_kind}): expected ${m(expectedBase)}${due}`;
     });
   const recurringForward = recurringExpectedInRange(recurring, recurringSkips, rates, now, horizonEnd);
@@ -242,7 +243,7 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
   const prefs = userMemory.preferences ?? {};
   const prefLines = Object.entries(prefs).map(([k, v]) => `pref ${k}: ${v}`);
 
-  return `Base currency: ${currency}. Today: ${now.toISOString().slice(0, 10)}.
+  return `Base currency: ${currency}. Today: ${phtDateString(now)}.
 
 DATA AVAILABILITY:
 - Observations: ~${observationDays}d of history

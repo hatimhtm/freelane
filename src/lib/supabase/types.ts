@@ -65,6 +65,52 @@ export type CalmWeatherRecommendationKind =
   | "pre_mortem"
   | "tight_open";
 
+// ─────────────────────────── Tier 2 enums (migrations 0032-0035) ──
+
+export type VendorLinkSource = "auto" | "user" | "ai_suggest" | "seed";
+
+export type VendorKind =
+  | "grocery"
+  | "food"
+  | "fast_food"
+  | "drug"
+  | "tech"
+  | "fuel"
+  | "transit"
+  | "household"
+  | "clothing"
+  | "service"
+  | "utility"
+  | (string & {});
+
+export type EntityKind =
+  | "person"
+  | "pet"
+  | "place"
+  | "household"
+  | "vendor_ref"
+  | "concept"
+  | "habit"
+  | "ritual"
+  | (string & {});
+
+export type IslamicEventKind =
+  | "eid_al_fitr"
+  | "eid_al_adha"
+  | "ramadan_start"
+  | "ramadan_end"
+  | "arafat"
+  | "hijri_new_year";
+
+export type PhCulturalEventKind =
+  | "fiesta_san_pablo"
+  | "school_year_start"
+  | "school_year_end"
+  | "midterm"
+  | "finals"
+  | "semestral_break"
+  | (string & {});
+
 export type AiQuestionKind =
   | "clarify_spend"
   | "clarify_payment"
@@ -149,6 +195,11 @@ export type EventKind =
   | "planned_spend.done" | "planned_spend.cancelled" | "planned_spend.deleted"
   | "calm_weather.refreshed"
   | "app_changelog.published"
+  | "vendor.created" | "vendor.updated" | "vendor.archived" | "vendor.deleted"
+  | "vendor.linked" | "vendor.unlinked"
+  | "entity.created" | "entity.updated" | "entity.archived" | "entity.deleted"
+  | "entity.linked" | "entity.unlinked"
+  | "wife_state.updated" | "wife_preferences.consolidated"
   | "settings.updated";
 
 export interface ActivityEvent {
@@ -383,6 +434,10 @@ export interface Spend {
   recurring_spend_id: string | null;
   loan_id: string | null;
   loan_installment_id: string | null;
+  // "It's For Us" tag (Tier 2 F — migration 0034). Distinct from the Wife
+  // category. Means the spend was for the household, not for either person
+  // individually.
+  for_us: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -617,6 +672,148 @@ export interface CalmWeatherState {
   expires_at: string;
 }
 
+// ─────────────────────────── Tier 2 entities (migrations 0032-0035) ──
+
+// AI-consolidated memory mirroring the client/user memory shape — used by
+// every named-entity surface (vendors, entities, wife). The shape stays
+// loose so future brain upgrades can grow it without a migration.
+export interface MemoryConsolidated {
+  summary?: string;
+  facts?: string[];
+  watch?: string[];
+  preferences?: Record<string, string>;
+  milestones?: string[];
+  updated_at?: string;
+  entry_count?: number;
+  [k: string]: unknown;
+}
+
+export interface VendorLocation {
+  area?: string;
+  barangay?: string;
+  landmark?: string;
+  gps?: { lat: number; lng: number };
+  [k: string]: unknown;
+}
+
+export interface Vendor {
+  id: string;
+  user_id: string;
+  canonical_name: string;
+  slug: string;
+  short_description: string | null;
+  location: VendorLocation;
+  kinds: VendorKind[];
+  memory_consolidated: MemoryConsolidated;
+  notes: string | null;
+  last_seen_at: string | null;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VendorAlias {
+  id: string;
+  vendor_id: string;
+  alias: string;
+  alias_norm: string;
+  source: VendorLinkSource;
+  created_at: string;
+}
+
+export interface SpendVendorLink {
+  spend_id: string;
+  vendor_id: string;
+  source: VendorLinkSource;
+  created_at: string;
+}
+
+export interface PriceDriftObservation {
+  id: string;
+  user_id: string;
+  vendor_id: string | null;
+  spend_id: string | null;
+  item_name_norm: string;
+  unit_price_base: number;
+  paid_base: number;
+  observed_at: string;
+  created_at: string;
+}
+
+export interface Entity {
+  id: string;
+  user_id: string;
+  kind: EntityKind;
+  canonical_name: string;
+  short_description: string | null;
+  aliases: string[];
+  memory_consolidated: MemoryConsolidated;
+  vague: boolean;
+  notes: string | null;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpendEntityLink {
+  spend_id: string;
+  entity_id: string;
+  source: VendorLinkSource;
+  created_at: string;
+}
+
+export interface WifeSemesterPeriod {
+  kind: "midterm" | "finals" | "semestral_break" | "regular" | (string & {});
+  starts: string;
+  ends: string;
+}
+
+export interface WifeSemester {
+  name?: string;
+  starts?: string;
+  ends?: string;
+  periods?: WifeSemesterPeriod[];
+}
+
+export interface WifeSemesterCalendar {
+  current?: WifeSemester;
+  upcoming?: WifeSemester[];
+  [k: string]: unknown;
+}
+
+export interface WifeState {
+  user_id: string;
+  name: string | null;
+  university: string | null;
+  year_of_study: number | null;
+  expected_graduation: string | null;
+  semester_calendar: WifeSemesterCalendar;
+  preferences_consolidated: MemoryConsolidated;
+  preferences_consolidated_at: string | null;
+  notes: string | null;
+  updated_at: string;
+}
+
+export interface IslamicCalendarRow {
+  id: string;
+  kind: IslamicEventKind;
+  gregorian_date: string;
+  hijri_year: number;
+  hijri_label: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface PhCulturalEventRow {
+  id: string;
+  kind: PhCulturalEventKind;
+  gregorian_date: string;
+  ends_at: string | null;
+  name: string;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface PriceIntelligenceRow {
   id: string;
   user_id: string;
@@ -709,6 +906,15 @@ export type Database = {
       planned_spends:              Table<PlannedSpend>;
       app_changelog:               Table<AppChangelogEntry>;
       calm_weather_state:          Table<CalmWeatherState>;
+      vendors:                     Table<Vendor>;
+      vendor_aliases:              Table<VendorAlias>;
+      spend_vendor_links:          Table<SpendVendorLink>;
+      price_drift_observations:    Table<PriceDriftObservation>;
+      entities:                    Table<Entity>;
+      spend_entity_links:          Table<SpendEntityLink>;
+      wife_state:                  Table<WifeState>;
+      islamic_calendar:            Table<IslamicCalendarRow>;
+      ph_cultural_events:          Table<PhCulturalEventRow>;
       invoices:                    Table<Invoice>;
       invoice_projects:            Table<{ invoice_id: string; project_id: string }>;
       project_templates:           Table<ProjectTemplate>;
@@ -747,6 +953,11 @@ export type Database = {
       planned_spend_certainty:  PlannedSpendCertainty;
       app_changelog_kind:       AppChangelogKind;
       calm_weather_band:        CalmWeatherBand;
+      vendor_link_source:       VendorLinkSource;
+      vendor_kind:              VendorKind;
+      entity_kind:              EntityKind;
+      islamic_event_kind:       IslamicEventKind;
+      ph_cultural_event_kind:   PhCulturalEventKind;
     };
     CompositeTypes: { [_ in never]: never };
   };

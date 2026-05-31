@@ -110,6 +110,23 @@ const META: Record<EventKind, KindMeta> = {
   "calm_weather.refreshed":  { icon: Brain,        tone: "neutral" },
   "app_changelog.published": { icon: Brain,        tone: "brand"   },
 
+  "vendor.created":   { icon: Plus,    tone: "brand"   },
+  "vendor.updated":   { icon: Pencil,  tone: "neutral" },
+  "vendor.archived":  { icon: Archive, tone: "neutral" },
+  "vendor.deleted":   { icon: Trash2,  tone: "rose"    },
+  "vendor.linked":    { icon: Tag,     tone: "neutral" },
+  "vendor.unlinked":  { icon: Tag,     tone: "neutral" },
+
+  "entity.created":   { icon: Plus,    tone: "brand"   },
+  "entity.updated":   { icon: Pencil,  tone: "neutral" },
+  "entity.archived":  { icon: Archive, tone: "neutral" },
+  "entity.deleted":   { icon: Trash2,  tone: "rose"    },
+  "entity.linked":    { icon: Tag,     tone: "neutral" },
+  "entity.unlinked":  { icon: Tag,     tone: "neutral" },
+
+  "wife_state.updated":         { icon: Brain, tone: "neutral" },
+  "wife_preferences.consolidated": { icon: Brain, tone: "success" },
+
   "settings.updated": { icon: SettingsIcon, tone: "neutral" },
 };
 

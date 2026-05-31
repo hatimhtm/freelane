@@ -38,7 +38,7 @@ import { PriceIntelLine } from "@/components/app/price-intel-line";
 
 import { createSpend } from "@/lib/data/actions";
 import { formatMoney } from "@/lib/money";
-import { cn } from "@/lib/utils";
+import { cn, phtToday, phtTimeHHMM } from "@/lib/utils";
 import { priceSanity, type PriceSanityResult } from "@/lib/ai/price-sanity";
 import {
   buildTokenCategoryFrequency,
@@ -112,12 +112,14 @@ export function SpendModal({
   const [error, setError] = useState<string | null>(null);
 
   const [walletId, setWalletId] = useState("");
-  const [spentAt, setSpentAt] = useState(() => today());
+  const [spentAt, setSpentAt] = useState(() => phtToday());
   // Time-of-day on the spend (Tier 1, migration 0028). Optional; defaults to
   // "now" when the user is logging live, blank when backdating from home.
-  const [spentTime, setSpentTime] = useState<string>(() => nowHHMM());
+  const [spentTime, setSpentTime] = useState<string>(() => phtTimeHHMM());
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<string>(PHP);
+  // Tier 2 (F): "It's For Us" tag — household line distinct from Wife.
+  const [forUs, setForUs] = useState(false);
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [businessRelevant, setBusinessRelevant] = useState(false);
@@ -136,12 +138,13 @@ export function SpendModal({
       .filter((w) => w.is_holding)
       .sort((a, b) => (b.balanceBase ?? 0) - (a.balanceBase ?? 0))[0];
     setWalletId(richestHolding?.id ?? wallets[0]?.id ?? "");
-    setSpentAt(today());
-    setSpentTime(nowHHMM());
+    setSpentAt(phtToday());
+    setSpentTime(phtTimeHHMM());
     setCurrency(PHP);
     setDescription(defaults?.description ?? "");
     setNotes(defaults?.note ?? "");
     setBusinessRelevant(false);
+    setForUs(false);
     setVat("");
     setSelectedCategoryIds(defaults?.categoryId ? [defaults.categoryId] : []);
     setShowItems(false);
@@ -271,6 +274,7 @@ export function SpendModal({
           notes: notes.trim() || null,
           vat_amount: vatNum && vatNum > 0 ? vatNum : null,
           business_relevant: businessRelevant,
+          for_us: forUs,
           covers_periods: recurringSpendId ? Math.max(1, coversPeriods) : 1,
           recurring_spend_id: recurringSpendId,
           categoryIds: selectedCategoryIds,
@@ -438,6 +442,17 @@ export function SpendModal({
             <Switch
               checked={businessRelevant}
               onCheckedChange={setBusinessRelevant}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-xs font-medium text-foreground">It&apos;s for us</span>
+              <span className="text-[10px] text-muted-foreground">Household — different from the Wife tag.</span>
+            </div>
+            <Switch
+              checked={forUs}
+              onCheckedChange={setForUs}
             />
           </div>
 
@@ -669,18 +684,7 @@ function CategoryChips({
   );
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-// "HH:mm" of the local clock right now. Used as the default time-of-day when
-// the modal opens — the user can clear it for backdated entries.
-function nowHHMM(): string {
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
+// PHT helpers are imported from @/lib/utils (phtToday + phtTimeHHMM).
 
 function toBase(
   amount: number,

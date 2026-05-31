@@ -24,7 +24,7 @@ import {
 import { WalletPickerWithBalance } from "@/components/app/wallet-picker";
 
 import { createPlannedSpend, updatePlannedSpend } from "@/lib/data/actions";
-import { cn } from "@/lib/utils";
+import { cn, phtToday } from "@/lib/utils";
 import type {
   CurrencyCode,
   PlannedSpend,
@@ -59,7 +59,7 @@ export function PlanModal({
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState(baseCurrency);
-  const [plannedFor, setPlannedFor] = useState(() => isoToday());
+  const [plannedFor, setPlannedFor] = useState(() => phtToday());
   const [windowDays, setWindowDays] = useState("0");
   const [certainty, setCertainty] = useState<PlannedSpendCertainty>("firm");
   const [walletId, setWalletId] = useState<string>("");
@@ -84,7 +84,7 @@ export function PlanModal({
       setLabel("");
       setAmount("");
       setCurrency(baseCurrency);
-      setPlannedFor(isoToday());
+      setPlannedFor(phtToday());
       setWindowDays("0");
       setCertainty("firm");
       setWalletId("");
@@ -341,6 +341,4 @@ function Field({
   );
 }
 
-function isoToday(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+// phtToday is imported from @/lib/utils.

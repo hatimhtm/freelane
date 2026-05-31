@@ -43,7 +43,7 @@ import type {
   ProjectTemplate,
 } from "@/lib/supabase/types";
 import { formatMoney } from "@/lib/money";
-import { cn } from "@/lib/utils";
+import { cn, phtToday } from "@/lib/utils";
 
 const CURRENCIES = ["PHP", "MAD", "USD", "EUR", "CNY"];
 
@@ -411,7 +411,7 @@ function PaymentsSection({
 }) {
   const router = useRouter();
   const [amount, setAmount] = useState("");
-  const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paidAt, setPaidAt] = useState(() => phtToday());
   const [method, setMethod] = useState("");
   const [pending, start] = useTransition();
 

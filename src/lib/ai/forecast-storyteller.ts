@@ -6,6 +6,7 @@ import { buildCashflowAtlas, type CashflowAtlas } from "@/lib/cashflow-atlas";
 import { holdingBalances } from "@/lib/payment-chain";
 import { plannedInRange } from "@/lib/planned-spends";
 import { formatMoney } from "@/lib/money";
+import { phtDateString } from "@/lib/utils";
 import type {
   ExchangeRate,
   LoanInstallment,
@@ -122,13 +123,13 @@ function buildAtlasSnapshot(args: {
 }): string {
   const m = (n: number) => formatMoney(n, "PHP", { compact: true });
   const a = args.atlas;
-  const start = a.days[0]?.date.toISOString().slice(0, 10) ?? "";
-  const end = a.days[a.days.length - 1]?.date.toISOString().slice(0, 10) ?? "";
+  const start = a.days[0]?.date ? phtDateString(a.days[0].date) : "";
+  const end = a.days[a.days.length - 1]?.date ? phtDateString(a.days[a.days.length - 1].date) : "";
   const momentsLines = args.moments.map((m0) => `- ${m0.date} · ${m0.label} · ${m(m0.amountBase)} · ${m0.kind}`);
   return `HORIZON: ${start} → ${end} (30 days)
 START BALANCE: ${m(args.startBalance)}
-ATLAS MIN BALANCE: ${m(a.minBalance)}${a.minBalanceDate ? ` on ${a.minBalanceDate.toISOString().slice(0, 10)}` : ""}
-ATLAS ZERO CROSSING: ${a.zeroCrossingDate ? a.zeroCrossingDate.toISOString().slice(0, 10) : "none"}
+ATLAS MIN BALANCE: ${m(a.minBalance)}${a.minBalanceDate ? ` on ${phtDateString(a.minBalanceDate)}` : ""}
+ATLAS ZERO CROSSING: ${a.zeroCrossingDate ? phtDateString(a.zeroCrossingDate) : "none"}
 
 KEY MOMENTS:
 ${momentsLines.join("\n") || "- (no scheduled commitments)"}
@@ -173,7 +174,7 @@ export async function generateForecastStory(inputs: ForecastInputs): Promise<For
   // Tag low-point as a moment.
   if (atlas.minBalanceDate && atlas.minBalance < startBalance * 0.6) {
     moments.push({
-      date: atlas.minBalanceDate.toISOString().slice(0, 10),
+      date: phtDateString(atlas.minBalanceDate),
       label: "Low point",
       amountBase: atlas.minBalance,
       kind: "low_point",
@@ -222,7 +223,7 @@ export async function generateForecastStory(inputs: ForecastInputs): Promise<For
     confidence,
     fromAi,
     atlasMinBase: atlas.minBalance,
-    atlasMinDate: atlas.minBalanceDate?.toISOString().slice(0, 10) ?? null,
+    atlasMinDate: atlas.minBalanceDate ? phtDateString(atlas.minBalanceDate) : null,
     startBalanceBase: startBalance,
   };
 }

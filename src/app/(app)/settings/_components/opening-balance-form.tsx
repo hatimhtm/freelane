@@ -6,16 +6,21 @@ import NumberFlow from "@number-flow/react";
 import { toast } from "sonner";
 import { setWalletOpeningBalance } from "@/lib/data/actions";
 import type { Currency, PaymentMethod } from "@/lib/supabase/types";
-import { cn } from "@/lib/utils";
+import { cn, phtToday } from "@/lib/utils";
 
 type Row = {
   amount: string;
   date: string;
   initialAmount: number;
   initialDate: string;
+  // Whether the wallet was ever anchored. Different from "amount > 0":
+  // an unanchored wallet has opening_balance_at = NULL and should accept
+  // 0 as a valid first save (Hatim 2026-06-01 — "setting up a wallet to
+  // zero doesn't even let me save").
+  wasAnchored: boolean;
 };
 
-const TODAY = () => new Date().toISOString().slice(0, 10);
+const TODAY = phtToday;
 
 export function OpeningBalanceForm({
   methods,
@@ -35,12 +40,17 @@ export function OpeningBalanceForm({
   const [rows, setRows] = useState<Record<string, Row>>(() => {
     const out: Record<string, Row> = {};
     for (const m of holding) {
-      const amt = m.opening_balance_base ?? 0;
+      const amt = Number(m.opening_balance_base ?? 0);
+      const wasAnchored = m.opening_balance_at !== null;
       out[m.id] = {
-        amount: amt > 0 ? String(amt) : "",
+        // Render the actual saved value (including 0). Earlier code hid 0
+        // by emptying the input — that fed back into the dirty check and
+        // made "save 0" unreachable.
+        amount: wasAnchored ? String(amt) : "",
         date: m.opening_balance_at ?? TODAY(),
         initialAmount: amt,
         initialDate: m.opening_balance_at ?? TODAY(),
+        wasAnchored,
       };
     }
     return out;
@@ -50,17 +60,28 @@ export function OpeningBalanceForm({
     () =>
       Object.values(rows).reduce((sum, r) => {
         const n = Number(r.amount);
-        return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+        // Sum honors negatives — a Moroccan bank sitting at -₱150 should
+        // pull the total down, not be silently clamped.
+        return sum + (Number.isFinite(n) ? n : 0);
       }, 0),
     [rows],
   );
 
+  // A row is dirty when any of:
+  //   - the wallet was never anchored AND the user typed any finite number
+  //     (including 0 or negative — calibrating to "I had zero before today"
+  //     or "Moroccan bank is at -₱150 from fees" is valid).
+  //   - the typed amount differs from the saved value.
+  //   - the date differs from the saved date.
   const dirty = useMemo(
     () =>
       Object.entries(rows).some(([, r]) => {
-        const n = Number(r.amount);
-        const next = Number.isFinite(n) && n > 0 ? n : 0;
-        return next !== r.initialAmount || r.date !== r.initialDate;
+        const trimmed = r.amount.trim();
+        const n = Number(trimmed);
+        const valid = trimmed !== "" && trimmed !== "-" && Number.isFinite(n);
+        if (!r.wasAnchored && valid) return true;
+        if (valid && n !== r.initialAmount) return true;
+        return r.date !== r.initialDate;
       }),
     [rows],
   );
@@ -77,30 +98,38 @@ export function OpeningBalanceForm({
   function save() {
     start(async () => {
       const changes = Object.entries(rows).filter(([, r]) => {
-        const n = Number(r.amount);
-        const next = Number.isFinite(n) && n > 0 ? n : 0;
-        return next !== r.initialAmount || r.date !== r.initialDate;
+        const trimmed = r.amount.trim();
+        const n = Number(trimmed);
+        const valid = trimmed !== "" && trimmed !== "-" && Number.isFinite(n);
+        if (!r.wasAnchored && valid) return true;
+        if (valid && n !== r.initialAmount) return true;
+        return r.date !== r.initialDate;
       });
       if (changes.length === 0) return;
       try {
         await Promise.all(
-          changes.map(([methodId, r]) =>
-            setWalletOpeningBalance({
+          changes.map(([methodId, r]) => {
+            const n = Number(r.amount.trim());
+            const amount = Number.isFinite(n) ? n : 0;
+            return setWalletOpeningBalance({
               methodId,
-              amountBase: Number(r.amount) || 0,
+              amountBase: amount,
               dateOpt: r.date || TODAY(),
-            }),
-          ),
+            });
+          }),
         );
         toast.success("Wallet balances set");
         setRows((prev) => {
           const next = { ...prev };
           for (const [methodId] of changes) {
             const r = prev[methodId];
+            const n = Number(r.amount.trim());
+            const amount = Number.isFinite(n) ? n : 0;
             next[methodId] = {
               ...r,
-              initialAmount: Number(r.amount) || 0,
+              initialAmount: amount,
               initialDate: r.date,
+              wasAnchored: true,
             };
           }
           return next;
@@ -176,7 +205,7 @@ function Row({
 }) {
   const baseCurrency = (method.currency_out ?? "PHP") as string;
   const symbol = currencies.find((c) => c.code === baseCurrency)?.symbol ?? "₱";
-  const wasSet = row.initialAmount > 0;
+  const wasSet = row.wasAnchored;
 
   return (
     <div className="grid grid-cols-[1fr_auto] items-center gap-x-6 gap-y-2 py-5 sm:grid-cols-[1fr_auto_auto] sm:gap-x-8">
@@ -226,12 +255,20 @@ function Row({
 }
 
 function cleanNumeric(v: string): string {
-  // Permit digits + a single decimal point; strip leading zeros so the typed
-  // value feels live rather than auto-corrected mid-keystroke.
-  const cleaned = v.replace(/[^\d.]/g, "");
+  // Permit a single leading minus + digits + a single decimal point. The
+  // minus is allowed because some wallets carry a negative starting balance
+  // (Hatim 2026-06-01: "my moroccan bank account usually has minus something
+  // because of the fees, that should be also allowed").
+  let sign = "";
+  let body = v;
+  if (body.startsWith("-")) {
+    sign = "-";
+    body = body.slice(1);
+  }
+  const cleaned = body.replace(/[^\d.]/g, "");
   const parts = cleaned.split(".");
-  if (parts.length <= 1) return cleaned;
-  return `${parts[0]}.${parts.slice(1).join("").slice(0, 2)}`;
+  const payload = parts.length <= 1 ? cleaned : `${parts[0]}.${parts.slice(1).join("").slice(0, 2)}`;
+  return `${sign}${payload}`;
 }
 
 function formatLightDate(iso: string): string {

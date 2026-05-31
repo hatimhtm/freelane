@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { WalletPickerWithBalance } from "@/components/app/wallet-picker";
 import { formatMoney } from "@/lib/money";
 import { createWithdrawal } from "@/lib/data/actions";
+import { phtToday } from "@/lib/utils";
 import type { CurrencyCode } from "@/lib/supabase/types";
 
 type MethodOpt = { id: string; name: string; balance?: number };
@@ -37,7 +38,7 @@ export function WithdrawalModal({
   const router = useRouter();
   const [fromId, setFromId] = useState("");
   const [toId, setToId] = useState<string>(defaultToId ?? "");
-  const [withdrawnAt, setWithdrawnAt] = useState(() => new Date().toISOString().slice(0, 10));
+  const [withdrawnAt, setWithdrawnAt] = useState(() => phtToday());
   const [gross, setGross] = useState("");
   const [net, setNet] = useState("");
   const [pending, start] = useTransition();
@@ -48,7 +49,7 @@ export function WithdrawalModal({
     const richest = [...holdingMethods].sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))[0];
     setFromId(richest?.id ?? holdingMethods[0]?.id ?? "");
     setToId(defaultToId ?? "");
-    setWithdrawnAt(new Date().toISOString().slice(0, 10));
+    setWithdrawnAt(phtToday());
     setGross("");
     setNet("");
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps

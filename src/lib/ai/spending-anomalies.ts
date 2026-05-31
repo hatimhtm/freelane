@@ -1,4 +1,5 @@
 import "server-only";
+import { phtDateString } from "@/lib/utils";
 import { Type } from "@google/genai";
 import { gemini, hasGemini, HEAVY_MODEL } from "./models";
 import { linksBySpend } from "@/lib/spends";
@@ -233,7 +234,7 @@ function buildSnapshot(args: {
       return `- ${sp.spent_at.slice(0, 10)} ${m(Number(sp.amount_base ?? 0))}${cats ? ` [${cats}]` : ""}: ${label || "(no detail)"}`;
     });
 
-  return `NOW: ${now.toISOString().slice(0, 10)}
+  return `NOW: ${phtDateString(now)}
 Days elapsed this month: ${daysElapsed} of ${daysInMonth}.
 Base currency: ${currency}.
 

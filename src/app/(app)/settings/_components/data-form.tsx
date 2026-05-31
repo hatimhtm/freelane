@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { phtToday } from "@/lib/utils";
 
 export function DataForm() {
   const [pending, setPending] = useState(false);
@@ -49,7 +50,7 @@ export function DataForm() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const stamp = new Date().toISOString().slice(0, 10);
+      const stamp = phtToday();
       a.download = `freelane-backup-${stamp}.json`;
       document.body.appendChild(a);
       a.click();

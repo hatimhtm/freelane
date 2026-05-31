@@ -14,6 +14,9 @@ import { readFocusCache } from "@/lib/ai/actions";
 import { getCalmWeather } from "@/lib/ai/calm-weather";
 import { computeTightMode, type TightModeRead } from "@/lib/ai/tight-mode-coach";
 import { generateForecastStory, type ForecastStory } from "@/lib/ai/forecast-storyteller";
+import { generateSadakaRhythm, type SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
+import { generateEidPrep, type EidPrepRead } from "@/lib/ai/eid-prep";
+import { nextRamadanPeriod, type RamadanPeriod } from "@/lib/islamic-calendar";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { BlockedRow } from "@/components/app/blocked-money-list";
@@ -55,6 +58,9 @@ export default async function TodayPage() {
     openAiQuestions,
     plannedSpends,
     calmWeather: cachedCalmWeather,
+    islamicCalendar,
+    phCulturalEvents,
+    wifeState,
   } = data;
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
@@ -312,6 +318,34 @@ export default async function TodayPage() {
     }
   }
 
+  // Tier 2 surfaces — Cultural overlay + Eid Prep + Ramadan + Sadaka Rhythm.
+  // All best-effort; failure on one doesn't break the page.
+  const ramadan: RamadanPeriod | null = nextRamadanPeriod(islamicCalendar, now);
+  let eidPrep: EidPrepRead | null = null;
+  let sadaka: SadakaRhythmRead | null = null;
+  try {
+    eidPrep = await generateEidPrep({
+      islamic: islamicCalendar,
+      spends,
+      spendCategoryLinks,
+      plannedSpends,
+      now,
+    });
+  } catch (err) {
+    console.error("Today: generateEidPrep threw", err);
+  }
+  try {
+    sadaka = await generateSadakaRhythm({
+      spends,
+      payments,
+      spendCategories,
+      spendCategoryLinks,
+      now,
+    });
+  } catch (err) {
+    console.error("Today: generateSadakaRhythm threw", err);
+  }
+
   return (
     <TodayView
       firstName={settings?.issuer_name?.split(" ")[0] ?? null}
@@ -351,6 +385,12 @@ export default async function TodayPage() {
       calmWeather={calmWeather}
       tightMode={tightMode}
       forecastStory={forecastStory}
+      islamicCalendar={islamicCalendar}
+      phCulturalEvents={phCulturalEvents}
+      ramadan={ramadan}
+      eidPrep={eidPrep}
+      sadaka={sadaka}
+      wifeState={wifeState}
     />
   );
 }

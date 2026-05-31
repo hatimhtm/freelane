@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { logEvent } from "@/lib/data/events";
+import { phtToday } from "@/lib/utils";
 import type {
   AiQuestion,
   AiQuestionKind,
@@ -194,7 +195,7 @@ export async function createProject(input: ProjectInput) {
   const { supabase, userId } = await userOrThrow();
   const status = input.status ?? "unpaid";
   const extras: Record<string, unknown> = {};
-  if (status === "paid") extras.completed_at = new Date().toISOString().slice(0, 10);
+  if (status === "paid") extras.completed_at = phtToday();
 
   const { error, data } = await supabase
     .from("projects")
@@ -209,7 +210,7 @@ export async function createProject(input: ProjectInput) {
   if (status === "paid" && input.amount > 0) {
     await addPaymentWithChain({
       project_id: data.id as string,
-      paid_at: new Date().toISOString().slice(0, 10),
+      paid_at: phtToday(),
       steps: [
         {
           method_id: null,
@@ -264,7 +265,7 @@ export async function updateProjectStatus(id: string, status: ProjectStatus, kan
   const { supabase, userId } = await userOrThrow();
   const patch: Record<string, unknown> = { status };
   if (typeof kanbanPosition === "number") patch.kanban_position = kanbanPosition;
-  if (status === "paid") patch.completed_at = new Date().toISOString().slice(0, 10);
+  if (status === "paid") patch.completed_at = phtToday();
   const { error } = await supabase.from("projects").update(patch).eq("id", id).eq("user_id", userId);
   if (error) throw error;
 
@@ -353,6 +354,49 @@ type RatePair = { code: string; rate_to_base: number };
 function toBaseAmount(amount: number, currency: string, rates: RatePair[]): number {
   const r = rates.find((x) => x.code === currency)?.rate_to_base ?? 1;
   return amount * r;
+}
+
+// Resolve a spend's description against the user's vendors + entities tables.
+// Explicit IDs from the caller short-circuit auto-resolution (the user already
+// decided). Returns the IDs the spend should be linked to.
+async function resolveLinksForSpend(args: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  description: string | null;
+  explicitVendorIds?: string[];
+  explicitEntityIds?: string[];
+}): Promise<{ vendorIds: string[]; entityIds: string[] }> {
+  const desc = (args.description ?? "").trim();
+  const vendorIds = args.explicitVendorIds ?? [];
+  const entityIds = args.explicitEntityIds ?? [];
+
+  // If the caller fully supplied both lists, skip the lookup entirely.
+  if (args.explicitVendorIds && args.explicitEntityIds) {
+    return { vendorIds, entityIds };
+  }
+  if (!desc) return { vendorIds, entityIds };
+
+  // One round-trip to fetch the lookup tables. Cheap — per-user tables stay
+  // small (< 1000 rows even for active users).
+  const [{ data: vendorsData }, { data: aliasesData }, { data: entitiesData }] = await Promise.all([
+    args.supabase.from("vendors").select("*").eq("user_id", args.userId).eq("archived", false),
+    args.supabase.from("vendor_aliases").select("*"),
+    args.supabase.from("entities").select("*").eq("user_id", args.userId).eq("archived", false),
+  ]);
+
+  if (!args.explicitVendorIds) {
+    const { resolveVendor } = await import("@/lib/vendor-resolution");
+    const res = resolveVendor(desc, vendorsData ?? [], aliasesData ?? []);
+    if (res.vendor) vendorIds.push(res.vendor.id);
+  }
+  if (!args.explicitEntityIds) {
+    const { matchEntitiesInDescription } = await import("@/lib/entity-resolution");
+    const matches = matchEntitiesInDescription(desc, entitiesData ?? []);
+    for (const m of matches) {
+      if (!entityIds.includes(m.entity.id)) entityIds.push(m.entity.id);
+    }
+  }
+  return { vendorIds, entityIds };
 }
 
 // Accepts "HH:mm" or "HH:mm:ss" from the spend modal's time picker; returns
@@ -1193,7 +1237,7 @@ export async function createExpense(input: ExpenseInput) {
     .from("expenses")
     .insert({
       user_id: userId,
-      spent_at: input.spent_at ?? new Date().toISOString().slice(0, 10),
+      spent_at: input.spent_at ?? phtToday(),
       description: input.description,
       amount: input.amount,
       currency: input.currency,
@@ -1452,6 +1496,13 @@ export type SpendInput = {
   loan_installment_id?: string | null;
   categoryIds?: string[];
   items?: SpendItemInput[];
+  // Tier 2: "It's For Us" tag (migration 0034 — household line).
+  for_us?: boolean;
+  // Tier 2: explicit vendor + entity associations. When omitted, the server
+  // auto-resolves from the description against finance.vendors + .entities
+  // and only inserts links where it finds a confident match.
+  vendorIds?: string[];
+  entityIds?: string[];
 };
 
 export async function createSpend(input: SpendInput) {
@@ -1467,7 +1518,7 @@ export async function createSpend(input: SpendInput) {
     .eq("user_id", userId);
   const rateRows = (rates ?? []) as RatePair[];
   const amountBase = toBaseAmount(amount, input.currency, rateRows);
-  const spentAt = input.spent_at ?? new Date().toISOString().slice(0, 10);
+  const spentAt = input.spent_at ?? phtToday();
   const coversPeriods = Math.max(1, Math.floor(Number(input.covers_periods ?? 1)));
 
   const { data: spendRow, error: spendErr } = await supabase
@@ -1488,6 +1539,7 @@ export async function createSpend(input: SpendInput) {
       recurring_spend_id: input.recurring_spend_id ?? null,
       loan_id: input.loan_id ?? null,
       loan_installment_id: input.loan_installment_id ?? null,
+      for_us: !!input.for_us,
     })
     .select("id")
     .single();
@@ -1498,6 +1550,41 @@ export async function createSpend(input: SpendInput) {
     const linkRows = input.categoryIds.map((cid) => ({ spend_id: spendId, category_id: cid }));
     const { error: linkErr } = await supabase.from("spend_category_links").insert(linkRows);
     if (linkErr) throw linkErr;
+  }
+
+  // Tier 2: vendor + entity links. Explicit IDs from the caller win; if none
+  // provided, auto-resolve from the description against the user's vendors
+  // and entities. Auto-resolved links carry source='auto' so the user can
+  // override without losing the original tag.
+  const { vendorIds, entityIds } = await resolveLinksForSpend({
+    supabase,
+    userId,
+    description: input.description ?? null,
+    explicitVendorIds: input.vendorIds,
+    explicitEntityIds: input.entityIds,
+  });
+  if (vendorIds.length) {
+    const rows = vendorIds.map((vid) => ({
+      spend_id: spendId,
+      vendor_id: vid,
+      source: input.vendorIds ? "user" : "auto",
+    }));
+    await supabase.from("spend_vendor_links").insert(rows);
+    // Refresh last_seen_at for each linked vendor.
+    await supabase
+      .from("vendors")
+      .update({ last_seen_at: spentAt })
+      .in("id", vendorIds)
+      .eq("user_id", userId)
+      .lt("last_seen_at", spentAt);
+  }
+  if (entityIds.length) {
+    const rows = entityIds.map((eid) => ({
+      spend_id: spendId,
+      entity_id: eid,
+      source: input.entityIds ? "user" : "auto",
+    }));
+    await supabase.from("spend_entity_links").insert(rows);
   }
 
   if (input.items?.length) {
@@ -1598,6 +1685,7 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
     "recurring_spend_id",
     "loan_id",
     "loan_installment_id",
+    "for_us",
   ];
   for (const k of writable) {
     if (k in input) {
@@ -1655,6 +1743,31 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
       }));
       const { error: itemErr } = await supabase.from("spend_items").insert(itemRows);
       if (itemErr) throw itemErr;
+    }
+  }
+
+  // Tier 2: vendor + entity links — only touched when the caller passes the
+  // arrays explicitly (no implicit auto-rewrite on every patch).
+  if (input.vendorIds) {
+    await supabase.from("spend_vendor_links").delete().eq("spend_id", id);
+    if (input.vendorIds.length > 0) {
+      const rows = input.vendorIds.map((vid) => ({
+        spend_id: id,
+        vendor_id: vid,
+        source: "user",
+      }));
+      await supabase.from("spend_vendor_links").insert(rows);
+    }
+  }
+  if (input.entityIds) {
+    await supabase.from("spend_entity_links").delete().eq("spend_id", id);
+    if (input.entityIds.length > 0) {
+      const rows = input.entityIds.map((eid) => ({
+        spend_id: id,
+        entity_id: eid,
+        source: "user",
+      }));
+      await supabase.from("spend_entity_links").insert(rows);
     }
   }
 
@@ -2061,7 +2174,7 @@ export async function createLoan(input: LoanInput) {
       principal_amount: input.principal_amount,
       principal_currency: input.principal_currency,
       principal_base: Math.round(principalBase * 100) / 100,
-      borrowed_at: input.borrowed_at ?? new Date().toISOString().slice(0, 10),
+      borrowed_at: input.borrowed_at ?? phtToday(),
       expected_return_by: input.expected_return_by ?? null,
       notes: input.notes ?? null,
     })
@@ -2386,7 +2499,7 @@ export async function setWalletOpeningBalance(input: WalletOpeningBalanceInput) 
   if (!Number.isFinite(input.amountBase) || input.amountBase < 0) {
     throw new Error("Opening balance must be 0 or more.");
   }
-  const opening_balance_at = input.dateOpt ?? new Date().toISOString().slice(0, 10);
+  const opening_balance_at = input.dateOpt ?? phtToday();
   const { error } = await supabase
     .from("payment_methods")
     .update({
@@ -2808,7 +2921,7 @@ export async function createChangelogEntry(input: AppChangelogInput) {
     .insert({
       author_id: userId,
       version,
-      released_at: input.released_at ?? new Date().toISOString().slice(0, 10),
+      released_at: input.released_at ?? phtToday(),
       kind: input.kind ?? "release",
       title,
       body: input.body ?? null,
@@ -2871,6 +2984,304 @@ export async function answerAiQuestionWithNotesAction(
 ): Promise<void> {
   const { answerAiQuestion } = await import("@/lib/ai/ai-questions");
   await answerAiQuestion(id, answer, answerNotes);
+  revalidatePath("/today");
+  revalidatePath("/settings");
+}
+
+// ───────────────────────────────────────── Vendors (Tier 2) ──
+
+export type VendorInput = {
+  canonical_name: string;
+  short_description?: string | null;
+  location?: Record<string, unknown>;
+  kinds?: string[];
+  notes?: string | null;
+};
+
+export async function createVendor(input: VendorInput) {
+  const { supabase, userId } = await userOrThrow();
+  const name = input.canonical_name.trim();
+  if (!name) throw new Error("Vendor needs a name.");
+  const { vendorSlug } = await import("@/lib/spending/vendor-extract");
+  const slug = vendorSlug(name);
+  const { data, error } = await supabase
+    .from("vendors")
+    .insert({
+      user_id: userId,
+      canonical_name: name,
+      slug,
+      short_description: input.short_description ?? null,
+      location: input.location ?? {},
+      kinds: input.kinds ?? [],
+      notes: input.notes ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "vendor.created",
+    title: `Vendor · ${name}`,
+    entityType: "vendor",
+    entityId: data.id as string,
+    metadata: { slug },
+  });
+  revalidatePath("/vendors");
+  revalidatePath("/spending");
+  return data;
+}
+
+export async function updateVendor(id: string, input: Partial<VendorInput>) {
+  const { supabase, userId } = await userOrThrow();
+  const patch: Record<string, unknown> = {};
+  if ("canonical_name" in input) {
+    const trimmed = input.canonical_name?.trim();
+    if (!trimmed) throw new Error("Vendor name can't be empty.");
+    const { vendorSlug } = await import("@/lib/spending/vendor-extract");
+    patch.canonical_name = trimmed;
+    patch.slug = vendorSlug(trimmed);
+  }
+  if ("short_description" in input) patch.short_description = input.short_description ?? null;
+  if ("location" in input) patch.location = input.location ?? {};
+  if ("kinds" in input) patch.kinds = input.kinds ?? [];
+  if ("notes" in input) patch.notes = input.notes ?? null;
+  if (Object.keys(patch).length === 0) return;
+  const { error } = await supabase
+    .from("vendors")
+    .update(patch)
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "vendor.updated",
+    title: `Updated vendor${input.canonical_name ? ` · ${input.canonical_name}` : ""}`,
+    entityType: "vendor",
+    entityId: id,
+  });
+  revalidatePath("/vendors");
+  revalidatePath(`/vendors/${id}`);
+  revalidatePath("/spending");
+}
+
+export async function archiveVendor(id: string, archived = true) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("vendors")
+    .update({ archived })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "vendor.archived",
+    title: archived ? "Archived vendor" : "Restored vendor",
+    entityType: "vendor",
+    entityId: id,
+    metadata: { archived },
+  });
+  revalidatePath("/vendors");
+}
+
+export async function deleteVendor(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("vendors")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "vendor.deleted",
+    title: "Deleted vendor",
+    entityType: "vendor",
+    entityId: id,
+  });
+  revalidatePath("/vendors");
+}
+
+export async function createVendorAlias(vendorId: string, alias: string) {
+  const { supabase, userId } = await userOrThrow();
+  const trimmed = alias.trim();
+  if (!trimmed) throw new Error("Alias can't be empty.");
+  // RLS via parent — confirm ownership client-side first to surface a nice error.
+  const { data: vendor } = await supabase
+    .from("vendors")
+    .select("id")
+    .eq("id", vendorId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!vendor) throw new Error("Vendor not found.");
+  const { normalizeAlias } = await import("@/lib/vendor-resolution");
+  const norm = normalizeAlias(trimmed);
+  const { error } = await supabase
+    .from("vendor_aliases")
+    .insert({ vendor_id: vendorId, alias: trimmed, alias_norm: norm, source: "user" });
+  if (error) throw error;
+  revalidatePath(`/vendors/${vendorId}`);
+}
+
+export async function deleteVendorAlias(aliasId: string, vendorId: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { data: vendor } = await supabase
+    .from("vendors")
+    .select("id")
+    .eq("id", vendorId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!vendor) throw new Error("Vendor not found.");
+  const { error } = await supabase.from("vendor_aliases").delete().eq("id", aliasId);
+  if (error) throw error;
+  revalidatePath(`/vendors/${vendorId}`);
+}
+
+// ───────────────────────────────────────── Entities (Tier 2) ──
+
+export type EntityInput = {
+  kind: string;
+  canonical_name: string;
+  short_description?: string | null;
+  aliases?: string[];
+  vague?: boolean;
+  notes?: string | null;
+};
+
+export async function createEntity(input: EntityInput) {
+  const { supabase, userId } = await userOrThrow();
+  const name = input.canonical_name.trim();
+  if (!name) throw new Error("Entity needs a name.");
+  if (!input.kind) throw new Error("Pick a kind.");
+  const { data, error } = await supabase
+    .from("entities")
+    .insert({
+      user_id: userId,
+      kind: input.kind,
+      canonical_name: name,
+      short_description: input.short_description ?? null,
+      aliases: input.aliases ?? [],
+      vague: !!input.vague,
+      notes: input.notes ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "entity.created",
+    title: `Entity · ${name}`,
+    entityType: "entity",
+    entityId: data.id as string,
+    metadata: { kind: input.kind, vague: !!input.vague },
+  });
+  revalidatePath("/entities");
+  return data;
+}
+
+export async function updateEntity(id: string, input: Partial<EntityInput>) {
+  const { supabase, userId } = await userOrThrow();
+  const patch: Record<string, unknown> = {};
+  if ("kind" in input) patch.kind = input.kind;
+  if ("canonical_name" in input) {
+    const t = input.canonical_name?.trim();
+    if (!t) throw new Error("Entity name can't be empty.");
+    patch.canonical_name = t;
+  }
+  if ("short_description" in input) patch.short_description = input.short_description ?? null;
+  if ("aliases" in input) patch.aliases = input.aliases ?? [];
+  if ("vague" in input) patch.vague = !!input.vague;
+  if ("notes" in input) patch.notes = input.notes ?? null;
+  if (Object.keys(patch).length === 0) return;
+  const { error } = await supabase
+    .from("entities")
+    .update(patch)
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "entity.updated",
+    title: `Updated entity${input.canonical_name ? ` · ${input.canonical_name}` : ""}`,
+    entityType: "entity",
+    entityId: id,
+  });
+  revalidatePath("/entities");
+  revalidatePath(`/entities/${id}`);
+}
+
+export async function archiveEntity(id: string, archived = true) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("entities")
+    .update({ archived })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "entity.archived",
+    title: archived ? "Archived entity" : "Restored entity",
+    entityType: "entity",
+    entityId: id,
+    metadata: { archived },
+  });
+  revalidatePath("/entities");
+}
+
+export async function deleteEntity(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("entities")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "entity.deleted",
+    title: "Deleted entity",
+    entityType: "entity",
+    entityId: id,
+  });
+  revalidatePath("/entities");
+}
+
+// ───────────────────────────────────────── Wife state (Tier 2) ──
+
+export type WifeStateInput = {
+  name?: string | null;
+  university?: string | null;
+  year_of_study?: number | null;
+  expected_graduation?: string | null;
+  semester_calendar?: Record<string, unknown>;
+  notes?: string | null;
+};
+
+export async function updateWifeStateAction(input: WifeStateInput) {
+  const { supabase, userId } = await userOrThrow();
+  const patch: Record<string, unknown> = {};
+  for (const k of ["name", "university", "year_of_study", "expected_graduation", "notes"] as const) {
+    if (k in input) patch[k] = (input as Record<string, unknown>)[k] ?? null;
+  }
+  if ("semester_calendar" in input) patch.semester_calendar = input.semester_calendar ?? {};
+  const { error } = await supabase
+    .from("wife_state")
+    .upsert({ user_id: userId, ...patch }, { onConflict: "user_id" });
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "wife_state.updated",
+    title: "Updated wife context",
+    entityType: "wife_state",
+    entityId: userId,
+  });
+  revalidatePath("/settings");
+  revalidatePath("/today");
+}
+
+export async function consolidateWifePreferencesAction(): Promise<void> {
+  const { consolidateWifePreferences } = await import("@/lib/ai/wife-preferences");
+  await consolidateWifePreferences();
   revalidatePath("/today");
   revalidatePath("/settings");
 }

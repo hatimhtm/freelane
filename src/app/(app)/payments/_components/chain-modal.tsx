@@ -23,6 +23,7 @@ import {
 import { WalletPickerWithBalance } from "@/components/app/wallet-picker";
 import { formatMoney } from "@/lib/money";
 import { playLanded } from "@/lib/sound";
+import { phtToday } from "@/lib/utils";
 import {
   addPaymentWithChain,
   consolidateClientMemoryAction,
@@ -72,7 +73,7 @@ export function ChainModal({
   const router = useRouter();
   const [projectId, setProjectId] = useState<string>("");
   const [paidAt, setPaidAt] = useState(() =>
-    new Date().toISOString().slice(0, 10),
+    phtToday(),
   );
   const [steps, setSteps] = useState<Step[]>([]);
   const [pending, start] = useTransition();
@@ -87,7 +88,7 @@ export function ChainModal({
       ? projects.find((x) => x.id === defaultProjectId)
       : undefined;
     setProjectId(deepLinked?.id ?? "");
-    setPaidAt(new Date().toISOString().slice(0, 10));
+    setPaidAt(phtToday());
     setSteps([
       {
         from_method_id: null,

@@ -1,4 +1,5 @@
 import "server-only";
+import { phtDateString } from "@/lib/utils";
 import { Type } from "@google/genai";
 import { gemini, MODEL, hasGemini } from "./gemini";
 import { createClient } from "@/lib/supabase/server";
@@ -205,7 +206,7 @@ export async function consolidateUserMemory(): Promise<void> {
   const topCats = catTotals.slice(0, 5).map((t) => `${catNameById.get(t.categoryId) ?? "?"} ${m(t.total)}`).join(", ");
   const activeRecurring = recurring.filter((r) => r.active);
 
-  const ledger = `LEDGER SNAPSHOT (base ${currency}, today ${now.toISOString().slice(0, 10)}, ~${observationDays}d of observations):
+  const ledger = `LEDGER SNAPSHOT (base ${currency}, today ${phtDateString(now)}, ~${observationDays}d of observations):
 
 INCOME — trailing 7d ${m(income7)}, trailing 30d ${m(income30)} · MTD ${m(metrics.mtd)} (MoM ${metrics.momDelta === null ? "n/a" : (metrics.momDelta * 100).toFixed(0) + "%"}) · last month ${m(metrics.lastMonth)} · YTD ${m(metrics.ytd)} · fees this month ${m(metrics.feesMtd)}.
 

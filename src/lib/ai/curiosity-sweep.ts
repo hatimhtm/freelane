@@ -1,4 +1,5 @@
 import "server-only";
+import { phtDateString } from "@/lib/utils";
 import { Type } from "@google/genai";
 import { gemini, hasGemini, HEAVY_MODEL } from "./models";
 import { createClient } from "@/lib/supabase/server";
@@ -546,7 +547,7 @@ async function buildCuriositySnapshot(
     user_memory_entry: new Set(memoryEntries.map((e) => e.id)),
   };
 
-  const text = `Base currency: ${currency}. Today: ${now.toISOString().slice(0, 10)}.
+  const text = `Base currency: ${currency}. Today: ${phtDateString(now)}.
 
 DATA AVAILABILITY:
 - Observations: ~${observationDays}d of history

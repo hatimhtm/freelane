@@ -1,4 +1,5 @@
 import "server-only";
+import { phtDateString } from "@/lib/utils";
 import { Type } from "@google/genai";
 import { gemini, hasGemini } from "./gemini";
 import { HEAVY_MODEL } from "./models";
@@ -267,7 +268,7 @@ function defaultNarrative(band: CalmWeatherBand, signals: PureSignals): { narrat
       const sec = signals.negativeWalletCount > 0
         ? `${signals.negativeWalletCount} wallet${signals.negativeWalletCount > 1 ? "s" : ""} below zero — log a missing payment or fix the data.`
         : signals.atlas.zeroCrossingDate
-          ? `Balance projects below zero around ${signals.atlas.zeroCrossingDate.toISOString().slice(0, 10)}.`
+          ? `Balance projects below zero around ${phtDateString(signals.atlas.zeroCrossingDate)}.`
           : `Runway ${days}d — narrow window, careful steps.`;
       return {
         narrative: `Tight stretch. Worth slowing the discretionary spending until things widen.`,
@@ -404,7 +405,7 @@ function buildSnapshot(args: {
     return `- ${p.label} (${p.certainty}): ${m(Number(p.expected_base ?? 0))} on ${p.planned_for} (in ${days}d)`;
   });
 
-  return `NOW: ${now.toISOString().slice(0, 10)} (PHT)
+  return `NOW: ${phtDateString(now)} (PHT)
 BAND (math-decided, DON'T CHALLENGE): ${band.toUpperCase()}
 PRIOR BAND: ${args.priorBand ?? "(first run)"}
 
@@ -413,8 +414,8 @@ ${walletLines}
 NEGATIVE WALLETS: ${signals.negativeWalletCount}
 
 RUNWAY (days until balance dips to COL floor): ${signals.runwayDays}
-ATLAS MIN BALANCE in 90d: ${m(signals.atlas.minBalance)}${signals.atlas.minBalanceDate ? ` on ${signals.atlas.minBalanceDate.toISOString().slice(0, 10)}` : ""}
-ATLAS ZERO CROSSING: ${signals.atlas.zeroCrossingDate ? signals.atlas.zeroCrossingDate.toISOString().slice(0, 10) : "none"}
+ATLAS MIN BALANCE in 90d: ${m(signals.atlas.minBalance)}${signals.atlas.minBalanceDate ? ` on ${phtDateString(signals.atlas.minBalanceDate)}` : ""}
+ATLAS ZERO CROSSING: ${signals.atlas.zeroCrossingDate ? phtDateString(signals.atlas.zeroCrossingDate) : "none"}
 
 SAFE-TO-SPEND BASELINE:
 - safe today: ${m(safe.safeTodayBase)}
