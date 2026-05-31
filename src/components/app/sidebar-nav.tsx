@@ -16,6 +16,7 @@ import {
   Sparkles,
   Store,
   HeartHandshake,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
@@ -30,6 +31,7 @@ const NAV = [
   { href: "/vendors",   label: "Vendors",   icon: Store           },
   { href: "/entities",  label: "Entities",  icon: HeartHandshake  },
   { href: "/clients",   label: "Clients",   icon: Users           },
+  { href: "/letters",   label: "Letters",   icon: FileText        },
   { href: "/activity",  label: "Activity",  icon: Activity        },
   { href: "/changelog", label: "What's new", icon: Sparkles       },
   { href: "/settings",  label: "Settings",  icon: Settings        },

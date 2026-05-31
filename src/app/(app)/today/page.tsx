@@ -17,6 +17,7 @@ import { generateForecastStory, type ForecastStory } from "@/lib/ai/forecast-sto
 import { generateSadakaRhythm, type SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
 import { generateEidPrep, type EidPrepRead } from "@/lib/ai/eid-prep";
 import { nextRamadanPeriod, type RamadanPeriod } from "@/lib/islamic-calendar";
+import { getLetters, getMilestones } from "@/lib/data/queries";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { BlockedRow } from "@/components/app/blocked-money-list";
@@ -346,6 +347,17 @@ export default async function TodayPage() {
     console.error("Today: generateSadakaRhythm threw", err);
   }
 
+  // Tier 3 fetches — letters + surfaced milestones for the Today cards.
+  let lettersList: Awaited<ReturnType<typeof getLetters>> = [];
+  let milestonesList: Awaited<ReturnType<typeof getMilestones>> = [];
+  try {
+    [lettersList, milestonesList] = await Promise.all([getLetters(8), getMilestones(20)]);
+  } catch (err) {
+    console.error("Today: getLetters/getMilestones threw", err);
+  }
+  const latestLetter = lettersList.find((l) => l.pinned) ?? lettersList[0] ?? null;
+  const freshMilestones = milestonesList.filter((m) => m.surfaced).slice(0, 4);
+
   return (
     <TodayView
       firstName={settings?.issuer_name?.split(" ")[0] ?? null}
@@ -391,6 +403,8 @@ export default async function TodayPage() {
       eidPrep={eidPrep}
       sadaka={sadaka}
       wifeState={wifeState}
+      latestLetter={latestLetter}
+      freshMilestones={freshMilestones}
     />
   );
 }

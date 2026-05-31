@@ -39,6 +39,10 @@ import type {
   WifeState,
   IslamicCalendarRow,
   PhCulturalEventRow,
+  EditorialLetter,
+  Milestone,
+  QuietReceipt,
+  LifeShift,
 } from "@/lib/supabase/types";
 
 async function userOrThrow() {
@@ -869,6 +873,75 @@ export async function getWifeState() {
     .eq("user_id", user.id)
     .maybeSingle();
   return (data ?? null) as WifeState | null;
+}
+
+// ─────────────────────────── Tier 3 fetchers ──
+
+export async function getLetters(limit = 60) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("letters")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("pinned", { ascending: false })
+    .order("generated_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as EditorialLetter[];
+}
+
+export async function getLetterById(id: string) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("letters")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("id", id)
+    .maybeSingle();
+  return (data ?? null) as EditorialLetter | null;
+}
+
+export async function getMilestones(limit = 80) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("milestones")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("achieved_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as Milestone[];
+}
+
+export async function getQuietReceipts(limit = 80) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("quiet_receipts")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("occurred_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as QuietReceipt[];
+}
+
+export async function getLifeShifts(limit = 80) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("life_shifts")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("occurred_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as LifeShift[];
+}
+
+// /letters page: letters + life shifts together (tabs).
+export async function getLettersPageData() {
+  const [letters, milestones, receipts, shifts] = await Promise.all([
+    getLetters(60),
+    getMilestones(80),
+    getQuietReceipts(80),
+    getLifeShifts(80),
+  ]);
+  return { letters, milestones, receipts, shifts };
 }
 
 // Islamic + PH cultural calendar rows (reference data, RLS=public read).

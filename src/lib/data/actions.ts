@@ -1972,6 +1972,13 @@ export async function createRecurringSpend(input: RecurringSpendInput) {
 
 export async function updateRecurringSpend(id: string, input: Partial<RecurringSpendInput>) {
   const { supabase, userId } = await userOrThrow();
+  // Read prior state so we can detect Tier 3 life shifts (pause / amount change).
+  const { data: prior } = await supabase
+    .from("recurring_spends")
+    .select("active,expected_amount,expected_currency,label")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
   const patch: Record<string, unknown> = {};
   const writable: (keyof RecurringSpendInput)[] = [
     "wallet_id",
@@ -2007,6 +2014,63 @@ export async function updateRecurringSpend(id: string, input: Partial<RecurringS
     entityId: id,
   });
   await invalidateAiSafeSpendCache(userId);
+  // Tier 3 hooks: detect paused or amount-changed life shifts.
+  if (prior) {
+    const priorActive = (prior as { active: boolean }).active;
+    const priorAmount = Number((prior as { expected_amount: number }).expected_amount ?? 0);
+    const priorCurrency = (prior as { expected_currency: string }).expected_currency;
+    const priorLabel = (prior as { label: string }).label;
+    const nextActive = "active" in patch ? !!patch.active : priorActive;
+    const nextAmount = "expected_amount" in patch ? Number(patch.expected_amount) : priorAmount;
+    try {
+      const { recordLifeShift } = await import("@/lib/ai/life-shift-writer");
+      const { recordQuietReceipt } = await import("@/lib/ai/quiet-receipt-writer");
+      if (priorActive && !nextActive) {
+        await Promise.all([
+          recordLifeShift({
+            kind: "recurring_paused",
+            label: `${priorLabel} recurring paused`,
+            beforeValue: `${priorAmount} ${priorCurrency}`,
+            afterValue: "paused",
+            sourceEntityType: "recurring_spend",
+            sourceEntityId: id,
+            context: { label: priorLabel, amount: priorAmount, currency: priorCurrency },
+          }),
+          recordQuietReceipt({
+            kind: "recurring_paused",
+            sourceEntityType: "recurring_spend",
+            sourceEntityId: id,
+            context: { label: priorLabel, amount: priorAmount, currency: priorCurrency },
+          }),
+        ]);
+      } else if (
+        priorActive &&
+        nextActive &&
+        priorAmount > 0 &&
+        Math.abs(nextAmount - priorAmount) / priorAmount > 0.15
+      ) {
+        await recordLifeShift({
+          kind: "recurring_changed",
+          label: `${priorLabel} recurring changed`,
+          beforeValue: `${priorAmount} ${priorCurrency}`,
+          afterValue: `${nextAmount} ${priorCurrency}`,
+          sourceEntityType: "recurring_spend",
+          sourceEntityId: id,
+          context: { label: priorLabel, before: priorAmount, after: nextAmount },
+        });
+        if (nextAmount < priorAmount) {
+          await recordQuietReceipt({
+            kind: "recurring_lowered",
+            sourceEntityType: "recurring_spend",
+            sourceEntityId: id,
+            context: { label: priorLabel, before: priorAmount, after: nextAmount },
+          });
+        }
+      }
+    } catch {
+      // Best-effort.
+    }
+  }
   revalidatePath("/settings");
   revalidatePath("/today");
   revalidatePath("/dashboard");
@@ -2242,6 +2306,12 @@ export async function updateLoan(
 
 export async function closeLoan(id: string) {
   const { supabase, userId } = await userOrThrow();
+  const { data: loanRow } = await supabase
+    .from("loans")
+    .select("counterparty,principal_base,direction")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
   const { error } = await supabase
     .from("loans")
     .update({ status: "closed" })
@@ -2256,6 +2326,24 @@ export async function closeLoan(id: string) {
     entityId: id,
   });
   await invalidateAiSafeSpendCache(userId);
+  // Tier 3 hook: quiet receipt for the closure (best-effort).
+  if (loanRow) {
+    try {
+      const { recordQuietReceipt } = await import("@/lib/ai/quiet-receipt-writer");
+      await recordQuietReceipt({
+        kind: "loan_repaid",
+        sourceEntityType: "loan",
+        sourceEntityId: id,
+        context: {
+          counterparty: (loanRow as { counterparty: string }).counterparty,
+          principal_base: Number((loanRow as { principal_base: number }).principal_base ?? 0),
+          direction: (loanRow as { direction: string }).direction,
+        },
+      });
+    } catch {
+      // Best-effort.
+    }
+  }
   revalidatePath("/loans");
   revalidatePath("/today");
   revalidatePath("/dashboard");
@@ -2732,6 +2820,21 @@ export async function commitPlannedSpend(id: string) {
     metadata: { committed_base: Number(plan.expected_base ?? 0) },
   });
   await invalidateAiSafeSpendCache(userId, supabase);
+  // Tier 3 hook: quiet receipt for the lock.
+  try {
+    const { recordQuietReceipt } = await import("@/lib/ai/quiet-receipt-writer");
+    await recordQuietReceipt({
+      kind: "plan_committed",
+      sourceEntityType: "planned_spend",
+      sourceEntityId: id,
+      context: {
+        label: plan.label,
+        committed_base: Number(plan.expected_base ?? 0),
+      },
+    });
+  } catch {
+    // Best-effort.
+  }
   revalidatePath("/plans");
   revalidatePath("/today");
   revalidatePath("/dashboard");
@@ -2828,6 +2931,21 @@ export async function materializePlannedSpend(id: string, input: MaterializePlan
     entityId: id,
     metadata: { spend_id: result.id },
   });
+  // Tier 3 hook: quiet receipt for the plan landing.
+  try {
+    const { recordQuietReceipt } = await import("@/lib/ai/quiet-receipt-writer");
+    await recordQuietReceipt({
+      kind: "plan_done",
+      sourceEntityType: "planned_spend",
+      sourceEntityId: id,
+      context: {
+        label: plan.label,
+        spend_id: result.id,
+      },
+    });
+  } catch {
+    // Best-effort.
+  }
   // createSpend above already invalidates both the safe-to-spend cache and
   // calm_weather_state via invalidateAiSafeSpendCache, so we don't need an
   // extra mark here. revalidatePath only.
@@ -3284,4 +3402,245 @@ export async function consolidateWifePreferencesAction(): Promise<void> {
   await consolidateWifePreferences();
   revalidatePath("/today");
   revalidatePath("/settings");
+}
+
+// ───────────────────────────────────────── Tier 3 (letters, milestones, etc.) ──
+
+export async function refreshLetterAction(input: {
+  kind: "end_of_month" | "spotlight" | "sunday" | "year" | "anniversary" | "regret_mark";
+  periodKey?: string;
+  force?: boolean;
+}): Promise<{ id: string } | null> {
+  const [{ generateLetter }, { getDashboardData, getUserMemory, getMilestones, getQuietReceipts, getLifeShifts }] = await Promise.all([
+    import("@/lib/ai/editorial-letter"),
+    import("@/lib/data/queries"),
+  ]);
+  const [data, memory, milestones, receipts, shifts] = await Promise.all([
+    getDashboardData(),
+    getUserMemory(),
+    getMilestones(120),
+    getQuietReceipts(120),
+    getLifeShifts(120),
+  ]);
+  const letter = await generateLetter({
+    kind: input.kind,
+    periodKey: input.periodKey,
+    force: !!input.force,
+    inputs: {
+      payments: data.payments,
+      spends: data.spends,
+      spendCategories: data.spendCategories,
+      spendCategoryLinks: data.spendCategoryLinks,
+      vendors: data.vendors,
+      milestones,
+      quietReceipts: receipts,
+      lifeShifts: shifts,
+      userMemory: memory.memory?.memory_consolidated ?? null,
+    },
+  });
+  revalidatePath("/letters");
+  revalidatePath("/today");
+  return letter ? { id: letter.id } : null;
+}
+
+export async function pinLetterAction(id: string, pinned: boolean): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("letters")
+    .update({ pinned })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "letter.pinned",
+    title: pinned ? "Pinned letter" : "Unpinned letter",
+    entityType: "letter",
+    entityId: id,
+    metadata: { pinned },
+  });
+  revalidatePath("/letters");
+  revalidatePath(`/letters/${id}`);
+  revalidatePath("/today");
+}
+
+export async function replyToLetterAction(id: string, reply: string): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const trimmed = reply.trim();
+  if (!trimmed) throw new Error("Write something first.");
+  const { data, error } = await supabase
+    .from("letters")
+    .update({ reply: trimmed, replied_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("headline,kind,period_key")
+    .single();
+  if (error) throw error;
+  const letterRow = data as { headline: string; kind: string; period_key: string };
+  // Fold into user memory so the corpus carries Hatim's own voice forward.
+  try {
+    await supabase.from("user_memory_entries").insert({
+      user_id: userId,
+      content: `Letter reply (${letterRow.kind} ${letterRow.period_key}) — "${letterRow.headline}" — ${trimmed}`,
+      source: "user_note",
+    });
+  } catch {
+    // Best-effort — the reply is already persisted on the letter row.
+  }
+  await logEvent({
+    userId,
+    kind: "letter.replied",
+    title: `Replied · ${letterRow.headline.slice(0, 64)}`,
+    entityType: "letter",
+    entityId: id,
+  });
+  void import("@/lib/ai/user-memory").then((m) => m.consolidateUserMemory()).catch(() => {});
+  revalidatePath("/letters");
+  revalidatePath(`/letters/${id}`);
+}
+
+export async function deleteLetterAction(id: string): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("letters")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "letter.deleted",
+    title: "Deleted a letter",
+    entityType: "letter",
+    entityId: id,
+  });
+  revalidatePath("/letters");
+}
+
+export async function runMilestoneSweepAction(): Promise<{ recorded: number }> {
+  const [{ runMilestoneSweep }, { getDashboardData }] = await Promise.all([
+    import("@/lib/ai/milestone-namer"),
+    import("@/lib/data/queries"),
+  ]);
+  const data = await getDashboardData();
+  const out = await runMilestoneSweep({
+    payments: data.payments,
+    spends: data.spends,
+    spendCategories: data.spendCategories,
+    spendCategoryLinks: data.spendCategoryLinks,
+  });
+  revalidatePath("/letters");
+  revalidatePath("/today");
+  return out;
+}
+
+export async function dismissMilestoneSurfacingAction(id: string): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("milestones")
+    .update({ surfaced: false })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  revalidatePath("/today");
+}
+
+export async function replyToMilestoneAction(id: string, reply: string): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const trimmed = reply.trim();
+  if (!trimmed) throw new Error("Write something first.");
+  const { data, error } = await supabase
+    .from("milestones")
+    .update({ reply: trimmed, replied_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("label")
+    .single();
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "milestone.replied",
+    title: `Replied · ${(data as { label: string }).label.slice(0, 64)}`,
+    entityType: "milestone",
+    entityId: id,
+  });
+  revalidatePath("/letters");
+}
+
+export async function deleteMilestoneAction(id: string): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("milestones")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "milestone.deleted",
+    title: "Deleted a milestone",
+    entityType: "milestone",
+    entityId: id,
+  });
+  revalidatePath("/letters");
+  revalidatePath("/today");
+}
+
+// Manually log a life shift (for "What Changed" tab on /letters).
+export async function logLifeShiftAction(input: {
+  kind: string;
+  label: string;
+  beforeValue?: string;
+  afterValue?: string;
+  occurredAt?: string;
+  narrative?: string;
+}): Promise<{ id: string } | null> {
+  const { recordLifeShift } = await import("@/lib/ai/life-shift-writer");
+  const out = await recordLifeShift({
+    kind: input.kind,
+    label: input.label,
+    beforeValue: input.beforeValue ?? null,
+    afterValue: input.afterValue ?? null,
+    occurredAt: input.occurredAt,
+    narrative: input.narrative,
+  });
+  revalidatePath("/letters");
+  return out;
+}
+
+export async function deleteLifeShiftAction(id: string): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("life_shifts")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "life_shift.deleted",
+    title: "Deleted a life shift",
+    entityType: "life_shift",
+    entityId: id,
+  });
+  revalidatePath("/letters");
+}
+
+export async function deleteQuietReceiptAction(id: string): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("quiet_receipts")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "quiet_receipt.deleted",
+    title: "Deleted a quiet receipt",
+    entityType: "quiet_receipt",
+    entityId: id,
+  });
+  revalidatePath("/letters");
+  revalidatePath("/today");
 }

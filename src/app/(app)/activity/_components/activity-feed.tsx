@@ -3,10 +3,12 @@
 import { useMemo } from "react";
 import { motion } from "motion/react";
 import {
+  Activity,
   Archive,
   Check,
   FileText,
   KanbanSquare,
+  Receipt,
   Settings as SettingsIcon,
   Trash2,
   Users,
@@ -126,6 +128,23 @@ const META: Record<EventKind, KindMeta> = {
 
   "wife_state.updated":         { icon: Brain, tone: "neutral" },
   "wife_preferences.consolidated": { icon: Brain, tone: "success" },
+
+  "letter.generated": { icon: FileText, tone: "brand"   },
+  "letter.pinned":    { icon: Bookmark, tone: "amber"   },
+  "letter.replied":   { icon: Pencil,   tone: "success" },
+  "letter.deleted":   { icon: Trash2,   tone: "rose"    },
+
+  "milestone.recorded": { icon: Check,  tone: "success" },
+  "milestone.replied":  { icon: Pencil, tone: "neutral" },
+  "milestone.deleted":  { icon: Trash2, tone: "rose"    },
+
+  "quiet_receipt.recorded": { icon: Receipt, tone: "neutral" },
+  "quiet_receipt.replied":  { icon: Pencil,  tone: "neutral" },
+  "quiet_receipt.deleted":  { icon: Trash2,  tone: "rose"    },
+
+  "life_shift.recorded": { icon: Activity, tone: "neutral" },
+  "life_shift.replied":  { icon: Pencil,   tone: "neutral" },
+  "life_shift.deleted":  { icon: Trash2,   tone: "rose"    },
 
   "settings.updated": { icon: SettingsIcon, tone: "neutral" },
 };

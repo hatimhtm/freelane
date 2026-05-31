@@ -111,6 +111,55 @@ export type PhCulturalEventKind =
   | "semestral_break"
   | (string & {});
 
+// ─────────────────────────── Tier 3 enums (migrations 0036-0039) ──
+
+export type EditorialLetterKind =
+  | "end_of_month"
+  | "spotlight"
+  | "sunday"
+  | "year"
+  | "anniversary"
+  | "regret_mark";
+
+export type MilestoneKind =
+  | "peso_month_threshold"
+  | "invoice_count"
+  | "smoke_free_days"
+  | "loan_closed"
+  | "sadaka_total"
+  | "recurring_dropped"
+  | "wallet_filled"
+  | "first_landing_in_currency"
+  | "logging_streak"
+  | "first_plan_done"
+  | (string & {});
+
+export type QuietReceiptKind =
+  | "loan_repaid"
+  | "loan_installment_paid"
+  | "recurring_lowered"
+  | "recurring_paused"
+  | "sadaka_given"
+  | "first_withdrawal"
+  | "invoice_sent"
+  | "plan_committed"
+  | "plan_done"
+  | (string & {});
+
+export type LifeShiftKind =
+  | "rent_changed"
+  | "recurring_added"
+  | "recurring_paused"
+  | "recurring_changed"
+  | "currency_entered"
+  | "wallet_added"
+  | "wallet_negative"
+  | "loan_taken"
+  | "loan_closed"
+  | "plan_committed"
+  | "plan_done"
+  | (string & {});
+
 export type AiQuestionKind =
   | "clarify_spend"
   | "clarify_payment"
@@ -200,6 +249,10 @@ export type EventKind =
   | "entity.created" | "entity.updated" | "entity.archived" | "entity.deleted"
   | "entity.linked" | "entity.unlinked"
   | "wife_state.updated" | "wife_preferences.consolidated"
+  | "letter.generated" | "letter.pinned" | "letter.replied" | "letter.deleted"
+  | "milestone.recorded" | "milestone.replied" | "milestone.deleted"
+  | "quiet_receipt.recorded" | "quiet_receipt.replied" | "quiet_receipt.deleted"
+  | "life_shift.recorded" | "life_shift.replied" | "life_shift.deleted"
   | "settings.updated";
 
 export interface ActivityEvent {
@@ -814,6 +867,80 @@ export interface PhCulturalEventRow {
   created_at: string;
 }
 
+// ─────────────────────────── Tier 3 entities (migrations 0036-0039) ──
+
+export interface EditorialLetter {
+  id: string;
+  user_id: string;
+  kind: EditorialLetterKind;
+  period_key: string;
+  headline: string;
+  body: string;
+  blocks: Record<string, unknown>;
+  input_snapshot: Record<string, unknown>;
+  confidence: number;
+  model_version: string;
+  pinned: boolean;
+  reply: string | null;
+  replied_at: string | null;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Milestone {
+  id: string;
+  user_id: string;
+  kind: MilestoneKind;
+  label: string;
+  value: number | null;
+  unit: string | null;
+  context: Record<string, unknown>;
+  narrative: string;
+  achieved_at: string;
+  surfaced: boolean;
+  reply: string | null;
+  replied_at: string | null;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuietReceipt {
+  id: string;
+  user_id: string;
+  kind: QuietReceiptKind;
+  source_entity_type: string | null;
+  source_entity_id: string | null;
+  narrative: string;
+  context: Record<string, unknown>;
+  occurred_at: string;
+  reply: string | null;
+  replied_at: string | null;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LifeShift {
+  id: string;
+  user_id: string;
+  kind: LifeShiftKind;
+  label: string;
+  before_value: string | null;
+  after_value: string | null;
+  source_entity_type: string | null;
+  source_entity_id: string | null;
+  narrative: string;
+  context: Record<string, unknown>;
+  occurred_at: string;
+  reply: string | null;
+  replied_at: string | null;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PriceIntelligenceRow {
   id: string;
   user_id: string;
@@ -915,6 +1042,10 @@ export type Database = {
       wife_state:                  Table<WifeState>;
       islamic_calendar:            Table<IslamicCalendarRow>;
       ph_cultural_events:          Table<PhCulturalEventRow>;
+      letters:                     Table<EditorialLetter>;
+      milestones:                  Table<Milestone>;
+      quiet_receipts:              Table<QuietReceipt>;
+      life_shifts:                 Table<LifeShift>;
       invoices:                    Table<Invoice>;
       invoice_projects:            Table<{ invoice_id: string; project_id: string }>;
       project_templates:           Table<ProjectTemplate>;
@@ -958,6 +1089,10 @@ export type Database = {
       entity_kind:              EntityKind;
       islamic_event_kind:       IslamicEventKind;
       ph_cultural_event_kind:   PhCulturalEventKind;
+      editorial_letter_kind:    EditorialLetterKind;
+      milestone_kind:           MilestoneKind;
+      quiet_receipt_kind:       QuietReceiptKind;
+      life_shift_kind:          LifeShiftKind;
     };
     CompositeTypes: { [_ in never]: never };
   };

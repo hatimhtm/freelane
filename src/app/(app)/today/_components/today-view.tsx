@@ -24,6 +24,8 @@ import { CulturalOverlay } from "@/components/app/cultural-overlay";
 import { EidPrepCard } from "@/components/app/eid-prep-card";
 import { RamadanModeBanner } from "@/components/app/ramadan-mode-banner";
 import { SadakaRhythmCard } from "@/components/app/sadaka-rhythm-card";
+import { LatestLetterCard } from "@/components/app/latest-letter-card";
+import { FreshMilestonesCard } from "@/components/app/fresh-milestones-card";
 import { Reveal } from "@/components/motion/reveal";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -31,8 +33,10 @@ import type {
   AiQuestion,
   CalmWeatherState,
   CurrencyCode,
+  EditorialLetter,
   ExchangeRate,
   IslamicCalendarRow,
+  Milestone,
   PhCulturalEventRow,
   RecurringSpend,
   RecurringSpendSkip,
@@ -116,6 +120,8 @@ export function TodayView({
   eidPrep,
   sadaka,
   wifeState,
+  latestLetter,
+  freshMilestones,
 }: {
   firstName: string | null;
   currency: CurrencyCode;
@@ -160,6 +166,8 @@ export function TodayView({
   eidPrep: EidPrepRead | null;
   sadaka: SadakaRhythmRead | null;
   wifeState: WifeState | null;
+  latestLetter: EditorialLetter | null;
+  freshMilestones: Milestone[];
 }) {
   const [greeting, setGreeting] = useState("Welcome back");
   useEffect(() => {
@@ -245,6 +253,12 @@ export function TodayView({
 
         {/* Tier 2: Sadaka Rhythm card. */}
         {sadaka && <SadakaRhythmCard read={sadaka} baseCurrency={currency} />}
+
+        {/* Tier 3: Latest letter (pinned wins, else most recent). */}
+        <LatestLetterCard letter={latestLetter} />
+
+        {/* Tier 3: Fresh milestones strip — hides when none surfaced. */}
+        <FreshMilestonesCard milestones={freshMilestones} />
 
         {/* Tier 2: Wife Preferences glance (only when consolidated). */}
         {wifeState?.preferences_consolidated?.summary && (
