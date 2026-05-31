@@ -3748,3 +3748,107 @@ export async function refreshIntentMirrorAction(weekStarts?: string): Promise<{ 
   revalidatePath("/today");
   return out ? { id: out.id } : null;
 }
+
+// ───────────────────────────────────────── Tier 5 (AI conversation) ──
+
+export async function saveCheckinResponseAction(input: {
+  response: string;
+  mood?: number | null;
+  energy?: number | null;
+  weekMoneyShape?: { landed?: number; spent?: number; surplus?: number };
+}): Promise<{ id: string } | null> {
+  const { echoCheckin } = await import("@/lib/ai/tuesday-checkin");
+  const row = await echoCheckin(input);
+  revalidatePath("/today");
+  return row ? { id: row.id } : null;
+}
+
+export async function runQuietChannelSweepAction(): Promise<{ detected: number }> {
+  const { runQuietChannelSweep } = await import("@/lib/ai/quiet-channel-watcher");
+  const out = await runQuietChannelSweep();
+  revalidatePath("/clients");
+  revalidatePath("/today");
+  return out;
+}
+
+export async function resolveQuietChannelAction(input: { quietChannelId: string; reply: string }): Promise<{ written_to_memory_entry_id: string | null } | null> {
+  const { resolveQuietChannel } = await import("@/lib/ai/quiet-channel-watcher");
+  const out = await resolveQuietChannel(input);
+  revalidatePath("/clients");
+  revalidatePath("/today");
+  return out;
+}
+
+export async function runRateInsightSweepAction(): Promise<{ generated: number }> {
+  const { runRateInsightSweep } = await import("@/lib/ai/project-rate-insight");
+  const out = await runRateInsightSweep();
+  revalidatePath("/clients");
+  revalidatePath("/projects");
+  return { generated: out.generated };
+}
+
+export async function replyToRateInsightAction(input: { rateInsightId: string; reply: string }): Promise<void> {
+  const { replyToRateInsight } = await import("@/lib/ai/project-rate-insight");
+  await replyToRateInsight(input);
+  revalidatePath("/clients");
+}
+
+export async function markRateInsightActedAction(id: string, acted: boolean): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("rate_insights")
+    .update({ acted, acted_at: acted ? new Date().toISOString() : null })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "rate_insight.acted",
+    title: acted ? "Acted on rate insight" : "Unmarked rate insight",
+    entityType: "rate_insight",
+    entityId: id,
+    metadata: { acted },
+  });
+  revalidatePath("/clients");
+}
+
+export async function deleteRateInsightAction(id: string): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("rate_insights")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  revalidatePath("/clients");
+}
+
+export async function askShouldIBuyAction(input: {
+  item: string;
+  amount: number;
+  currency: string;
+  note?: string;
+}): Promise<{ id: string; verdict: string | null; narrative: string | null } | null> {
+  const { askShouldIBuy } = await import("@/lib/ai/should-i-buy");
+  const row = await askShouldIBuy(input);
+  if (!row) return null;
+  revalidatePath("/should-i-buy");
+  return { id: row.id, verdict: row.verdict ?? null, narrative: row.narrative ?? null };
+}
+
+export async function recordShouldIBuyDecisionAction(input: { sessionId: string; bought: boolean }): Promise<void> {
+  const { recordShouldIBuyDecision } = await import("@/lib/ai/should-i-buy");
+  await recordShouldIBuyDecision(input);
+  revalidatePath("/should-i-buy");
+}
+
+export async function deleteShouldIBuySessionAction(id: string): Promise<void> {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("should_i_buy_sessions")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  revalidatePath("/should-i-buy");
+}

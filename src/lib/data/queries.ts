@@ -45,6 +45,10 @@ import type {
   LifeShift,
   MorningLog,
   IntentMirror,
+  WellbeingCheckin,
+  QuietChannel,
+  RateInsight,
+  ShouldIBuySession,
 } from "@/lib/supabase/types";
 
 async function userOrThrow() {
@@ -988,4 +992,56 @@ export async function getCurrentIntentMirror() {
     .eq("week_starts", weekStarts)
     .maybeSingle();
   return (data ?? null) as IntentMirror | null;
+}
+
+// ─────────────────────────── Tier 5 fetchers ──
+
+export async function getCurrentWellbeingCheckin() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { phtToday, phtDateString } = await import("@/lib/utils");
+  const today = new Date(phtToday());
+  const dow = today.getDay() || 7;
+  const monday = new Date(today.getTime() - (dow - 1) * 86_400_000);
+  const weekStarts = phtDateString(monday);
+  const { data } = await supabase
+    .from("wellbeing_checkins")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("week_starts", weekStarts)
+    .maybeSingle();
+  return (data ?? null) as WellbeingCheckin | null;
+}
+
+export async function getOpenQuietChannels(limit = 10) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("quiet_channels")
+    .select("*")
+    .eq("user_id", user.id)
+    .is("resolved_at", null)
+    .order("silence_days", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as QuietChannel[];
+}
+
+export async function getRateInsights(limit = 40) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("rate_insights")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("generated_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as RateInsight[];
+}
+
+export async function getShouldIBuySessions(limit = 30) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("should_i_buy_sessions")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as ShouldIBuySession[];
 }

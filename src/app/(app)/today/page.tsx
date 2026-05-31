@@ -17,7 +17,9 @@ import { generateForecastStory, type ForecastStory } from "@/lib/ai/forecast-sto
 import { generateSadakaRhythm, type SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
 import { generateEidPrep, type EidPrepRead } from "@/lib/ai/eid-prep";
 import { nextRamadanPeriod, type RamadanPeriod } from "@/lib/islamic-calendar";
-import { getLetters, getMilestones, getTodayMorningLog, getCurrentIntentMirror } from "@/lib/data/queries";
+import { getLetters, getMilestones, getTodayMorningLog, getCurrentIntentMirror, getCurrentWellbeingCheckin } from "@/lib/data/queries";
+import { promptForWeek, isCheckinDay } from "@/lib/ai/tuesday-checkin";
+import { buildYearMemoryRecall, type YearMemoryRecall } from "@/lib/ai/year-memory-recall";
 import { generatePackRhythm, type PackRhythmRead } from "@/lib/ai/pack-rhythm";
 import { generateLateNightRead, type LateNightClusterRead } from "@/lib/ai/late-night-cluster";
 import { generatePostPaydaySurge, type PostPaydaySurgeRead } from "@/lib/ai/post-payday-surge";
@@ -411,6 +413,21 @@ export default async function TodayPage() {
     console.error("Today: generateSleepSpendEcho threw", err);
   }
 
+  // Tier 5 reads — Tuesday Check-In + Year Memory Recall.
+  let tuesdayPrompt = "What's the smallest thing that landed well this week?";
+  let tuesdayCheckin: Awaited<ReturnType<typeof getCurrentWellbeingCheckin>> = null;
+  let yearRecall: YearMemoryRecall | null = null;
+  try {
+    [tuesdayPrompt, tuesdayCheckin, yearRecall] = await Promise.all([
+      promptForWeek(),
+      getCurrentWellbeingCheckin(),
+      buildYearMemoryRecall(),
+    ]);
+  } catch (err) {
+    console.error("Today: Tier 5 reads threw", err);
+  }
+  const isTuesday = isCheckinDay(now);
+
   return (
     <TodayView
       firstName={settings?.issuer_name?.split(" ")[0] ?? null}
@@ -464,6 +481,10 @@ export default async function TodayPage() {
       postPayday={postPayday}
       sleepEcho={sleepEcho}
       intentMirror={intentMirror}
+      tuesdayPrompt={tuesdayPrompt}
+      tuesdayCheckin={tuesdayCheckin}
+      isTuesday={isTuesday}
+      yearRecall={yearRecall}
     />
   );
 }

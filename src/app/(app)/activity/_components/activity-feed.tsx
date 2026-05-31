@@ -151,6 +151,16 @@ const META: Record<EventKind, KindMeta> = {
   "intent_mirror.saved":    { icon: Brain, tone: "neutral" },
   "intent_mirror.refreshed":{ icon: Brain, tone: "success" },
 
+  "wellbeing.checkin_saved":  { icon: Brain,  tone: "neutral" },
+  "wellbeing.echo_generated": { icon: Brain,  tone: "success" },
+  "quiet_channel.detected":   { icon: Bell,   tone: "amber"   },
+  "quiet_channel.resolved":   { icon: Check,  tone: "success" },
+  "rate_insight.generated":   { icon: Brain,  tone: "brand"   },
+  "rate_insight.replied":     { icon: Pencil, tone: "neutral" },
+  "rate_insight.acted":       { icon: Check,  tone: "success" },
+  "should_i_buy.asked":       { icon: Brain,  tone: "neutral" },
+  "should_i_buy.decided":     { icon: Check,  tone: "success" },
+
   "settings.updated": { icon: SettingsIcon, tone: "neutral" },
 };
 

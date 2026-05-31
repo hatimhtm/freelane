@@ -26,6 +26,9 @@ import { RamadanModeBanner } from "@/components/app/ramadan-mode-banner";
 import { SadakaRhythmCard } from "@/components/app/sadaka-rhythm-card";
 import { LatestLetterCard } from "@/components/app/latest-letter-card";
 import { FreshMilestonesCard } from "@/components/app/fresh-milestones-card";
+import { TuesdayCheckinCard } from "@/components/app/tuesday-checkin-card";
+import { YearMemoryRecallCard } from "@/components/app/year-memory-recall-card";
+import { ShouldIBuyQuicklink } from "@/components/app/should-i-buy-quicklink";
 import { PackRhythmCard } from "@/components/app/pack-rhythm-card";
 import { FamilySavingsWitnessLine } from "@/components/app/family-savings-witness-line";
 import { LateNightClusterCard } from "@/components/app/late-night-cluster-card";
@@ -51,6 +54,7 @@ import type {
   SpendCategory,
   SpendCategoryLink,
   SpendItem,
+  WellbeingCheckin,
   WifeState,
 } from "@/lib/supabase/types";
 import type { MoneyInsight } from "@/lib/ai/actions";
@@ -65,6 +69,7 @@ import type { LateNightClusterRead } from "@/lib/ai/late-night-cluster";
 import type { PostPaydaySurgeRead } from "@/lib/ai/post-payday-surge";
 import type { SleepSpendEcho } from "@/lib/ai/sleep-spend-echo";
 import type { FamilySavingsWitness } from "@/lib/family-savings-witness";
+import type { YearMemoryRecall } from "@/lib/ai/year-memory-recall";
 import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import type { HoldingBalanceRow } from "@/lib/payment-chain";
 import {
@@ -140,6 +145,10 @@ export function TodayView({
   postPayday,
   sleepEcho,
   intentMirror,
+  tuesdayPrompt,
+  tuesdayCheckin,
+  isTuesday,
+  yearRecall,
 }: {
   firstName: string | null;
   currency: CurrencyCode;
@@ -192,6 +201,10 @@ export function TodayView({
   postPayday: PostPaydaySurgeRead | null;
   sleepEcho: SleepSpendEcho | null;
   intentMirror: IntentMirror | null;
+  tuesdayPrompt: string;
+  tuesdayCheckin: WellbeingCheckin | null;
+  isTuesday: boolean;
+  yearRecall: YearMemoryRecall | null;
 }) {
   const [greeting, setGreeting] = useState("Welcome back");
   useEffect(() => {
@@ -301,6 +314,15 @@ export function TodayView({
 
         {/* Tier 4: Pack Rhythm — sparkline + line. Hides when no data. */}
         {packRhythm && <PackRhythmCard read={packRhythm} baseCurrency={currency} />}
+
+        {/* Tier 5: Tuesday Check-In — collapsed unless Tuesday or already saved. */}
+        <TuesdayCheckinCard prompt={tuesdayPrompt} checkin={tuesdayCheckin} isCheckinDay={isTuesday} />
+
+        {/* Tier 5: Year-Memory Recall — hides when nothing surfaces. */}
+        <YearMemoryRecallCard recall={yearRecall} />
+
+        {/* Tier 5: Should-I-Buy quicklink. */}
+        <ShouldIBuyQuicklink />
 
         {/* Tier 2: Wife Preferences glance (only when consolidated). */}
         {wifeState?.preferences_consolidated?.summary && (

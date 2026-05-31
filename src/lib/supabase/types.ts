@@ -204,6 +204,92 @@ export interface IntentMirror {
   updated_at: string;
 }
 
+// ─────────────────────────── Tier 5 (migrations 0042-0045) ──
+
+export type ShouldIBuyVerdict =
+  | "easy_yes"
+  | "fits_the_stretch"
+  | "tight_but_possible"
+  | "not_this_stretch"
+  | (string & {});
+
+export type RateInsightKind =
+  | "scope_creep"
+  | "revision_burden"
+  | "communication_lag"
+  | "rate_lag"
+  | "underpriced_relative_to_market"
+  | "overpriced_relative_to_outcomes"
+  | "time_spent_unaccounted"
+  | "general"
+  | (string & {});
+
+export interface WellbeingCheckin {
+  id: string;
+  user_id: string;
+  week_starts: string;
+  prompt: string | null;
+  response: string | null;
+  mood: number | null;
+  energy: number | null;
+  echo: string | null;
+  generated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuietChannel {
+  id: string;
+  user_id: string;
+  client_id: string;
+  detected_at: string;
+  silence_days: number;
+  ai_question_id: string | null;
+  resolved_at: string | null;
+  reply: string | null;
+  written_to_memory_entry_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RateInsight {
+  id: string;
+  user_id: string;
+  client_id: string | null;
+  project_id: string | null;
+  kind: RateInsightKind;
+  observation: string;
+  context: Record<string, unknown>;
+  reply: string | null;
+  replied_at: string | null;
+  suggested_rate: number | null;
+  suggested_currency: string | null;
+  acted: boolean;
+  acted_at: string | null;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShouldIBuySession {
+  id: string;
+  user_id: string;
+  item: string;
+  amount: number;
+  currency: CurrencyCode;
+  amount_base: number;
+  note: string | null;
+  verdict: ShouldIBuyVerdict | null;
+  narrative: string | null;
+  confidence: number | null;
+  bought: boolean | null;
+  decided_at: string | null;
+  input_snapshot: Record<string, unknown>;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type AiQuestionKind =
   | "clarify_spend"
   | "clarify_payment"
@@ -299,6 +385,10 @@ export type EventKind =
   | "life_shift.recorded" | "life_shift.replied" | "life_shift.deleted"
   | "morning_log.saved"
   | "intent_mirror.saved" | "intent_mirror.refreshed"
+  | "wellbeing.checkin_saved" | "wellbeing.echo_generated"
+  | "quiet_channel.detected" | "quiet_channel.resolved"
+  | "rate_insight.generated" | "rate_insight.replied" | "rate_insight.acted"
+  | "should_i_buy.asked" | "should_i_buy.decided"
   | "settings.updated";
 
 export interface ActivityEvent {
@@ -1094,6 +1184,10 @@ export type Database = {
       life_shifts:                 Table<LifeShift>;
       morning_log:                 Table<MorningLog>;
       intent_mirror:               Table<IntentMirror>;
+      wellbeing_checkins:          Table<WellbeingCheckin>;
+      quiet_channels:              Table<QuietChannel>;
+      rate_insights:               Table<RateInsight>;
+      should_i_buy_sessions:       Table<ShouldIBuySession>;
       invoices:                    Table<Invoice>;
       invoice_projects:            Table<{ invoice_id: string; project_id: string }>;
       project_templates:           Table<ProjectTemplate>;
