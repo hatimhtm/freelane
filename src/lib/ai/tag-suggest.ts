@@ -1,4 +1,3 @@
-import "server-only";
 import { Type } from "@google/genai";
 import { pickModel, gemini, hasGemini } from "./models";
 import type {

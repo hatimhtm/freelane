@@ -1,4 +1,3 @@
-import "server-only";
 import { GoogleGenAI } from "@google/genai";
 
 // Model registry. Two tiers today, both Gemini; the abstraction exists so the
