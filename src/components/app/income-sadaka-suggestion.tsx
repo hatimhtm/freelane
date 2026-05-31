@@ -4,13 +4,10 @@ import { useState } from "react";
 import NumberFlow from "@number-flow/react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  CenterModal,
+  CenterModalBody,
+  CenterModalFooter,
+} from "@/components/ui/center-modal";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
@@ -138,42 +135,45 @@ export function IncomeSadakaSuggestion({
         )}
       </AnimatePresence>
 
-      <Sheet open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <SheetContent side="bottom" className="bg-paper">
-          <SheetHeader>
-            <div className="display-eyebrow text-ink/55">Set aside</div>
-            <SheetTitle className="mt-3 font-fraunces text-[40px] leading-none tracking-tight text-ink tabular">
-              {formatMoney(suggestedBase, "PHP", { compact: true })}
-            </SheetTitle>
-            <SheetDescription className="mt-3 text-[14px] leading-relaxed text-ink/70">
-              From {client} {formatCompactPhp(net)} — {percentLabel} sadaka.
-              Logs as a Sadaka spend.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetFooter className="flex-row items-center justify-end gap-4">
-            <button
-              type="button"
-              onClick={() => setConfirmOpen(false)}
-              className="text-[13px] text-ink/55 transition-colors duration-300 ease-out hover:text-ink/80"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSetAside}
-              className={cn(
-                "inline-flex h-10 items-center justify-center rounded-lg px-5 text-[13px] font-medium tracking-tight",
-                "bg-[var(--brand)] text-[var(--brand-foreground)]",
-                "transition-[transform,filter] duration-300 ease-out",
-                "hover:brightness-[0.97] active:translate-y-px",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30",
-              )}
-            >
-              Continue
-            </button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <CenterModal
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={
+          <span className="font-fraunces text-[32px] leading-none tracking-tight tabular">
+            {formatMoney(suggestedBase, "PHP", { compact: true })}
+          </span>
+        }
+        description={`From ${client} ${formatCompactPhp(net)} — ${percentLabel} sadaka. Logs as a Sadaka spend.`}
+        size="sm"
+      >
+        <CenterModalBody>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            This opens the spend log pre-filled with the Sadaka category.
+          </p>
+        </CenterModalBody>
+        <CenterModalFooter>
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(false)}
+            className="text-[13px] text-foreground/60 transition-colors duration-300 ease-out hover:text-foreground/85"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSetAside}
+            className={cn(
+              "inline-flex h-9 items-center justify-center rounded-lg px-4 text-[13px] font-medium tracking-tight",
+              "bg-[var(--brand)] text-[var(--brand-foreground)]",
+              "transition-[transform,filter] duration-300 ease-out",
+              "hover:brightness-[0.97] active:translate-y-px",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30",
+            )}
+          >
+            Continue
+          </button>
+        </CenterModalFooter>
+      </CenterModal>
     </>
   );
 }

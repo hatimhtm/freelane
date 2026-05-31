@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { motion } from "motion/react";
 import {
   Archive,
+  Check,
   FileText,
   KanbanSquare,
   Settings as SettingsIcon,
@@ -98,6 +99,16 @@ const META: Record<EventKind, KindMeta> = {
   "ai_question.dismissed": { icon: Brain,  tone: "neutral" },
 
   "wallet.opening_balance_set": { icon: Wallet, tone: "neutral" },
+
+  "planned_spend.created":   { icon: Plus,         tone: "brand"   },
+  "planned_spend.updated":   { icon: Plus,         tone: "neutral" },
+  "planned_spend.committed": { icon: Wallet,       tone: "success" },
+  "planned_spend.done":      { icon: Check,        tone: "success" },
+  "planned_spend.cancelled": { icon: Trash2,       tone: "rose"    },
+  "planned_spend.deleted":   { icon: Trash2,       tone: "rose"    },
+
+  "calm_weather.refreshed":  { icon: Brain,        tone: "neutral" },
+  "app_changelog.published": { icon: Brain,        tone: "brand"   },
 
   "settings.updated": { icon: SettingsIcon, tone: "neutral" },
 };

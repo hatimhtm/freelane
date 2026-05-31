@@ -4,6 +4,7 @@ import type {
   Payment,
   PaymentMethod,
   PaymentStep,
+  PlannedSpend,
   RecurringSpend,
   RecurringSpendSkip,
   Spend,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/dashboard-calc";
 import { holdingBalances } from "@/lib/payment-chain";
 import { PH_DAILY_FLOOR_BASE } from "@/lib/ph-col";
+import { committedPoolBase, plannedInRange } from "@/lib/planned-spends";
 
 const DAY_MS = 86_400_000;
 
@@ -48,6 +50,13 @@ export interface SafeToSpendInputs {
   methods: PaymentMethod[];
   stepsByPayment: Map<string, PaymentStep[]>;
   rates: ExchangeRate[];
+  // Tier 1 — planned_spends. Optional so existing callers still type-check.
+  // When provided, the discretionary pool is reduced by:
+  //   - committed plans: full committed_base (locked, can't be spent)
+  //   - planned-in-horizon: expected_base for planned (not committed/done/cancelled)
+  // The brain treats these as commitments the user has already made to
+  // their future self.
+  plannedSpends?: PlannedSpend[];
   now?: Date;
   horizonDays?: number;
 }
@@ -61,6 +70,9 @@ export interface SafeToSpendBreakdown {
   recurringForwardBase: number;
   loanForwardBase: number;
   feeFloorBase: number;
+  // Tier 1 additions — planned + locked obligations bundled into committedPool.
+  plannedForwardBase: number;
+  committedLockedBase: number;
   committedPoolBase: number;
   // Recovery: when trailing spend > trailing income, excess is spread forward.
   trailingOverspendBase: number;
@@ -149,7 +161,20 @@ export function safeToSpend(inputs: SafeToSpendInputs): SafeToSpendBreakdown {
     (trailingFeesTotal * horizonDays) / TRAILING_LOOKBACK_DAYS,
   );
 
-  const committedPool = recurringForward + loanForward + feeFloor;
+  // Planned spends inside [now, horizonEnd] + the always-locked committed pool.
+  // The committed pool is OUTSIDE horizon-bound (it's locked regardless of when
+  // it'll spend); planned-in-horizon is the window-specific obligation.
+  const planned = inputs.plannedSpends ?? [];
+  const plannedHorizon = plannedInRange(planned, now, horizonEnd).total;
+  const committed = committedPoolBase(planned);
+  if (plannedHorizon > 0) {
+    notes.push(`Planned spends in window: ${plannedHorizon.toFixed(0)} (subtracted before allowance).`);
+  }
+  if (committed > 0) {
+    notes.push(`Locked (committed plans): ${committed.toFixed(0)} parked, not spendable.`);
+  }
+
+  const committedPool = recurringForward + loanForward + feeFloor + plannedHorizon + committed;
 
   // ── Wallets ──
   // Sum across all holding wallets without per-wallet clamp — a negative
@@ -215,6 +240,8 @@ export function safeToSpend(inputs: SafeToSpendInputs): SafeToSpendBreakdown {
     recurringForwardBase: recurringForward,
     loanForwardBase: loanForward,
     feeFloorBase: feeFloor,
+    plannedForwardBase: plannedHorizon,
+    committedLockedBase: committed,
     committedPoolBase: committedPool,
     trailingOverspendBase: trailingOverspend,
     recoveryDailyTaxBase: recoveryDailyTax,

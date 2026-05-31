@@ -13,6 +13,7 @@ import { SpendOverTime } from "@/components/spending/spend-over-time";
 import { CategoryTrendSmallMultiples } from "@/components/spending/category-trend-small-multiples";
 import { VendorIntelligence } from "@/components/spending/vendor-intelligence";
 import { SpendAnomaliesPanel } from "@/components/spending/spend-anomalies-panel";
+import { InvestmentVsConsumption } from "@/components/spending/investment-vs-consumption";
 import { extractVendorToken, vendorSlug } from "@/lib/spending/vendor-extract";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -330,6 +331,13 @@ export function SpendingView({
               topN={6}
             />
           </Panel>
+          <InvestmentVsConsumption
+            spends={monthSpends}
+            links={spendCategoryLinks}
+            categories={categories}
+            baseCurrency={baseCurrency}
+            windowLabel={monthHeatmapLabel(month)}
+          />
           <Panel eyebrow="Top vendors" subtitle="Lifetime pattern, click for detail.">
             <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} />
           </Panel>

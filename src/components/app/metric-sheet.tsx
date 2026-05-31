@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowUpRight } from "lucide-react";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { CenterModal, CenterModalBody } from "@/components/ui/center-modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricDetailBody, type MetricData } from "@/app/(app)/metric/[key]/_components/metric-detail";
 import { getMetricData } from "@/lib/data/metric-actions";
@@ -75,33 +75,25 @@ export function MetricSheetProvider({ children }: { children: React.ReactNode })
   return (
     <MetricSheetContext.Provider value={{ open, prefetch }}>
       {children}
-      <Sheet open={isOpen} onOpenChange={(o) => setIsOpen(o)}>
-        <SheetContent
-          side="right"
-          /* Inline style beats SheetContent's baked data-[side=right] width
-             classes (tailwind-merge can't dedupe across variant prefixes).
-             Full-width on phones, ~half the screen on anything roomy. */
-          style={{ width: "min(92vw, max(560px, 50vw))", maxWidth: "none" }}
-          className="gap-0 overflow-x-hidden p-0"
-        >
-          <div className="sticky top-0 z-10 border-b border-border/60 bg-popover/85 px-5 py-4 backdrop-blur-xl sm:px-7">
-            <div className="display-eyebrow text-muted-foreground">Metric</div>
-            <h2 className="display-headline mt-1 text-xl">{meta?.title ?? "Metric"}</h2>
-            {meta && <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>}
-            {activeKey && (
-              <Link
-                href={`/metric/${activeKey}`}
-                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Open full page <ArrowUpRight className="size-3" />
-              </Link>
-            )}
-          </div>
-          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pb-12 pt-6 sm:px-7">
-            {data ? <MetricDetailBody data={data} /> : <MetricSheetSkeleton />}
-          </div>
-        </SheetContent>
-      </Sheet>
+      <CenterModal
+        open={isOpen}
+        onOpenChange={(o) => setIsOpen(o)}
+        title={meta?.title ?? "Metric"}
+        description={meta?.description}
+        size="lg"
+      >
+        <CenterModalBody>
+          {activeKey && (
+            <Link
+              href={`/metric/${activeKey}`}
+              className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Open full page <ArrowUpRight className="size-3" />
+            </Link>
+          )}
+          {data ? <MetricDetailBody data={data} /> : <MetricSheetSkeleton />}
+        </CenterModalBody>
+      </CenterModal>
     </MetricSheetContext.Provider>
   );
 }

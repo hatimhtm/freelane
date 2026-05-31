@@ -17,11 +17,15 @@ import { AiQuestionsCard } from "@/components/app/ai-questions-card";
 import { WalletRunwayCard } from "@/components/app/wallet-runway-card";
 import { RecurringWindowWatch } from "@/components/app/recurring-window-watch";
 import { SadakaQuickLogButton } from "@/components/app/sadaka-quick-log-button";
+import { CalmWeatherBanner } from "@/components/app/calm-weather-banner";
+import { TightModeCoach } from "@/components/app/tight-mode-coach";
+import { ForecastStoryCard } from "@/components/app/forecast-story-card";
 import { Reveal } from "@/components/motion/reveal";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type {
   AiQuestion,
+  CalmWeatherState,
   CurrencyCode,
   ExchangeRate,
   RecurringSpend,
@@ -33,6 +37,8 @@ import type {
 } from "@/lib/supabase/types";
 import type { MoneyInsight } from "@/lib/ai/actions";
 import type { SafeToSpendOverlay } from "@/lib/ai/safe-to-spend-ai";
+import type { TightModeRead } from "@/lib/ai/tight-mode-coach";
+import type { ForecastStory } from "@/lib/ai/forecast-storyteller";
 import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import type { HoldingBalanceRow } from "@/lib/payment-chain";
 import {
@@ -91,6 +97,9 @@ export function TodayView({
   sheetWallets,
   currencies,
   safeToSpendBaseline,
+  calmWeather,
+  tightMode,
+  forecastStory,
 }: {
   firstName: string | null;
   currency: CurrencyCode;
@@ -126,6 +135,9 @@ export function TodayView({
   sheetWallets: WalletOpt[];
   currencies: string[];
   safeToSpendBaseline: SafeToSpendBreakdown;
+  calmWeather: CalmWeatherState | null;
+  tightMode: TightModeRead | null;
+  forecastStory: ForecastStory | null;
 }) {
   const [greeting, setGreeting] = useState("Welcome back");
   useEffect(() => {
@@ -173,8 +185,18 @@ export function TodayView({
         <span className="text-xs text-muted-foreground tabular">{today}</span>
       </motion.div>
 
-      {/* Phase 1.5 stack — densified, small-window optimized. */}
+      {/* Phase 1.5 + Tier 1 stack — densified, small-window optimized. */}
       <div className="mt-5 space-y-4">
+        {/* Calm Weather Mode — the one honest line under everything. */}
+        {calmWeather && (
+          <CalmWeatherBanner state={calmWeather} variant="today" />
+        )}
+
+        {/* Tight Mode Coach — only renders during storm/gust bands. */}
+        {tightMode && tightMode.active && (
+          <TightModeCoach read={tightMode} baseCurrency={currency} />
+        )}
+
         {/* Alarm only when something is genuinely wrong. */}
         {holdings.some((h) => h.balance < 0) && (
           <NegativeWalletAlarm holdings={holdings} />
@@ -182,6 +204,11 @@ export function TodayView({
 
         {/* Main hero — Safe-to-spend with Fraunces numeric. */}
         <MorningBriefHero overlay={overlay} />
+
+        {/* Forecast Storyteller — next 30 days in Hatim's voice. */}
+        {forecastStory && (
+          <ForecastStoryCard story={forecastStory} baseCurrency={currency} />
+        )}
 
         {/* Open AI questions — letter-like surface, only when there are any
             OR the user can ask for a sweep. */}

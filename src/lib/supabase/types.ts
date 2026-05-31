@@ -36,6 +36,35 @@ export type LoanInstallmentStatus = "pending" | "paid" | "skipped";
 
 export type UserMemorySource = "observation" | "user_note" | "insight";
 
+// ─────────────────────────── Tier 1 enums (migrations 0026-0031) ──
+
+export type SpendCategoryKind = "consumption" | "investment" | "neutral";
+
+export type PlannedSpendStatus =
+  | "planned"
+  | "committed"
+  | "done"
+  | "cancelled";
+
+export type PlannedSpendCertainty = "firm" | "probable" | "maybe";
+
+export type AppChangelogKind = "release" | "improvement" | "fix" | "note";
+
+export type CalmWeatherBand =
+  | "still"
+  | "breeze"
+  | "gust"
+  | "storm"
+  | "calm_after";
+
+export type CalmWeatherRecommendationKind =
+  | "lock"
+  | "review"
+  | "log"
+  | "breathe"
+  | "pre_mortem"
+  | "tight_open";
+
 export type AiQuestionKind =
   | "clarify_spend"
   | "clarify_payment"
@@ -116,6 +145,10 @@ export type EventKind =
   | "user_memory.note_added" | "user_memory.observation"
   | "ai_question.queued" | "ai_question.answered" | "ai_question.dismissed"
   | "wallet.opening_balance_set"
+  | "planned_spend.created" | "planned_spend.updated" | "planned_spend.committed"
+  | "planned_spend.done" | "planned_spend.cancelled" | "planned_spend.deleted"
+  | "calm_weather.refreshed"
+  | "app_changelog.published"
   | "settings.updated";
 
 export interface ActivityEvent {
@@ -317,6 +350,10 @@ export interface SpendCategory {
   color: string | null;
   sort_order: number;
   archived: boolean;
+  // Investment vs Consumption Ledger classification (migration 0030).
+  // Drives the 30-day split panel on /spending and roll-up logic in
+  // src/lib/spends.ts (`spendsByKind`).
+  kind: SpendCategoryKind;
   created_at: string;
   updated_at: string;
 }
@@ -326,6 +363,9 @@ export interface Spend {
   user_id: string;
   wallet_id: string;
   spent_at: string;
+  // Optional time-of-day on the spend (migration 0028). Format "HH:mm:ss".
+  // Null when the row is date-only (legacy or backdated entry).
+  spent_time: string | null;
   amount: number;
   currency: CurrencyCode;
   // PHP-equivalent locked at entry-time via today's FX (same immutability
@@ -360,6 +400,8 @@ export interface SpendItem {
   amount: number | null;
   vat_amount: number | null;
   sort_order: number;
+  // Universal notes rule (migration 0029). Per-item freeform context.
+  notes: string | null;
   created_at: string;
 }
 
@@ -484,7 +526,95 @@ export interface AiQuestion {
   created_at: string;
   answered_at: string | null;
   answer: string | null;
+  // Free-text reply alongside the chip (universal notes rule, migration 0029).
+  answer_notes: string | null;
   dismissed_at: string | null;
+}
+
+// ─────────────────────────── Tier 1 entities (migrations 0026-0031) ──
+
+// App changelog — single source of truth read by both /changelog and the
+// future macOS Swift app's What's New menu.
+export interface AppChangelogEntry {
+  id: string;
+  author_id: string;
+  version: string;
+  released_at: string;
+  kind: AppChangelogKind;
+  title: string;
+  body: string | null;
+  highlights: string[];
+  tier: number | null;
+  is_pinned: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// A future intent row — MacBook, Apple Dev, Eid prep envelope. Counts against
+// runway as if already on the calendar, doesn't count against spend totals
+// until materialized.
+export interface PlannedSpend {
+  id: string;
+  user_id: string;
+  label: string;
+  expected_amount: number;
+  expected_currency: CurrencyCode;
+  // PHP-equivalent locked at row-creation time.
+  expected_base: number;
+  planned_for: string;
+  planned_for_window_days: number;
+  certainty: PlannedSpendCertainty;
+  status: PlannedSpendStatus;
+  wallet_id: string | null;
+  default_category_ids: string[];
+  is_big_plan: boolean;
+  committed_base: number | null;
+  committed_at: string | null;
+  done_spend_id: string | null;
+  done_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// One structured action chip on the Calm Weather banner.
+export interface CalmWeatherRecommendation {
+  label: string;
+  kind: CalmWeatherRecommendationKind;
+  cta_route?: string;
+  cta_params?: Record<string, string>;
+}
+
+// The exact inputs the Calm Weather brain consumed at generation time.
+// Loose shape — evolves with the brain.
+export interface CalmWeatherInputSnapshot {
+  runwayDays?: number;
+  dailyBurn?: number;
+  safeToSpend?: number;
+  overdueBaseTotal?: number;
+  bigPlansBase?: number;
+  plannedBase30d?: number;
+  stabilityMultiplier?: number;
+  patternMultiplier?: number;
+  observationDays?: number;
+  isLearning?: boolean;
+  recurringDueIn7dBase?: number;
+  negativeWalletCount?: number;
+  calmAfterStormStartedAt?: string;
+  [k: string]: unknown;
+}
+
+export interface CalmWeatherState {
+  user_id: string;
+  band: CalmWeatherBand;
+  narrative: string;
+  secondary: string | null;
+  recommendations: CalmWeatherRecommendation[];
+  confidence: number;
+  input_snapshot: CalmWeatherInputSnapshot;
+  model_version: string;
+  generated_at: string;
+  expires_at: string;
 }
 
 export interface PriceIntelligenceRow {
@@ -576,6 +706,9 @@ export type Database = {
       user_memory_entries:         Table<UserMemoryEntry>;
       ai_questions:                Table<AiQuestion>;
       price_intelligence:          Table<PriceIntelligenceRow>;
+      planned_spends:              Table<PlannedSpend>;
+      app_changelog:               Table<AppChangelogEntry>;
+      calm_weather_state:          Table<CalmWeatherState>;
       invoices:                    Table<Invoice>;
       invoice_projects:            Table<{ invoice_id: string; project_id: string }>;
       project_templates:           Table<ProjectTemplate>;
@@ -609,6 +742,11 @@ export type Database = {
       loan_status:              LoanStatus;
       loan_installment_status:  LoanInstallmentStatus;
       user_memory_source:       UserMemorySource;
+      spend_category_kind:      SpendCategoryKind;
+      planned_spend_status:     PlannedSpendStatus;
+      planned_spend_certainty:  PlannedSpendCertainty;
+      app_changelog_kind:       AppChangelogKind;
+      calm_weather_band:        CalmWeatherBand;
     };
     CompositeTypes: { [_ in never]: never };
   };

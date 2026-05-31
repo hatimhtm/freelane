@@ -12,6 +12,8 @@ import {
   Wallet,
   FolderKanban,
   Settings,
+  Calendar,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
@@ -22,8 +24,10 @@ const NAV = [
   { href: "/projects",  label: "Projects",  icon: FolderKanban    },
   { href: "/payments",  label: "Payments",  icon: Wallet          },
   { href: "/spending",  label: "Spending",  icon: Receipt         },
+  { href: "/plans",     label: "Plans",     icon: Calendar        },
   { href: "/clients",   label: "Clients",   icon: Users           },
   { href: "/activity",  label: "Activity",  icon: Activity        },
+  { href: "/changelog", label: "What's new", icon: Sparkles       },
   { href: "/settings",  label: "Settings",  icon: Settings        },
 ];
 

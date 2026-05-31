@@ -62,6 +62,10 @@
   --color-brand-foreground: var(--brand-foreground);
   --color-paper: var(--paper);
   --color-ink: var(--ink);
+  /* Semantic alias — Tier-1 surfaces refer to the brand colour as
+     "acid-lime" because that's what Hatim calls it in the design language.
+     Same token, two class names — design intent stays readable. */
+  --color-acid-lime: var(--brand);
 
   /* Radius scale — 4px rows/inputs, 12px cards, 20px sheets. Never 8px. */
   --radius-sm: 4px;

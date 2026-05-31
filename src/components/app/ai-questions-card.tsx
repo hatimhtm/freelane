@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { cn } from "@/lib/utils";
 import {
   answerAiQuestionAction,
+  answerAiQuestionWithNotesAction,
   dismissAiQuestionAction,
   runCuriositySweepAction,
 } from "@/lib/data/actions";
@@ -42,7 +43,7 @@ export function AiQuestionsCard({ questions }: Props) {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -4 }}
         transition={{ duration: 0.32, ease: EASE }}
-        className="group relative overflow-hidden rounded-2xl bg-card p-7 ring-1 ring-foreground/10"
+        className="group relative overflow-hidden rounded-[14px] bg-card p-5 ring-1 ring-foreground/10"
       >
         <DismissButton
           id={current.id}
@@ -55,11 +56,11 @@ export function AiQuestionsCard({ questions }: Props) {
           }
         />
 
-        <p className="max-w-[58ch] pr-8 text-[17px] leading-relaxed text-foreground">
+        <p className="max-w-[58ch] pr-8 text-[15px] leading-snug text-foreground">
           {current.question}
         </p>
 
-        <div className="mt-6">
+        <div className="mt-4">
           {current.options && current.options.length > 0 ? (
             <OptionChips
               question={current}
@@ -124,15 +125,20 @@ function OptionChips({
   question: AiQuestion;
   onDone: () => void;
 }) {
-  const [submitting, setSubmitting] = useState<string | null>(null);
-  const [, start] = useTransition();
+  // Free-text + chips per universal ask-sheet rule (Tier 1, migration 0029).
+  // Chip is fast-path; the textarea below sends a free-text note alongside.
+  const [pickedChip, setPickedChip] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
+  const [pending, start] = useTransition();
 
-  const send = (answer: string) => {
-    if (submitting) return;
-    setSubmitting(answer);
+  const sendCombined = () => {
+    if (pending) return;
+    const chip = pickedChip ?? "";
+    const trimmed = notes.trim();
+    if (!chip && !trimmed) return;
     start(async () => {
       try {
-        await answerAiQuestionAction(question.id, answer);
+        await answerAiQuestionWithNotesAction(question.id, chip, trimmed);
       } finally {
         onDone();
       }
@@ -140,29 +146,59 @@ function OptionChips({
   };
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {(question.options ?? []).map((opt) => {
-        const active = submitting === opt;
-        return (
-          <button
-            key={opt}
-            type="button"
-            disabled={submitting !== null}
-            onClick={() => send(opt)}
-            className={cn(
-              "rounded-full border px-3.5 py-1.5 text-[13px] leading-none transition-colors",
-              "border-foreground/20 text-foreground",
-              "hover:bg-muted/50 hover:border-foreground/30",
-              "disabled:cursor-not-allowed",
-              active && "bg-foreground text-background border-foreground",
-              !active && submitting !== null && "opacity-40",
-            )}
-            style={{ borderWidth: 1.5 }}
-          >
-            {opt}
-          </button>
-        );
-      })}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        {(question.options ?? []).map((opt) => {
+          const active = pickedChip === opt;
+          return (
+            <button
+              key={opt}
+              type="button"
+              disabled={pending}
+              onClick={() => setPickedChip((cur) => (cur === opt ? null : opt))}
+              className={cn(
+                "rounded-full border px-3.5 py-1.5 text-[13px] leading-none transition-colors",
+                "border-foreground/20 text-foreground",
+                "hover:bg-muted/50 hover:border-foreground/30",
+                "disabled:cursor-not-allowed",
+                active && "bg-foreground text-background border-foreground",
+                !active && pending && "opacity-40",
+              )}
+              style={{ borderWidth: 1.5 }}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendCombined();
+        }}
+        className="flex items-center gap-2 border-b border-foreground/15 pb-1.5 focus-within:border-foreground/35 transition-colors"
+      >
+        <input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder={pickedChip ? "Or add your own words" : "Or tell me in your own words"}
+          disabled={pending}
+          className="flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground/60"
+        />
+        <button
+          type="submit"
+          disabled={pending || (!pickedChip && !notes.trim())}
+          aria-label="Send reply"
+          className={cn(
+            "grid size-8 shrink-0 place-items-center rounded-full transition-all",
+            "bg-foreground text-background",
+            "hover:scale-105 disabled:opacity-30 disabled:hover:scale-100",
+          )}
+        >
+          <ArrowRight className="size-3.5" />
+        </button>
+      </form>
     </div>
   );
 }

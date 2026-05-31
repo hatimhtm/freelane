@@ -59,15 +59,26 @@ export async function queueAiQuestion(input: {
 // Marks a question answered, folds the Q+A into user_memory_entries as a
 // user_note so the next memory consolidation absorbs it, then kicks off
 // consolidation in the background (matches the recordUserMemoryNote pattern).
-export async function answerAiQuestion(id: string, answer: string): Promise<void> {
+// answerNotes is the free-text reply that pairs with the chip per the
+// universal notes rule (Tier 1, migration 0029).
+export async function answerAiQuestion(
+  id: string,
+  answer: string,
+  answerNotes?: string,
+): Promise<void> {
   const user = await getAuthUser();
   if (!user) throw new Error("Not authenticated.");
   const trimmed = answer.trim();
-  if (!trimmed) throw new Error("Answer is empty.");
+  const trimmedNotes = (answerNotes ?? "").trim();
+  if (!trimmed && !trimmedNotes) throw new Error("Answer is empty.");
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("ai_questions")
-    .update({ answered_at: new Date().toISOString(), answer: trimmed })
+    .update({
+      answered_at: new Date().toISOString(),
+      answer: trimmed || null,
+      answer_notes: trimmedNotes || null,
+    })
     .eq("id", id)
     .eq("user_id", user.id)
     .select("*")
@@ -75,9 +86,12 @@ export async function answerAiQuestion(id: string, answer: string): Promise<void
   if (error) throw error;
   const row = data as AiQuestion;
   try {
+    const memoryLine = trimmedNotes
+      ? `Q: ${row.question} / A: ${trimmed || "(chip skipped)"} / Notes: ${trimmedNotes}`
+      : `Q: ${row.question} / A: ${trimmed}`;
     await supabase.from("user_memory_entries").insert({
       user_id: user.id,
-      content: `Q: ${row.question} / A: ${trimmed}`,
+      content: memoryLine,
       source: "user_note",
     });
   } catch {
@@ -89,7 +103,7 @@ export async function answerAiQuestion(id: string, answer: string): Promise<void
     title: `Answered: ${snippet(row.question)}`,
     entityType: "ai_question",
     entityId: row.id,
-    metadata: { kind: row.kind },
+    metadata: { kind: row.kind, has_notes: !!trimmedNotes },
   });
   void import("@/lib/ai/user-memory").then((m) => m.consolidateUserMemory()).catch(() => {});
 }

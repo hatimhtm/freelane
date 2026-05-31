@@ -11,13 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  CenterModal,
+  CenterModalBody,
+  CenterModalFooter,
+} from "@/components/ui/center-modal";
 import {
   Select,
   SelectContent,
@@ -154,17 +151,16 @@ export function ProjectDialog({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto scroll-muted">
-        <form onSubmit={onSubmit} className="flex h-full flex-col">
-          <SheetHeader>
-            <SheetTitle>{project ? "Edit project" : "New project"}</SheetTitle>
-            <SheetDescription>
-              {project ? "Tweak the details or log a new payment." : "Add a project for a client."}
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="grid gap-5 px-4 py-6">
+    <CenterModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={project ? "Edit project" : "New project"}
+      description={project ? "Tweak the details or log a new payment." : "Add a project for a client."}
+      size="lg"
+    >
+      <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+        <CenterModalBody>
+          <div className="grid gap-3">
             {!project && (
               <TemplatePicker
                 templates={templates}
@@ -200,7 +196,7 @@ export function ProjectDialog({
               />
             </Field>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Client" required>
                 <Select
                   items={clients.map((c) => ({ value: c.id, label: c.name }))}
@@ -243,7 +239,7 @@ export function ProjectDialog({
               </Field>
             </div>
 
-            <div className="grid grid-cols-[1fr_120px] gap-4">
+            <div className="grid grid-cols-[1fr_120px] gap-3">
               <Field label="Amount">
                 <Input
                   type="number"
@@ -286,7 +282,7 @@ export function ProjectDialog({
               <Textarea
                 value={state.description ?? ""}
                 onChange={(e) => update("description", e.target.value)}
-                rows={3}
+                rows={2}
                 placeholder="Short description that'll appear on invoices…"
               />
             </Field>
@@ -302,8 +298,9 @@ export function ProjectDialog({
               </>
             )}
           </div>
-
-          <SheetFooter className="mt-auto flex-row justify-between border-t border-border/60 bg-background/70 backdrop-blur">
+        </CenterModalBody>
+        <CenterModalFooter>
+          <div className="flex flex-1 items-center gap-2">
             {project ? (
               <Button type="button" variant="ghost" onClick={onDelete} className="text-destructive">
                 <Trash2 className="mr-1.5 h-4 w-4" />
@@ -321,6 +318,7 @@ export function ProjectDialog({
                     <Button
                       type="button"
                       variant="ghost"
+                      size="sm"
                       onClick={() => {
                         if (!state.title?.trim()) {
                           toast.error("Add a title first");
@@ -331,7 +329,7 @@ export function ProjectDialog({
                       }}
                       disabled={!state.title?.trim()}
                     >
-                      <Bookmark className="mr-1.5 h-4 w-4" />
+                      <Bookmark className="mr-1.5 h-3.5 w-3.5" />
                       Save as template
                     </Button>
                   </motion.div>
@@ -389,18 +387,16 @@ export function ProjectDialog({
                 )}
               </AnimatePresence>
             )}
-            <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={pending}>
-                {pending ? "Saving…" : project ? "Save changes" : "Create project"}
-              </Button>
-            </div>
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
+          </div>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={pending}>
+            {pending ? "Saving…" : project ? "Save changes" : "Create project"}
+          </Button>
+        </CenterModalFooter>
+      </form>
+    </CenterModal>
   );
 }
 
@@ -736,8 +732,8 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
-      <Label className="text-xs font-medium text-muted-foreground">
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
         {required && <span className="text-destructive"> *</span>}
       </Label>

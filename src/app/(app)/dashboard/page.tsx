@@ -8,6 +8,10 @@ import {
 import { monthlyFeeBase, holdingBalances } from "@/lib/payment-chain";
 import { safeToSpend } from "@/lib/safe-to-spend";
 import { anchorDate, periodKey, expectedBase } from "@/lib/recurring";
+import { buildCashflowAtlas } from "@/lib/cashflow-atlas";
+import { getCalmWeather } from "@/lib/ai/calm-weather";
+import { generateForecastStory, type ForecastStory } from "@/lib/ai/forecast-storyteller";
+import { hasGemini } from "@/lib/ai/gemini";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode, Spend } from "@/lib/supabase/types";
 import { DashboardView, type AlertRow } from "./_components/dashboard-view";
@@ -33,6 +37,8 @@ export default async function DashboardPage() {
     recurringSkips,
     loanInstallments,
     openAiQuestions,
+    plannedSpends,
+    calmWeather: cachedCalmWeather,
   } = await getDashboardData();
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
@@ -62,8 +68,44 @@ export default async function DashboardPage() {
     methods,
     stepsByPayment,
     rates,
+    plannedSpends,
     now,
   });
+
+  // 90-Day Cashflow Atlas — drives the bird's-eye chart on the dashboard.
+  const atlas = buildCashflowAtlas({
+    payments,
+    withdrawals,
+    spends,
+    recurring,
+    recurringSkips,
+    loanInstallments,
+    plannedSpends,
+    methods,
+    stepsByPayment,
+    rates,
+    now,
+    horizonDays: 90,
+  });
+
+  // Calm Weather + Forecast — best-effort. Failures fall back to whatever's
+  // cached (calmWeather) or null (forecast).
+  const calmWeather = await getCalmWeather().catch(() => cachedCalmWeather ?? null);
+  const forecastStory: ForecastStory | null = hasGemini()
+    ? await generateForecastStory({
+        payments,
+        withdrawals,
+        spends,
+        recurring,
+        recurringSkips,
+        loanInstallments,
+        plannedSpends,
+        methods,
+        stepsByPayment,
+        rates,
+        now,
+      }).catch(() => null)
+    : null;
 
   // 30-day pulse — landed and spent series, aligned to today.
   const landedSeries = dailySeries(payments, 30, now);
@@ -146,6 +188,9 @@ export default async function DashboardPage() {
       landedSeries={landedSeries}
       spentSeries={spentSeries}
       alerts={alerts.slice(0, ALERT_LIMIT)}
+      calmWeather={calmWeather}
+      atlas={atlas}
+      forecastStory={forecastStory}
     />
   );
 }

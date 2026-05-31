@@ -22,21 +22,30 @@ async function userOrThrow() {
   return { supabase, userId: user.id };
 }
 
-// Drops the AI safe-to-spend cache row for this user so the next read recomputes
-// from scratch. Called from every mutation that changes the math (spends,
-// payments, withdrawals, recurring paid/skipped, loan installments, rule edits).
-// Best-effort: failures don't block the parent mutation. Reuses the caller's
-// supabase client when passed to avoid the redundant createClient() round-trip
-// on hot paths.
+// Drops the AI safe-to-spend cache row AND marks calm_weather_state stale so
+// the next read of either recomputes from scratch. Called from every mutation
+// that changes the math (spends, payments, withdrawals, recurring paid/skipped,
+// loan installments, rule edits). The two caches are coupled here so we never
+// re-invalidate one and forget the other (Tier-1 reviewer flagged this as a
+// critical correctness gap). Best-effort: failures don't block the parent
+// mutation. Reuses the caller's supabase client when passed to avoid the
+// redundant createClient() round-trip on hot paths.
 async function invalidateAiSafeSpendCache(
   userId: string,
   existing?: Awaited<ReturnType<typeof createClient>>,
 ): Promise<void> {
   try {
     const supabase = existing ?? (await createClient());
-    await supabase.from("ai_safe_spend_cache").delete().eq("user_id", userId);
+    // Two writes; run in parallel since they target different tables.
+    await Promise.all([
+      supabase.from("ai_safe_spend_cache").delete().eq("user_id", userId),
+      supabase
+        .from("calm_weather_state")
+        .update({ expires_at: new Date().toISOString() })
+        .eq("user_id", userId),
+    ]);
   } catch {
-    // Swallow — cache is regenerable; not worth failing a real write.
+    // Swallow — both caches are regenerable; not worth failing a real write.
   }
 }
 
@@ -344,6 +353,22 @@ type RatePair = { code: string; rate_to_base: number };
 function toBaseAmount(amount: number, currency: string, rates: RatePair[]): number {
   const r = rates.find((x) => x.code === currency)?.rate_to_base ?? 1;
   return amount * r;
+}
+
+// Accepts "HH:mm" or "HH:mm:ss" from the spend modal's time picker; returns
+// "HH:mm:ss" for Postgres `time` columns. Empty/null pass through as null so
+// the row stays date-only. Anything malformed → null (defensive).
+function normalizeTimeOfDay(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  const s = Number(match[3] ?? 0);
+  if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) return null;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 // Recompute a project's payment status from allocations (migration 0021).
@@ -1405,11 +1430,16 @@ export type SpendItemInput = {
   name: string;
   amount?: number | null;
   vat_amount?: number | null;
+  // Universal notes rule (Tier 1, migration 0029) — per-item freeform context.
+  notes?: string | null;
 };
 
 export type SpendInput = {
   wallet_id: string;
   spent_at?: string;
+  // Tier 1: optional time-of-day on the spend (migration 0028). Format "HH:mm".
+  // Null when the row is date-only (legacy / backdated entry).
+  spent_time?: string | null;
   amount: number;
   currency: string;
   description?: string | null;
@@ -1446,6 +1476,7 @@ export async function createSpend(input: SpendInput) {
       user_id: userId,
       wallet_id: input.wallet_id,
       spent_at: spentAt,
+      spent_time: normalizeTimeOfDay(input.spent_time),
       amount,
       currency: input.currency,
       amount_base: Math.round(amountBase * 100) / 100,
@@ -1475,6 +1506,7 @@ export async function createSpend(input: SpendInput) {
       name: it.name,
       amount: it.amount ?? null,
       vat_amount: it.vat_amount ?? null,
+      notes: it.notes ?? null,
       sort_order: i,
     }));
     const { error: itemErr } = await supabase.from("spend_items").insert(itemRows);
@@ -1557,6 +1589,7 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
   const writable: (keyof SpendInput)[] = [
     "wallet_id",
     "spent_at",
+    "spent_time",
     "description",
     "notes",
     "vat_amount",
@@ -1567,7 +1600,10 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
     "loan_installment_id",
   ];
   for (const k of writable) {
-    if (k in input) patch[k] = (input as Record<string, unknown>)[k] ?? null;
+    if (k in input) {
+      const raw = (input as Record<string, unknown>)[k];
+      patch[k] = k === "spent_time" ? normalizeTimeOfDay(raw as string | null | undefined) : raw ?? null;
+    }
   }
 
   // If amount/currency changed, recompute amount_base via TODAY's FX. This is a
@@ -1614,6 +1650,7 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
         name: it.name,
         amount: it.amount ?? null,
         vat_amount: it.vat_amount ?? null,
+        notes: it.notes ?? null,
         sort_order: i,
       }));
       const { error: itemErr } = await supabase.from("spend_items").insert(itemRows);
@@ -1659,6 +1696,8 @@ export type SpendCategoryInput = {
   icon?: string | null;
   color?: string | null;
   sort_order?: number;
+  // Tier 1, migration 0030. Investment vs Consumption Ledger classification.
+  kind?: "consumption" | "investment" | "neutral";
 };
 
 export async function createSpendCategory(input: SpendCategoryInput) {
@@ -1673,6 +1712,7 @@ export async function createSpendCategory(input: SpendCategoryInput) {
       icon: input.icon ?? null,
       color: input.color ?? null,
       sort_order: input.sort_order ?? 0,
+      kind: input.kind ?? "consumption",
     })
     .select("id")
     .single();
@@ -1696,6 +1736,7 @@ export async function updateSpendCategory(id: string, input: Partial<SpendCatego
   if ("icon" in input) patch.icon = input.icon ?? null;
   if ("color" in input) patch.color = input.color ?? null;
   if ("sort_order" in input) patch.sort_order = input.sort_order ?? 0;
+  if ("kind" in input) patch.kind = input.kind ?? "consumption";
   const { error } = await supabase
     .from("spend_categories")
     .update(patch)
@@ -2412,4 +2453,424 @@ export async function runCuriositySweepAction(): Promise<{
   const summary = await runCuriositySweep();
   revalidatePath("/today");
   return summary;
+}
+
+// ───────────────────────────────────────── Planned spends (Tier 1) ──
+//
+// Future intent rows the runway math counts as if already on the calendar.
+// Lifecycle: planned → committed (money parked) → done (materialized as real
+// spend) → or cancelled. Hatim's MacBook + Apple Dev renewal live here.
+//
+// commitPlannedSpend parks the expected_base into a "committed" state. The
+// safe-to-spend formula subtracts that locked amount from the discretionary
+// pool — the money is still physically in the wallet, it's just earmarked.
+// materializePlannedSpend creates a real spends row + links done_spend_id.
+// cancelPlannedSpend drops it from forward math without deleting history.
+
+export type PlannedSpendInput = {
+  label: string;
+  expected_amount: number;
+  expected_currency: string;
+  planned_for: string;                       // "YYYY-MM-DD"
+  planned_for_window_days?: number;
+  certainty?: "firm" | "probable" | "maybe";
+  wallet_id?: string | null;
+  default_category_ids?: string[];
+  is_big_plan?: boolean;
+  notes?: string | null;
+};
+
+export async function createPlannedSpend(input: PlannedSpendInput) {
+  const { supabase, userId } = await userOrThrow();
+  const label = input.label.trim();
+  if (!label) throw new Error("Plan needs a label.");
+  if (!(Number(input.expected_amount) > 0)) {
+    throw new Error("Expected amount must be greater than 0.");
+  }
+  if (!input.planned_for) throw new Error("Pick a date.");
+
+  const { data: rates } = await supabase
+    .from("exchange_rates")
+    .select("code,rate_to_base")
+    .eq("user_id", userId);
+  const expectedBase = Math.round(
+    toBaseAmount(Number(input.expected_amount), input.expected_currency, (rates ?? []) as RatePair[]) * 100,
+  ) / 100;
+
+  const { data, error } = await supabase
+    .from("planned_spends")
+    .insert({
+      user_id: userId,
+      label,
+      expected_amount: Number(input.expected_amount),
+      expected_currency: input.expected_currency,
+      expected_base: expectedBase,
+      planned_for: input.planned_for,
+      planned_for_window_days: input.planned_for_window_days ?? 0,
+      certainty: input.certainty ?? "firm",
+      status: "planned",
+      wallet_id: input.wallet_id ?? null,
+      default_category_ids: input.default_category_ids ?? [],
+      is_big_plan: !!input.is_big_plan,
+      notes: input.notes ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+
+  await logEvent({
+    userId,
+    kind: "planned_spend.created",
+    title: `Planned · ${label}`,
+    entityType: "planned_spend",
+    entityId: data.id as string,
+    metadata: { expected_base: expectedBase, planned_for: input.planned_for },
+  });
+  await invalidateAiSafeSpendCache(userId, supabase);
+  revalidatePath("/plans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+  return data;
+}
+
+export async function updatePlannedSpend(id: string, input: Partial<PlannedSpendInput>) {
+  const { supabase, userId } = await userOrThrow();
+  const patch: Record<string, unknown> = {};
+  if ("label" in input) patch.label = input.label?.trim();
+  if ("planned_for" in input) patch.planned_for = input.planned_for;
+  if ("planned_for_window_days" in input) patch.planned_for_window_days = input.planned_for_window_days ?? 0;
+  if ("certainty" in input) patch.certainty = input.certainty;
+  if ("wallet_id" in input) patch.wallet_id = input.wallet_id ?? null;
+  if ("default_category_ids" in input) patch.default_category_ids = input.default_category_ids ?? [];
+  if ("is_big_plan" in input) patch.is_big_plan = !!input.is_big_plan;
+  if ("notes" in input) patch.notes = input.notes ?? null;
+
+  if (input.expected_amount !== undefined || input.expected_currency !== undefined) {
+    const { data: existing } = await supabase
+      .from("planned_spends")
+      .select("expected_amount,expected_currency")
+      .eq("id", id)
+      .maybeSingle();
+    if (!existing) throw new Error("Plan not found");
+    const amount = Number(input.expected_amount ?? existing.expected_amount);
+    const currency = (input.expected_currency ?? existing.expected_currency) as string;
+    if (!(amount > 0)) throw new Error("Expected amount must be greater than 0.");
+    const { data: rates } = await supabase
+      .from("exchange_rates")
+      .select("code,rate_to_base")
+      .eq("user_id", userId);
+    const expectedBase = Math.round(
+      toBaseAmount(amount, currency, (rates ?? []) as RatePair[]) * 100,
+    ) / 100;
+    patch.expected_amount = amount;
+    patch.expected_currency = currency;
+    patch.expected_base = expectedBase;
+  }
+
+  if (Object.keys(patch).length === 0) return;
+
+  const { error } = await supabase
+    .from("planned_spends")
+    .update(patch)
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+
+  await logEvent({
+    userId,
+    kind: "planned_spend.updated",
+    title: `Updated plan${input.label ? ` · ${input.label}` : ""}`,
+    entityType: "planned_spend",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId, supabase);
+  revalidatePath("/plans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+export async function commitPlannedSpend(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { data: plan } = await supabase
+    .from("planned_spends")
+    .select("expected_base,label,status")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!plan) throw new Error("Plan not found");
+  if (plan.status === "done") throw new Error("Plan is already done — can't lock.");
+  if (plan.status === "cancelled") throw new Error("Plan is cancelled — uncancel before locking.");
+  const { error } = await supabase
+    .from("planned_spends")
+    .update({
+      status: "committed",
+      committed_base: Number(plan.expected_base ?? 0),
+      committed_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "planned_spend.committed",
+    title: `Locked · ${plan.label}`,
+    entityType: "planned_spend",
+    entityId: id,
+    metadata: { committed_base: Number(plan.expected_base ?? 0) },
+  });
+  await invalidateAiSafeSpendCache(userId, supabase);
+  revalidatePath("/plans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+// Reverse a commit (user changed mind before materializing).
+export async function uncommitPlannedSpend(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { data: plan } = await supabase
+    .from("planned_spends")
+    .select("status")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!plan) throw new Error("Plan not found");
+  if (plan.status !== "committed") {
+    throw new Error("Only locked plans can be unlocked.");
+  }
+  const { error } = await supabase
+    .from("planned_spends")
+    .update({ status: "planned", committed_base: null, committed_at: null })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "planned_spend.updated",
+    title: "Unlocked a plan",
+    entityType: "planned_spend",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId, supabase);
+  revalidatePath("/plans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+// Materializes the plan into a real spend. Caller provides amount + currency
+// (in case the actual differs from expected) + wallet. Tags inherited from
+// default_category_ids unless overridden.
+export type MaterializePlanInput = {
+  amount: number;
+  currency: string;
+  wallet_id: string;
+  spent_at?: string;
+  spent_time?: string | null;
+  description?: string | null;
+  notes?: string | null;
+  business_relevant?: boolean;
+  categoryIds?: string[];
+  vat_amount?: number | null;
+  items?: SpendItemInput[];
+};
+
+export async function materializePlannedSpend(id: string, input: MaterializePlanInput) {
+  const { supabase, userId } = await userOrThrow();
+  const { data: plan } = await supabase
+    .from("planned_spends")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!plan) throw new Error("Plan not found");
+  if (plan.status === "done") throw new Error("Plan is already done");
+
+  const result = await createSpend({
+    wallet_id: input.wallet_id,
+    spent_at: input.spent_at,
+    spent_time: input.spent_time ?? null,
+    amount: input.amount,
+    currency: input.currency,
+    description: input.description ?? plan.label,
+    notes: input.notes ?? plan.notes,
+    vat_amount: input.vat_amount ?? null,
+    business_relevant: input.business_relevant,
+    categoryIds: input.categoryIds ?? (plan.default_category_ids ?? []),
+    items: input.items,
+  });
+
+  await supabase
+    .from("planned_spends")
+    .update({
+      status: "done",
+      done_spend_id: result.id,
+      done_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  await logEvent({
+    userId,
+    kind: "planned_spend.done",
+    title: `Plan done · ${plan.label}`,
+    entityType: "planned_spend",
+    entityId: id,
+    metadata: { spend_id: result.id },
+  });
+  // createSpend above already invalidates both the safe-to-spend cache and
+  // calm_weather_state via invalidateAiSafeSpendCache, so we don't need an
+  // extra mark here. revalidatePath only.
+  revalidatePath("/plans");
+  return { id: result.id };
+}
+
+export async function cancelPlannedSpend(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { data: plan } = await supabase
+    .from("planned_spends")
+    .select("status")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!plan) throw new Error("Plan not found");
+  if (plan.status === "done") throw new Error("Plan is already done — can't cancel.");
+  const { error } = await supabase
+    .from("planned_spends")
+    .update({ status: "cancelled", committed_base: null, committed_at: null })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "planned_spend.cancelled",
+    title: "Cancelled a plan",
+    entityType: "planned_spend",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId, supabase);
+  revalidatePath("/plans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+export async function deletePlannedSpend(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("planned_spends")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "planned_spend.deleted",
+    title: "Deleted a plan",
+    entityType: "planned_spend",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId, supabase);
+  revalidatePath("/plans");
+}
+
+// ───────────────────────────────────────── Calm Weather (Tier 1) ──
+//
+// All cache invalidation now flows through invalidateAiSafeSpendCache, which
+// coupled-deletes both the safe-to-spend cache and the calm_weather_state row.
+// Tier-1 reviewer #2 flagged that a separate markCalmWeatherStale helper was
+// easy to forget at new mutation sites; coupling fixed that class of bug.
+
+export async function refreshCalmWeatherAction(): Promise<void> {
+  const { refreshCalmWeather } = await import("@/lib/ai/calm-weather");
+  await refreshCalmWeather({ force: true });
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+// ───────────────────────────────────────── App Changelog (Tier 1) ──
+
+export type AppChangelogInput = {
+  version: string;
+  released_at?: string;             // "YYYY-MM-DD"; defaults to today
+  kind?: "release" | "improvement" | "fix" | "note";
+  title: string;
+  body?: string | null;             // markdown
+  highlights?: string[];
+  tier?: number | null;
+  is_pinned?: boolean;
+};
+
+export async function createChangelogEntry(input: AppChangelogInput) {
+  const { supabase, userId } = await userOrThrow();
+  const version = input.version.trim();
+  const title = input.title.trim();
+  if (!version) throw new Error("Version required.");
+  if (!title) throw new Error("Title required.");
+  const { data, error } = await supabase
+    .from("app_changelog")
+    .insert({
+      author_id: userId,
+      version,
+      released_at: input.released_at ?? new Date().toISOString().slice(0, 10),
+      kind: input.kind ?? "release",
+      title,
+      body: input.body ?? null,
+      highlights: input.highlights ?? [],
+      tier: input.tier ?? null,
+      is_pinned: !!input.is_pinned,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "app_changelog.published",
+    title: `Changelog · ${title}`,
+    entityType: "app_changelog",
+    entityId: data.id as string,
+    metadata: { version, tier: input.tier ?? null },
+  });
+  revalidatePath("/changelog");
+  return data;
+}
+
+export async function updateChangelogEntry(id: string, input: Partial<AppChangelogInput>) {
+  const { supabase, userId } = await userOrThrow();
+  const patch: Record<string, unknown> = {};
+  if ("version" in input) patch.version = input.version?.trim();
+  if ("released_at" in input) patch.released_at = input.released_at;
+  if ("kind" in input) patch.kind = input.kind;
+  if ("title" in input) patch.title = input.title?.trim();
+  if ("body" in input) patch.body = input.body ?? null;
+  if ("highlights" in input) patch.highlights = input.highlights ?? [];
+  if ("tier" in input) patch.tier = input.tier ?? null;
+  if ("is_pinned" in input) patch.is_pinned = !!input.is_pinned;
+  if (Object.keys(patch).length === 0) return;
+  const { error } = await supabase
+    .from("app_changelog")
+    .update(patch)
+    .eq("id", id)
+    .eq("author_id", userId);
+  if (error) throw error;
+  revalidatePath("/changelog");
+}
+
+export async function deleteChangelogEntry(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("app_changelog")
+    .delete()
+    .eq("id", id)
+    .eq("author_id", userId);
+  if (error) throw error;
+  revalidatePath("/changelog");
+}
+
+// AI question with free-text note alongside the chip (universal notes rule).
+export async function answerAiQuestionWithNotesAction(
+  id: string,
+  answer: string,
+  answerNotes?: string,
+): Promise<void> {
+  const { answerAiQuestion } = await import("@/lib/ai/ai-questions");
+  await answerAiQuestion(id, answer, answerNotes);
+  revalidatePath("/today");
+  revalidatePath("/settings");
 }

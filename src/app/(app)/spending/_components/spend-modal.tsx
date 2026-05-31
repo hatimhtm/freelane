@@ -76,7 +76,7 @@ export type SpendModalDefaults = {
   source?: string;
 };
 
-type ItemRow = { name: string; amount: string };
+type ItemRow = { name: string; amount: string; notes: string };
 
 export function SpendModal({
   open,
@@ -113,6 +113,9 @@ export function SpendModal({
 
   const [walletId, setWalletId] = useState("");
   const [spentAt, setSpentAt] = useState(() => today());
+  // Time-of-day on the spend (Tier 1, migration 0028). Optional; defaults to
+  // "now" when the user is logging live, blank when backdating from home.
+  const [spentTime, setSpentTime] = useState<string>(() => nowHHMM());
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<string>(PHP);
   const [description, setDescription] = useState("");
@@ -134,6 +137,7 @@ export function SpendModal({
       .sort((a, b) => (b.balanceBase ?? 0) - (a.balanceBase ?? 0))[0];
     setWalletId(richestHolding?.id ?? wallets[0]?.id ?? "");
     setSpentAt(today());
+    setSpentTime(nowHHMM());
     setCurrency(PHP);
     setDescription(defaults?.description ?? "");
     setNotes(defaults?.note ?? "");
@@ -224,7 +228,7 @@ export function SpendModal({
   }
 
   function addItem() {
-    setItems((prev) => [...prev, { name: "", amount: "" }]);
+    setItems((prev) => [...prev, { name: "", amount: "", notes: "" }]);
   }
   function setItem(i: number, patch: Partial<ItemRow>) {
     setItems((prev) =>
@@ -249,6 +253,7 @@ export function SpendModal({
       .map((it) => ({
         name: it.name.trim(),
         amount: it.amount ? Number(it.amount) : null,
+        notes: it.notes.trim() || null,
       }))
       .filter((it) => it.name.length > 0);
 
@@ -259,6 +264,7 @@ export function SpendModal({
         await createSpend({
           wallet_id: walletId,
           spent_at: spentAt,
+          spent_time: spentTime || null,
           amount: amountNum,
           currency,
           description: description.trim() || null,
@@ -269,7 +275,7 @@ export function SpendModal({
           recurring_spend_id: recurringSpendId,
           categoryIds: selectedCategoryIds,
           items: cleanItems.length
-            ? cleanItems.map((it) => ({ name: it.name, amount: it.amount }))
+            ? cleanItems.map((it) => ({ name: it.name, amount: it.amount, notes: it.notes }))
             : undefined,
         });
         toast.success(
@@ -320,13 +326,22 @@ export function SpendModal({
                 placeholder="Pick a wallet"
               />
             </Row>
-            <Row label="Date">
-              <Input
-                type="date"
-                value={spentAt}
-                onChange={(e) => setSpentAt(e.target.value)}
-                className="h-8 w-[150px] tabular"
-              />
+            <Row label="When">
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="date"
+                  value={spentAt}
+                  onChange={(e) => setSpentAt(e.target.value)}
+                  className="h-8 w-[150px] tabular"
+                />
+                <Input
+                  type="time"
+                  value={spentTime}
+                  onChange={(e) => setSpentTime(e.target.value)}
+                  className="h-8 w-[92px] tabular"
+                  aria-label="Time of day (optional)"
+                />
+              </div>
             </Row>
           </div>
 
@@ -520,6 +535,12 @@ export function SpendModal({
                               cache={priceIntelCache}
                             />
                           )}
+                          <Input
+                            value={it.notes}
+                            onChange={(e) => setItem(i, { notes: e.target.value })}
+                            placeholder="Notes (optional)"
+                            className="mt-1.5 h-7 w-full text-xs text-foreground/80"
+                          />
                         </motion.div>
                       ))}
                     </AnimatePresence>
@@ -650,6 +671,15 @@ function CategoryChips({
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// "HH:mm" of the local clock right now. Used as the default time-of-day when
+// the modal opens — the user can clear it for backdated entries.
+function nowHHMM(): string {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 function toBase(

@@ -15,9 +15,14 @@ import {
 import { motion } from "motion/react";
 import { LinkButton } from "@/components/ui/link-button";
 import { EmptyState } from "@/components/app/empty-state";
+import { CalmWeatherBanner } from "@/components/app/calm-weather-banner";
+import { ForecastStoryCard } from "@/components/app/forecast-story-card";
+import { CashflowAtlasChart } from "@/components/spending/cashflow-atlas-chart";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import type { CurrencyCode } from "@/lib/supabase/types";
+import type { CalmWeatherState, CurrencyCode } from "@/lib/supabase/types";
+import type { CashflowAtlas } from "@/lib/cashflow-atlas";
+import type { ForecastStory } from "@/lib/ai/forecast-storyteller";
 
 // ─────────────────────────────────────────────────────────── DENSITY NOTE ──
 // Bird's-eye dashboard, small-window-first. Everything here is a SUMMARY —
@@ -48,6 +53,9 @@ export function DashboardView({
   spentSeries,
   // alerts
   alerts,
+  calmWeather,
+  atlas,
+  forecastStory,
 }: {
   firstName: string | null;
   currency: CurrencyCode;
@@ -62,6 +70,9 @@ export function DashboardView({
   landedSeries: number[];
   spentSeries: number[];
   alerts: AlertRow[];
+  calmWeather: CalmWeatherState | null;
+  atlas: CashflowAtlas | null;
+  forecastStory: ForecastStory | null;
 }) {
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -98,6 +109,11 @@ export function DashboardView({
         </div>
       ) : (
         <div className="mt-5 space-y-5">
+          {/* Calm Weather Mode — same line the Today page shows. */}
+          {calmWeather && (
+            <CalmWeatherBanner state={calmWeather} variant="dashboard" />
+          )}
+
           {/* Hero strip — six stats */}
           <HeroStrip
             currency={currency}
@@ -111,8 +127,23 @@ export function DashboardView({
             ]}
           />
 
+          {/* 90-Day Cashflow Atlas — bird's-eye projection. */}
+          {atlas && (
+            <CashflowAtlasChart
+              atlas={atlas}
+              baseCurrency={currency}
+              headline={forecastStory?.headline}
+              narrative={forecastStory?.narrative}
+            />
+          )}
+
           {/* Pulse — landed + spent over 30 days */}
           <PulseStrip landedSeries={landedSeries} spentSeries={spentSeries} currency={currency} />
+
+          {/* Forecast Storyteller — quiet narrative card. */}
+          {forecastStory && (
+            <ForecastStoryCard story={forecastStory} baseCurrency={currency} />
+          )}
 
           {/* Alerts — only render if there is at least one */}
           {alerts.length > 0 && <Alerts rows={alerts} currency={currency} />}

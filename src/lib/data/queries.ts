@@ -27,6 +27,9 @@ import type {
   UserMemoryEntry,
   AiQuestion,
   PriceIntelligenceRow,
+  PlannedSpend,
+  CalmWeatherState,
+  AppChangelogEntry,
 } from "@/lib/supabase/types";
 
 async function userOrThrow() {
@@ -109,6 +112,8 @@ export async function getDashboardData() {
     loans,
     loanInstallments,
     openAiQuestions,
+    plannedSpends,
+    calmWeather,
   ] = await Promise.all([
     supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
     supabase.from("projects").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
@@ -129,6 +134,8 @@ export async function getDashboardData() {
       .order("priority", { ascending: true })
       .order("created_at", { ascending: false })
       .limit(5),
+    supabase.from("planned_spends").select("*").eq("user_id", user.id).order("planned_for"),
+    supabase.from("calm_weather_state").select("*").eq("user_id", user.id).maybeSingle(),
   ]);
 
   const paymentRows = (payments.data ?? []) as Payment[];
@@ -168,6 +175,8 @@ export async function getDashboardData() {
     loanInstallments: (loanInstallments.data ?? []) as LoanInstallment[],
     paymentAllocations,
     openAiQuestions: (openAiQuestions.data ?? []) as AiQuestion[],
+    plannedSpends: (plannedSpends.data ?? []) as PlannedSpend[],
+    calmWeather: (calmWeather.data ?? null) as CalmWeatherState | null,
   };
 }
 
@@ -416,6 +425,8 @@ export async function getSpendingData() {
     rates,
     payments,
     openAiQuestions,
+    plannedSpends,
+    calmWeather,
   ] = await Promise.all([
     supabase.from("spends").select("*").eq("user_id", user.id).order("spent_at", { ascending: false }),
     supabase.from("spend_categories").select("*").eq("user_id", user.id).order("sort_order"),
@@ -434,6 +445,8 @@ export async function getSpendingData() {
       .order("priority", { ascending: true })
       .order("created_at", { ascending: false })
       .limit(5),
+    supabase.from("planned_spends").select("*").eq("user_id", user.id).order("planned_for"),
+    supabase.from("calm_weather_state").select("*").eq("user_id", user.id).maybeSingle(),
   ]);
   const spendRows = (spends.data ?? []) as Spend[];
   const paymentRows = (payments.data ?? []) as Payment[];
@@ -467,6 +480,8 @@ export async function getSpendingData() {
     payments: paymentRows,
     stepsByPayment,
     openAiQuestions: (openAiQuestions.data ?? []) as AiQuestion[],
+    plannedSpends: (plannedSpends.data ?? []) as PlannedSpend[],
+    calmWeather: (calmWeather.data ?? null) as CalmWeatherState | null,
   };
 }
 
@@ -601,4 +616,97 @@ export async function getPriceIntelForItem(itemNameNorm: string) {
     .eq("item_name_norm", itemNameNorm)
     .order("last_seen_at", { ascending: false });
   return (data ?? []) as PriceIntelligenceRow[];
+}
+
+// ─────────────────────────── Tier 1 fetchers ──
+
+// All planned spends (open + closed) — the /plans route shows everything,
+// dashboard surfaces filter to active.
+export async function getPlannedSpends() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("planned_spends")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("planned_for");
+  return (data ?? []) as PlannedSpend[];
+}
+
+// Full /plans page data — planned spends + everything safe-to-spend math
+// needs to project the runway against them.
+export async function getPlansData() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [
+    plannedSpends,
+    spends,
+    payments,
+    withdrawals,
+    methods,
+    rates,
+    recurring,
+    recurringSkips,
+    loanInstallments,
+    spendCategories,
+    settings,
+    currencies,
+    calmWeather,
+  ] = await Promise.all([
+    supabase.from("planned_spends").select("*").eq("user_id", user.id).order("planned_for"),
+    supabase.from("spends").select("*").eq("user_id", user.id).order("spent_at", { ascending: false }),
+    supabase.from("payments").select("*").eq("user_id", user.id).order("paid_at", { ascending: false }),
+    supabase.from("withdrawals").select("*").eq("user_id", user.id).order("withdrawn_at", { ascending: false }),
+    supabase.from("payment_methods").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
+    supabase.from("exchange_rates").select("*").eq("user_id", user.id),
+    supabase.from("recurring_spends").select("*").eq("user_id", user.id).order("label"),
+    supabase.from("recurring_spend_skips").select("*"),
+    supabase.from("loan_installments").select("*").order("due_date"),
+    supabase.from("spend_categories").select("*").eq("user_id", user.id).order("sort_order"),
+    supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
+    supabase.from("currencies").select("*"),
+    supabase.from("calm_weather_state").select("*").eq("user_id", user.id).maybeSingle(),
+  ]);
+  const paymentRows = (payments.data ?? []) as Payment[];
+  const stepsByPayment = await fetchStepsByPayment(supabase, paymentRows.map((p) => p.id));
+  return {
+    plannedSpends: (plannedSpends.data ?? []) as PlannedSpend[],
+    spends: (spends.data ?? []) as Spend[],
+    payments: paymentRows,
+    stepsByPayment,
+    withdrawals: (withdrawals.data ?? []) as Withdrawal[],
+    methods: (methods.data ?? []) as PaymentMethod[],
+    rates: (rates.data ?? []) as ExchangeRate[],
+    recurring: (recurring.data ?? []) as RecurringSpend[],
+    recurringSkips: (recurringSkips.data ?? []) as RecurringSpendSkip[],
+    loanInstallments: (loanInstallments.data ?? []) as LoanInstallment[],
+    spendCategories: (spendCategories.data ?? []) as SpendCategory[],
+    settings: (settings.data ?? null) as Settings | null,
+    currencies: (currencies.data ?? []) as Currency[],
+    calmWeather: (calmWeather.data ?? null) as CalmWeatherState | null,
+  };
+}
+
+// Calm Weather state — single row per user, regenerated on read when stale.
+export async function getCalmWeatherState() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("calm_weather_state")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  return (data ?? null) as CalmWeatherState | null;
+}
+
+// Full app changelog feed — pinned first, then newest first. Single-author
+// table (Hatim).
+export async function getAppChangelog(limit = 50) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("app_changelog")
+    .select("*")
+    .eq("author_id", user.id)
+    .order("is_pinned", { ascending: false })
+    .order("released_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as AppChangelogEntry[];
 }

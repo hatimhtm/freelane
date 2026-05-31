@@ -11,6 +11,9 @@ import { holdingBalances } from "@/lib/payment-chain";
 import { safeToSpend, suggestSadakaForIncome } from "@/lib/safe-to-spend";
 import { hasGemini } from "@/lib/ai/gemini";
 import { readFocusCache } from "@/lib/ai/actions";
+import { getCalmWeather } from "@/lib/ai/calm-weather";
+import { computeTightMode, type TightModeRead } from "@/lib/ai/tight-mode-coach";
+import { generateForecastStory, type ForecastStory } from "@/lib/ai/forecast-storyteller";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { BlockedRow } from "@/components/app/blocked-money-list";
@@ -50,6 +53,8 @@ export default async function TodayPage() {
     loanInstallments,
     stepsByPayment,
     openAiQuestions,
+    plannedSpends,
+    calmWeather: cachedCalmWeather,
   } = data;
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
@@ -240,6 +245,8 @@ export default async function TodayPage() {
       recurringForwardBase: 0,
       loanForwardBase: 0,
       feeFloorBase: 0,
+      plannedForwardBase: 0,
+      committedLockedBase: 0,
       committedPoolBase: 0,
       trailingOverspendBase: 0,
       recoveryDailyTaxBase: 0,
@@ -254,6 +261,55 @@ export default async function TodayPage() {
       notes: ["safe-to-spend recompute failed — fell back to a calm default."],
       isLearning: true,
     };
+  }
+
+  // ── Tier 1 layer: Calm Weather + Tight Mode + Forecast ──
+  // Calm Weather regenerates on read when stale. Tight Mode + Forecast read
+  // straight off the snapshot. All three are best-effort — a failure on any
+  // doesn't break the page.
+  const calmWeather = await getCalmWeather().catch(() => cachedCalmWeather ?? null);
+
+  let tightMode: TightModeRead | null = null;
+  if (calmWeather && (calmWeather.band === "storm" || calmWeather.band === "gust")) {
+    try {
+      tightMode = await computeTightMode({
+        payments,
+        withdrawals,
+        spends,
+        recurring,
+        recurringSkips,
+        loanInstallments,
+        plannedSpends,
+        methods,
+        stepsByPayment,
+        rates,
+        calmWeather,
+        now,
+      });
+    } catch (err) {
+      console.error("Today: computeTightMode threw", err);
+    }
+  }
+
+  let forecastStory: ForecastStory | null = null;
+  if (aiEnabled) {
+    try {
+      forecastStory = await generateForecastStory({
+        payments,
+        withdrawals,
+        spends,
+        recurring,
+        recurringSkips,
+        loanInstallments,
+        plannedSpends,
+        methods,
+        stepsByPayment,
+        rates,
+        now,
+      });
+    } catch (err) {
+      console.error("Today: generateForecastStory threw", err);
+    }
   }
 
   return (
@@ -292,6 +348,9 @@ export default async function TodayPage() {
       sheetWallets={sheetWallets}
       currencies={currencies.map((c) => c.code)}
       safeToSpendBaseline={safeToSpendBaseline}
+      calmWeather={calmWeather}
+      tightMode={tightMode}
+      forecastStory={forecastStory}
     />
   );
 }

@@ -9,13 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  CenterModal,
+  CenterModalBody,
+  CenterModalFooter,
+} from "@/components/ui/center-modal";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -94,17 +91,16 @@ export function ClientDialog({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto scroll-muted">
-        <form onSubmit={onSubmit} className="flex h-full flex-col">
-          <SheetHeader>
-            <SheetTitle>{client ? "Edit client" : "New client"}</SheetTitle>
-            <SheetDescription>
-              Who they are, how they pay, and a line of context for the AI.
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="grid gap-5 px-4 py-6">
+    <CenterModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={client ? "Edit client" : "New client"}
+      description="Who they are, how they pay, and a line of context for the AI."
+      size="lg"
+    >
+      <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+        <CenterModalBody>
+          <div className="grid gap-3">
             <Field label="Name" required>
               <Input
                 value={state.name ?? ""}
@@ -127,7 +123,7 @@ export function ClientDialog({
                 placeholder="Boss · recurring iOS work · pays in CNY, often late"
               />
             </Field>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Email">
                 <Input
                   type="email"
@@ -176,7 +172,7 @@ export function ClientDialog({
                 placeholder="214 Bd Ibnou Sina"
               />
             </Field>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="City">
                 <Input
                   value={state.city ?? ""}
@@ -198,7 +194,7 @@ export function ClientDialog({
               Legal & tax
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="ICE">
                 <Input value={state.ice ?? ""} onChange={(e) => update("ice", e.target.value)} />
               </Field>
@@ -215,7 +211,7 @@ export function ClientDialog({
               Bank info (optional)
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Bank name">
                 <Input
                   value={state.bank_name ?? ""}
@@ -229,7 +225,7 @@ export function ClientDialog({
                 />
               </Field>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="IBAN">
                 <Input
                   value={state.iban ?? ""}
@@ -249,7 +245,7 @@ export function ClientDialog({
               <Textarea
                 value={state.notes ?? ""}
                 onChange={(e) => update("notes", e.target.value)}
-                rows={3}
+                rows={2}
                 placeholder="Anything worth remembering about this client…"
               />
             </Field>
@@ -292,18 +288,17 @@ export function ClientDialog({
               </>
             )}
           </div>
-
-          <SheetFooter className="mt-auto border-t border-border/60 bg-background/70 backdrop-blur">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : client ? "Save changes" : "Add client"}
-            </Button>
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
+        </CenterModalBody>
+        <CenterModalFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={pending}>
+            {pending ? "Saving…" : client ? "Save changes" : "Add client"}
+          </Button>
+        </CenterModalFooter>
+      </form>
+    </CenterModal>
   );
 }
 
@@ -317,8 +312,8 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
-      <Label className="text-xs font-medium text-muted-foreground">
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
         {required && <span className="text-destructive"> *</span>}
       </Label>
