@@ -3,13 +3,41 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { logEvent } from "@/lib/data/events";
-import type { CurrencyCode, ProjectStatus } from "@/lib/supabase/types";
+import type {
+  AiQuestion,
+  AiQuestionKind,
+  AiQuestionSourceType,
+  CurrencyCode,
+  LoanDirection,
+  LoanStatus,
+  ProjectStatus,
+  RecurringScheduleKind,
+  RecurringSpend,
+} from "@/lib/supabase/types";
 
 async function userOrThrow() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Unauthenticated");
   return { supabase, userId: user.id };
+}
+
+// Drops the AI safe-to-spend cache row for this user so the next read recomputes
+// from scratch. Called from every mutation that changes the math (spends,
+// payments, withdrawals, recurring paid/skipped, loan installments, rule edits).
+// Best-effort: failures don't block the parent mutation. Reuses the caller's
+// supabase client when passed to avoid the redundant createClient() round-trip
+// on hot paths.
+async function invalidateAiSafeSpendCache(
+  userId: string,
+  existing?: Awaited<ReturnType<typeof createClient>>,
+): Promise<void> {
+  try {
+    const supabase = existing ?? (await createClient());
+    await supabase.from("ai_safe_spend_cache").delete().eq("user_id", userId);
+  } catch {
+    // Swallow — cache is regenerable; not worth failing a real write.
+  }
 }
 
 // ───────────────────────────────────────── Clients ──
@@ -94,7 +122,7 @@ export async function updateClientRecord(id: string, input: Partial<ClientInput>
 
 export async function archiveClient(id: string, archived = true) {
   const { supabase, userId } = await userOrThrow();
-  const { error } = await supabase.from("clients").update({ archived }).eq("id", id);
+  const { error } = await supabase.from("clients").update({ archived }).eq("id", id).eq("user_id", userId);
   if (error) throw error;
   await logEvent({
     userId,
@@ -110,7 +138,7 @@ export async function archiveClient(id: string, archived = true) {
 
 export async function deleteClient(id: string) {
   const { supabase, userId } = await userOrThrow();
-  const { error } = await supabase.from("clients").delete().eq("id", id);
+  const { error } = await supabase.from("clients").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
   await logEvent({
     userId,
@@ -137,6 +165,22 @@ export type ProjectInput = {
   tags?: string[];
 };
 
+// Mirror of CLIENT_WRITABLE: only these columns may be written from a project
+// form. Stops the dialog from echoing back id/user_id/created_at/updated_at and
+// silently breaking the touch trigger or trying to flip user_id.
+const PROJECT_WRITABLE = [
+  "client_id", "category_id", "title", "description", "amount", "currency",
+  "status", "due_date", "completed_at", "tags", "notes",
+] as const;
+
+function pickProjectFields(input: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const key of PROJECT_WRITABLE) {
+    if (key in input) out[key] = input[key];
+  }
+  return out;
+}
+
 export async function createProject(input: ProjectInput) {
   const { supabase, userId } = await userOrThrow();
   const status = input.status ?? "unpaid";
@@ -150,16 +194,23 @@ export async function createProject(input: ProjectInput) {
     .single();
   if (error) throw error;
 
-  // Creating a project directly in "paid" status (unusual but possible) should
-  // also log a payment so the dashboard credits the earnings.
+  // Creating a project directly in "paid" status (unusual but possible) routes
+  // through addPaymentWithChain so allocations, locks, and cache invalidation
+  // all run — a raw INSERT bypasses every guard the chain pipeline holds.
   if (status === "paid" && input.amount > 0) {
-    await supabase.from("payments").insert({
-      user_id: userId,
+    await addPaymentWithChain({
       project_id: data.id as string,
-      amount: input.amount,
-      currency: input.currency,
       paid_at: new Date().toISOString().slice(0, 10),
-      method: "Marked paid",
+      steps: [
+        {
+          method_id: null,
+          amount_in: input.amount,
+          currency_in: input.currency,
+          amount_out: input.amount,
+          currency_out: input.currency,
+        },
+      ],
+      notes: "Marked paid on project creation",
     });
   }
 
@@ -180,7 +231,8 @@ export async function createProject(input: ProjectInput) {
 
 export async function updateProject(id: string, input: Partial<ProjectInput>) {
   const { supabase, userId } = await userOrThrow();
-  const { error } = await supabase.from("projects").update(input).eq("id", id);
+  const patch = pickProjectFields(input as Record<string, unknown>);
+  const { error } = await supabase.from("projects").update(patch).eq("id", id).eq("user_id", userId);
   if (error) throw error;
   await logEvent({
     userId,
@@ -190,6 +242,7 @@ export async function updateProject(id: string, input: Partial<ProjectInput>) {
     entityId: id,
     clientId: input.client_id,
   });
+  await invalidateAiSafeSpendCache(userId, supabase);
   revalidatePath("/projects");
   revalidatePath("/dashboard");
 }
@@ -265,7 +318,7 @@ export async function deleteProject(id: string) {
     .select("title,client_id")
     .eq("id", id)
     .maybeSingle();
-  const { error } = await supabase.from("projects").delete().eq("id", id);
+  const { error } = await supabase.from("projects").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
   await logEvent({
     userId,
@@ -293,33 +346,44 @@ function toBaseAmount(amount: number, currency: string, rates: RatePair[]): numb
   return amount * r;
 }
 
-// Recompute a project's payment status from same-currency payment totals.
-// (Mixed-currency partials fall through to base comparison.)
+// Recompute a project's payment status from allocations (migration 0021).
+// allocation_amount is summed in the project currency when all allocations
+// match; allocations in other currencies fall through to base comparison via
+// allocation_base. Skipped on archived projects.
 async function recomputeProjectStatus(
   supabase: Awaited<ReturnType<typeof createClient>>,
   projectId: string,
 ) {
-  const [{ data: project }, { data: payments }, { data: rates }] = await Promise.all([
+  const [{ data: project }, { data: allocations }, { data: rates }] = await Promise.all([
     supabase.from("projects").select("*").eq("id", projectId).maybeSingle(),
-    supabase.from("payments").select("amount,currency,gross_at_market_base").eq("project_id", projectId),
+    supabase
+      .from("payment_project_allocations")
+      .select("allocation_amount,allocation_currency,allocation_base")
+      .eq("project_id", projectId),
     supabase.from("exchange_rates").select("code,rate_to_base"),
   ]);
   if (!project || project.status === "archived") return project ?? null;
 
-  const sameCurrency = (payments ?? []).filter((p) => p.currency === project.currency);
-  const mixed = (payments ?? []).length !== sameCurrency.length;
+  const allocs = allocations ?? [];
+  const sameCurrency = allocs.filter((a) => a.allocation_currency === project.currency);
+  const mixed = allocs.length !== sameCurrency.length;
 
   let paidRatio: number;
   if (mixed) {
-    // Compare in base currency when payments span currencies.
+    // Compare in base currency when allocations span currencies.
     const projectBase = toBaseAmount(Number(project.amount), project.currency, (rates ?? []) as RatePair[]);
-    const paidBase = (payments ?? []).reduce(
-      (s, p) => s + Number(p.gross_at_market_base ?? toBaseAmount(Number(p.amount), p.currency, (rates ?? []) as RatePair[])),
+    const paidBase = allocs.reduce(
+      (s, a) =>
+        s +
+        Number(
+          a.allocation_base ??
+            toBaseAmount(Number(a.allocation_amount), a.allocation_currency, (rates ?? []) as RatePair[]),
+        ),
       0,
     );
     paidRatio = projectBase > 0 ? paidBase / projectBase : 0;
   } else {
-    const paid = sameCurrency.reduce((s, p) => s + Number(p.amount), 0);
+    const paid = sameCurrency.reduce((s, a) => s + Number(a.allocation_amount), 0);
     paidRatio = Number(project.amount) > 0 ? paid / Number(project.amount) : 0;
   }
 
@@ -350,8 +414,18 @@ export type ChainStepInput = {
   notes?: string;
 };
 
-export type PaymentChainInput = {
+export type PaymentProjectAllocationInput = {
   project_id: string;
+  allocation_amount: number;
+  currency: string;
+  notes?: string;
+};
+
+export type PaymentChainInput = {
+  // Optional now — when `projects` is provided the legacy single project_id is
+  // ignored (but accepted for back-compat with single-project callers).
+  project_id?: string;
+  projects?: PaymentProjectAllocationInput[];
   paid_at: string;
   steps: ChainStepInput[];
   reference?: string;
@@ -360,6 +434,9 @@ export type PaymentChainInput = {
 
 // The canonical "I got paid" action. Takes the full chain, snapshots the
 // market value + the implied total fee, and locks the landed PHP.
+// Multi-project: if input.projects is provided, splits net_amount_base pro-rata
+// across allocations (per allocation_base via today's FX). The denormalized
+// payments.project_id is set to the LARGEST allocation's project_id.
 export async function addPaymentWithChain(input: PaymentChainInput) {
   const { supabase, userId } = await userOrThrow();
   if (!input.steps.length) throw new Error("A payment needs at least one step.");
@@ -367,14 +444,34 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
   const first = input.steps[0];
   const final = input.steps[input.steps.length - 1];
 
-  const [{ data: project }, { data: settings }, { data: rates }] = await Promise.all([
-    supabase.from("projects").select("*").eq("id", input.project_id).single(),
+  const [{ data: settings }, { data: rates }] = await Promise.all([
     supabase.from("settings").select("base_currency").eq("user_id", userId).maybeSingle(),
     supabase.from("exchange_rates").select("code,rate_to_base").eq("user_id", userId),
   ]);
-  if (!project) throw new Error("Project not found");
   const baseCurrency = settings?.base_currency ?? "PHP";
   const rateRows = (rates ?? []) as RatePair[];
+
+  const hasMulti = !!(input.projects && input.projects.length > 0);
+  if (!hasMulti && !input.project_id) throw new Error("Payment needs a project.");
+
+  // Resolve the headline project for denormalized payments.project_id. With
+  // multiple allocations, the LARGEST share wins (broken ties → first listed).
+  let primaryProjectId: string;
+  if (hasMulti) {
+    const sorted = [...input.projects!].sort(
+      (a, b) => Number(b.allocation_amount) - Number(a.allocation_amount),
+    );
+    primaryProjectId = sorted[0].project_id;
+  } else {
+    primaryProjectId = input.project_id!;
+  }
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select("*")
+    .eq("id", primaryProjectId)
+    .single();
+  if (!project) throw new Error("Project not found");
 
   // net = the final hop's output, expressed in base currency (PHP).
   const netBase =
@@ -389,7 +486,7 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
     .from("payments")
     .insert({
       user_id: userId,
-      project_id: input.project_id,
+      project_id: primaryProjectId,
       amount: first.amount_in,
       currency: first.currency_in,
       paid_at: input.paid_at,
@@ -419,12 +516,70 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
   const { error: stepErr } = await supabase.from("payment_steps").insert(stepRows);
   if (stepErr) throw stepErr;
 
-  await recomputeProjectStatus(supabase, input.project_id);
+  // Allocations — multi-project pro-rates netBase across shares by allocation_base
+  // (each share's PHP value at today's FX, then normalized so allocations sum
+  // exactly to netBase even when FX rounding would have drifted). Single-project
+  // payments write one row mirroring net_amount_base for backwards compat with
+  // recomputeProjectStatus + project_paid_from_allocations.
+  if (hasMulti) {
+    const shareBaseRaw = input.projects!.map((p) =>
+      toBaseAmount(Number(p.allocation_amount), p.currency, rateRows),
+    );
+    const totalShareBase = shareBaseRaw.reduce((s, v) => s + v, 0);
+    const netBaseRounded = Math.round(netBase * 100) / 100;
+    // Round the first N-1 shares independently; force the last share to absorb
+    // the rounding remainder so allocations sum EXACTLY to net_amount_base.
+    // Otherwise N/2 centavos of drift can flip recomputeProjectStatus between
+    // paid and partially_paid.
+    const roundedShares: number[] = [];
+    let runningSum = 0;
+    for (let i = 0; i < input.projects!.length; i++) {
+      if (i < input.projects!.length - 1) {
+        const raw = totalShareBase > 0 ? (shareBaseRaw[i] / totalShareBase) * netBase : 0;
+        const rounded = Math.round(raw * 100) / 100;
+        roundedShares.push(rounded);
+        runningSum += rounded;
+      } else {
+        const last = Math.round((netBaseRounded - runningSum) * 100) / 100;
+        roundedShares.push(last);
+      }
+    }
+    const allocRows = input.projects!.map((p, i) => ({
+      payment_id: paymentRow.id,
+      project_id: p.project_id,
+      allocation_amount: p.allocation_amount,
+      allocation_currency: p.currency,
+      allocation_base: roundedShares[i],
+      notes: p.notes ?? null,
+    }));
+    const { error: allocErr } = await supabase
+      .from("payment_project_allocations")
+      .insert(allocRows);
+    if (allocErr) throw allocErr;
+  } else {
+    const { error: allocErr } = await supabase.from("payment_project_allocations").insert({
+      payment_id: paymentRow.id,
+      project_id: primaryProjectId,
+      allocation_amount: first.amount_in,
+      allocation_currency: first.currency_in,
+      allocation_base: Math.round(netBase * 100) / 100,
+      notes: null,
+    });
+    if (allocErr) throw allocErr;
+  }
+
+  // Recompute every touched project (multi-project payments fan out).
+  const touchedProjectIds = hasMulti
+    ? Array.from(new Set(input.projects!.map((p) => p.project_id)))
+    : [primaryProjectId];
+  for (const pid of touchedProjectIds) {
+    await recomputeProjectStatus(supabase, pid);
+  }
 
   await logEvent({
     userId,
     kind: "payment.added",
-    title: `Payment · ${first.currency_in} ${Number(first.amount_in).toFixed(2)} → ${baseCurrency} ${netBase.toFixed(0)} net on ${project.title}`,
+    title: `Payment · ${first.currency_in} ${Number(first.amount_in).toFixed(2)} → ${baseCurrency} ${netBase.toFixed(0)} net on ${project.title}${hasMulti ? ` +${touchedProjectIds.length - 1} more` : ""}`,
     entityType: "payment",
     entityId: paymentRow.id as string,
     clientId: project.client_id as string,
@@ -433,9 +588,13 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
       gross_base: grossBase,
       fee_base: feeBase,
       steps: input.steps.length,
-      project_id: input.project_id,
+      project_id: primaryProjectId,
+      project_ids: touchedProjectIds,
+      multi_project: hasMulti,
     },
   });
+
+  await invalidateAiSafeSpendCache(userId, supabase);
 
   revalidatePath("/today");
   revalidatePath("/projects");
@@ -467,13 +626,31 @@ export async function addPayment(input: PaymentInput) {
   });
 }
 
+// Safe-field edits ONLY (notes, reference, invoice_id, method). Direct money
+// edits (project_id / amount / currency / paid_at) bypass allocation rewrites
+// and project status recompute — go through updatePaymentDetails for the
+// gross/net/method edit, or delete + addPaymentWithChain to redo the chain.
 export async function updatePayment(
   id: string,
   input: Partial<PaymentInput> & { invoice_id?: string | null },
 ) {
-  const { supabase } = await userOrThrow();
-  const { error } = await supabase.from("payments").update(input).eq("id", id);
+  const { supabase, userId } = await userOrThrow();
+  if ("project_id" in input || "amount" in input || "currency" in input || "paid_at" in input) {
+    throw new Error(
+      "updatePayment only accepts safe fields (notes, reference, invoice_id, method). Use updatePaymentDetails or addPaymentWithChain for money edits.",
+    );
+  }
+  const { error } = await supabase.from("payments").update(input).eq("id", id).eq("user_id", userId);
   if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "payment.updated",
+    title: "Updated payment",
+    entityType: "payment",
+    entityId: id,
+    metadata: { fields_changed: Object.keys(input) },
+  });
+  await invalidateAiSafeSpendCache(userId);
   revalidatePath("/projects");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
@@ -586,6 +763,7 @@ export async function updatePaymentDetails(
     metadata: { net_base: net, gross_base: gross, fee_base: fee, fee_unknown: !!input.feeUnknown },
   });
 
+  await invalidateAiSafeSpendCache(userId);
   revalidatePath("/today");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
@@ -594,23 +772,27 @@ export async function updatePaymentDetails(
 }
 
 export async function deletePayment(id: string) {
-  const { supabase } = await userOrThrow();
+  const { supabase, userId } = await userOrThrow();
 
-  // Grab the project id before deleting so we can recompute status afterwards.
-  const { data: payment } = await supabase
-    .from("payments")
-    .select("project_id")
-    .eq("id", id)
-    .maybeSingle();
+  // Grab affected projects before deleting so we can recompute their status
+  // afterwards. Multi-project payments fan out to each allocation.
+  const [{ data: payment }, { data: allocations }] = await Promise.all([
+    supabase.from("payments").select("project_id").eq("id", id).maybeSingle(),
+    supabase.from("payment_project_allocations").select("project_id").eq("payment_id", id),
+  ]);
 
-  // payment_steps cascade-delete via FK.
-  const { error } = await supabase.from("payments").delete().eq("id", id);
+  // payment_steps + payment_project_allocations cascade-delete via FK.
+  const { error } = await supabase.from("payments").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
 
-  if (payment?.project_id) {
-    await recomputeProjectStatus(supabase, payment.project_id);
+  const touched = new Set<string>();
+  if (payment?.project_id) touched.add(payment.project_id as string);
+  for (const a of allocations ?? []) touched.add(a.project_id as string);
+  for (const pid of touched) {
+    await recomputeProjectStatus(supabase, pid);
   }
 
+  await invalidateAiSafeSpendCache(userId);
   revalidatePath("/projects");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
@@ -1138,6 +1320,7 @@ export async function createWithdrawal(input: WithdrawalInput) {
     metadata: { gross_base: gross, net_base: net, fee_base: fee, from_method_id: input.from_method_id },
   });
 
+  await invalidateAiSafeSpendCache(userId, supabase);
   revalidatePath("/today");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
@@ -1149,6 +1332,7 @@ export async function deleteWithdrawal(id: string) {
   const { error } = await supabase.from("withdrawals").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
   await logEvent({ userId, kind: "withdrawal.removed", title: "Removed a withdrawal", entityType: "withdrawal", entityId: id });
+  await invalidateAiSafeSpendCache(userId);
   revalidatePath("/today");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
@@ -1193,4 +1377,1027 @@ export async function deleteClientMemoryEntry(id: string, clientId: string) {
   const { error } = await supabase.from("client_memory_entries").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
   revalidatePath(`/clients/${clientId}`);
+}
+
+// ───────────────────────────────────────── Spends ──
+//
+// Spends are the headline outflow ledger. amount_base is LOCKED at entry time
+// via today's FX (same immutability rule as paid payments). Categories are
+// stored as link rows (many-per-spend tag model). Optional `items` are sparse
+// receipt-like sub-rows. covers_periods > 1 with a recurring_spend_id means
+// this single row pays for N consecutive periods — the engine emits N-1 skip
+// rows so the reminder layer stays quiet. loan_installment_id wires the spend
+// to a specific installment, flipping it to paid + caching the back-edge.
+
+export type SpendItemInput = {
+  name: string;
+  amount?: number | null;
+  vat_amount?: number | null;
+};
+
+export type SpendInput = {
+  wallet_id: string;
+  spent_at?: string;
+  amount: number;
+  currency: string;
+  description?: string | null;
+  notes?: string | null;
+  vat_amount?: number | null;
+  business_relevant?: boolean;
+  covers_periods?: number;
+  recurring_spend_id?: string | null;
+  loan_id?: string | null;
+  loan_installment_id?: string | null;
+  categoryIds?: string[];
+  items?: SpendItemInput[];
+};
+
+export async function createSpend(input: SpendInput) {
+  const { supabase, userId } = await userOrThrow();
+  const amount = Number(input.amount);
+  if (!(amount > 0)) throw new Error("Spend amount must be greater than 0.");
+  if (!input.wallet_id) throw new Error("Pick a wallet.");
+  if (!input.currency) throw new Error("Pick a currency.");
+
+  const { data: rates } = await supabase
+    .from("exchange_rates")
+    .select("code,rate_to_base")
+    .eq("user_id", userId);
+  const rateRows = (rates ?? []) as RatePair[];
+  const amountBase = toBaseAmount(amount, input.currency, rateRows);
+  const spentAt = input.spent_at ?? new Date().toISOString().slice(0, 10);
+  const coversPeriods = Math.max(1, Math.floor(Number(input.covers_periods ?? 1)));
+
+  const { data: spendRow, error: spendErr } = await supabase
+    .from("spends")
+    .insert({
+      user_id: userId,
+      wallet_id: input.wallet_id,
+      spent_at: spentAt,
+      amount,
+      currency: input.currency,
+      amount_base: Math.round(amountBase * 100) / 100,
+      description: input.description ?? null,
+      notes: input.notes ?? null,
+      vat_amount: input.vat_amount ?? null,
+      business_relevant: !!input.business_relevant,
+      covers_periods: coversPeriods,
+      recurring_spend_id: input.recurring_spend_id ?? null,
+      loan_id: input.loan_id ?? null,
+      loan_installment_id: input.loan_installment_id ?? null,
+    })
+    .select("id")
+    .single();
+  if (spendErr || !spendRow) throw spendErr ?? new Error("Failed to save spend");
+  const spendId = spendRow.id as string;
+
+  if (input.categoryIds?.length) {
+    const linkRows = input.categoryIds.map((cid) => ({ spend_id: spendId, category_id: cid }));
+    const { error: linkErr } = await supabase.from("spend_category_links").insert(linkRows);
+    if (linkErr) throw linkErr;
+  }
+
+  if (input.items?.length) {
+    const itemRows = input.items.map((it, i) => ({
+      spend_id: spendId,
+      name: it.name,
+      amount: it.amount ?? null,
+      vat_amount: it.vat_amount ?? null,
+      sort_order: i,
+    }));
+    const { error: itemErr } = await supabase.from("spend_items").insert(itemRows);
+    if (itemErr) throw itemErr;
+  }
+
+  // Pre-payment: a single row settles N consecutive recurring periods. Emit
+  // N-1 skip rows for the future periods so the reminder engine stays quiet.
+  if (coversPeriods > 1 && input.recurring_spend_id) {
+    const { data: rule } = await supabase
+      .from("recurring_spends")
+      .select("*")
+      .eq("id", input.recurring_spend_id)
+      .maybeSingle();
+    if (rule) {
+      const { prepayPeriodKeys } = await import("@/lib/recurring");
+      const futureKeys = prepayPeriodKeys(
+        rule as unknown as RecurringSpend,
+        new Date(spentAt),
+        coversPeriods,
+      );
+      if (futureKeys.length > 0) {
+        const skipRows = futureKeys.map((key) => ({
+          recurring_spend_id: input.recurring_spend_id,
+          period_key: key,
+          source: "covered_by_prepay" as const,
+          spend_id: spendId,
+        }));
+        // Upsert so re-saves don't conflict with existing skips for the same period.
+        const { error: skipErr } = await supabase
+          .from("recurring_spend_skips")
+          .upsert(skipRows, { onConflict: "recurring_spend_id,period_key" });
+        if (skipErr) throw skipErr;
+      }
+    }
+  }
+
+  // Loan installment: flip the installment to paid + wire the back-edge.
+  if (input.loan_installment_id) {
+    const { error: instErr } = await supabase
+      .from("loan_installments")
+      .update({ status: "paid", spend_id: spendId })
+      .eq("id", input.loan_installment_id);
+    if (instErr) throw instErr;
+  }
+
+  await logEvent({
+    userId,
+    kind: "spend.added",
+    title: `Spent ${input.currency} ${amount.toFixed(2)}${input.description ? ` · ${input.description}` : ""}`,
+    entityType: "spend",
+    entityId: spendId,
+    metadata: {
+      amount_base: amountBase,
+      wallet_id: input.wallet_id,
+      business_relevant: !!input.business_relevant,
+      covers_periods: coversPeriods,
+      recurring_spend_id: input.recurring_spend_id ?? null,
+      loan_id: input.loan_id ?? null,
+      loan_installment_id: input.loan_installment_id ?? null,
+      category_count: input.categoryIds?.length ?? 0,
+    },
+  });
+
+  await invalidateAiSafeSpendCache(userId, supabase);
+  revalidatePath("/spending");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+  return { id: spendId };
+}
+
+// Patch editable fields on a spend. NEVER recomputes amount_base from
+// amount × current FX — past spends are immutable to FX drift. If you really
+// changed the spent amount, the base also changes (that's a correction, not a
+// re-float), so the FX rate at update time is used for the new amount.
+export async function updateSpend(id: string, input: Partial<SpendInput>) {
+  const { supabase, userId } = await userOrThrow();
+
+  const patch: Record<string, unknown> = {};
+  const writable: (keyof SpendInput)[] = [
+    "wallet_id",
+    "spent_at",
+    "description",
+    "notes",
+    "vat_amount",
+    "business_relevant",
+    "covers_periods",
+    "recurring_spend_id",
+    "loan_id",
+    "loan_installment_id",
+  ];
+  for (const k of writable) {
+    if (k in input) patch[k] = (input as Record<string, unknown>)[k] ?? null;
+  }
+
+  // If amount/currency changed, recompute amount_base via TODAY's FX. This is a
+  // correction, not a re-float — the user explicitly changed what was spent.
+  if (input.amount !== undefined || input.currency !== undefined) {
+    const { data: existing } = await supabase
+      .from("spends")
+      .select("amount,currency")
+      .eq("id", id)
+      .maybeSingle();
+    if (!existing) throw new Error("Spend not found");
+    const nextAmount = Number(input.amount ?? existing.amount);
+    const nextCurrency = (input.currency ?? existing.currency) as string;
+    if (!(nextAmount > 0)) throw new Error("Spend amount must be greater than 0.");
+    const { data: rates } = await supabase
+      .from("exchange_rates")
+      .select("code,rate_to_base")
+      .eq("user_id", userId);
+    const base = toBaseAmount(nextAmount, nextCurrency, (rates ?? []) as RatePair[]);
+    patch.amount = nextAmount;
+    patch.currency = nextCurrency;
+    patch.amount_base = Math.round(base * 100) / 100;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    const { error } = await supabase.from("spends").update(patch).eq("id", id).eq("user_id", userId);
+    if (error) throw error;
+  }
+
+  if (input.categoryIds) {
+    await supabase.from("spend_category_links").delete().eq("spend_id", id);
+    if (input.categoryIds.length > 0) {
+      const linkRows = input.categoryIds.map((cid) => ({ spend_id: id, category_id: cid }));
+      const { error: linkErr } = await supabase.from("spend_category_links").insert(linkRows);
+      if (linkErr) throw linkErr;
+    }
+  }
+
+  if (input.items) {
+    await supabase.from("spend_items").delete().eq("spend_id", id);
+    if (input.items.length > 0) {
+      const itemRows = input.items.map((it, i) => ({
+        spend_id: id,
+        name: it.name,
+        amount: it.amount ?? null,
+        vat_amount: it.vat_amount ?? null,
+        sort_order: i,
+      }));
+      const { error: itemErr } = await supabase.from("spend_items").insert(itemRows);
+      if (itemErr) throw itemErr;
+    }
+  }
+
+  await logEvent({
+    userId,
+    kind: "spend.updated",
+    title: `Updated spend${input.description ? ` · ${input.description}` : ""}`,
+    entityType: "spend",
+    entityId: id,
+  });
+
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/spending");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+export async function deleteSpend(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  // spend_category_links + spend_items cascade-delete via FK.
+  const { error } = await supabase.from("spends").delete().eq("id", id).eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "spend.removed",
+    title: "Removed a spend",
+    entityType: "spend",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/spending");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+// ───────────────────────────────────────── Spend categories ──
+export type SpendCategoryInput = {
+  name: string;
+  icon?: string | null;
+  color?: string | null;
+  sort_order?: number;
+};
+
+export async function createSpendCategory(input: SpendCategoryInput) {
+  const { supabase, userId } = await userOrThrow();
+  const name = input.name.trim();
+  if (!name) throw new Error("Category needs a name.");
+  const { data, error } = await supabase
+    .from("spend_categories")
+    .insert({
+      user_id: userId,
+      name,
+      icon: input.icon ?? null,
+      color: input.color ?? null,
+      sort_order: input.sort_order ?? 0,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "spend_category.created",
+    title: `Added category · ${name}`,
+    entityType: "spend_category",
+    entityId: data.id as string,
+  });
+  revalidatePath("/settings");
+  revalidatePath("/spending");
+  return data;
+}
+
+export async function updateSpendCategory(id: string, input: Partial<SpendCategoryInput>) {
+  const { supabase, userId } = await userOrThrow();
+  const patch: Record<string, unknown> = {};
+  if ("name" in input) patch.name = input.name?.trim();
+  if ("icon" in input) patch.icon = input.icon ?? null;
+  if ("color" in input) patch.color = input.color ?? null;
+  if ("sort_order" in input) patch.sort_order = input.sort_order ?? 0;
+  const { error } = await supabase
+    .from("spend_categories")
+    .update(patch)
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "spend_category.updated",
+    title: `Updated category${input.name ? ` · ${input.name}` : ""}`,
+    entityType: "spend_category",
+    entityId: id,
+  });
+  revalidatePath("/settings");
+  revalidatePath("/spending");
+}
+
+export async function archiveSpendCategory(id: string, archived = true) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("spend_categories")
+    .update({ archived })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "spend_category.updated",
+    title: archived ? "Archived category" : "Restored category",
+    entityType: "spend_category",
+    entityId: id,
+    metadata: { archived },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/spending");
+}
+
+export async function deleteSpendCategory(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  // spend_category_links cascade-delete via FK; existing spends keep their
+  // remaining tags (and lose this one) and stay in the ledger.
+  const { error } = await supabase
+    .from("spend_categories")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "spend_category.deleted",
+    title: "Deleted category",
+    entityType: "spend_category",
+    entityId: id,
+  });
+  revalidatePath("/settings");
+  revalidatePath("/spending");
+}
+
+// ───────────────────────────────────────── Recurring spends ──
+export type RecurringSpendInput = {
+  wallet_id?: string | null;
+  label: string;
+  expected_amount: number;
+  expected_currency: string;
+  schedule_kind: RecurringScheduleKind;
+  day_of_month?: number | null;
+  day_of_week?: number | null;
+  every_n_value?: number | null;
+  window_before_days?: number;
+  window_after_days?: number;
+  default_category_ids?: string[];
+  business_relevant?: boolean;
+  active?: boolean;
+  notes?: string | null;
+};
+
+export async function createRecurringSpend(input: RecurringSpendInput) {
+  const { supabase, userId } = await userOrThrow();
+  const label = input.label.trim();
+  if (!label) throw new Error("Recurring rule needs a label.");
+  if (!(Number(input.expected_amount) > 0)) throw new Error("Expected amount must be greater than 0.");
+
+  const { data, error } = await supabase
+    .from("recurring_spends")
+    .insert({
+      user_id: userId,
+      wallet_id: input.wallet_id ?? null,
+      label,
+      expected_amount: input.expected_amount,
+      expected_currency: input.expected_currency,
+      schedule_kind: input.schedule_kind,
+      day_of_month: input.day_of_month ?? null,
+      day_of_week: input.day_of_week ?? null,
+      every_n_value: input.every_n_value ?? null,
+      window_before_days: input.window_before_days ?? 3,
+      window_after_days: input.window_after_days ?? 3,
+      default_category_ids: input.default_category_ids ?? [],
+      business_relevant: !!input.business_relevant,
+      active: input.active ?? true,
+      notes: input.notes ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+
+  await logEvent({
+    userId,
+    kind: "recurring_spend.created",
+    title: `Added recurring · ${label}`,
+    entityType: "recurring_spend",
+    entityId: data.id as string,
+    metadata: { schedule_kind: input.schedule_kind, expected_amount: input.expected_amount, expected_currency: input.expected_currency },
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/settings");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+  return data;
+}
+
+export async function updateRecurringSpend(id: string, input: Partial<RecurringSpendInput>) {
+  const { supabase, userId } = await userOrThrow();
+  const patch: Record<string, unknown> = {};
+  const writable: (keyof RecurringSpendInput)[] = [
+    "wallet_id",
+    "label",
+    "expected_amount",
+    "expected_currency",
+    "schedule_kind",
+    "day_of_month",
+    "day_of_week",
+    "every_n_value",
+    "window_before_days",
+    "window_after_days",
+    "default_category_ids",
+    "business_relevant",
+    "active",
+    "notes",
+  ];
+  for (const k of writable) {
+    if (k in input) patch[k] = (input as Record<string, unknown>)[k];
+  }
+  const { error } = await supabase
+    .from("recurring_spends")
+    .update(patch)
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+
+  await logEvent({
+    userId,
+    kind: "recurring_spend.updated",
+    title: `Updated recurring${input.label ? ` · ${input.label}` : ""}`,
+    entityType: "recurring_spend",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/settings");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+export async function deleteRecurringSpend(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  // recurring_spend_skips cascade-delete via FK. Past spends with
+  // recurring_spend_id pointing here become orphaned (SET NULL) and remain
+  // in the ledger — past money paid is immutable.
+  const { error } = await supabase
+    .from("recurring_spends")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "recurring_spend.deleted",
+    title: "Deleted recurring",
+    entityType: "recurring_spend",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/settings");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+export type MarkRecurringPaidInput = {
+  recurring_spend_id: string;
+  wallet_id: string;
+  amount: number;
+  currency: string;
+  paid_at: string;
+  covers_periods?: number;
+  description?: string | null;
+  notes?: string | null;
+};
+
+// "I paid this recurring this period" from the Today nudge. Inherits the rule's
+// default categories + business_relevant flag, then defers to createSpend (which
+// handles covers_periods → skip rows + cache invalidation).
+export async function markRecurringPaid(input: MarkRecurringPaidInput) {
+  const { supabase, userId } = await userOrThrow();
+  const { data: rule } = await supabase
+    .from("recurring_spends")
+    .select("*")
+    .eq("id", input.recurring_spend_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!rule) throw new Error("Recurring rule not found.");
+
+  const result = await createSpend({
+    wallet_id: input.wallet_id,
+    spent_at: input.paid_at,
+    amount: input.amount,
+    currency: input.currency,
+    description: input.description ?? (rule.label as string),
+    notes: input.notes ?? null,
+    business_relevant: rule.business_relevant as boolean,
+    covers_periods: input.covers_periods ?? 1,
+    recurring_spend_id: input.recurring_spend_id,
+    categoryIds: (rule.default_category_ids as string[]) ?? [],
+  });
+
+  await logEvent({
+    userId,
+    kind: "recurring_spend.paid",
+    title: `Paid recurring · ${rule.label}`,
+    entityType: "recurring_spend",
+    entityId: input.recurring_spend_id,
+    metadata: {
+      spend_id: result.id,
+      covers_periods: input.covers_periods ?? 1,
+    },
+  });
+  await invalidateAiSafeSpendCache(userId);
+  return result;
+}
+
+export async function markRecurringSkipped(
+  recurring_spend_id: string,
+  period_key: string,
+  notes?: string | null,
+) {
+  const { supabase, userId } = await userOrThrow();
+  // Verify the rule belongs to this user (RLS-via-recurring on the skips table
+  // already guards this, but the explicit check gives a friendlier error).
+  const { data: rule } = await supabase
+    .from("recurring_spends")
+    .select("id,label")
+    .eq("id", recurring_spend_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!rule) throw new Error("Recurring rule not found.");
+
+  const { error } = await supabase
+    .from("recurring_spend_skips")
+    .upsert(
+      {
+        recurring_spend_id,
+        period_key,
+        source: "user_skip",
+        notes: notes ?? null,
+      },
+      { onConflict: "recurring_spend_id,period_key" },
+    );
+  if (error) throw error;
+
+  await logEvent({
+    userId,
+    kind: "recurring_spend.skipped",
+    title: `Skipped recurring · ${rule.label} · ${period_key}`,
+    entityType: "recurring_spend",
+    entityId: recurring_spend_id,
+    metadata: { period_key },
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+// ───────────────────────────────────────── Loans ──
+export type LoanInstallmentSeed = {
+  due_date: string;
+  expected_amount: number;
+  expected_currency: string;
+  notes?: string | null;
+};
+
+export type LoanInput = {
+  counterparty: string;
+  direction: LoanDirection;
+  principal_amount: number;
+  principal_currency: string;
+  borrowed_at?: string;
+  expected_return_by?: string | null;
+  notes?: string | null;
+  installments?: LoanInstallmentSeed[];
+};
+
+export async function createLoan(input: LoanInput) {
+  const { supabase, userId } = await userOrThrow();
+  const counterparty = input.counterparty.trim();
+  if (!counterparty) throw new Error("Loan needs a counterparty name.");
+  if (!(Number(input.principal_amount) > 0)) throw new Error("Principal must be greater than 0.");
+
+  const { data: rates } = await supabase
+    .from("exchange_rates")
+    .select("code,rate_to_base")
+    .eq("user_id", userId);
+  const principalBase = toBaseAmount(
+    Number(input.principal_amount),
+    input.principal_currency,
+    (rates ?? []) as RatePair[],
+  );
+
+  const { data: loan, error: loanErr } = await supabase
+    .from("loans")
+    .insert({
+      user_id: userId,
+      counterparty,
+      direction: input.direction,
+      principal_amount: input.principal_amount,
+      principal_currency: input.principal_currency,
+      principal_base: Math.round(principalBase * 100) / 100,
+      borrowed_at: input.borrowed_at ?? new Date().toISOString().slice(0, 10),
+      expected_return_by: input.expected_return_by ?? null,
+      notes: input.notes ?? null,
+    })
+    .select("id")
+    .single();
+  if (loanErr || !loan) throw loanErr ?? new Error("Failed to save loan");
+
+  if (input.installments?.length) {
+    const rows = input.installments.map((inst) => ({
+      loan_id: loan.id,
+      due_date: inst.due_date,
+      expected_amount: inst.expected_amount,
+      expected_currency: inst.expected_currency,
+      notes: inst.notes ?? null,
+    }));
+    const { error: instErr } = await supabase.from("loan_installments").insert(rows);
+    if (instErr) throw instErr;
+  }
+
+  await logEvent({
+    userId,
+    kind: "loan.created",
+    title: `${input.direction === "borrowed" ? "Borrowed from" : "Lent to"} ${counterparty} · ${input.principal_currency} ${Number(input.principal_amount).toFixed(2)}`,
+    entityType: "loan",
+    entityId: loan.id as string,
+    metadata: {
+      direction: input.direction,
+      principal_amount: input.principal_amount,
+      principal_currency: input.principal_currency,
+      principal_base: principalBase,
+      installment_count: input.installments?.length ?? 0,
+    },
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/loans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+  return loan;
+}
+
+export async function updateLoan(
+  id: string,
+  input: Partial<Pick<LoanInput, "counterparty" | "expected_return_by" | "notes"> & { status: LoanStatus }>,
+) {
+  const { supabase, userId } = await userOrThrow();
+  const patch: Record<string, unknown> = {};
+  if ("counterparty" in input) patch.counterparty = input.counterparty?.trim();
+  if ("expected_return_by" in input) patch.expected_return_by = input.expected_return_by ?? null;
+  if ("notes" in input) patch.notes = input.notes ?? null;
+  if ("status" in input) patch.status = input.status;
+  const { error } = await supabase.from("loans").update(patch).eq("id", id).eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "loan.updated",
+    title: `Updated loan${input.counterparty ? ` · ${input.counterparty}` : ""}`,
+    entityType: "loan",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/loans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+export async function closeLoan(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  const { error } = await supabase
+    .from("loans")
+    .update({ status: "closed" })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "loan.closed",
+    title: "Closed loan",
+    entityType: "loan",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/loans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+export async function deleteLoan(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  // loan_installments cascade-delete via FK. Past spends with loan_id pointing
+  // here become orphaned (SET NULL) — actual money paid stays in the ledger.
+  const { error } = await supabase.from("loans").delete().eq("id", id).eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "loan.deleted",
+    title: "Deleted loan",
+    entityType: "loan",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/loans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+// ───────────────────────────────────────── Loan installments ──
+export type LoanInstallmentInput = {
+  loan_id: string;
+  due_date: string;
+  expected_amount: number;
+  expected_currency: string;
+  notes?: string | null;
+};
+
+export async function createLoanInstallment(input: LoanInstallmentInput) {
+  const { supabase, userId } = await userOrThrow();
+  if (!(Number(input.expected_amount) > 0)) throw new Error("Installment amount must be greater than 0.");
+  const { data, error } = await supabase
+    .from("loan_installments")
+    .insert({
+      loan_id: input.loan_id,
+      due_date: input.due_date,
+      expected_amount: input.expected_amount,
+      expected_currency: input.expected_currency,
+      notes: input.notes ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "loan_installment.added",
+    title: `Added installment · due ${input.due_date}`,
+    entityType: "loan_installment",
+    entityId: data.id as string,
+    metadata: {
+      loan_id: input.loan_id,
+      due_date: input.due_date,
+      expected_amount: input.expected_amount,
+      expected_currency: input.expected_currency,
+    },
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/loans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+  return data;
+}
+
+export type MarkLoanInstallmentPaidInput = {
+  installment_id: string;
+  wallet_id: string;
+  amount: number;
+  currency: string;
+  paid_at: string;
+  notes?: string | null;
+};
+
+// Materialize a paid installment as a real spend. Auto-tags "Loan repayment"
+// (the seeded category from migration 0020) when the user has it. createSpend
+// flips the installment to paid + wires the back-edge.
+export async function markLoanInstallmentPaid(input: MarkLoanInstallmentPaidInput) {
+  const { supabase, userId } = await userOrThrow();
+
+  const { data: installment } = await supabase
+    .from("loan_installments")
+    .select("id,loan_id,expected_amount,expected_currency")
+    .eq("id", input.installment_id)
+    .maybeSingle();
+  if (!installment) throw new Error("Installment not found.");
+
+  const { data: loanRepaymentCat } = await supabase
+    .from("spend_categories")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("name", "Loan repayment")
+    .maybeSingle();
+
+  const result = await createSpend({
+    wallet_id: input.wallet_id,
+    spent_at: input.paid_at,
+    amount: input.amount,
+    currency: input.currency,
+    notes: input.notes ?? null,
+    loan_id: installment.loan_id as string,
+    loan_installment_id: input.installment_id,
+    categoryIds: loanRepaymentCat ? [loanRepaymentCat.id as string] : [],
+  });
+
+  await logEvent({
+    userId,
+    kind: "loan_installment.paid",
+    title: `Paid installment · ${input.currency} ${Number(input.amount).toFixed(2)}`,
+    entityType: "loan_installment",
+    entityId: input.installment_id,
+    metadata: { loan_id: installment.loan_id, spend_id: result.id },
+  });
+  await invalidateAiSafeSpendCache(userId);
+  return result;
+}
+
+export async function markLoanInstallmentSkipped(installment_id: string) {
+  const { supabase, userId } = await userOrThrow();
+  // Defense-in-depth: confirm the parent loan belongs to this user before the
+  // UPDATE. RLS via parent loan ownership already covers us, but a direct
+  // check here means a forged id can never even reach the write.
+  const { data: owned } = await supabase
+    .from("loan_installments")
+    .select("id, loans!inner(user_id)")
+    .eq("id", installment_id)
+    .eq("loans.user_id", userId)
+    .maybeSingle();
+  if (!owned) throw new Error("Installment not found.");
+  const { error } = await supabase
+    .from("loan_installments")
+    .update({ status: "skipped" })
+    .eq("id", installment_id);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "loan_installment.skipped",
+    title: "Skipped installment",
+    entityType: "loan_installment",
+    entityId: installment_id,
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/loans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+export async function deleteLoanInstallment(id: string) {
+  const { supabase, userId } = await userOrThrow();
+  // Same defense-in-depth as markLoanInstallmentSkipped — RLS covers us but
+  // make the ownership check explicit before a destructive DELETE.
+  const { data: owned } = await supabase
+    .from("loan_installments")
+    .select("id, loans!inner(user_id)")
+    .eq("id", id)
+    .eq("loans.user_id", userId)
+    .maybeSingle();
+  if (!owned) throw new Error("Installment not found.");
+  const { error } = await supabase.from("loan_installments").delete().eq("id", id);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "loan_installment.deleted",
+    title: "Deleted installment",
+    entityType: "loan_installment",
+    entityId: id,
+  });
+  await invalidateAiSafeSpendCache(userId);
+  revalidatePath("/loans");
+  revalidatePath("/today");
+  revalidatePath("/dashboard");
+}
+
+// ───────────────────────────────────────── User memory ──
+//
+// Raw entries accumulate, then Gemini folds them into the living
+// memory_consolidated doc on user_memory (mirrors the client memory pattern).
+// recordUserMemoryNote logs a user-authored note + triggers consolidation.
+// recordUserMemoryObservation is silent — the AI calling layer batches and
+// consolidates separately to keep the activity feed clean.
+
+export async function recordUserMemoryNote(content: string) {
+  const { supabase, userId } = await userOrThrow();
+  const trimmed = content.trim();
+  if (!trimmed) throw new Error("Write something first.");
+  const { data, error } = await supabase
+    .from("user_memory_entries")
+    .insert({ user_id: userId, content: trimmed, source: "user_note" })
+    .select("id")
+    .single();
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "user_memory.note_added",
+    title: "Added to your money memory",
+    entityType: "user_memory",
+    entityId: data.id as string,
+  });
+  // Non-blocking: kick off consolidation but don't await the heavy Gemini call.
+  // Mirrors the consolidateClientMemoryAction pattern — the UI re-renders fast
+  // while the AI fold runs in the background.
+  void import("@/lib/ai/user-memory").then((m) => m.consolidateUserMemory()).catch(() => {});
+  revalidatePath("/settings");
+  return data;
+}
+
+export async function recordUserMemoryObservation(content: string) {
+  const { supabase, userId } = await userOrThrow();
+  const trimmed = content.trim();
+  if (!trimmed) return null;
+  const { data, error } = await supabase
+    .from("user_memory_entries")
+    .insert({ user_id: userId, content: trimmed, source: "observation" })
+    .select("id")
+    .single();
+  if (error) throw error;
+  // No event log: observations are AI-internal noise; the activity feed stays
+  // for things the user did. The calling layer batches consolidation.
+  return data;
+}
+
+// ───────────────────────────────────────── Wallet opening balance ──
+//
+// Anchors what a holding wallet was carrying on a given date so the runway
+// countdown + safe-to-spend dial can subtract spends/withdrawals from a real
+// starting point instead of zero. Opening_balance is in PHP — the user picks
+// the wallet, types the PHP value they had on that day, and the math layer
+// sums everything from opening_balance_at forward. Touching this changes
+// holdings → safe-to-spend cache must be dropped.
+export type WalletOpeningBalanceInput = {
+  methodId: string;
+  amountBase: number;
+  dateOpt?: string;
+};
+
+export async function setWalletOpeningBalance(input: WalletOpeningBalanceInput) {
+  const { supabase, userId } = await userOrThrow();
+  if (!Number.isFinite(input.amountBase) || input.amountBase < 0) {
+    throw new Error("Opening balance must be 0 or more.");
+  }
+  const opening_balance_at = input.dateOpt ?? new Date().toISOString().slice(0, 10);
+  const { error } = await supabase
+    .from("payment_methods")
+    .update({
+      opening_balance_base: input.amountBase,
+      opening_balance_at,
+    })
+    .eq("id", input.methodId)
+    .eq("user_id", userId);
+  if (error) throw error;
+  await logEvent({
+    userId,
+    kind: "wallet.opening_balance_set",
+    title: `Set opening balance · PHP ${input.amountBase.toFixed(2)}`,
+    entityType: "payment_method",
+    entityId: input.methodId,
+    metadata: { amount_base: input.amountBase, at: opening_balance_at },
+  });
+  await invalidateAiSafeSpendCache(userId, supabase);
+  revalidatePath("/settings");
+  revalidatePath("/dashboard");
+  revalidatePath("/today");
+}
+
+// ───────────────────────────────────────── AI questions (Phase 1.5) ──
+//
+// Thin server-action wrappers around ai/ai-questions so the AI Questions card
+// on /today can call them directly from a client component. The heavy logic
+// (memory-fold on answer, event logging) lives in the underlying module.
+export async function queueAiQuestionAction(input: {
+  question: string;
+  kind: AiQuestionKind;
+  context: Record<string, unknown>;
+  options?: string[];
+  sourceEntityType?: AiQuestionSourceType;
+  sourceEntityId?: string;
+  priority?: number;
+}): Promise<AiQuestion> {
+  const { queueAiQuestion } = await import("@/lib/ai/ai-questions");
+  const row = await queueAiQuestion(input);
+  revalidatePath("/today");
+  return row;
+}
+
+export async function answerAiQuestionAction(id: string, answer: string): Promise<void> {
+  const { answerAiQuestion } = await import("@/lib/ai/ai-questions");
+  await answerAiQuestion(id, answer);
+  revalidatePath("/today");
+  revalidatePath("/settings");
+}
+
+export async function dismissAiQuestionAction(id: string): Promise<void> {
+  const { dismissAiQuestion } = await import("@/lib/ai/ai-questions");
+  await dismissAiQuestion(id);
+  revalidatePath("/today");
+}
+
+// Triggers the periodic curiosity sweep that fills the AI Questions inbox.
+// Manual entry-point for "ask me what you're missing now" + the future cron.
+export async function runCuriositySweepAction(): Promise<{
+  queued: number;
+  questions: AiQuestion[];
+}> {
+  const { runCuriositySweep } = await import("@/lib/ai/curiosity-sweep");
+  const summary = await runCuriositySweep();
+  revalidatePath("/today");
+  return summary;
 }

@@ -4,6 +4,7 @@ import type {
   Payment,
   PaymentMethod,
   PaymentStep,
+  Spend,
   Withdrawal,
 } from "@/lib/supabase/types";
 import { toBase } from "@/lib/money";
@@ -163,17 +164,20 @@ export function methodLeaderboard(
 
 // ───────────────────────────────────────── Holding wallets ──
 //
-// A holding wallet (coin.ph, Cash) carries a running balance. Money RECEIVED
-// into it = the net of every payment whose final chain step lands on this
-// method. Money WITHDRAWN out = the gross of every withdrawal logged against
-// it. The balance is what's still parked there.
+// A holding wallet (Cash, coin.ph, GCash, Wise, Bank account) carries a running
+// PHP-equivalent balance:
+//   balance = received  (sum of net of payments whose FINAL step lands here)
+//           − withdrawn (sum of gross of withdrawals out of this wallet)
+//           − spent     (sum of amount_base of spends drawn from this wallet)
 
 export interface HoldingBalanceRow {
   methodId: string;
   name: string;
-  received: number;  // total net landed into this wallet (base)
-  withdrawn: number; // total gross moved out (base)
-  balance: number;   // received − withdrawn (base)
+  opening: number;
+  received: number;
+  withdrawn: number;
+  spent: number;
+  balance: number;
 }
 
 // The method a payment ultimately landed on = its final step's method.
@@ -186,29 +190,39 @@ export function holdingBalances(
   payments: Payment[],
   stepsByPayment: Map<string, PaymentStep[]>,
   withdrawals: Withdrawal[],
+  spends: Spend[] = [],
 ): HoldingBalanceRow[] {
   const holding = methods.filter((m) => m.is_holding);
   if (holding.length === 0) return [];
+  const holdingIds = new Set(holding.map((m) => m.id));
 
   const received = new Map<string, number>();
   for (const p of payments) {
     const landedOn = landingMethodId(stepsByPayment.get(p.id) ?? []);
-    if (!landedOn) continue;
+    if (!landedOn || !holdingIds.has(landedOn)) continue;
     received.set(landedOn, (received.get(landedOn) ?? 0) + Number(p.net_amount_base ?? 0));
   }
 
   const withdrawn = new Map<string, number>();
   for (const w of withdrawals) {
-    if (!w.from_method_id) continue;
+    if (!w.from_method_id || !holdingIds.has(w.from_method_id)) continue;
     withdrawn.set(w.from_method_id, (withdrawn.get(w.from_method_id) ?? 0) + Number(w.gross_base ?? 0));
+  }
+
+  const spent = new Map<string, number>();
+  for (const sp of spends) {
+    if (!holdingIds.has(sp.wallet_id)) continue;
+    spent.set(sp.wallet_id, (spent.get(sp.wallet_id) ?? 0) + Number(sp.amount_base ?? 0));
   }
 
   return holding
     .map((m) => {
+      const opening = Number(m.opening_balance_base ?? 0);
       const r = received.get(m.id) ?? 0;
       const out = withdrawn.get(m.id) ?? 0;
-      return { methodId: m.id, name: m.name, received: r, withdrawn: out, balance: r - out };
+      const sp = spent.get(m.id) ?? 0;
+      return { methodId: m.id, name: m.name, opening, received: r, withdrawn: out, spent: sp, balance: opening + r - out - sp };
     })
     // Show wallets that have ever seen money; hide empty ones to avoid clutter.
-    .filter((row) => row.received > 0 || row.withdrawn > 0);
+    .filter((row) => row.opening > 0 || row.received > 0 || row.withdrawn > 0 || row.spent > 0);
 }

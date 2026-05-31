@@ -16,6 +16,12 @@ import {
   Pencil,
   ArrowRight,
   ArrowDownToLine,
+  ShoppingBag,
+  Tag,
+  Repeat,
+  SkipForward,
+  HandCoins,
+  Brain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ActivityEvent, EventKind } from "@/lib/supabase/types";
@@ -60,6 +66,39 @@ const META: Record<EventKind, KindMeta> = {
   "withdrawal.added":   { icon: ArrowDownToLine, tone: "rose"    },
   "withdrawal.removed": { icon: Trash2,          tone: "neutral" },
 
+  "spend.added":   { icon: ShoppingBag, tone: "neutral" },
+  "spend.updated": { icon: ShoppingBag, tone: "neutral" },
+  "spend.removed": { icon: ShoppingBag, tone: "rose"    },
+
+  "spend_category.created": { icon: Tag, tone: "neutral" },
+  "spend_category.updated": { icon: Tag, tone: "neutral" },
+  "spend_category.deleted": { icon: Tag, tone: "rose"    },
+
+  "recurring_spend.created": { icon: Repeat,       tone: "neutral" },
+  "recurring_spend.updated": { icon: Repeat,       tone: "neutral" },
+  "recurring_spend.deleted": { icon: Repeat,       tone: "rose"    },
+  "recurring_spend.paid":    { icon: Repeat,       tone: "success" },
+  "recurring_spend.skipped": { icon: SkipForward,  tone: "neutral" },
+
+  "loan.created": { icon: HandCoins, tone: "neutral" },
+  "loan.updated": { icon: HandCoins, tone: "neutral" },
+  "loan.closed":  { icon: HandCoins, tone: "success" },
+  "loan.deleted": { icon: HandCoins, tone: "rose"    },
+
+  "loan_installment.added":   { icon: HandCoins,   tone: "neutral" },
+  "loan_installment.paid":    { icon: HandCoins,   tone: "success" },
+  "loan_installment.skipped": { icon: SkipForward, tone: "neutral" },
+  "loan_installment.deleted": { icon: Trash2,      tone: "neutral" },
+
+  "user_memory.note_added":  { icon: Brain, tone: "neutral" },
+  "user_memory.observation": { icon: Brain, tone: "neutral" },
+
+  "ai_question.queued":    { icon: Brain,  tone: "neutral" },
+  "ai_question.answered":  { icon: Brain,  tone: "success" },
+  "ai_question.dismissed": { icon: Brain,  tone: "neutral" },
+
+  "wallet.opening_balance_set": { icon: Wallet, tone: "neutral" },
+
   "settings.updated": { icon: SettingsIcon, tone: "neutral" },
 };
 
@@ -81,7 +120,10 @@ export function ActivityFeed({
   events: ActivityEvent[];
   clientsById: Map<string, string>;
 }) {
-  const grouped = useMemo(() => groupByDay(events), [events]);
+  const grouped = useMemo(
+    () => groupByDay(events.filter((e) => e.kind !== "user_memory.observation")),
+    [events],
+  );
 
   return (
     <div className="space-y-8">

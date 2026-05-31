@@ -1,4 +1,4 @@
-import { getDashboardData } from "@/lib/data/queries";
+import { getDashboardData, getAiSafeSpendCacheRow } from "@/lib/data/queries";
 import {
   cashflowMetrics,
   outstanding,
@@ -7,23 +7,50 @@ import {
   dailySeries,
 } from "@/lib/dashboard-calc";
 import { monthlyFeeBase } from "@/lib/payment-chain";
+import { holdingBalances } from "@/lib/payment-chain";
+import { safeToSpend, suggestSadakaForIncome } from "@/lib/safe-to-spend";
 import { hasGemini } from "@/lib/ai/gemini";
 import { readFocusCache } from "@/lib/ai/actions";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { BlockedRow } from "@/components/app/blocked-money-list";
+import type { SafeToSpendOverlay } from "@/lib/ai/safe-to-spend-ai";
 import { TodayView } from "./_components/today-view";
 
 const DAY_MS = 86_400_000;
+// Income → sadaka window: a payment that landed within this many hours counts
+// as "fresh" enough to surface the suggestion card on Today. Past that, the
+// moment has passed and the card disappears until the next landing.
+const SADAKA_FRESH_HOURS = 36;
 
 export const metadata = { title: "Today" };
 
 export default async function TodayPage() {
   const aiEnabled = hasGemini();
-  const [{ settings, projects, payments, rates, clients, methods, withdrawals }, focus] = await Promise.all([
+  const [data, focus, cachedOverlayRow] = await Promise.all([
     getDashboardData(),
     aiEnabled ? readFocusCache() : Promise.resolve({ insights: [], generatedAt: null }),
+    getAiSafeSpendCacheRow(),
   ]);
+  const {
+    settings,
+    projects,
+    payments,
+    rates,
+    clients,
+    currencies,
+    methods,
+    withdrawals,
+    spends,
+    spendCategories,
+    spendCategoryLinks,
+    spendItems,
+    recurring,
+    recurringSkips,
+    loanInstallments,
+    stepsByPayment,
+    openAiQuestions,
+  } = data;
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
   const recurringFee = methods.reduce((s, m) => s + monthlyFeeBase(m, rates), 0);
@@ -33,7 +60,6 @@ export default async function TodayPage() {
   const pendingTotal = outstandingTotalBase(rows);
   const series = dailySeries(payments, 30);
 
-  // Blocked rows — the same shape the dashboard + projects pages consume.
   const blocked: BlockedRow[] = rows.map((r) => ({
     projectId: r.project.id,
     projectTitle: r.project.title,
@@ -46,7 +72,6 @@ export default async function TodayPage() {
     flagged: r.project.flagged_overdue,
   }));
 
-  // Biggest debtor — client with the largest outstanding total.
   const debtById = new Map<string, { name: string; total: number }>();
   for (const r of rows) {
     const name = r.client?.name ?? "Unknown";
@@ -56,7 +81,6 @@ export default async function TodayPage() {
   }
   const biggestDebtor = Array.from(debtById.values()).sort((a, b) => b.total - a.total)[0] ?? null;
 
-  // Avg quote → first payment, paid projects only.
   const lags = projects
     .filter((p) => p.quoted_at && p.status === "paid")
     .map((p) => {
@@ -82,7 +106,6 @@ export default async function TodayPage() {
     };
   });
 
-  // One sentence framing the morning — calm, specific.
   const oldest = rows[0] ?? null;
   let situation: string;
   if (clients.length === 0) {
@@ -97,6 +120,95 @@ export default async function TodayPage() {
   } else {
     situation = "Nothing's waiting on you. Every project is settled.";
   }
+
+  // ── Phase 1.5 surfaces ──
+
+  // Wallet balances (holding wallets only) — feeds NegativeWalletAlarm + Runway.
+  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
+
+  // Trailing 30d spend per wallet → daily burn used by WalletRunwayCard.
+  const now = new Date();
+  const burnStart = now.getTime() - 30 * DAY_MS;
+  const burnSumByWallet = new Map<string, number>();
+  for (const s of spends) {
+    const t = new Date(s.spent_at).getTime();
+    if (t < burnStart || t > now.getTime()) continue;
+    burnSumByWallet.set(
+      s.wallet_id,
+      (burnSumByWallet.get(s.wallet_id) ?? 0) + Number(s.amount_base ?? 0),
+    );
+  }
+  const dailyBurnByWallet: Array<[string, number]> = Array.from(burnSumByWallet.entries()).map(
+    ([k, v]) => [k, v / 30],
+  );
+
+  // Income → sadaka pairing. We look for the most recent landed payment inside
+  // the freshness window; if there is one, derive the suggestion locally so the
+  // card works without depending on the AI cache being populated.
+  const freshCutoff = now.getTime() - SADAKA_FRESH_HOURS * 60 * 60 * 1000;
+  const freshPayment = payments.find((p) => {
+    const t = new Date(p.paid_at).getTime();
+    return t >= freshCutoff && t <= now.getTime() && Number(p.net_amount_base ?? 0) > 0;
+  });
+  let sadakaSuggestion: { suggestedBase: number; percent: number; reason: string } | null = null;
+  let triggeringPayment: { client: string; net: number; paid_at: string } | null = null;
+  if (freshPayment) {
+    const netBase = Number(freshPayment.net_amount_base ?? 0);
+    const project = projects.find((p) => p.id === freshPayment.project_id);
+    const client = project ? clients.find((c) => c.id === project.client_id) : null;
+    const s = suggestSadakaForIncome(netBase, {
+      payments,
+      withdrawals,
+      spends,
+      recurring,
+      recurringSkips,
+      loanInstallments,
+      methods,
+      stepsByPayment,
+      rates,
+    });
+    if (s.suggestedBase > 0) {
+      sadakaSuggestion = { suggestedBase: s.suggestedBase, percent: s.percent, reason: s.reason };
+      triggeringPayment = {
+        client: client?.name ?? "a client",
+        net: netBase,
+        paid_at: freshPayment.paid_at,
+      };
+    }
+  }
+
+  // Sadaka category id — the quick-log button + suggestion both target it.
+  const sadakaCategoryId =
+    spendCategories.find((c) => /sadaka/i.test(c.name))?.id ?? null;
+
+  // Safe-to-spend AI overlay: read whatever's in the cache. If empty, pass
+  // null and let MorningBriefHero show its calm "still learning" state.
+  const overlay: SafeToSpendOverlay | null = cachedOverlayRow?.insight
+    ? (cachedOverlayRow.insight as SafeToSpendOverlay)
+    : null;
+
+  // SpendSheet props — Today renders its own sheet so the Sadaka quick-log +
+  // suggestion buttons can open it without routing away.
+  const balanceByMethod = new Map(holdings.map((h) => [h.methodId, h.balance]));
+  const sheetWallets = methods
+    .filter((m) => !m.archived)
+    .map((m) => ({
+      id: m.id,
+      name: m.name,
+      is_holding: !!m.is_holding,
+      balanceBase: m.is_holding ? balanceByMethod.get(m.id) ?? 0 : undefined,
+    }));
+  const safeToSpendBaseline = safeToSpend({
+    payments,
+    withdrawals,
+    spends,
+    recurring,
+    recurringSkips,
+    loanInstallments,
+    methods,
+    stepsByPayment,
+    rates,
+  });
 
   return (
     <TodayView
@@ -117,6 +229,23 @@ export default async function TodayPage() {
       aiEnabled={aiEnabled}
       focusInsights={focus.insights}
       focusGeneratedAt={focus.generatedAt}
+      overlay={overlay}
+      holdings={holdings}
+      dailyBurnByWalletEntries={dailyBurnByWallet}
+      sadakaSuggestion={sadakaSuggestion}
+      triggeringPayment={triggeringPayment}
+      sadakaCategoryId={sadakaCategoryId}
+      openAiQuestions={openAiQuestions}
+      recurring={recurring}
+      recurringSkips={recurringSkips}
+      rates={rates}
+      spendCategories={spendCategories}
+      spendCategoryLinks={spendCategoryLinks}
+      spendItems={spendItems}
+      spends={spends}
+      sheetWallets={sheetWallets}
+      currencies={currencies.map((c) => c.code)}
+      safeToSpendBaseline={safeToSpendBaseline}
     />
   );
 }

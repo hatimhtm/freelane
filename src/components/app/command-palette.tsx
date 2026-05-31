@@ -8,6 +8,7 @@ import {
   FolderKanban,
   LayoutDashboard,
   Plus,
+  Receipt,
   RefreshCw,
   Search,
   Settings,
@@ -79,6 +80,10 @@ export function CommandTrigger() {
               <Wallet className="mr-2 h-4 w-4" />
               Payments
             </CommandItem>
+            <CommandItem onSelect={() => go("/spending")}>
+              <Receipt className="mr-2 h-4 w-4" />
+              Spending
+            </CommandItem>
             <CommandItem onSelect={() => go("/clients")}>
               <Users className="mr-2 h-4 w-4" />
               Clients
@@ -105,6 +110,10 @@ export function CommandTrigger() {
             <CommandItem onSelect={() => go("/payments?new=1")}>
               <Plus className="mr-2 h-4 w-4" />
               Log a payment
+            </CommandItem>
+            <CommandItem onSelect={() => go("/spending?new=1")}>
+              <Plus className="mr-2 h-4 w-4" />
+              Log a spend
             </CommandItem>
             <CommandItem onSelect={() => go("/settings#rates")}>
               <RefreshCw className="mr-2 h-4 w-4" />

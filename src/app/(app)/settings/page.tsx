@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { getSettings } from "@/lib/data/queries";
 import { IssuerForm } from "./_components/issuer-form";
 import { MethodsForm } from "./_components/methods-form";
+import { OpeningBalanceForm } from "./_components/opening-balance-form";
 import { CurrenciesForm } from "./_components/currencies-form";
 import { AppearanceForm } from "./_components/appearance-form";
 import { DataForm } from "./_components/data-form";
@@ -28,6 +29,13 @@ export default async function SettingsPage() {
           hint="The rails money reaches you through. Add a monthly fee where one applies — it's subtracted from each month's landed total."
         >
           <MethodsForm methods={methods} currencies={currencies} baseCurrency={settings?.base_currency ?? "PHP"} />
+        </Section>
+
+        <Section
+          title="Wallet balances"
+          hint="Set what is actually in each holding wallet today. Freelane starts counting from there."
+        >
+          <OpeningBalanceForm methods={methods} currencies={currencies} />
         </Section>
 
         <Section

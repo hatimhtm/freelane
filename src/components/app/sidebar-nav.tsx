@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import {
   Activity,
   LayoutDashboard,
+  Receipt,
   Sun,
   Users,
   Wallet,
@@ -20,6 +21,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects",  label: "Projects",  icon: FolderKanban    },
   { href: "/payments",  label: "Payments",  icon: Wallet          },
+  { href: "/spending",  label: "Spending",  icon: Receipt         },
   { href: "/clients",   label: "Clients",   icon: Users           },
   { href: "/activity",  label: "Activity",  icon: Activity        },
   { href: "/settings",  label: "Settings",  icon: Settings        },

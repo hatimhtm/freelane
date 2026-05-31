@@ -1,20 +1,45 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, CalendarRange, Hourglass, Receipt, Sparkles, UserX } from "lucide-react";
 import { motion } from "motion/react";
 import { Card } from "@/components/ui/card";
-import { MastheadStat, MetricTile, DeltaChip } from "@/components/stats/stat";
+import { MetricTile } from "@/components/stats/stat";
 import { AiPanel } from "@/components/app/ai-panel";
 import { MetricTrigger } from "@/components/app/metric-sheet";
 import { TodaysFocus } from "@/components/app/todays-focus";
 import { BlockedMoneyList, type BlockedRow } from "@/components/app/blocked-money-list";
+import { MorningBriefHero } from "@/components/app/morning-brief-hero";
+import { NegativeWalletAlarm } from "@/components/app/negative-wallet-alarm";
+import { IncomeSadakaSuggestion } from "@/components/app/income-sadaka-suggestion";
+import { AiQuestionsCard } from "@/components/app/ai-questions-card";
+import { WalletRunwayCard } from "@/components/app/wallet-runway-card";
+import { RecurringWindowWatch } from "@/components/app/recurring-window-watch";
+import { SadakaQuickLogButton } from "@/components/app/sadaka-quick-log-button";
 import { Reveal } from "@/components/motion/reveal";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import type { CurrencyCode } from "@/lib/supabase/types";
+import type {
+  AiQuestion,
+  CurrencyCode,
+  ExchangeRate,
+  RecurringSpend,
+  RecurringSpendSkip,
+  Spend,
+  SpendCategory,
+  SpendCategoryLink,
+  SpendItem,
+} from "@/lib/supabase/types";
 import type { MoneyInsight } from "@/lib/ai/actions";
+import type { SafeToSpendOverlay } from "@/lib/ai/safe-to-spend-ai";
+import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
+import type { HoldingBalanceRow } from "@/lib/payment-chain";
+import {
+  SpendSheet,
+  type SpendSheetDefaults,
+  type WalletOpt,
+} from "@/app/(app)/spending/_components/spend-sheet";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -49,6 +74,23 @@ export function TodayView({
   aiEnabled,
   focusInsights,
   focusGeneratedAt,
+  overlay,
+  holdings,
+  dailyBurnByWalletEntries,
+  sadakaSuggestion,
+  triggeringPayment,
+  sadakaCategoryId,
+  openAiQuestions,
+  recurring,
+  recurringSkips,
+  rates,
+  spendCategories,
+  spendCategoryLinks,
+  spendItems,
+  spends,
+  sheetWallets,
+  currencies,
+  safeToSpendBaseline,
 }: {
   firstName: string | null;
   currency: CurrencyCode;
@@ -67,11 +109,42 @@ export function TodayView({
   aiEnabled: boolean;
   focusInsights: MoneyInsight[];
   focusGeneratedAt: string | null;
+  overlay: SafeToSpendOverlay | null;
+  holdings: HoldingBalanceRow[];
+  dailyBurnByWalletEntries: Array<[string, number]>;
+  sadakaSuggestion: { suggestedBase: number; percent: number; reason: string } | null;
+  triggeringPayment: { client: string; net: number; paid_at: string } | null;
+  sadakaCategoryId: string | null;
+  openAiQuestions: AiQuestion[];
+  recurring: RecurringSpend[];
+  recurringSkips: RecurringSpendSkip[];
+  rates: ExchangeRate[];
+  spendCategories: SpendCategory[];
+  spendCategoryLinks: SpendCategoryLink[];
+  spendItems: SpendItem[];
+  spends: Spend[];
+  sheetWallets: WalletOpt[];
+  currencies: string[];
+  safeToSpendBaseline: SafeToSpendBreakdown;
 }) {
-  // Time-aware greeting computed on the client so it matches the user's clock.
   const [greeting, setGreeting] = useState("Welcome back");
   useEffect(() => {
     setGreeting(greetingFor(new Date().getHours()));
+  }, []);
+
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetDefaults, setSheetDefaults] = useState<SpendSheetDefaults | undefined>(undefined);
+
+  // Mirrors spending-view: one global event, one sheet — keeps the form's
+  // state machine in a single place across screens.
+  useEffect(() => {
+    function onOpen(e: Event) {
+      const detail = (e as CustomEvent).detail as SpendSheetDefaults | undefined;
+      setSheetDefaults(detail);
+      setSheetOpen(true);
+    }
+    window.addEventListener("freelane:open-spend-sheet", onOpen);
+    return () => window.removeEventListener("freelane:open-spend-sheet", onOpen);
   }, []);
 
   const today = new Date().toLocaleDateString(undefined, {
@@ -79,6 +152,11 @@ export function TodayView({
     day: "numeric",
     month: "long",
   });
+
+  const dailyBurnByWallet = useMemo(
+    () => new Map(dailyBurnByWalletEntries),
+    [dailyBurnByWalletEntries],
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 lg:px-10 lg:py-12">
@@ -95,22 +173,62 @@ export function TodayView({
         <span className="text-xs text-muted-foreground tabular">{today}</span>
       </motion.div>
 
-      <div className="mt-8 space-y-10">
-        {/* Hero: masthead number with daily sparkline */}
-        <section className="grid items-end gap-8 lg:grid-cols-[1.6fr_1fr]">
-          <MetricTrigger metricKey="landed" className="lift -m-2 rounded-xl p-2">
-            <MastheadStat
-              eyebrow="Landed this month"
-              value={metrics.mtd}
-              currency={currency}
-              delta={metrics.momDelta}
-              series={series}
-              support={
-                <span className="text-base leading-snug text-foreground/80">{situation}</span>
-              }
+      {/* Vertical stack — generous whitespace, no nested cards. */}
+      <div className="mt-10 space-y-8">
+        {/* Phase 1.5 alarm only when something is genuinely wrong. */}
+        {holdings.some((h) => h.balance < 0) && (
+          <NegativeWalletAlarm holdings={holdings} />
+        )}
+
+        {/* Main hero — Safe-to-spend with Fraunces numeric. 48px below. */}
+        <div className="pb-4">
+          <MorningBriefHero overlay={overlay} />
+        </div>
+
+        {/* Quick actions — single thin row, no card. */}
+        {sadakaCategoryId && (
+          <div className="flex flex-wrap items-center gap-3">
+            <SadakaQuickLogButton sadakaCategoryId={sadakaCategoryId} />
+          </div>
+        )}
+
+        {/* Just-landed nudge. Self-dismissing. */}
+        {sadakaSuggestion && triggeringPayment && (
+          <Reveal delay={0.05}>
+            <IncomeSadakaSuggestion
+              suggestion={sadakaSuggestion}
+              triggeringPayment={triggeringPayment}
+              sadakaCategoryId={sadakaCategoryId}
             />
-          </MetricTrigger>
-          <Reveal delay={0.2}>
+          </Reveal>
+        )}
+
+        {/* Open AI questions — letter-like surface, only when there are any
+            OR the user can ask for a sweep. */}
+        {aiEnabled && (
+          <Reveal delay={0.08}>
+            <AiQuestionsCard questions={openAiQuestions} />
+          </Reveal>
+        )}
+
+        {/* Existing "today's focus" content — preserved verbatim. */}
+        {aiEnabled && (
+          <Reveal delay={0.12}>
+            <TodaysFocus
+              initialInsights={focusInsights}
+              initialGeneratedAt={focusGeneratedAt}
+              enabled={aiEnabled}
+            />
+          </Reveal>
+        )}
+
+        {/* Outstanding situation strip — preserves the "what's the morning
+            picture?" framing without competing with the new hero. */}
+        <section className="grid items-end gap-6 lg:grid-cols-[1.6fr_1fr]">
+          <p className="max-w-prose text-[15px] leading-relaxed text-foreground/75">
+            {situation}
+          </p>
+          <Reveal delay={0.16}>
             <MetricTrigger metricKey="outstanding" className="lift rounded-xl">
               <Card className="border-border/70 p-6">
                 <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
@@ -121,8 +239,8 @@ export function TodayView({
                   {formatMoney(pendingTotal, currency, { compact: true })}
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Across {pendingCount} open {pendingCount === 1 ? "project" : "projects"}, valued at
-                  today&apos;s rates — moves with FX until paid.
+                  Across {pendingCount} open {pendingCount === 1 ? "project" : "projects"}, valued
+                  at today&apos;s rates — moves with FX until paid.
                 </p>
                 <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-foreground">
                   View outstanding <ArrowUpRight className="size-3" />
@@ -132,16 +250,30 @@ export function TodayView({
           </Reveal>
         </section>
 
-        {/* Today's Focus — proactive, cached, auto-refreshing */}
-        {aiEnabled && (
-          <Reveal delay={0.24}>
-            <TodaysFocus initialInsights={focusInsights} initialGeneratedAt={focusGeneratedAt} enabled={aiEnabled} />
-          </Reveal>
-        )}
+        {/* Wallet runway — under the focus content, per spec. */}
+        <section>
+          <SectionHead title="Wallet runway" hint="Balance ÷ trailing 30d burn" />
+          <WalletRunwayCard
+            holdings={holdings}
+            dailyBurnByWallet={dailyBurnByWallet}
+            baseCurrency={currency}
+          />
+        </section>
 
-        {/* BIG Ask-your-money centerpiece */}
+        {/* Recurring window — self-hides when nothing is in the next 5d. */}
+        <section>
+          <SectionHead title="Recurring this week" hint="Next 5 days" />
+          <RecurringWindowWatch
+            recurring={recurring}
+            skips={recurringSkips}
+            holdings={holdings}
+            rates={rates}
+          />
+        </section>
+
+        {/* BIG Ask-your-money centerpiece — preserved. */}
         {aiEnabled && (
-          <Reveal delay={0.28}>
+          <Reveal delay={0.2}>
             <div className="relative overflow-hidden rounded-xl border border-foreground/15 bg-gradient-to-b from-muted/40 to-card p-1.5 sm:p-2">
               <div className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-[var(--brand)]/10 blur-3xl" />
               <div className="mb-3 flex items-center gap-2 px-4 pt-3">
@@ -158,8 +290,19 @@ export function TodayView({
           </Reveal>
         )}
 
-        {/* Richer metric grid */}
+        {/* Richer metric grid — preserved. */}
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <MetricTrigger metricKey="landed" className="h-full">
+            <MetricTile
+              label="Landed this month"
+              value={metrics.mtd}
+              currency={currency}
+              delta={metrics.momDelta}
+              hint="MoM"
+              icon={CalendarRange}
+              delay={0.02}
+            />
+          </MetricTrigger>
           <MetricTrigger metricKey="landed" className="h-full">
             <MetricTile
               label="This week"
@@ -168,7 +311,7 @@ export function TodayView({
               delta={metrics.wowDelta}
               hint="landed · WoW"
               icon={CalendarRange}
-              delay={0.02}
+              delay={0.05}
             />
           </MetricTrigger>
           <MetricTrigger metricKey="outstanding" className="h-full">
@@ -179,7 +322,7 @@ export function TodayView({
               hint={`${pendingCount} open ${pendingCount === 1 ? "project" : "projects"}`}
               icon={Hourglass}
               accent
-              delay={0.05}
+              delay={0.08}
             />
           </MetricTrigger>
           <MetricTrigger metricKey="fees" className="h-full">
@@ -189,7 +332,7 @@ export function TodayView({
               currency={currency}
               hint="rails + FX markup"
               icon={Receipt}
-              delay={0.08}
+              delay={0.11}
             />
           </MetricTrigger>
           <MetricTrigger metricKey="avg-days" className="h-full">
@@ -198,7 +341,7 @@ export function TodayView({
               text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
               hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
               icon={Hourglass}
-              delay={0.11}
+              delay={0.14}
             />
           </MetricTrigger>
           <MetricTrigger metricKey="debtor" className="h-full">
@@ -207,7 +350,7 @@ export function TodayView({
               text={biggestDebtor?.name ?? "—"}
               hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
               icon={UserX}
-              delay={0.14}
+              delay={0.17}
             />
           </MetricTrigger>
           <MetricTrigger metricKey="landed" className="h-full">
@@ -217,7 +360,19 @@ export function TodayView({
               currency={currency}
               hint={`${year} so far`}
               icon={CalendarRange}
-              delay={0.17}
+              delay={0.2}
+            />
+          </MetricTrigger>
+          {/* The 30d income sparkline still tells the rhythm story — kept here
+              as a compact tile rather than the screen's hero. */}
+          <MetricTrigger metricKey="landed" className="h-full sm:col-span-2 lg:col-span-1">
+            <MetricTile
+              label="Trailing 30 days"
+              value={series.reduce((a, b) => a + b, 0)}
+              currency={currency}
+              hint="income rhythm"
+              icon={CalendarRange}
+              delay={0.23}
             />
           </MetricTrigger>
         </section>
@@ -277,6 +432,21 @@ export function TodayView({
           </div>
         </section>
       </div>
+
+      <SpendSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        wallets={sheetWallets}
+        categories={spendCategories}
+        currencies={currencies}
+        baseCurrency={currency}
+        rates={rates.map((r) => ({ code: r.code, rate_to_base: Number(r.rate_to_base) }))}
+        recentSpends={spends}
+        spendCategoryLinks={spendCategoryLinks}
+        spendItems={spendItems}
+        safeToSpendBaseline={safeToSpendBaseline}
+        defaults={sheetDefaults}
+      />
     </div>
   );
 }
