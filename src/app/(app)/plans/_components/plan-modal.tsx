@@ -135,7 +135,7 @@ export function PlanModal({
           });
           toast.success(`Updated · ${label}`);
         } else {
-          await createPlannedSpend({
+          const result = await createPlannedSpend({
             label: label.trim(),
             expected_amount: amt,
             expected_currency: currency,
@@ -147,6 +147,10 @@ export function PlanModal({
             is_big_plan: isBigPlan,
             notes: notes.trim() || null,
           });
+          if (!result.ok) {
+            setError(result.error || "Couldn't save the plan.");
+            return;
+          }
           toast.success(`Planned · ${label}`);
         }
         onOpenChange(false);

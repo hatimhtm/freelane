@@ -1527,7 +1527,8 @@ export type SpendInput = {
   entityIds?: string[];
 };
 
-export async function createSpend(input: SpendInput) {
+export async function createSpend(input: SpendInput): Promise<ActionResult<{ id: string }>> {
+  return safeRun("createSpend", async () => {
   const { supabase, userId } = await userOrThrow();
   const amount = Number(input.amount);
   if (!(amount > 0)) throw new Error("Spend amount must be greater than 0.");
@@ -1685,6 +1686,7 @@ export async function createSpend(input: SpendInput) {
   revalidatePath("/today");
   revalidatePath("/dashboard");
   return { id: spendId };
+  });
 }
 
 // Patch editable fields on a spend. NEVER recomputes amount_base from
@@ -2158,6 +2160,7 @@ export async function markRecurringPaid(input: MarkRecurringPaidInput) {
     recurring_spend_id: input.recurring_spend_id,
     categoryIds: (rule.default_category_ids as string[]) ?? [],
   });
+  if (!result.ok) throw new Error(result.error);
 
   await logEvent({
     userId,
@@ -2166,12 +2169,12 @@ export async function markRecurringPaid(input: MarkRecurringPaidInput) {
     entityType: "recurring_spend",
     entityId: input.recurring_spend_id,
     metadata: {
-      spend_id: result.id,
+      spend_id: result.data.id,
       covers_periods: input.covers_periods ?? 1,
     },
   });
   await invalidateAiSafeSpendCache(userId);
-  return result;
+  return result.data;
 }
 
 export async function markRecurringSkipped(
@@ -2473,6 +2476,7 @@ export async function markLoanInstallmentPaid(input: MarkLoanInstallmentPaidInpu
     loan_installment_id: input.installment_id,
     categoryIds: loanRepaymentCat ? [loanRepaymentCat.id as string] : [],
   });
+  if (!result.ok) throw new Error(result.error);
 
   await logEvent({
     userId,
@@ -2480,10 +2484,10 @@ export async function markLoanInstallmentPaid(input: MarkLoanInstallmentPaidInpu
     title: `Paid installment · ${input.currency} ${Number(input.amount).toFixed(2)}`,
     entityType: "loan_installment",
     entityId: input.installment_id,
-    metadata: { loan_id: installment.loan_id, spend_id: result.id },
+    metadata: { loan_id: installment.loan_id, spend_id: result.data.id },
   });
   await invalidateAiSafeSpendCache(userId);
-  return result;
+  return result.data;
 }
 
 export async function markLoanInstallmentSkipped(installment_id: string) {
@@ -2703,57 +2707,59 @@ export type PlannedSpendInput = {
   notes?: string | null;
 };
 
-export async function createPlannedSpend(input: PlannedSpendInput) {
-  const { supabase, userId } = await userOrThrow();
-  const label = input.label.trim();
-  if (!label) throw new Error("Plan needs a label.");
-  if (!(Number(input.expected_amount) > 0)) {
-    throw new Error("Expected amount must be greater than 0.");
-  }
-  if (!input.planned_for) throw new Error("Pick a date.");
+export async function createPlannedSpend(input: PlannedSpendInput): Promise<ActionResult<{ id: string }>> {
+  return safeRun("createPlannedSpend", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const label = input.label.trim();
+    if (!label) throw new Error("Plan needs a label.");
+    if (!(Number(input.expected_amount) > 0)) {
+      throw new Error("Expected amount must be greater than 0.");
+    }
+    if (!input.planned_for) throw new Error("Pick a date.");
 
-  const { data: rates } = await supabase
-    .from("exchange_rates")
-    .select("code,rate_to_base")
-    .eq("user_id", userId);
-  const expectedBase = Math.round(
-    toBaseAmount(Number(input.expected_amount), input.expected_currency, (rates ?? []) as RatePair[]) * 100,
-  ) / 100;
+    const { data: rates } = await supabase
+      .from("exchange_rates")
+      .select("code,rate_to_base")
+      .eq("user_id", userId);
+    const expectedBase = Math.round(
+      toBaseAmount(Number(input.expected_amount), input.expected_currency, (rates ?? []) as RatePair[]) * 100,
+    ) / 100;
 
-  const { data, error } = await supabase
-    .from("planned_spends")
-    .insert({
-      user_id: userId,
-      label,
-      expected_amount: Number(input.expected_amount),
-      expected_currency: input.expected_currency,
-      expected_base: expectedBase,
-      planned_for: input.planned_for,
-      planned_for_window_days: input.planned_for_window_days ?? 0,
-      certainty: input.certainty ?? "firm",
-      status: "planned",
-      wallet_id: input.wallet_id ?? null,
-      default_category_ids: input.default_category_ids ?? [],
-      is_big_plan: !!input.is_big_plan,
-      notes: input.notes ?? null,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
+    const { data, error } = await supabase
+      .from("planned_spends")
+      .insert({
+        user_id: userId,
+        label,
+        expected_amount: Number(input.expected_amount),
+        expected_currency: input.expected_currency,
+        expected_base: expectedBase,
+        planned_for: input.planned_for,
+        planned_for_window_days: input.planned_for_window_days ?? 0,
+        certainty: input.certainty ?? "firm",
+        status: "planned",
+        wallet_id: input.wallet_id ?? null,
+        default_category_ids: input.default_category_ids ?? [],
+        is_big_plan: !!input.is_big_plan,
+        notes: input.notes ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
 
-  await logEvent({
-    userId,
-    kind: "planned_spend.created",
-    title: `Planned · ${label}`,
-    entityType: "planned_spend",
-    entityId: data.id as string,
-    metadata: { expected_base: expectedBase, planned_for: input.planned_for },
+    await logEvent({
+      userId,
+      kind: "planned_spend.created",
+      title: `Planned · ${label}`,
+      entityType: "planned_spend",
+      entityId: data.id as string,
+      metadata: { expected_base: expectedBase, planned_for: input.planned_for },
+    });
+    await invalidateAiSafeSpendCache(userId, supabase);
+    revalidatePath("/plans");
+    revalidatePath("/today");
+    revalidatePath("/dashboard");
+    return { id: data.id as string };
   });
-  await invalidateAiSafeSpendCache(userId, supabase);
-  revalidatePath("/plans");
-  revalidatePath("/today");
-  revalidatePath("/dashboard");
-  return data;
 }
 
 export async function updatePlannedSpend(id: string, input: Partial<PlannedSpendInput>) {
@@ -2935,12 +2941,14 @@ export async function materializePlannedSpend(id: string, input: MaterializePlan
     categoryIds: input.categoryIds ?? (plan.default_category_ids ?? []),
     items: input.items,
   });
+  if (!result.ok) throw new Error(result.error);
+  const spendId = result.data.id;
 
   await supabase
     .from("planned_spends")
     .update({
       status: "done",
-      done_spend_id: result.id,
+      done_spend_id: spendId,
       done_at: new Date().toISOString(),
     })
     .eq("id", id);
@@ -2951,7 +2959,7 @@ export async function materializePlannedSpend(id: string, input: MaterializePlan
     title: `Plan done · ${plan.label}`,
     entityType: "planned_spend",
     entityId: id,
-    metadata: { spend_id: result.id },
+    metadata: { spend_id: spendId },
   });
   // Tier 3 hook: quiet receipt for the plan landing.
   try {
@@ -2962,7 +2970,7 @@ export async function materializePlannedSpend(id: string, input: MaterializePlan
       sourceEntityId: id,
       context: {
         label: plan.label,
-        spend_id: result.id,
+        spend_id: spendId,
       },
     });
   } catch {
@@ -2972,7 +2980,7 @@ export async function materializePlannedSpend(id: string, input: MaterializePlan
   // calm_weather_state via invalidateAiSafeSpendCache, so we don't need an
   // extra mark here. revalidatePath only.
   revalidatePath("/plans");
-  return { id: result.id };
+  return { id: spendId };
 }
 
 export async function cancelPlannedSpend(id: string) {

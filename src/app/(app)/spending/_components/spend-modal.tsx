@@ -264,33 +264,33 @@ export function SpendModal({
     const vatNum = vat ? Number(vat) : null;
 
     start(async () => {
-      try {
-        await createSpend({
-          wallet_id: walletId,
-          spent_at: spentAt,
-          spent_time: spentTime || null,
-          amount: amountNum,
-          currency,
-          description: description.trim() || null,
-          notes: notes.trim() || null,
-          vat_amount: vatNum && vatNum > 0 ? vatNum : null,
-          business_relevant: businessRelevant,
-          for_us: forUs,
-          covers_periods: recurringSpendId ? Math.max(1, coversPeriods) : 1,
-          recurring_spend_id: recurringSpendId,
-          categoryIds: selectedCategoryIds,
-          items: cleanItems.length
-            ? cleanItems.map((it) => ({ name: it.name, amount: it.amount, notes: it.notes }))
-            : undefined,
-        });
-        toast.success(
-          `Logged · ${formatMoney(amountBase, baseCurrency, { compact: true })}`,
-        );
-        onOpenChange(false);
-        router.refresh();
-      } catch (err) {
-        setError((err as Error).message);
+      const result = await createSpend({
+        wallet_id: walletId,
+        spent_at: spentAt,
+        spent_time: spentTime || null,
+        amount: amountNum,
+        currency,
+        description: description.trim() || null,
+        notes: notes.trim() || null,
+        vat_amount: vatNum && vatNum > 0 ? vatNum : null,
+        business_relevant: businessRelevant,
+        for_us: forUs,
+        covers_periods: recurringSpendId ? Math.max(1, coversPeriods) : 1,
+        recurring_spend_id: recurringSpendId,
+        categoryIds: selectedCategoryIds,
+        items: cleanItems.length
+          ? cleanItems.map((it) => ({ name: it.name, amount: it.amount, notes: it.notes }))
+          : undefined,
+      });
+      if (!result.ok) {
+        setError(result.error || "Couldn't save the spend.");
+        return;
       }
+      toast.success(
+        `Logged · ${formatMoney(amountBase, baseCurrency, { compact: true })}`,
+      );
+      onOpenChange(false);
+      router.refresh();
     });
   }
 

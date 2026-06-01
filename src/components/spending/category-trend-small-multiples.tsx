@@ -88,7 +88,11 @@ export function CategoryTrendSmallMultiples({
     for (const [cid, series] of totalsByCat) {
       const cat = byId.get(cid);
       if (!cat || cat.archived) continue;
-      const current = series[series.length - 1] ?? 0;
+      // Headline number is the trailing 6-month TOTAL, matching the panel
+      // subtitle "Trailing 6 months, top by spend." — previously this showed
+      // only the current month, which read as "₱0" the moment the calendar
+      // ticked over even when the 6-month trend behind it was non-trivial.
+      const current = series.reduce((s, v) => s + v, 0);
       ranked.push({ category: cat, series, current });
     }
     // Rank by trailing 6-month total — small-multiples want the most-spent
