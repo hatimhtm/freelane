@@ -45,22 +45,20 @@ export function OpeningBalanceForm({
   const [rows, setRows] = useState<Record<string, Row>>(() => {
     const out: Record<string, Row> = {};
     for (const m of holding) {
-      // Prefer the saved native amount when present (migration 0047). Older
-      // rows only have opening_balance_base in PHP — fall back to that so
-      // existing wallets stay anchored, with the OUT currency or PHP as the
-      // implied unit.
-      const nativeAmt = m.opening_balance_amount;
+      // The form is a write-only calibration surface — every load comes up
+      // blank so the user can't accidentally re-apply yesterday's number
+      // by hitting Save without thinking. The saved value still drives every
+      // other surface; the live balance shows in the spend modal / Today /
+      // Payments via the holdingBalances math.
       const nativeCcy = (m.opening_balance_currency ?? m.currency_out ?? baseCurrency) as CurrencyCode;
-      const baseAmt = Number(m.opening_balance_base ?? 0);
       const wasAnchored = m.opening_balance_at !== null;
-      const displayAmt = nativeAmt !== null && nativeAmt !== undefined ? Number(nativeAmt) : baseAmt;
       out[m.id] = {
-        amount: wasAnchored ? String(displayAmt) : "",
+        amount: "",
         currency: nativeCcy,
-        date: m.opening_balance_at ?? TODAY(),
-        initialAmount: displayAmt,
+        date: TODAY(),
+        initialAmount: 0,
         initialCurrency: nativeCcy,
-        initialDate: m.opening_balance_at ?? TODAY(),
+        initialDate: TODAY(),
         wasAnchored,
       };
     }
@@ -137,17 +135,20 @@ export function OpeningBalanceForm({
         return;
       }
       toast.success("Wallet balances saved.");
+      // Calibration is a one-shot: clear every input so the form stops
+      // looking "dirty" and the user doesn't accidentally re-apply the same
+      // numbers on the next click. The saved values still drive every
+      // surface that reads holdingBalances — Today, the spend modal,
+      // Payments — via the revalidatePath sweep on the server.
       setRows((prev) => {
         const next = { ...prev };
-        for (const [methodId] of changes) {
-          const r = prev[methodId];
-          const n = Number(r.amount.trim());
-          const amount = Number.isFinite(n) ? n : 0;
+        for (const methodId in next) {
           next[methodId] = {
-            ...r,
-            initialAmount: amount,
-            initialCurrency: r.currency,
-            initialDate: r.date,
+            ...next[methodId],
+            amount: "",
+            initialAmount: 0,
+            initialCurrency: next[methodId].currency,
+            initialDate: next[methodId].date,
             wasAnchored: true,
           };
         }
