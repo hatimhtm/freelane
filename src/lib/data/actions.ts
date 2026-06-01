@@ -2604,37 +2604,51 @@ export async function recordUserMemoryObservation(content: string) {
 // holdings → safe-to-spend cache must be dropped.
 export type WalletOpeningBalanceInput = {
   methodId: string;
-  amountBase: number;
+  // Native amount the user typed (in `amountCurrency`).
+  amount: number;
+  amountCurrency: CurrencyCode;
   dateOpt?: string;
 };
 
-export async function setWalletOpeningBalance(input: WalletOpeningBalanceInput) {
-  const { supabase, userId } = await userOrThrow();
-  if (!Number.isFinite(input.amountBase) || input.amountBase < 0) {
-    throw new Error("Opening balance must be 0 or more.");
-  }
-  const opening_balance_at = input.dateOpt ?? phtToday();
-  const { error } = await supabase
-    .from("payment_methods")
-    .update({
-      opening_balance_base: input.amountBase,
-      opening_balance_at,
-    })
-    .eq("id", input.methodId)
-    .eq("user_id", userId);
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "wallet.opening_balance_set",
-    title: `Set opening balance · PHP ${input.amountBase.toFixed(2)}`,
-    entityType: "payment_method",
-    entityId: input.methodId,
-    metadata: { amount_base: input.amountBase, at: opening_balance_at },
+export async function setWalletOpeningBalance(input: WalletOpeningBalanceInput): Promise<ActionResult<{ amountBase: number }>> {
+  return safeRun("setWalletOpeningBalance", async () => {
+    const { supabase, userId } = await userOrThrow();
+    if (!Number.isFinite(input.amount)) throw new Error("Opening balance must be a number.");
+    if (!input.amountCurrency) throw new Error("Pick a currency.");
+    const opening_balance_at = input.dateOpt ?? phtToday();
+
+    const { data: rates } = await supabase
+      .from("exchange_rates")
+      .select("code,rate_to_base")
+      .eq("user_id", userId);
+    const amountBase =
+      Math.round(toBaseAmount(input.amount, input.amountCurrency, (rates ?? []) as RatePair[]) * 100) / 100;
+
+    const { error } = await supabase
+      .from("payment_methods")
+      .update({
+        opening_balance_amount: input.amount,
+        opening_balance_currency: input.amountCurrency,
+        opening_balance_base: amountBase,
+        opening_balance_at,
+      })
+      .eq("id", input.methodId)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    await logEvent({
+      userId,
+      kind: "wallet.opening_balance_set",
+      title: `Set opening balance · ${input.amountCurrency} ${input.amount.toFixed(2)}`,
+      entityType: "payment_method",
+      entityId: input.methodId,
+      metadata: { amount: input.amount, currency: input.amountCurrency, amount_base: amountBase, at: opening_balance_at },
+    });
+    await invalidateAiSafeSpendCache(userId, supabase);
+    revalidatePath("/settings");
+    revalidatePath("/dashboard");
+    revalidatePath("/today");
+    return { amountBase };
   });
-  await invalidateAiSafeSpendCache(userId, supabase);
-  revalidatePath("/settings");
-  revalidatePath("/dashboard");
-  revalidatePath("/today");
 }
 
 // ───────────────────────────────────────── AI questions (Phase 1.5) ──

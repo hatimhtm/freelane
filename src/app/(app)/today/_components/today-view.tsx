@@ -29,6 +29,7 @@ import { FreshMilestonesCard } from "@/components/app/fresh-milestones-card";
 import { TuesdayCheckinCard } from "@/components/app/tuesday-checkin-card";
 import { YearMemoryRecallCard } from "@/components/app/year-memory-recall-card";
 import { ShouldIBuyQuicklink } from "@/components/app/should-i-buy-quicklink";
+import { LogSpendPrimaryAction } from "@/components/app/primary-action";
 import { PackRhythmCard } from "@/components/app/pack-rhythm-card";
 import { FamilySavingsWitnessLine } from "@/components/app/family-savings-witness-line";
 import { LateNightClusterCard } from "@/components/app/late-night-cluster-card";
@@ -587,6 +588,8 @@ export function TodayView({
         safeToSpendBaseline={safeToSpendBaseline}
         defaults={sheetDefaults}
       />
+
+      <LogSpendPrimaryAction />
     </div>
   );
 }

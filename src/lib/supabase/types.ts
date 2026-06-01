@@ -557,6 +557,10 @@ export interface PaymentMethod {
   is_holding: boolean;
   opening_balance_base: number | null;
   opening_balance_at: string | null;
+  // Native opening balance (migration 0047). The form echoes this back so
+  // the user sees exactly what they typed instead of an FX-converted value.
+  opening_balance_amount: number | null;
+  opening_balance_currency: CurrencyCode | null;
   notes: string | null;
   archived: boolean;
   created_at: string;

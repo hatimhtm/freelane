@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation";
 import NumberFlow from "@number-flow/react";
 import { toast } from "sonner";
 import { setWalletOpeningBalance } from "@/lib/data/actions";
-import type { Currency, PaymentMethod } from "@/lib/supabase/types";
-import { cn, phtToday } from "@/lib/utils";
+import type { Currency, CurrencyCode, PaymentMethod } from "@/lib/supabase/types";
+import { cn, normalizeAmountInput, phtToday } from "@/lib/utils";
 
 type Row = {
   amount: string;
+  currency: CurrencyCode;
   date: string;
   initialAmount: number;
+  initialCurrency: CurrencyCode;
   initialDate: string;
   // Whether the wallet was ever anchored. Different from "amount > 0":
   // an unanchored wallet has opening_balance_at = NULL and should accept
@@ -21,13 +23,16 @@ type Row = {
 };
 
 const TODAY = phtToday;
+const BASE_FALLBACK: CurrencyCode = "PHP";
 
 export function OpeningBalanceForm({
   methods,
   currencies,
+  baseCurrency,
 }: {
   methods: PaymentMethod[];
   currencies: Currency[];
+  baseCurrency: CurrencyCode;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -40,15 +45,21 @@ export function OpeningBalanceForm({
   const [rows, setRows] = useState<Record<string, Row>>(() => {
     const out: Record<string, Row> = {};
     for (const m of holding) {
-      const amt = Number(m.opening_balance_base ?? 0);
+      // Prefer the saved native amount when present (migration 0047). Older
+      // rows only have opening_balance_base in PHP — fall back to that so
+      // existing wallets stay anchored, with the OUT currency or PHP as the
+      // implied unit.
+      const nativeAmt = m.opening_balance_amount;
+      const nativeCcy = (m.opening_balance_currency ?? m.currency_out ?? baseCurrency) as CurrencyCode;
+      const baseAmt = Number(m.opening_balance_base ?? 0);
       const wasAnchored = m.opening_balance_at !== null;
+      const displayAmt = nativeAmt !== null && nativeAmt !== undefined ? Number(nativeAmt) : baseAmt;
       out[m.id] = {
-        // Render the actual saved value (including 0). Earlier code hid 0
-        // by emptying the input — that fed back into the dirty check and
-        // made "save 0" unreachable.
-        amount: wasAnchored ? String(amt) : "",
+        amount: wasAnchored ? String(displayAmt) : "",
+        currency: nativeCcy,
         date: m.opening_balance_at ?? TODAY(),
-        initialAmount: amt,
+        initialAmount: displayAmt,
+        initialCurrency: nativeCcy,
         initialDate: m.opening_balance_at ?? TODAY(),
         wasAnchored,
       };
@@ -56,23 +67,23 @@ export function OpeningBalanceForm({
     return out;
   });
 
+  // Build a quick code → unit price lookup so the total can stay roughly
+  // accurate when wallets are in different currencies. The lookup is from
+  // the currency list which carries the symbol; conversions to the base
+  // currency happen server-side at save time.
+  const codeToSymbol = useMemo(() => new Map(currencies.map((c) => [c.code, c.symbol ?? c.code])), [currencies]);
+
+  // Sum of typed amounts — purely display; the real PHP-base value gets
+  // computed and stored server-side using the live FX rate.
   const total = useMemo(
     () =>
       Object.values(rows).reduce((sum, r) => {
         const n = Number(r.amount);
-        // Sum honors negatives — a Moroccan bank sitting at -₱150 should
-        // pull the total down, not be silently clamped.
         return sum + (Number.isFinite(n) ? n : 0);
       }, 0),
     [rows],
   );
 
-  // A row is dirty when any of:
-  //   - the wallet was never anchored AND the user typed any finite number
-  //     (including 0 or negative — calibrating to "I had zero before today"
-  //     or "Moroccan bank is at -₱150 from fees" is valid).
-  //   - the typed amount differs from the saved value.
-  //   - the date differs from the saved date.
   const dirty = useMemo(
     () =>
       Object.entries(rows).some(([, r]) => {
@@ -81,6 +92,7 @@ export function OpeningBalanceForm({
         const valid = trimmed !== "" && trimmed !== "-" && Number.isFinite(n);
         if (!r.wasAnchored && valid) return true;
         if (valid && n !== r.initialAmount) return true;
+        if (r.currency !== r.initialCurrency) return true;
         return r.date !== r.initialDate;
       }),
     [rows],
@@ -103,43 +115,54 @@ export function OpeningBalanceForm({
         const valid = trimmed !== "" && trimmed !== "-" && Number.isFinite(n);
         if (!r.wasAnchored && valid) return true;
         if (valid && n !== r.initialAmount) return true;
+        if (r.currency !== r.initialCurrency) return true;
         return r.date !== r.initialDate;
       });
       if (changes.length === 0) return;
-      try {
-        await Promise.all(
-          changes.map(([methodId, r]) => {
-            const n = Number(r.amount.trim());
-            const amount = Number.isFinite(n) ? n : 0;
-            return setWalletOpeningBalance({
-              methodId,
-              amountBase: amount,
-              dateOpt: r.date || TODAY(),
-            });
-          }),
-        );
-        toast.success("Wallet balances set");
-        setRows((prev) => {
-          const next = { ...prev };
-          for (const [methodId] of changes) {
-            const r = prev[methodId];
-            const n = Number(r.amount.trim());
-            const amount = Number.isFinite(n) ? n : 0;
-            next[methodId] = {
-              ...r,
-              initialAmount: amount,
-              initialDate: r.date,
-              wasAnchored: true,
-            };
-          }
-          return next;
-        });
-        router.refresh();
-      } catch (err) {
-        toast.error((err as Error).message);
+      const results = await Promise.all(
+        changes.map(([methodId, r]) => {
+          const n = Number(r.amount.trim());
+          const amount = Number.isFinite(n) ? n : 0;
+          return setWalletOpeningBalance({
+            methodId,
+            amount,
+            amountCurrency: r.currency,
+            dateOpt: r.date || TODAY(),
+          });
+        }),
+      );
+      const firstError = results.find((r) => !r.ok);
+      if (firstError && !firstError.ok) {
+        toast.error(firstError.error || "Couldn't save balances.");
+        return;
       }
+      toast.success("Wallet balances saved.");
+      setRows((prev) => {
+        const next = { ...prev };
+        for (const [methodId] of changes) {
+          const r = prev[methodId];
+          const n = Number(r.amount.trim());
+          const amount = Number.isFinite(n) ? n : 0;
+          next[methodId] = {
+            ...r,
+            initialAmount: amount,
+            initialCurrency: r.currency,
+            initialDate: r.date,
+            wasAnchored: true,
+          };
+        }
+        return next;
+      });
+      router.refresh();
     });
   }
+
+  // The summed amounts are in mixed currencies; only render the value when
+  // every wallet is in the same currency. Otherwise show the count as a hint.
+  const sameCurrency = useMemo(() => {
+    const seen = new Set(Object.values(rows).map((r) => r.currency));
+    return seen.size === 1 ? [...seen][0] : null;
+  }, [rows]);
 
   return (
     <div className="space-y-6">
@@ -152,6 +175,7 @@ export function OpeningBalanceForm({
               method={m}
               row={row}
               currencies={currencies}
+              codeToSymbol={codeToSymbol}
               onChange={(patch) =>
                 setRows((prev) => ({ ...prev, [m.id]: { ...prev[m.id], ...patch } }))
               }
@@ -166,12 +190,21 @@ export function OpeningBalanceForm({
             Total on hand
           </div>
           <div className="mt-2 font-fraunces text-[44px] leading-none tracking-tight tabular text-foreground">
-            <NumberFlow
-              value={Math.round(total)}
-              format={{ style: "currency", currency: "PHP", maximumFractionDigits: 0 }}
-              transformTiming={{ duration: 420, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}
-            />
+            {sameCurrency ? (
+              <NumberFlow
+                value={Math.round(total)}
+                format={{ style: "currency", currency: sameCurrency, maximumFractionDigits: 0 }}
+                transformTiming={{ duration: 420, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}
+              />
+            ) : (
+              <span className="text-foreground/70">{Object.keys(rows).length} wallets</span>
+            )}
           </div>
+          {!sameCurrency && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Mixed currencies — the math layer converts each to {baseCurrency} at save time.
+            </p>
+          )}
         </div>
 
         <button
@@ -196,46 +229,65 @@ function Row({
   method,
   row,
   currencies,
+  codeToSymbol,
   onChange,
 }: {
   method: PaymentMethod;
   row: Row;
   currencies: Currency[];
+  codeToSymbol: Map<string, string>;
   onChange: (patch: Partial<Row>) => void;
 }) {
-  const baseCurrency = (method.currency_out ?? "PHP") as string;
-  const symbol = currencies.find((c) => c.code === baseCurrency)?.symbol ?? "₱";
+  const symbol = codeToSymbol.get(row.currency) ?? row.currency;
   const wasSet = row.wasAnchored;
 
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-x-6 gap-y-2 py-5 sm:grid-cols-[1fr_auto_auto] sm:gap-x-8">
+    <div className="grid grid-cols-[1fr_auto] items-center gap-x-6 gap-y-2 py-5 sm:grid-cols-[1fr_auto_auto_auto] sm:gap-x-6">
       <div className="min-w-0">
         <div className="truncate text-[15px] font-medium text-foreground">{method.name}</div>
         <div className="mt-0.5 text-[12px] text-muted-foreground tabular">
           {wasSet
-            ? `Anchored ${formatLightDate(row.initialDate)}`
+            ? `Anchored ${formatLightDate(row.initialDate)} · stays at this number`
             : "Starts counting from this number"}
         </div>
       </div>
 
       <label className="group relative col-start-1 row-start-2 flex items-center sm:col-start-2 sm:row-start-1">
-        <span className="pointer-events-none absolute left-3 text-[15px] text-muted-foreground">
+        <span className="pointer-events-none absolute left-3 text-[13px] text-muted-foreground">
           {symbol}
         </span>
         <input
           type="text"
           inputMode="decimal"
           value={row.amount}
-          onChange={(e) => onChange({ amount: cleanNumeric(e.target.value) })}
+          onChange={(e) => onChange({ amount: normalizeAmountInput(e.target.value) })}
           placeholder="0"
           className={cn(
-            "h-11 w-[160px] rounded-lg border border-border/70 bg-transparent pl-8 pr-3 text-right text-[17px] tabular tracking-tight text-foreground",
+            "h-11 w-[150px] rounded-lg border border-border/70 bg-transparent pl-8 pr-3 text-right text-[17px] tabular tracking-tight text-foreground",
             "outline-none transition-colors duration-300 ease-out",
             "placeholder:text-foreground/25",
             "focus:border-foreground/40",
           )}
         />
       </label>
+
+      <select
+        value={row.currency}
+        onChange={(e) => onChange({ currency: e.target.value as CurrencyCode })}
+        aria-label={`Currency for ${method.name}`}
+        className={cn(
+          "col-start-2 row-start-2 h-11 rounded-lg border border-border/70 bg-transparent px-2 text-[13px] tabular text-foreground/90",
+          "outline-none transition-colors duration-300 ease-out",
+          "focus:border-foreground/40",
+          "sm:col-start-3 sm:row-start-1",
+        )}
+      >
+        {currencies.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.code}
+          </option>
+        ))}
+      </select>
 
       <input
         type="date"
@@ -244,31 +296,14 @@ function Row({
         onChange={(e) => onChange({ date: e.target.value || TODAY() })}
         aria-label={`Anchor date for ${method.name}`}
         className={cn(
-          "col-start-2 row-start-2 h-11 rounded-lg border border-border/70 bg-transparent px-3 text-[13px] text-muted-foreground tabular",
+          "col-start-2 row-start-3 h-11 rounded-lg border border-border/70 bg-transparent px-3 text-[13px] text-muted-foreground tabular",
           "outline-none transition-colors duration-300 ease-out",
           "focus:border-foreground/40 focus:text-foreground",
-          "sm:col-start-3 sm:row-start-1",
+          "sm:col-start-4 sm:row-start-1",
         )}
       />
     </div>
   );
-}
-
-function cleanNumeric(v: string): string {
-  // Permit a single leading minus + digits + a single decimal point. The
-  // minus is allowed because some wallets carry a negative starting balance
-  // (Hatim 2026-06-01: "my moroccan bank account usually has minus something
-  // because of the fees, that should be also allowed").
-  let sign = "";
-  let body = v;
-  if (body.startsWith("-")) {
-    sign = "-";
-    body = body.slice(1);
-  }
-  const cleaned = body.replace(/[^\d.]/g, "");
-  const parts = cleaned.split(".");
-  const payload = parts.length <= 1 ? cleaned : `${parts[0]}.${parts.slice(1).join("").slice(0, 2)}`;
-  return `${sign}${payload}`;
 }
 
 function formatLightDate(iso: string): string {
