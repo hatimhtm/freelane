@@ -17,10 +17,19 @@ import {
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { archiveClient, deleteClient } from "@/lib/data/actions";
-import type { Client, ClientMemoryConsolidated, CurrencyCode, ProjectStatus } from "@/lib/supabase/types";
+import type {
+  Client,
+  ClientMemoryConsolidated,
+  CurrencyCode,
+  ProjectStatus,
+  QuietChannel,
+  RateInsight,
+} from "@/lib/supabase/types";
 import { ClientDialog } from "../../_components/client-dialog";
 import { MemoryComposer } from "./memory-composer";
 import { FollowUpButton } from "./follow-up-button";
+import { QuietChannelBanner } from "./quiet-channel-banner";
+import { RateInsightsSection } from "./rate-insights-section";
 
 type ProjectView = { id: string; title: string; amount: number; currency: CurrencyCode; status: ProjectStatus; outstandingNative: number };
 type Entry = { id: string; content: string; createdAt: string; consolidated: boolean };
@@ -43,6 +52,8 @@ export function ClientDetail({
   events,
   aiEnabled,
   hasOutstanding,
+  quietChannel,
+  rateInsights,
 }: {
   client: Client;
   currency: CurrencyCode;
@@ -54,6 +65,8 @@ export function ClientDetail({
   events: { id: string; title: string; createdAt: string }[];
   aiEnabled: boolean;
   hasOutstanding: boolean;
+  quietChannel: QuietChannel | null;
+  rateInsights: RateInsight[];
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -111,6 +124,12 @@ export function ClientDetail({
         <Stat label="Projects" value={String(projects.length)} />
       </div>
 
+      {quietChannel && (
+        <div className="mt-6">
+          <QuietChannelBanner channel={quietChannel} />
+        </div>
+      )}
+
       <div className="mt-10 grid gap-10 lg:grid-cols-[1.3fr_1fr]">
         <section>
           <h2 className="mb-3 text-sm font-medium">Memory</h2>
@@ -118,6 +137,10 @@ export function ClientDetail({
         </section>
 
         <div className="space-y-10">
+          {aiEnabled && (
+            <RateInsightsSection insights={rateInsights} />
+          )}
+
           <section>
             <h2 className="mb-3 text-sm font-medium">Projects</h2>
             {projects.length === 0 ? (

@@ -1,5 +1,10 @@
 import { notFound } from "next/navigation";
-import { getClientDetail, getSettings } from "@/lib/data/queries";
+import {
+  getClientDetail,
+  getOpenQuietChannelForClient,
+  getRateInsightsForClient,
+  getSettings,
+} from "@/lib/data/queries";
 import { outstanding } from "@/lib/dashboard-calc";
 import { hasGemini } from "@/lib/ai/gemini";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
@@ -14,9 +19,16 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [{ client, memory, projects, payments, events }, { rates, settings }] = await Promise.all([
+  const [
+    { client, memory, projects, payments, events },
+    { rates, settings },
+    quietChannel,
+    rateInsights,
+  ] = await Promise.all([
     getClientDetail(id),
     getSettings(),
+    getOpenQuietChannelForClient(id).catch(() => null),
+    getRateInsightsForClient(id, 8).catch(() => []),
   ]);
   if (!client) notFound();
 
@@ -55,6 +67,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       events={events.map((e) => ({ id: e.id, title: e.title, createdAt: e.created_at }))}
       aiEnabled={hasGemini()}
       hasOutstanding={outstandingTotal > 0}
+      quietChannel={quietChannel}
+      rateInsights={rateInsights}
     />
   );
 }

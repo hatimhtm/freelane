@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { ShoppingBag } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
+
+// Small quick action shown in the Today bottom strip alongside Sadaka quick log.
+// Linked to /should-i-buy where the full session UI lives.
 
 export function ShouldIBuyQuicklink() {
   return (
-    <Link
-      href="/should-i-buy"
-      className="inline-flex items-center gap-1.5 self-start rounded-full border border-border/70 px-2.5 py-1 text-[11px] text-foreground/80 transition-colors hover:border-foreground/40 hover:bg-muted/40"
-    >
-      <ShoppingBag className="h-3 w-3" />
-      Should I buy this?
+    <Link href="/should-i-buy" className={buttonVariants({ variant: "outline", size: "sm" })}>
+      <ShoppingBag data-icon="inline-start" />
+      Should I buy?
     </Link>
   );
 }

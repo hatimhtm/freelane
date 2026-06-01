@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, RefreshCw, ShoppingBag, Trash2, X } from "lucide-react";
+import { Check, Sparkles, ShoppingBag, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -36,16 +36,23 @@ const VERDICT_LABEL: Record<ShouldIBuyVerdict | "unknown", string> = {
 };
 
 const VERDICT_TONE: Record<ShouldIBuyVerdict | "unknown", string> = {
-  easy_yes: "border-acid-lime/50 text-acid-lime",
-  fits_the_stretch: "border-foreground/30 text-foreground/80",
-  tight_but_possible: "border-amber-400/40 text-amber-500",
-  not_this_stretch: "border-overdue/50 text-overdue",
+  easy_yes: "border-acid-lime/50 text-acid-lime bg-acid-lime/5",
+  fits_the_stretch: "border-foreground/30 text-foreground/80 bg-foreground/[0.03]",
+  tight_but_possible: "border-amber-400/40 text-amber-500 bg-amber-400/5",
+  not_this_stretch: "border-overdue/50 text-overdue bg-overdue/5",
   unknown: "border-border text-muted-foreground",
 };
 
 interface ShouldIBuyViewProps {
   sessions: ShouldIBuySession[];
   baseCurrency: CurrencyCode;
+}
+
+function formatSessionDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
 export function ShouldIBuyView({ sessions, baseCurrency }: ShouldIBuyViewProps) {
@@ -64,13 +71,15 @@ export function ShouldIBuyView({ sessions, baseCurrency }: ShouldIBuyViewProps) 
     setCurrency(baseCurrency);
   }
 
+  const showBasePreview = currency !== baseCurrency && amount.trim() !== "" && Number(amount) > 0;
+
   return (
     <div className="mx-auto flex max-w-[760px] flex-col gap-5 p-4 sm:p-6">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <h1 className="font-display text-lg leading-tight">Should I buy this?</h1>
           <p className="text-xs text-muted-foreground">
-            Quick read against the current stretch. Verdict is a mirror, not a command.
+            Quick read against the current stretch. The verdict is a mirror, not a command.
           </p>
         </div>
       </header>
@@ -87,7 +96,7 @@ export function ShouldIBuyView({ sessions, baseCurrency }: ShouldIBuyViewProps) 
               className="h-9 text-sm"
             />
           </div>
-          <div className="grid grid-cols-[1fr_140px] gap-3">
+          <div className="grid grid-cols-[1fr_120px] gap-3">
             <div className="flex flex-col gap-1.5">
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount</Label>
               <Input
@@ -113,6 +122,11 @@ export function ShouldIBuyView({ sessions, baseCurrency }: ShouldIBuyViewProps) 
               </Select>
             </div>
           </div>
+          {showBasePreview && (
+            <p className="-mt-1.5 text-[11px] tabular text-muted-foreground">
+              At session time, this gets locked in {baseCurrency} from your latest rate.
+            </p>
+          )}
           <div className="flex flex-col gap-1.5">
             <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
               Note <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">optional</span>
@@ -120,7 +134,7 @@ export function ShouldIBuyView({ sessions, baseCurrency }: ShouldIBuyViewProps) 
             <Textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="What kind of decision is this? Anything you want the AI to weigh?"
+              placeholder="What kind of decision is this? Anything you want weighed?"
               rows={2}
               className="resize-none text-sm"
             />
@@ -152,7 +166,7 @@ export function ShouldIBuyView({ sessions, baseCurrency }: ShouldIBuyViewProps) 
               }
               className="gap-1.5"
             >
-              <RefreshCw className={cn("h-3.5 w-3.5", pending && "animate-spin")} />
+              <Sparkles className={cn("h-3.5 w-3.5", pending && "animate-pulse")} />
               {pending ? "Reading…" : "Ask"}
             </Button>
           </div>
@@ -181,16 +195,17 @@ export function ShouldIBuyView({ sessions, baseCurrency }: ShouldIBuyViewProps) 
       {/* History */}
       <section className="flex flex-col gap-2">
         <h2 className="font-display text-sm font-medium">Recent reads</h2>
-        {sessions.length === 0 && (
+        {sessions.length === 0 ? (
           <div className="rounded-md border border-dashed border-border/60 px-4 py-8 text-center text-xs text-muted-foreground">
             Nothing yet. Ask about an item above to get the first read.
           </div>
+        ) : (
+          <ul className="flex flex-col divide-y divide-border/40 overflow-hidden rounded-[10px] border border-border/50 bg-card/30">
+            {sessions.map((s) => (
+              <SessionRow key={s.id} session={s} baseCurrency={baseCurrency} />
+            ))}
+          </ul>
         )}
-        <ul className="flex flex-col divide-y divide-border/40 rounded-[10px] border border-border/50 bg-card/30">
-          {sessions.map((s) => (
-            <SessionRow key={s.id} session={s} baseCurrency={baseCurrency} />
-          ))}
-        </ul>
       </section>
     </div>
   );
@@ -200,11 +215,14 @@ function SessionRow({ session, baseCurrency }: { session: ShouldIBuySession; bas
   const router = useRouter();
   const [pending, start] = useTransition();
   const verdictKey: ShouldIBuyVerdict | "unknown" = (session.verdict as ShouldIBuyVerdict | null) ?? "unknown";
+  const decided = session.bought !== null;
+  const stamp = decided ? formatSessionDate(session.decided_at) : formatSessionDate(session.created_at);
+  const stampLabel = decided ? (session.bought ? "Bought" : "Passed") : "Asked";
   return (
-    <li className="grid grid-cols-[1fr_auto] items-start gap-3 px-3 py-2.5">
+    <li className="grid grid-cols-[1fr_auto] items-start gap-3 px-3 py-3">
       <div className="min-w-0">
-        <div className="flex flex-wrap items-baseline gap-1.5">
-          <ShoppingBag className="h-3 w-3 text-foreground/70" />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ShoppingBag className="h-3 w-3 shrink-0 text-foreground/70" />
           <span className="text-sm font-medium text-foreground">{session.item}</span>
           <span
             className={cn(
@@ -215,21 +233,27 @@ function SessionRow({ session, baseCurrency }: { session: ShouldIBuySession; bas
             {VERDICT_LABEL[verdictKey]}
           </span>
           {session.bought === true && (
-            <span className="rounded-full border border-acid-lime/40 px-2 py-0.5 text-[10px] uppercase tracking-wider text-acid-lime">
-              bought
+            <span className="rounded-full border border-acid-lime/40 bg-acid-lime/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-acid-lime">
+              Bought
             </span>
           )}
           {session.bought === false && (
-            <span className="rounded-full border border-overdue/40 px-2 py-0.5 text-[10px] uppercase tracking-wider text-overdue">
-              passed
+            <span className="rounded-full border border-overdue/40 bg-overdue/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-overdue">
+              Passed
             </span>
           )}
         </div>
-        <div className="text-[11px] text-muted-foreground">
-          {session.currency} {session.amount} (≈ {formatMoney(Number(session.amount_base ?? 0), baseCurrency, { compact: true })}) · {session.created_at.slice(0, 10)}
+        <div className="mt-0.5 text-[11px] tabular text-muted-foreground">
+          {formatMoney(Number(session.amount_base ?? 0), baseCurrency, { compact: true })}
+          {session.currency !== baseCurrency && (
+            <> · {session.currency} {Number(session.amount).toFixed(2)}</>
+          )}
+          {stamp && (
+            <> · {stampLabel} {stamp}</>
+          )}
         </div>
         {session.narrative && (
-          <p className="mt-1 text-[12px] leading-relaxed text-foreground/85">{session.narrative}</p>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-foreground/85">{session.narrative}</p>
         )}
       </div>
       <div className="flex items-center gap-1">

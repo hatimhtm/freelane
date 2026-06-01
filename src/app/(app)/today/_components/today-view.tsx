@@ -252,143 +252,134 @@ export function TodayView({
         <span className="text-xs text-muted-foreground tabular">{today}</span>
       </motion.div>
 
-      {/* Phase 1.5 + Tier 1 + Tier 2 stack — densified, small-window optimized. */}
-      <div className="mt-5 space-y-4">
-        {/* Calm Weather Mode — the one honest line under everything. */}
-        {calmWeather && (
-          <CalmWeatherBanner state={calmWeather} variant="today" />
+      {/* Page stack — cards grouped by intent, with breathing room between
+          groups so the Today screen doesn't read as one long undifferentiated
+          column. Within-group: space-y-3; between groups: space-y-6. */}
+      <div className="mt-5 space-y-6">
+
+        {/* ── Alerts ── Calm Weather is the master line; cultural/seasonal
+            banners + alarms cluster with it so urgency reads as a single
+            block. */}
+        <div className="space-y-3">
+          {calmWeather && <CalmWeatherBanner state={calmWeather} variant="today" />}
+          <CulturalOverlay islamic={islamicCalendar} phCultural={phCulturalEvents} />
+          <RamadanModeBanner period={ramadan} />
+          {tightMode && tightMode.active && (
+            <TightModeCoach read={tightMode} baseCurrency={currency} />
+          )}
+          {holdings.some((h) => h.balance < 0) && (
+            <NegativeWalletAlarm holdings={holdings} />
+          )}
+        </div>
+
+        {/* ── Hero ── Safe-to-spend is the centerpiece; the savings line and
+            forecast read straight beneath it as a single hero block. */}
+        <div className="space-y-3">
+          <MorningBriefHero overlay={overlay} />
+          <FamilySavingsWitnessLine read={familySavings} baseCurrency={currency} />
+          {forecastStory && (
+            <ForecastStoryCard story={forecastStory} baseCurrency={currency} />
+          )}
+        </div>
+
+        {/* ── Seasonal & sadaka ── Hidden entirely when neither surfaces. */}
+        {((eidPrep && eidPrep.windows.length > 0) || sadaka) && (
+          <div className="space-y-3">
+            {eidPrep && eidPrep.windows.map((card) => (
+              <EidPrepCard key={`${card.kind}-${card.date}`} card={card} baseCurrency={currency} />
+            ))}
+            {sadaka && <SadakaRhythmCard read={sadaka} baseCurrency={currency} />}
+          </div>
         )}
 
-        {/* Tier 2: Cultural Overlay — Islamic + PH cultural strip (restricted). */}
-        <CulturalOverlay islamic={islamicCalendar} phCultural={phCulturalEvents} />
+        {/* ── Editorial ── Letter + milestones + year-recall read as one
+            "stories" cluster. Each piece self-hides when empty. */}
+        <div className="space-y-3">
+          <LatestLetterCard letter={latestLetter} />
+          <FreshMilestonesCard milestones={freshMilestones} />
+          <YearMemoryRecallCard recall={yearRecall} />
+        </div>
 
-        {/* Tier 2: Ramadan Mode banner — renders only in prep window or during. */}
-        <RamadanModeBanner period={ramadan} />
+        {/* ── Body & behaviour ── Sleep, intentions, late-night, payday and
+            pack-rhythm reads. Tuesday check-in lands here because it's a
+            weekly emotional ledger. */}
+        <div className="space-y-3">
+          <SleepSpendEchoCard echo={sleepEcho} />
+          <JournalMirrorCard mirror={intentMirror} />
+          <TuesdayCheckinCard prompt={tuesdayPrompt} checkin={tuesdayCheckin} isCheckinDay={isTuesday} />
+          {postPayday && <PostPaydaySurgeCard read={postPayday} />}
+          {lateNight && <LateNightClusterCard read={lateNight} />}
+          {packRhythm && <PackRhythmCard read={packRhythm} baseCurrency={currency} />}
+        </div>
 
-        {/* Tight Mode Coach — only renders during storm/gust bands. */}
-        {tightMode && tightMode.active && (
-          <TightModeCoach read={tightMode} baseCurrency={currency} />
+        {/* ── Wife glance + just-landed nudges ── Both self-hide when empty. */}
+        {(wifeState?.preferences_consolidated?.summary || (sadakaSuggestion && triggeringPayment)) && (
+          <div className="space-y-3">
+            {wifeState?.preferences_consolidated?.summary && (
+              <section className="rounded-[12px] border border-border/60 bg-card/30 px-3.5 py-3">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Wife preferences
+                </div>
+                <p className="mt-0.5 text-sm leading-snug text-foreground">
+                  {String(wifeState.preferences_consolidated.summary)}
+                </p>
+              </section>
+            )}
+            {sadakaSuggestion && triggeringPayment && (
+              <Reveal delay={0.04}>
+                <IncomeSadakaSuggestion
+                  suggestion={sadakaSuggestion}
+                  triggeringPayment={triggeringPayment}
+                  sadakaCategoryId={sadakaCategoryId}
+                />
+              </Reveal>
+            )}
+          </div>
         )}
 
-        {/* Alarm only when something is genuinely wrong. */}
-        {holdings.some((h) => h.balance < 0) && (
-          <NegativeWalletAlarm holdings={holdings} />
-        )}
-
-        {/* Main hero — Safe-to-spend with Fraunces numeric. */}
-        <MorningBriefHero overlay={overlay} />
-
-        {/* Tier 4: Family Savings Witness — 11px line under the hero. */}
-        <FamilySavingsWitnessLine read={familySavings} baseCurrency={currency} />
-
-        {/* Forecast Storyteller — next 30 days in Hatim's voice. */}
-        {forecastStory && (
-          <ForecastStoryCard story={forecastStory} baseCurrency={currency} />
-        )}
-
-        {/* Tier 2: Eid Preparation Plan (60d-out, both Eids). */}
-        {eidPrep && eidPrep.windows.map((card) => (
-          <EidPrepCard key={`${card.kind}-${card.date}`} card={card} baseCurrency={currency} />
-        ))}
-
-        {/* Tier 2: Sadaka Rhythm card. */}
-        {sadaka && <SadakaRhythmCard read={sadaka} baseCurrency={currency} />}
-
-        {/* Tier 3: Latest letter (pinned wins, else most recent). */}
-        <LatestLetterCard letter={latestLetter} />
-
-        {/* Tier 3: Fresh milestones strip — hides when none surfaced. */}
-        <FreshMilestonesCard milestones={freshMilestones} />
-
-        {/* Tier 4: Sleep × Spend Echo (prompt or echo). */}
-        <SleepSpendEchoCard echo={sleepEcho} />
-
-        {/* Tier 4: Weekly intentions + mirror. */}
-        <JournalMirrorCard mirror={intentMirror} />
-
-        {/* Tier 4: Post-Payday Surge — surfaces only when inside the window. */}
-        {postPayday && <PostPaydaySurgeCard read={postPayday} />}
-
-        {/* Tier 4: Late-Night Cluster — surfaces only when threshold crossed. */}
-        {lateNight && <LateNightClusterCard read={lateNight} />}
-
-        {/* Tier 4: Pack Rhythm — sparkline + line. Hides when no data. */}
-        {packRhythm && <PackRhythmCard read={packRhythm} baseCurrency={currency} />}
-
-        {/* Tier 5: Tuesday Check-In — collapsed unless Tuesday or already saved. */}
-        <TuesdayCheckinCard prompt={tuesdayPrompt} checkin={tuesdayCheckin} isCheckinDay={isTuesday} />
-
-        {/* Tier 5: Year-Memory Recall — hides when nothing surfaces. */}
-        <YearMemoryRecallCard recall={yearRecall} />
-
-        {/* Tier 5: Should-I-Buy quicklink. */}
-        <ShouldIBuyQuicklink />
-
-        {/* Tier 2: Wife Preferences glance (only when consolidated). */}
-        {wifeState?.preferences_consolidated?.summary && (
-          <section className="rounded-[12px] border border-border/60 bg-card/30 px-3.5 py-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Wife preferences
-            </div>
-            <p className="mt-0.5 text-sm leading-snug text-foreground">
-              {String(wifeState.preferences_consolidated.summary)}
-            </p>
-          </section>
-        )}
-
-        {/* Open AI questions — letter-like surface, only when there are any
-            OR the user can ask for a sweep. */}
+        {/* ── AI questions ── Letter-style prompt surface. Always renders the
+            wrapper when AI is enabled so the user can request a fresh sweep
+            even when nothing is queued. */}
         {aiEnabled && (
           <Reveal delay={0.06}>
             <AiQuestionsCard questions={openAiQuestions} />
           </Reveal>
         )}
 
-        {/* Just-landed nudge. Self-dismissing. */}
-        {sadakaSuggestion && triggeringPayment && (
-          <Reveal delay={0.04}>
-            <IncomeSadakaSuggestion
-              suggestion={sadakaSuggestion}
-              triggeringPayment={triggeringPayment}
-              sadakaCategoryId={sadakaCategoryId}
+        {/* ── Operations ── Wallet runway + this week's recurring + AI focus
+            insights. These are the "what's the system telling me" cards. */}
+        <div className="space-y-4">
+          <section>
+            <SectionHead title="Wallet runway" hint="Balance ÷ trailing 30d burn" />
+            <WalletRunwayCard
+              holdings={holdings}
+              dailyBurnByWallet={dailyBurnByWallet}
+              baseCurrency={currency}
             />
-          </Reveal>
-        )}
+          </section>
 
-        {/* Wallet runway. */}
-        <section>
-          <SectionHead title="Wallet runway" hint="Balance ÷ trailing 30d burn" />
-          <WalletRunwayCard
-            holdings={holdings}
-            dailyBurnByWallet={dailyBurnByWallet}
-            baseCurrency={currency}
-          />
-        </section>
-
-        {/* Recurring window — self-hides when nothing is in the next 5d. */}
-        <section>
-          <SectionHead title="Recurring this week" hint="Next 5 days" />
-          <RecurringWindowWatch
-            recurring={recurring}
-            skips={recurringSkips}
-            holdings={holdings}
-            rates={rates}
-          />
-        </section>
-
-        {/* Existing "today's focus" content — preserved verbatim. */}
-        {aiEnabled && (
-          <Reveal delay={0.1}>
-            <TodaysFocus
-              initialInsights={focusInsights}
-              initialGeneratedAt={focusGeneratedAt}
-              enabled={aiEnabled}
+          <section>
+            <SectionHead title="Recurring this week" hint="Next 5 days" />
+            <RecurringWindowWatch
+              recurring={recurring}
+              skips={recurringSkips}
+              holdings={holdings}
+              rates={rates}
             />
-          </Reveal>
-        )}
+          </section>
 
-        {/* Outstanding situation strip — preserves the "what's the morning
-            picture?" framing without competing with the new hero. */}
+          {aiEnabled && (
+            <Reveal delay={0.1}>
+              <TodaysFocus
+                initialInsights={focusInsights}
+                initialGeneratedAt={focusGeneratedAt}
+                enabled={aiEnabled}
+              />
+            </Reveal>
+          )}
+        </div>
+
+        {/* ── Outstanding strip + Ask AI ── */}
         <section className="grid items-end gap-4 lg:grid-cols-[1.6fr_1fr]">
           <p className="max-w-prose text-sm leading-relaxed text-foreground/75">
             {situation}
@@ -415,7 +406,6 @@ export function TodayView({
           </Reveal>
         </section>
 
-        {/* BIG Ask-your-money centerpiece — preserved, tighter padding. */}
         {aiEnabled && (
           <Reveal delay={0.18}>
             <div className="relative overflow-hidden rounded-xl border border-foreground/15 bg-gradient-to-b from-muted/40 to-card p-1.5">
@@ -576,12 +566,11 @@ export function TodayView({
           </div>
         </section>
 
-        {/* Quick actions — single thin row at the bottom, no card. */}
-        {sadakaCategoryId && (
-          <div className="flex flex-wrap items-center gap-2 pt-2">
-            <SadakaQuickLogButton sadakaCategoryId={sadakaCategoryId} />
-          </div>
-        )}
+        {/* Quick actions — single thin row at the bottom. */}
+        <div className="flex flex-wrap items-center gap-2 pt-2">
+          {sadakaCategoryId && <SadakaQuickLogButton sadakaCategoryId={sadakaCategoryId} />}
+          <ShouldIBuyQuicklink />
+        </div>
       </div>
 
       <SpendModal

@@ -1024,12 +1024,38 @@ export async function getOpenQuietChannels(limit = 10) {
   return (data ?? []) as QuietChannel[];
 }
 
+export async function getOpenQuietChannelForClient(clientId: string) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("quiet_channels")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("client_id", clientId)
+    .is("resolved_at", null)
+    .order("detected_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data ?? null) as QuietChannel | null;
+}
+
 export async function getRateInsights(limit = 40) {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
   const { data } = await supabase
     .from("rate_insights")
     .select("*")
     .eq("user_id", user.id)
+    .order("generated_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as RateInsight[];
+}
+
+export async function getRateInsightsForClient(clientId: string, limit = 6) {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("rate_insights")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("client_id", clientId)
     .order("generated_at", { ascending: false })
     .limit(limit);
   return (data ?? []) as RateInsight[];

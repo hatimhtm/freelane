@@ -17,24 +17,54 @@ import {
   Store,
   HeartHandshake,
   FileText,
+  ShoppingBag,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
 
-const NAV = [
-  { href: "/today",     label: "Today",     icon: Sun             },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projects",  label: "Projects",  icon: FolderKanban    },
-  { href: "/payments",  label: "Payments",  icon: Wallet          },
-  { href: "/spending",  label: "Spending",  icon: Receipt         },
-  { href: "/plans",     label: "Plans",     icon: Calendar        },
-  { href: "/vendors",   label: "Vendors",   icon: Store           },
-  { href: "/entities",  label: "Entities",  icon: HeartHandshake  },
-  { href: "/clients",   label: "Clients",   icon: Users           },
-  { href: "/letters",   label: "Letters",   icon: FileText        },
-  { href: "/activity",  label: "Activity",  icon: Activity        },
-  { href: "/changelog", label: "What's new", icon: Sparkles       },
-  { href: "/settings",  label: "Settings",  icon: Settings        },
+type NavItem = { href: string; label: string; icon: LucideIcon };
+
+const NAV: { title: string; items: NavItem[] }[] = [
+  {
+    title: "Now",
+    items: [
+      { href: "/today",     label: "Today",     icon: Sun },
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    title: "Money",
+    items: [
+      { href: "/projects",  label: "Projects",  icon: FolderKanban },
+      { href: "/payments",  label: "Payments",  icon: Wallet },
+      { href: "/spending",  label: "Spending",  icon: Receipt },
+      { href: "/plans",     label: "Plans",     icon: Calendar },
+    ],
+  },
+  {
+    title: "People",
+    items: [
+      { href: "/clients",   label: "Clients",   icon: Users },
+      { href: "/vendors",   label: "Vendors",   icon: Store },
+      { href: "/entities",  label: "Entities",  icon: HeartHandshake },
+    ],
+  },
+  {
+    title: "Stories",
+    items: [
+      { href: "/letters",     label: "Letters",      icon: FileText },
+      { href: "/should-i-buy", label: "Should I buy?", icon: ShoppingBag },
+    ],
+  },
+  {
+    title: "Log",
+    items: [
+      { href: "/activity",  label: "Activity",   icon: Activity },
+      { href: "/changelog", label: "What's new", icon: Sparkles },
+      { href: "/settings",  label: "Settings",   icon: Settings },
+    ],
+  },
 ];
 
 export function SidebarNav() {
@@ -46,45 +76,54 @@ export function SidebarNav() {
         <Logo />
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 px-3 py-2">
-        {NAV.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || pathname.startsWith(href + "/");
-          return (
-            <Link
-              key={href}
-              href={href}
-              prefetch
-              className={cn(
-                "group relative flex items-center gap-3 rounded-[6px] px-3 py-2 text-sm transition-colors",
-                active
-                  ? "text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/65 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-              )}
-            >
-              {active && (
-                <motion.span
-                  layoutId="sidebar-active"
-                  className="absolute inset-0 rounded-[6px] bg-sidebar-accent"
-                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                />
-              )}
-              {active && (
-                <motion.span
-                  layoutId="sidebar-active-bar"
-                  className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-[var(--brand)]"
-                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                />
-              )}
-              <Icon
-                className={cn(
-                  "relative h-[18px] w-[18px] shrink-0 transition-transform",
-                  active ? "text-foreground" : "text-sidebar-foreground/55 group-hover:scale-105",
-                )}
-              />
-              <span className={cn("relative", active && "font-medium")}>{label}</span>
-            </Link>
-          );
-        })}
+      <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-2">
+        {NAV.map((group, gi) => (
+          <div key={group.title} className="flex flex-col gap-0.5">
+            {gi > 0 && (
+              <div className="px-3 pb-1 pt-1.5 text-[9px] uppercase tracking-[0.18em] text-sidebar-foreground/35">
+                {group.title}
+              </div>
+            )}
+            {group.items.map(({ href, label, icon: Icon }) => {
+              const active = pathname === href || pathname.startsWith(href + "/");
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  prefetch
+                  className={cn(
+                    "group relative flex items-center gap-3 rounded-[6px] px-3 py-2 text-sm transition-colors",
+                    active
+                      ? "text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/65 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                  )}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="sidebar-active"
+                      className="absolute inset-0 rounded-[6px] bg-sidebar-accent"
+                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  {active && (
+                    <motion.span
+                      layoutId="sidebar-active-bar"
+                      className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-[var(--brand)]"
+                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  <Icon
+                    className={cn(
+                      "relative h-[18px] w-[18px] shrink-0 transition-transform",
+                      active ? "text-foreground" : "text-sidebar-foreground/55 group-hover:scale-105",
+                    )}
+                  />
+                  <span className={cn("relative", active && "font-medium")}>{label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="px-4 pb-5 pt-3">
