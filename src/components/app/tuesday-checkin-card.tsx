@@ -78,17 +78,17 @@ export function TuesdayCheckinCard({
           disabled={pending || !response.trim()}
           onClick={() =>
             start(async () => {
-              try {
-                await saveCheckinResponseAction({
-                  response: response.trim(),
-                  mood,
-                  energy,
-                });
-                toast.success("Saved.");
-                router.refresh();
-              } catch (err) {
-                toast.error((err as Error).message);
+              const result = await saveCheckinResponseAction({
+                response: response.trim(),
+                mood,
+                energy,
+              });
+              if (!result.ok) {
+                toast.error(result.error || "Couldn't save.");
+                return;
               }
+              toast.success("Saved.");
+              router.refresh();
             })
           }
           className="gap-1.5"

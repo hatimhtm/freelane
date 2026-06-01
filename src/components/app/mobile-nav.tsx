@@ -96,7 +96,7 @@ export function MobileNav() {
             <SheetTitle className="sr-only">Navigation</SheetTitle>
             <Logo />
           </SheetHeader>
-          <nav className="flex flex-1 flex-col gap-4 overflow-y-auto p-3 pb-6">
+          <nav className="no-scrollbar flex flex-1 flex-col gap-4 overflow-y-auto p-3 pb-6">
             {NAV.map((group, gi) => (
               <div key={group.title} className="flex flex-col gap-0.5">
                 {gi > 0 && (

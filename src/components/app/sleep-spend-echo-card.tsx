@@ -159,20 +159,20 @@ function MorningLogModal({
           disabled={pending}
           onClick={() =>
             start(async () => {
-              try {
-                const sleptNum = slept.trim() ? Number(slept) : null;
-                await saveMorningLogAction({
-                  sleptHours: Number.isFinite(sleptNum) ? sleptNum : null,
-                  moodBand: mood,
-                  mindState: mind.trim() || null,
-                  notes: notes.trim() || null,
-                });
-                toast.success("Morning logged.");
-                onOpenChange(false);
-                router.refresh();
-              } catch (err) {
-                toast.error((err as Error).message);
+              const sleptNum = slept.trim() ? Number(slept) : null;
+              const result = await saveMorningLogAction({
+                sleptHours: Number.isFinite(sleptNum) ? sleptNum : null,
+                moodBand: mood,
+                mindState: mind.trim() || null,
+                notes: notes.trim() || null,
+              });
+              if (!result.ok) {
+                toast.error(result.error || "Couldn't save.");
+                return;
               }
+              toast.success("Morning logged.");
+              onOpenChange(false);
+              router.refresh();
             })
           }
           className="gap-1.5"

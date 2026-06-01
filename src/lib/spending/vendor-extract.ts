@@ -80,10 +80,13 @@ export function extractVendorToken(description: string): VendorMatch {
   }
 
   // Guessed: a single capitalized noun OR an ALL-CAPS short word in the
-  // raw description. Skip the leading word if the description starts with
-  // a generic verb pattern? Keep it simple — first qualifying token wins.
+  // raw description. Skip generic action verbs ("sent", "paid", "bought",
+  // "transfer"…) that show up at the start of sadaka / loan / wife-transfer
+  // descriptions but aren't real vendor names.
   const tokens = description.split(/[\s,.;:!?()/\\-]+/).filter(Boolean);
   for (const tok of tokens) {
+    const lowerTok = tok.toLowerCase();
+    if (GUESS_STOPWORDS.has(lowerTok)) continue;
     if (/^[A-Z]{2,6}$/.test(tok)) {
       return { vendor: tok, confidence: "guessed" };
     }
@@ -94,6 +97,20 @@ export function extractVendorToken(description: string): VendorMatch {
 
   return { vendor: null, confidence: null };
 }
+
+// Tokens that show up at the start of common spend descriptions but aren't
+// vendor names — keeps "Sent ₱1,000 sadaka" from registering as a "Sent"
+// vendor on the spending top-vendor leaderboard.
+const GUESS_STOPWORDS = new Set([
+  "sent", "send", "paid", "pay", "bought", "buy", "gave", "give",
+  "received", "receive", "got", "transfer", "transferred", "withdrew",
+  "withdraw", "deposit", "deposited", "spent", "spend", "topped", "loaned",
+  "borrowed", "for", "to", "from", "the", "a", "and", "with", "via",
+  "sadaka", "tithe", "alms", "donation", "donated",
+  "rent", "bill", "bills", "utility", "utilities", "groceries", "grocery",
+  "food", "lunch", "breakfast", "dinner", "snack", "snacks", "drink",
+  "drinks", "cigarettes", "smoke", "smokes",
+]);
 
 const NO_VENDOR_KEY = "—";
 

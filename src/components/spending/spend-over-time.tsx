@@ -123,6 +123,8 @@ export function SpendOverTime({
             tickLine={false}
             axisLine={false}
             width={44}
+            domain={[0, "auto"]}
+            allowDataOverflow={false}
             tick={<YTick baseCurrency={baseCurrency} />}
           />
           <Tooltip
@@ -139,7 +141,7 @@ export function SpendOverTime({
             }
           />
           <Area
-            type="natural"
+            type="monotone"
             dataKey="total"
             stroke="var(--chart-1)"
             strokeWidth={2}

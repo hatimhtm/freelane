@@ -76,7 +76,7 @@ export function SidebarNav() {
         <Logo />
       </div>
 
-      <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-2">
+      <nav className="no-scrollbar flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-2">
         {NAV.map((group, gi) => (
           <div key={group.title} className="flex flex-col gap-0.5">
             {gi > 0 && (

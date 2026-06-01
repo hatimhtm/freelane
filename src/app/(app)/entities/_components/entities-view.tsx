@@ -183,13 +183,17 @@ function CreateEntityModal({
     if (!name.trim()) return;
     setPending(true);
     try {
-      await createEntity({
+      const result = await createEntity({
         kind,
         canonical_name: name.trim(),
         short_description: shortDescription.trim() || null,
         vague,
         notes: notes.trim() || null,
       });
+      if (!result.ok) {
+        toast.error(result.error || "Couldn't save.");
+        return;
+      }
       toast.success(`Added ${name.trim()}`);
       setName("");
       setShortDescription("");
@@ -197,8 +201,6 @@ function CreateEntityModal({
       setVague(false);
       onOpenChange(false);
       router.refresh();
-    } catch (err) {
-      toast.error((err as Error).message);
     } finally {
       setPending(false);
     }

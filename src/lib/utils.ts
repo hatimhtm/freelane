@@ -34,3 +34,26 @@ export function phtTimeHHMM(d: Date = new Date()): string {
   const m = String(shifted.getUTCMinutes()).padStart(2, "0");
   return `${h}:${m}`;
 }
+
+// Accept BOTH "." and "," as the decimal separator on amount inputs — the
+// numpad comma key is right there on most keyboards (esp. EU layouts) and
+// the user shouldn't have to retrain their muscle memory. Use this on the
+// onChange of every amount field that's <input type="text" inputMode="decimal">.
+// Returns a string safe to feed into Number()/parseFloat() and to store as
+// the input's controlled value. Strips non-digits except an optional leading
+// minus and a single decimal point.
+export function normalizeAmountInput(raw: string): string {
+  if (!raw) return "";
+  let sign = "";
+  let body = raw.replace(/,/g, ".");
+  if (body.startsWith("-")) {
+    sign = "-";
+    body = body.slice(1);
+  }
+  const cleaned = body.replace(/[^\d.]/g, "");
+  const parts = cleaned.split(".");
+  const payload = parts.length <= 1
+    ? cleaned
+    : `${parts[0]}.${parts.slice(1).join("").slice(0, 2)}`;
+  return `${sign}${payload}`;
+}

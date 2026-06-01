@@ -6,7 +6,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -33,9 +32,9 @@ export function UserMenu() {
         </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        <div className="px-1.5 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Freelane
-        </DropdownMenuLabel>
+        </div>
         <DropdownMenuItem onClick={() => router.push("/settings")}>
           <SettingsIcon className="mr-2 h-4 w-4" />
           Settings

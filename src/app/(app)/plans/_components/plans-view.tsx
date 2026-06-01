@@ -71,19 +71,27 @@ export function PlansView({
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(openNew);
   const [editingPlan, setEditingPlan] = useState<PlannedSpend | null>(null);
+  // Plans the user just deleted/cancelled — optimistically hidden until
+  // router.refresh() lands the fresh data so the UI feels instant.
+  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
 
-  const grouped = useMemo(() => groupByStatus(plans), [plans]);
+  const visiblePlans = useMemo(
+    () => plans.filter((p) => !removedIds.has(p.id)),
+    [plans, removedIds],
+  );
+
+  const grouped = useMemo(() => groupByStatus(visiblePlans), [visiblePlans]);
   const committedTotal = useMemo(
-    () => plans
+    () => visiblePlans
       .filter((p) => p.status === "committed")
       .reduce((s, p) => s + Number(p.committed_base ?? p.expected_base ?? 0), 0),
-    [plans],
+    [visiblePlans],
   );
   const plannedActiveTotal = useMemo(
-    () => plans
+    () => visiblePlans
       .filter((p) => p.status === "planned")
       .reduce((s, p) => s + Number(p.expected_base ?? 0), 0),
-    [plans],
+    [visiblePlans],
   );
 
   function openCreate() {
@@ -173,12 +181,18 @@ export function PlansView({
               onEdit={openEdit}
               onCommit={(p) => doCommit(p, router)}
               onUncommit={(p) => doUncommit(p, router)}
-              onCancel={(p) => doCancel(p, router)}
-              onDelete={(p) => doDelete(p, router)}
+              onCancel={(p) => {
+                setRemovedIds((s) => new Set(s).add(p.id));
+                doCancel(p, router);
+              }}
+              onDelete={(p) => {
+                setRemovedIds((s) => new Set(s).add(p.id));
+                doDelete(p, router);
+              }}
             />
           );
         })}
-        {plans.length === 0 && (
+        {visiblePlans.length === 0 && (
           <div className="rounded-md border border-dashed border-border/60 px-4 py-8 text-center text-xs text-muted-foreground">
             No plans yet — add one to start parking money before you spend it.
           </div>

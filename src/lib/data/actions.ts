@@ -23,6 +23,28 @@ async function userOrThrow() {
   return { supabase, userId: user.id };
 }
 
+// Result wrapper for actions whose UX needs to surface the REAL underlying
+// error. Next 16 masks any thrown error from a server action in production
+// builds with a generic "Server Components render" message; returning a
+// structured value sidesteps that and lets the toast show what actually
+// went wrong. Always logs the message server-side too so the same info
+// reaches Vercel logs.
+export type ActionResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string };
+
+async function safeRun<T>(label: string, fn: () => Promise<T>): Promise<ActionResult<T>> {
+  try {
+    const data = await fn();
+    return { ok: true, data };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    // eslint-disable-next-line no-console
+    console.error(`[freelane-action:${label}]`, message);
+    return { ok: false, error: message || "Something went wrong." };
+  }
+}
+
 // Drops the AI safe-to-spend cache row AND marks calm_weather_state stale so
 // the next read of either recomputes from scratch. Called from every mutation
 // that changes the math (spends, payments, withdrawals, recurring paid/skipped,
@@ -3265,35 +3287,37 @@ export type EntityInput = {
   notes?: string | null;
 };
 
-export async function createEntity(input: EntityInput) {
-  const { supabase, userId } = await userOrThrow();
-  const name = input.canonical_name.trim();
-  if (!name) throw new Error("Entity needs a name.");
-  if (!input.kind) throw new Error("Pick a kind.");
-  const { data, error } = await supabase
-    .from("entities")
-    .insert({
-      user_id: userId,
-      kind: input.kind,
-      canonical_name: name,
-      short_description: input.short_description ?? null,
-      aliases: input.aliases ?? [],
-      vague: !!input.vague,
-      notes: input.notes ?? null,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "entity.created",
-    title: `Entity · ${name}`,
-    entityType: "entity",
-    entityId: data.id as string,
-    metadata: { kind: input.kind, vague: !!input.vague },
+export async function createEntity(input: EntityInput): Promise<ActionResult<{ id: string }>> {
+  return safeRun("createEntity", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const name = input.canonical_name.trim();
+    if (!name) throw new Error("Entity needs a name.");
+    if (!input.kind) throw new Error("Pick a kind.");
+    const { data, error } = await supabase
+      .from("entities")
+      .insert({
+        user_id: userId,
+        kind: input.kind,
+        canonical_name: name,
+        short_description: input.short_description ?? null,
+        aliases: input.aliases ?? [],
+        vague: !!input.vague,
+        notes: input.notes ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    await logEvent({
+      userId,
+      kind: "entity.created",
+      title: `Entity · ${name}`,
+      entityType: "entity",
+      entityId: data.id as string,
+      metadata: { kind: input.kind, vague: !!input.vague },
+    });
+    revalidatePath("/entities");
+    return { id: data.id as string };
   });
-  revalidatePath("/entities");
-  return data;
 }
 
 export async function updateEntity(id: string, input: Partial<EntityInput>) {
@@ -3655,32 +3679,35 @@ export type MorningLogInput = {
   notes?: string | null;
 };
 
-export async function saveMorningLogAction(input: MorningLogInput) {
-  const { supabase, userId } = await userOrThrow();
-  const recordedAt = input.recordedAt ?? phtToday();
-  const { error } = await supabase
-    .from("morning_log")
-    .upsert(
-      {
-        user_id: userId,
-        recorded_at: recordedAt,
-        slept_hours: input.sleptHours ?? null,
-        mood_band: input.moodBand ?? null,
-        mind_state: input.mindState ?? null,
-        notes: input.notes ?? null,
-      },
-      { onConflict: "user_id,recorded_at" },
-    );
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "morning_log.saved",
-    title: "Logged the morning",
-    entityType: "morning_log",
-    entityId: userId,
-    metadata: { recorded_at: recordedAt, slept_hours: input.sleptHours, mood_band: input.moodBand },
+export async function saveMorningLogAction(input: MorningLogInput): Promise<ActionResult<{ recordedAt: string }>> {
+  return safeRun("saveMorningLog", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const recordedAt = input.recordedAt ?? phtToday();
+    const { error } = await supabase
+      .from("morning_log")
+      .upsert(
+        {
+          user_id: userId,
+          recorded_at: recordedAt,
+          slept_hours: input.sleptHours ?? null,
+          mood_band: input.moodBand ?? null,
+          mind_state: input.mindState ?? null,
+          notes: input.notes ?? null,
+        },
+        { onConflict: "user_id,recorded_at" },
+      );
+    if (error) throw new Error(error.message);
+    await logEvent({
+      userId,
+      kind: "morning_log.saved",
+      title: "Logged the morning",
+      entityType: "morning_log",
+      entityId: userId,
+      metadata: { recorded_at: recordedAt, slept_hours: input.sleptHours, mood_band: input.moodBand },
+    });
+    revalidatePath("/today");
+    return { recordedAt };
   });
-  revalidatePath("/today");
 }
 
 export type IntentMirrorInput = {
@@ -3756,11 +3783,13 @@ export async function saveCheckinResponseAction(input: {
   mood?: number | null;
   energy?: number | null;
   weekMoneyShape?: { landed?: number; spent?: number; surplus?: number };
-}): Promise<{ id: string } | null> {
-  const { echoCheckin } = await import("@/lib/ai/tuesday-checkin");
-  const row = await echoCheckin(input);
-  revalidatePath("/today");
-  return row ? { id: row.id } : null;
+}): Promise<ActionResult<{ id: string | null }>> {
+  return safeRun("saveCheckinResponse", async () => {
+    const { echoCheckin } = await import("@/lib/ai/tuesday-checkin");
+    const row = await echoCheckin(input);
+    revalidatePath("/today");
+    return { id: row?.id ?? null };
+  });
 }
 
 export async function runQuietChannelSweepAction(): Promise<{ detected: number }> {
