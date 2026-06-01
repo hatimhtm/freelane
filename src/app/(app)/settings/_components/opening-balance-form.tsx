@@ -82,17 +82,18 @@ export function OpeningBalanceForm({
     [rows],
   );
 
+  // The form is write-only and always starts blank, so ANY value the user
+  // typed counts as a re-anchor request — including 0. Don't compare to
+  // initialAmount: "type 0, save 0" must work even when the prior anchor
+  // was already 0 (most wallets ARE 0; that's the common case).
+  function isExplicit(amount: string): boolean {
+    const trimmed = amount.trim();
+    if (trimmed === "" || trimmed === "-") return false;
+    return Number.isFinite(Number(trimmed));
+  }
+
   const dirty = useMemo(
-    () =>
-      Object.entries(rows).some(([, r]) => {
-        const trimmed = r.amount.trim();
-        const n = Number(trimmed);
-        const valid = trimmed !== "" && trimmed !== "-" && Number.isFinite(n);
-        if (!r.wasAnchored && valid) return true;
-        if (valid && n !== r.initialAmount) return true;
-        if (r.currency !== r.initialCurrency) return true;
-        return r.date !== r.initialDate;
-      }),
+    () => Object.values(rows).some((r) => isExplicit(r.amount)),
     [rows],
   );
 
@@ -107,15 +108,7 @@ export function OpeningBalanceForm({
 
   function save() {
     start(async () => {
-      const changes = Object.entries(rows).filter(([, r]) => {
-        const trimmed = r.amount.trim();
-        const n = Number(trimmed);
-        const valid = trimmed !== "" && trimmed !== "-" && Number.isFinite(n);
-        if (!r.wasAnchored && valid) return true;
-        if (valid && n !== r.initialAmount) return true;
-        if (r.currency !== r.initialCurrency) return true;
-        return r.date !== r.initialDate;
-      });
+      const changes = Object.entries(rows).filter(([, r]) => isExplicit(r.amount));
       if (changes.length === 0) return;
       const results = await Promise.all(
         changes.map(([methodId, r]) => {
