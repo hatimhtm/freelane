@@ -196,22 +196,44 @@ export function holdingBalances(
   if (holding.length === 0) return [];
   const holdingIds = new Set(holding.map((m) => m.id));
 
+  // The opening_balance_at on a wallet is an ANCHOR: the user told us what was
+  // in the wallet on that date. Activity BEFORE that date is already baked
+  // into the opening number, so we must not re-subtract it. Activity ON the
+  // anchor date counts forward — same-day spends after the calibration are
+  // real outgoings. Wallets with no anchor (legacy / never-set) fall through
+  // to "count everything from time zero" so the math layer matches the prior
+  // behaviour.
+  const anchorAt = new Map<string, string | null>(
+    holding.map((m) => [m.id, m.opening_balance_at ?? null]),
+  );
+  function isAfterAnchor(methodId: string, isoMoment: string): boolean {
+    const anchor = anchorAt.get(methodId);
+    if (!anchor) return true;
+    // Anchor is stored as a date ("YYYY-MM-DD"); compare lexicographically
+    // against the spend/withdrawal/payment date. spent_at can be a full ISO
+    // timestamp or a date — slicing to 10 chars normalises both.
+    return isoMoment.slice(0, 10) >= anchor.slice(0, 10);
+  }
+
   const received = new Map<string, number>();
   for (const p of payments) {
     const landedOn = landingMethodId(stepsByPayment.get(p.id) ?? []);
     if (!landedOn || !holdingIds.has(landedOn)) continue;
+    if (!isAfterAnchor(landedOn, p.paid_at)) continue;
     received.set(landedOn, (received.get(landedOn) ?? 0) + Number(p.net_amount_base ?? 0));
   }
 
   const withdrawn = new Map<string, number>();
   for (const w of withdrawals) {
     if (!w.from_method_id || !holdingIds.has(w.from_method_id)) continue;
+    if (!isAfterAnchor(w.from_method_id, w.withdrawn_at)) continue;
     withdrawn.set(w.from_method_id, (withdrawn.get(w.from_method_id) ?? 0) + Number(w.gross_base ?? 0));
   }
 
   const spent = new Map<string, number>();
   for (const sp of spends) {
     if (!holdingIds.has(sp.wallet_id)) continue;
+    if (!isAfterAnchor(sp.wallet_id, sp.spent_at)) continue;
     spent.set(sp.wallet_id, (spent.get(sp.wallet_id) ?? 0) + Number(sp.amount_base ?? 0));
   }
 
@@ -223,6 +245,11 @@ export function holdingBalances(
       const sp = spent.get(m.id) ?? 0;
       return { methodId: m.id, name: m.name, opening, received: r, withdrawn: out, spent: sp, balance: opening + r - out - sp };
     })
-    // Show wallets that have ever seen money; hide empty ones to avoid clutter.
-    .filter((row) => row.opening > 0 || row.received > 0 || row.withdrawn > 0 || row.spent > 0);
+    // Show wallets the user has anchored OR that have seen money. Hide pure
+    // empties so the picker doesn't fill with dormant rows.
+    .filter((row) => {
+      const m = methods.find((x) => x.id === row.methodId);
+      if (m?.opening_balance_at) return true;
+      return row.opening !== 0 || row.received !== 0 || row.withdrawn !== 0 || row.spent !== 0;
+    });
 }
