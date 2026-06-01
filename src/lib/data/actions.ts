@@ -2635,18 +2635,18 @@ export async function setWalletOpeningBalance(input: WalletOpeningBalanceInput):
       .eq("id", input.methodId)
       .eq("user_id", userId);
     if (error) throw new Error(error.message);
-    await logEvent({
-      userId,
-      kind: "wallet.opening_balance_set",
-      title: `Set opening balance · ${input.amountCurrency} ${input.amount.toFixed(2)}`,
-      entityType: "payment_method",
-      entityId: input.methodId,
-      metadata: { amount: input.amount, currency: input.amountCurrency, amount_base: amountBase, at: opening_balance_at },
-    });
+    // Hatim 2026-06-01: anchoring a wallet balance is a calibration, not a
+    // financial event. No activity-log row, no quiet-receipt, no milestone.
+    // Just propagate the new number everywhere the system reads from it so
+    // /today, /spending, /payments, /plans, /dashboard all show the same
+    // figure as soon as the setting saves.
     await invalidateAiSafeSpendCache(userId, supabase);
     revalidatePath("/settings");
     revalidatePath("/dashboard");
     revalidatePath("/today");
+    revalidatePath("/spending");
+    revalidatePath("/payments");
+    revalidatePath("/plans");
     return { amountBase };
   });
 }
