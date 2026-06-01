@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ArrowDownToLine, ChevronDown, Plus, Trash2, Wallet } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { PageHeader } from "@/components/app/page-header";
+import { PrimaryAction } from "@/components/app/primary-action";
 import { EmptyState } from "@/components/app/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -247,6 +248,15 @@ export function PaymentsView({
         baseCurrency={currency}
         defaultToId={cashMethodId}
       />
+
+      {allProjects.length > 0 && (
+        <PrimaryAction
+          icon={Plus}
+          label="Log a payment"
+          ariaLabel="Open the payment log"
+          onClick={() => setSheetOpen(true)}
+        />
+      )}
     </div>
   );
 }

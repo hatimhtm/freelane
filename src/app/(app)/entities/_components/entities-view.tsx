@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { PrimaryAction } from "@/components/app/primary-action";
 import {
   Select,
   SelectContent,
@@ -101,6 +102,13 @@ export function EntitiesView({ entities, links, spends, baseCurrency }: Entities
       ))}
 
       <CreateEntityModal open={createOpen} onOpenChange={setCreateOpen} />
+
+      <PrimaryAction
+        icon={Plus}
+        label="New entity"
+        ariaLabel="Create a new entity"
+        onClick={() => setCreateOpen(true)}
+      />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { CenterModal, CenterModalBody, CenterModalFooter } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { PrimaryAction } from "@/components/app/primary-action";
 import { formatMoney } from "@/lib/money";
 import { archiveVendor, createVendor } from "@/lib/data/actions";
 import type {
@@ -195,6 +196,13 @@ export function VendorsView({
       </section>
 
       <CreateVendorModal open={createOpen} onOpenChange={setCreateOpen} />
+
+      <PrimaryAction
+        icon={Plus}
+        label="New vendor"
+        ariaLabel="Create a new vendor"
+        onClick={() => setCreateOpen(true)}
+      />
     </div>
   );
 }

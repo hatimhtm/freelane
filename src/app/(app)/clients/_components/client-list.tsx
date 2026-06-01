@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ClientDialog } from "./client-dialog";
+import { PrimaryAction } from "@/components/app/primary-action";
 import { archiveClient, deleteClient } from "@/lib/data/actions";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -204,6 +205,13 @@ export function ClientList({
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
         client={editing ?? undefined}
+      />
+
+      <PrimaryAction
+        icon={Plus}
+        label="New client"
+        ariaLabel="Create a new client"
+        onClick={() => setNewOpen(true)}
       />
     </>
   );

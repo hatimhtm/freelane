@@ -475,9 +475,9 @@
   .display-eyebrow {
     font-family: var(--font-sans), system-ui, sans-serif;
     font-weight: 500;
-    font-size: 0.6875rem;
+    font-size: 0.75rem;          /* 12px — bumped from 11px for daily legibility. */
     text-transform: uppercase;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.18em;
     line-height: 1;
   }
 }

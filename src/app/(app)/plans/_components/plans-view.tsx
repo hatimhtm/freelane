@@ -9,6 +9,7 @@ import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CashflowAtlasChart } from "@/components/spending/cashflow-atlas-chart";
+import { PrimaryAction } from "@/components/app/primary-action";
 import { PlanModal } from "./plan-modal";
 import { PreMortemCard } from "./pre-mortem-card";
 
@@ -210,6 +211,13 @@ export function PlansView({
         currencies={currencies}
         baseCurrency={baseCurrency}
         categories={spendCategories}
+      />
+
+      <PrimaryAction
+        icon={Plus}
+        label="New plan"
+        ariaLabel="Create a new plan"
+        onClick={openCreate}
       />
     </div>
   );

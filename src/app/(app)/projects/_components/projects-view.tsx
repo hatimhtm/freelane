@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { LinkButton } from "@/components/ui/link-button";
 import { BlockedMoneyList, type BlockedRow } from "@/components/app/blocked-money-list";
+import { PrimaryAction } from "@/components/app/primary-action";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { Client, CurrencyCode, Payment, Project, ProjectTemplate } from "@/lib/supabase/types";
@@ -130,6 +131,15 @@ export function ProjectsView({
         project={editing ?? undefined}
         defaultStatus="unpaid"
       />
+
+      {clients.length > 0 && (
+        <PrimaryAction
+          icon={Plus}
+          label="New project"
+          ariaLabel="Create a new project"
+          onClick={() => { setEditing(null); setDialogOpen(true); }}
+        />
+      )}
     </div>
   );
 }
