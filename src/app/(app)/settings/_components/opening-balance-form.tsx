@@ -247,8 +247,8 @@ function Row({
         <div className="truncate text-[15px] font-medium text-foreground">{method.name}</div>
         <div className="mt-0.5 text-[12px] text-muted-foreground tabular">
           {wasSet
-            ? `Anchored ${formatLightDate(row.initialDate)} · stays at this number`
-            : "Starts counting from this number"}
+            ? `Anchored ${formatLightDate(row.initialDate)} — everywhere else reads this + activity since.`
+            : "Calibration starts here. Pre-anchor activity is treated as already baked in."}
         </div>
       </div>
 
@@ -260,7 +260,13 @@ function Row({
           type="text"
           inputMode="decimal"
           value={row.amount}
-          onChange={(e) => onChange({ amount: normalizeAmountInput(e.target.value) })}
+          onChange={(e) =>
+            // Re-anchor to today whenever the amount changes so "what I type"
+            // equals "what shows everywhere" — no surprise drift from pre-anchor
+            // activity. The user can still backdate manually via the date picker
+            // for one-off historical anchors.
+            onChange({ amount: normalizeAmountInput(e.target.value), date: TODAY() })
+          }
           placeholder="0"
           className={cn(
             "h-11 w-[150px] rounded-lg border border-border/70 bg-transparent pl-8 pr-3 text-right text-[17px] tabular tracking-tight text-foreground",
