@@ -650,6 +650,9 @@ export interface SpendItem {
   sort_order: number;
   // Universal notes rule (migration 0029). Per-item freeform context.
   notes: string | null;
+  // Per-item quantity (migration 0048). 1 by default — total line price is
+  // `amount`, so unit price = amount / quantity for the leaderboards + AI.
+  quantity: number;
   created_at: string;
 }
 

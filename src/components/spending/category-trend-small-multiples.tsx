@@ -133,18 +133,18 @@ function CategoryCell({
   return (
     <Link
       href={`/spending/category/${cell.category.id}`}
-      className="group block bg-paper px-3 py-2.5 transition-colors duration-300 hover:bg-ink/[0.025]"
+      className="group block bg-paper px-4 py-3.5 transition-colors duration-300 hover:bg-ink/[0.025]"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-[11px] uppercase tracking-wide text-ink/55">
+        <span className="truncate text-[12px] uppercase tracking-[0.14em] text-ink/60">
           {cell.category.name}
         </span>
       </div>
-      <div className="mt-0.5 font-fraunces text-[18px] leading-tight tabular text-ink/90">
+      <div className="mt-1.5 font-fraunces text-[22px] leading-tight tabular text-ink/90">
         {formatMoney(cell.current, baseCurrency, { compact: true })}
       </div>
-      <div className="mt-1 -mx-0.5">
-        <Sparkline data={cell.series} height={28} color={color} strokeWidth={1.5} filled />
+      <div className="mt-2 -mx-0.5">
+        <Sparkline data={cell.series} height={32} color={color} strokeWidth={1.5} filled />
       </div>
     </Link>
   );

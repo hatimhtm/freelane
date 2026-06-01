@@ -79,7 +79,7 @@ export function PageMonthNav({
         </Button>
         <h2
           aria-live="polite"
-          className="font-display min-w-[10ch] text-center text-xl leading-none tracking-tight"
+          className="font-display min-w-[10ch] text-center text-[28px] leading-none tracking-tight"
           style={{ fontVariationSettings: '"opsz" 144, "SOFT" 40' }}
         >
           {label}
@@ -96,7 +96,7 @@ export function PageMonthNav({
         </Button>
       </div>
       {summary && (
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-6 gap-y-1.5 text-[13px] text-muted-foreground">
           {summary}
         </div>
       )}
@@ -119,13 +119,13 @@ export function MonthNavStat({
   tone?: "neutral" | "positive" | "warning";
 }) {
   return (
-    <div className="flex items-baseline gap-1.5">
-      <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+    <div className="flex items-baseline gap-2">
+      <span className="text-[12px] uppercase tracking-[0.16em] text-muted-foreground/80">
         {label}
       </span>
       <span
         className={cn(
-          "tabular text-sm font-medium",
+          "tabular text-[15px] font-medium",
           tone === "neutral" && "text-foreground",
           tone === "positive" && "text-[var(--color-positive,theme(colors.lime.400))]",
           tone === "warning" && "text-[var(--color-warning,theme(colors.orange.400))]",

@@ -491,11 +491,11 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-[12px] border border-foreground/10 bg-card/40">
-      <div className="flex items-baseline justify-between gap-3 border-b border-foreground/10 px-3.5 py-2.5">
+    <div className="rounded-[14px] border border-foreground/10 bg-card/40">
+      <div className="flex items-baseline justify-between gap-3 border-b border-foreground/10 px-4 py-3">
         <span className="display-eyebrow text-muted-foreground">{eyebrow}</span>
         {subtitle && (
-          <span className="text-[11px] text-muted-foreground/70 truncate">
+          <span className="text-[12px] text-muted-foreground/80 truncate">
             {subtitle}
           </span>
         )}
@@ -513,21 +513,21 @@ interface StatItem {
 
 function StatStrip({ items }: { items: StatItem[] }) {
   return (
-    <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[12px] border border-foreground/10 bg-foreground/8 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-[14px] border border-foreground/10 bg-foreground/8 sm:grid-cols-3 lg:grid-cols-5">
       {items.map((item, i) => (
         <motion.div
           key={`${item.label}-${i}`}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.32, delay: i * 0.04, ease: EASE }}
-          className="flex flex-col gap-1 bg-card/60 px-3.5 py-3"
+          className="flex flex-col gap-1.5 bg-card/60 px-4 py-4"
         >
-          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+          <span className="text-[12px] uppercase tracking-[0.16em] text-muted-foreground/80">
             {item.label}
           </span>
           <span
             className={cn(
-              "font-fraunces tabular text-[20px] leading-none",
+              "font-fraunces tabular text-[28px] leading-none",
               item.tone === "positive" &&
                 "text-[var(--color-positive,theme(colors.lime.400))]",
               item.tone === "warning" &&

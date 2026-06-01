@@ -79,10 +79,10 @@ export function DashboardView({
       {/* Header — tight */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-heading text-xl font-medium tracking-tight md:text-2xl">
+          <h1 className="display-headline text-3xl md:text-4xl">
             {firstName ? `Hey, ${firstName}.` : "Dashboard"}
           </h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-1 text-sm text-muted-foreground">
             {new Date().toLocaleString("en", { month: "long", year: "numeric" })} at a glance.
           </p>
         </div>
@@ -176,7 +176,7 @@ function HeroStrip({
         <div
           key={it.label}
           className={cn(
-            "relative px-3 py-3 sm:px-4",
+            "relative px-4 py-4 sm:px-5 sm:py-5",
             // hairline dividers between cells
             i < items.length - 1 && "after:absolute after:right-0 after:top-3 after:bottom-3 after:hidden after:w-px after:bg-foreground/10 lg:after:block",
             i % 2 === 1 && "border-l border-foreground/10 lg:border-l-0",
@@ -186,10 +186,10 @@ function HeroStrip({
             it.accent && "bg-foreground/[0.025]",
           )}
         >
-          <div className="display-eyebrow text-[10px] text-muted-foreground">{it.label}</div>
+          <div className="display-eyebrow text-muted-foreground">{it.label}</div>
           <div
             className={cn(
-              "mt-1 font-heading text-lg font-medium tracking-tight tabular leading-none",
+              "mt-2 font-heading text-[24px] font-medium tracking-tight tabular leading-none",
               it.tone === "pos" && "text-foreground",
               it.tone === "neg" && "text-foreground",
               it.tone === "warn" && "text-foreground",
@@ -225,15 +225,15 @@ function PulseStrip({
       transition={{ duration: 0.32, delay: 0.04, ease: EASE }}
       className="rounded-xl bg-card ring-1 ring-foreground/10"
     >
-      <div className="flex items-end justify-between gap-3 px-4 pt-3">
-        <div className="flex items-center gap-4 text-[11px]">
+      <div className="flex items-end justify-between gap-3 px-5 pt-4">
+        <div className="flex items-center gap-5 text-[13px]">
           <Legend swatch="var(--chart-1)" label="Landed" value={landedTotal} currency={currency} />
           <Legend swatch="var(--chart-4)" label="Spent" value={spentTotal} currency={currency} />
         </div>
         <div className="text-right">
-          <div className="display-eyebrow text-[10px] text-muted-foreground">30-day net</div>
+          <div className="display-eyebrow text-muted-foreground">30-day net</div>
           <div className={cn(
-            "font-heading text-sm font-medium tabular tracking-tight",
+            "mt-1 font-heading text-base font-medium tabular tracking-tight",
             net < 0 ? "text-[var(--overdue)]" : "text-[var(--success)]",
           )}>
             {net < 0 ? "−" : "+"}{formatMoney(Math.abs(net), currency, { compact: true })}

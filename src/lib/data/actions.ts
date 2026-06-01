@@ -1498,6 +1498,8 @@ export type SpendItemInput = {
   vat_amount?: number | null;
   // Universal notes rule (Tier 1, migration 0029) — per-item freeform context.
   notes?: string | null;
+  // Per-item quantity (migration 0048). Defaults to 1 on save.
+  quantity?: number | null;
 };
 
 export type SpendInput = {
@@ -1617,6 +1619,7 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
       amount: it.amount ?? null,
       vat_amount: it.vat_amount ?? null,
       notes: it.notes ?? null,
+      quantity: it.quantity && it.quantity > 0 ? it.quantity : 1,
       sort_order: i,
     }));
     const { error: itemErr } = await supabase.from("spend_items").insert(itemRows);
@@ -1763,6 +1766,7 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
         amount: it.amount ?? null,
         vat_amount: it.vat_amount ?? null,
         notes: it.notes ?? null,
+        quantity: it.quantity && it.quantity > 0 ? it.quantity : 1,
         sort_order: i,
       }));
       const { error: itemErr } = await supabase.from("spend_items").insert(itemRows);

@@ -77,7 +77,7 @@ export type SpendModalDefaults = {
   source?: string;
 };
 
-type ItemRow = { name: string; amount: string; notes: string };
+type ItemRow = { name: string; quantity: string; amount: string; notes: string };
 
 export function SpendModal({
   open,
@@ -232,7 +232,7 @@ export function SpendModal({
   }
 
   function addItem() {
-    setItems((prev) => [...prev, { name: "", amount: "", notes: "" }]);
+    setItems((prev) => [...prev, { name: "", quantity: "1", amount: "", notes: "" }]);
   }
   function setItem(i: number, patch: Partial<ItemRow>) {
     setItems((prev) =>
@@ -256,6 +256,7 @@ export function SpendModal({
     const cleanItems = items
       .map((it) => ({
         name: it.name.trim(),
+        quantity: it.quantity && Number(it.quantity) > 0 ? Number(it.quantity) : 1,
         amount: it.amount ? Number(it.amount) : null,
         notes: it.notes.trim() || null,
       }))
@@ -279,7 +280,7 @@ export function SpendModal({
         recurring_spend_id: recurringSpendId,
         categoryIds: selectedCategoryIds,
         items: cleanItems.length
-          ? cleanItems.map((it) => ({ name: it.name, amount: it.amount, notes: it.notes }))
+          ? cleanItems.map((it) => ({ name: it.name, quantity: it.quantity, amount: it.amount, notes: it.notes }))
           : undefined,
       });
       if (!result.ok) {
@@ -533,12 +534,29 @@ export function SpendModal({
                             <Input
                               type="number"
                               inputMode="decimal"
+                              step="0.001"
+                              min="0"
+                              value={it.quantity}
+                              onChange={(e) =>
+                                setItem(i, { quantity: e.target.value })
+                              }
+                              placeholder="qty"
+                              aria-label="Quantity"
+                              title="Quantity (default 1)"
+                              className="h-8 w-14 text-center tabular text-sm"
+                            />
+                            <span className="self-center text-muted-foreground/60 text-xs">×</span>
+                            <Input
+                              type="number"
+                              inputMode="decimal"
                               step="0.01"
                               value={it.amount}
                               onChange={(e) =>
                                 setItem(i, { amount: e.target.value })
                               }
                               placeholder="0.00"
+                              aria-label="Total price"
+                              title="Total price for the line"
                               className="h-8 w-24 text-right tabular text-sm"
                             />
                             <button

@@ -104,26 +104,26 @@ export function MetricTile({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay, ease: EASE }}
       className={cn(
-        "lift h-full rounded-xl border bg-card p-5",
+        "lift h-full rounded-2xl border bg-card p-6",
         accent ? "border-foreground/15" : "border-border/70",
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="display-eyebrow text-muted-foreground">{label}</div>
-          <div className="mt-2 text-[26px] font-semibold tracking-tight tabular">
+          <div className="mt-2.5 text-[32px] font-semibold leading-tight tracking-tight tabular">
             {typeof value === "number" ? (
               <MoneyFlow value={value} currency={currency ?? "PHP"} />
             ) : (
               text
             )}
           </div>
-          {typeof delta === "number" && <div className="mt-1"><DeltaChip delta={delta} /></div>}
-          {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
+          {typeof delta === "number" && <div className="mt-1.5"><DeltaChip delta={delta} /></div>}
+          {hint && <div className="mt-1.5 text-[13px] text-muted-foreground">{hint}</div>}
         </div>
         {Icon && (
-          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
-            <Icon className="h-4 w-4" />
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+            <Icon className="h-[18px] w-[18px]" />
           </div>
         )}
       </div>
@@ -145,11 +145,11 @@ export function DeltaChip({ delta, suffix = "vs last month" }: { delta: number; 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-xs font-medium tabular",
+        "inline-flex items-center gap-1 text-[13px] font-medium tabular",
         positive ? "text-[var(--success)]" : "text-[var(--overdue)]",
       )}
     >
-      {positive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+      {positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
       {(positive ? "+" : "") + (delta * 100).toFixed(0)}% {suffix}
     </span>
   );
