@@ -2635,6 +2635,10 @@ export async function setWalletOpeningBalance(input: WalletOpeningBalanceInput):
         opening_balance_currency: input.amountCurrency,
         opening_balance_base: amountBase,
         opening_balance_at,
+        // Snapshot the moment of save so holdingBalances can ignore activity
+        // that the user logged earlier today before recalibrating. Date alone
+        // can't distinguish "10am withdrawal" from "12pm anchor" — this can.
+        opening_balance_set_at: new Date().toISOString(),
       })
       .eq("id", input.methodId)
       .eq("user_id", userId);

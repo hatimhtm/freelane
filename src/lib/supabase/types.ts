@@ -561,6 +561,10 @@ export interface PaymentMethod {
   // the user sees exactly what they typed instead of an FX-converted value.
   opening_balance_amount: number | null;
   opening_balance_currency: CurrencyCode | null;
+  // Anchor snapshot in TIMESTAMPTZ (migration 0049). Holding-balance math
+  // compares activity created_at against this to exclude same-day pre-anchor
+  // rows precisely. Null on legacy rows — math falls back to date comparison.
+  opening_balance_set_at: string | null;
   notes: string | null;
   archived: boolean;
   created_at: string;
