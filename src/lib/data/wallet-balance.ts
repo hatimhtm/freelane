@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import type { PaymentMethod } from "@/lib/supabase/types";

@@ -21,13 +21,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import type { AutoRuleMatchKind, AutoRuleRow } from "@/lib/sadaka/auto-rules";
 import {
-  type AutoRuleMatchKind,
-  type AutoRuleRow,
   createAutoRule,
   deleteAutoRule,
   toggleAutoRule,
-} from "@/lib/sadaka/auto-rules";
+} from "@/lib/sadaka/auto-rules-actions";
 
 // AUTO-RULES (S): active rule count, tap to manage in a center modal.
 

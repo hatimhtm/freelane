@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "motion/react";
@@ -22,8 +22,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createClientRecord, updateClientRecord } from "@/lib/data/actions";
+import { extractClientFactsAction } from "@/lib/ai/facts-actions";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import type { ActivityEvent, Client } from "@/lib/supabase/types";
+
+// Debounce window for the notes → facts extraction trigger. Matches the
+// design memo (30 seconds of quiescence after the last keystroke). The
+// timer resets on every keystroke AND on close/unmount so the brain
+// doesn't fire against stale notes after the dialog tears down.
+const NOTES_EXTRACT_DEBOUNCE_MS = 30_000;
 
 const CURRENCIES = ["PHP", "MAD", "USD", "EUR", "CNY"];
 
@@ -40,6 +47,11 @@ export function ClientDialog({
   const [state, setState] = useState<Partial<Client>>({});
   const [events, setEvents] = useState<ActivityEvent[] | null>(null);
   const [pending, start] = useTransition();
+  // Notes debounce — fires extractClientFactsAction 30s after the last
+  // keystroke against the notes textarea. The timer lives in a ref so a
+  // re-render doesn't churn it; the cleanup runs on unmount + on every
+  // re-arm so the brain never fires against stale notes.
+  const extractTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -66,6 +78,37 @@ export function ClientDialog({
     setState((prev) => ({ ...prev, [key]: value }));
   }
 
+  // Re-arm the 30s debounce on every notes keystroke. Server action runs
+  // fire-and-forget (catch + ignore) so a Gemini outage never blocks the
+  // dialog. Server-side, the brain cache fingerprints by hash(notes_text)
+  // so re-opening the dialog without edits will hit the cache and skip
+  // the Flash Lite call entirely.
+  function scheduleFactsExtraction(notesText: string) {
+    if (!client?.id) return; // new clients: no id yet — wait for next save.
+    if (extractTimer.current) clearTimeout(extractTimer.current);
+    extractTimer.current = setTimeout(() => {
+      void extractClientFactsAction(client.id, notesText).catch((e) => {
+        // Dev-only signal so a Gemini outage / auth lapse is visible in
+        // the console. Prod stays quiet — the cache will catch up on
+        // the next save and the user shouldn't see a toast for a
+        // background-extraction hiccup.
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.warn("[freelane] extract-facts failed", e);
+        }
+      });
+    }, NOTES_EXTRACT_DEBOUNCE_MS);
+  }
+
+  useEffect(() => {
+    return () => {
+      // Cleanup — if the dialog tears down before the 30s elapses the
+      // extraction is dropped. Reopening rebuilds from server-loaded
+      // notes via the loadEvents effect anyway.
+      if (extractTimer.current) clearTimeout(extractTimer.current);
+    };
+  }, []);
+
   function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!state.name?.trim()) {
@@ -81,6 +124,16 @@ export function ClientDialog({
         } else {
           await createClientRecord(payload);
           toast.success("Client added");
+        }
+        // Cancel the 30s debounce — updateClientRecord / createClientRecord
+        // already fired the server-side extraction fallback when notes
+        // changed. Without this, a debounce timer scheduled before save
+        // would fire 30s later against stale state and re-extract the
+        // same notes (the brain cache would catch most repeats, but only
+        // if no other client was edited in between).
+        if (extractTimer.current) {
+          clearTimeout(extractTimer.current);
+          extractTimer.current = null;
         }
         onOpenChange(false);
         router.refresh();
@@ -244,7 +297,11 @@ export function ClientDialog({
             <Field label="Private notes">
               <Textarea
                 value={state.notes ?? ""}
-                onChange={(e) => update("notes", e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  update("notes", v);
+                  scheduleFactsExtraction(v);
+                }}
                 rows={2}
                 placeholder="Anything worth remembering about this client…"
               />

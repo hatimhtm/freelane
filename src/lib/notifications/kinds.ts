@@ -17,6 +17,7 @@ import {
   MessageCircle,
   RefreshCw,
   Sparkles,
+  UserCog,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -78,6 +79,11 @@ export const KNOWN_KINDS: KindMeta[] = [
     label: "Sadaka nudge",
     description: "Quiet voluntary-charity moment when the pool is sizeable and liquidity is fine.",
   },
+  {
+    key: "client_pattern_change",
+    label: "Client pattern changed",
+    description: "A client's payment method or project size shifted significantly.",
+  },
 ];
 
 export const KNOWN_KIND_KEYS = new Set(KNOWN_KINDS.map((k) => k.key));
@@ -96,6 +102,7 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   ai_clarifying_question: HelpCircle,
   storm_active: AlertTriangle,
   sadaka_nudge: HandHeart,
+  client_pattern_change: UserCog,
 };
 
 export function iconForKind(kind: string): LucideIcon {

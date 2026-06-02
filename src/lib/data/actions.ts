@@ -214,6 +214,17 @@ export async function createClientRecord(input: ClientInput) {
   // New client = structural event — chatbot brain may want to ask about
   // them. Fire-and-forget; doesn't gate the response.
   await maybeSurfaceClarifyingQuestion();
+  // Seed initial facts from any notes the user typed on creation. The
+  // dialog's debounce doesn't fire for brand-new clients (no id yet);
+  // this is the single chance to capture them on first save.
+  if (typeof input.notes === "string" && input.notes.trim().length > 0) {
+    try {
+      const { extractClientFactsAction } = await import("@/lib/ai/facts-actions");
+      void extractClientFactsAction(data.id as string, input.notes).catch(() => {});
+    } catch {
+      // dynamic-import safety net — ignore.
+    }
+  }
   revalidatePath("/clients");
   revalidatePath("/projects");
   revalidatePath("/dashboard");
@@ -223,6 +234,22 @@ export async function createClientRecord(input: ClientInput) {
 export async function updateClientRecord(id: string, input: Partial<ClientInput>) {
   const { supabase, userId } = await userOrThrow();
   const patch = pickClientFields(input);
+
+  // Capture prior notes BEFORE the update so we can skip the facts-
+  // extraction fallback when notes didn't change. Saves a Supabase
+  // round-trip for the prior-facts read on identity saves (e.g. someone
+  // tweaks the phone number without touching notes).
+  let priorNotes: string | null = null;
+  if (typeof input.notes === "string") {
+    const { data: prior } = await supabase
+      .from("clients")
+      .select("notes")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    priorNotes = (prior?.notes as string | null) ?? null;
+  }
+
   const { error } = await supabase.from("clients").update(patch).eq("id", id).eq("user_id", userId);
   if (error) throw error;
   await logEvent({
@@ -233,6 +260,23 @@ export async function updateClientRecord(id: string, input: Partial<ClientInput>
     entityId: id,
     clientId: id,
   });
+
+  // Server-side facts-extraction fallback — only when notes actually
+  // changed. The client dialog also schedules a 30s debounce, but a save
+  // that finalises a quick typing burst (or a save while the timer
+  // hasn't elapsed yet) would otherwise miss the extraction window.
+  // Brain-cache fingerprint guards against re-running on identical
+  // notes, but skipping the action entirely on identity-saves avoids
+  // even the prior-facts read.
+  if (typeof input.notes === "string" && input.notes !== (priorNotes ?? "")) {
+    try {
+      const { extractClientFactsAction } = await import("@/lib/ai/facts-actions");
+      void extractClientFactsAction(id, input.notes).catch(() => {});
+    } catch {
+      // dynamic-import safety net — ignore.
+    }
+  }
+
   revalidatePath("/clients");
   revalidatePath(`/clients/${id}`);
   revalidatePath("/projects");
@@ -379,7 +423,7 @@ export async function updateProjectStatus(id: string, status: ProjectStatus, kan
 
   const { data: project } = await supabase
     .from("projects")
-    .select("title,client_id")
+    .select("title,client_id,amount")
     .eq("id", id)
     .maybeSingle();
 
@@ -392,6 +436,27 @@ export async function updateProjectStatus(id: string, status: ProjectStatus, kan
     clientId: project?.client_id as string | undefined,
     metadata: { status },
   });
+
+  // Pattern-change hook — flipping a project to paid is the moment the
+  // baseline absorbs a new completed-amount sample, so the z-score check
+  // becomes meaningful. Fire-and-forget; brain failures must not block
+  // the status flip itself.
+  const clientId = project?.client_id as string | undefined;
+  if (clientId && status === "paid") {
+    try {
+      const { runClientPatternChangeForEvent } = await import(
+        "@/lib/ai/client-pattern-actions"
+      );
+      void runClientPatternChangeForEvent(clientId, {
+        kind: "project_status_change",
+        projectId: id,
+        amount: Number(project?.amount ?? 0),
+      }).catch(() => {});
+    } catch {
+      // dynamic-import safety net — ignore.
+    }
+  }
+
   revalidatePath("/projects");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
@@ -800,6 +865,23 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
   // Payment received = structural event (cash arrived) — give the
   // chatbot brain a chance to surface a follow-up question.
   await invalidateAiSafeSpendCache(userId, supabase, { surfaceQuestion: true });
+
+  // Fire-and-forget client-pattern detection. Wrapped in catch so a brain
+  // failure (Gemini outage, missing baseline table, anything) NEVER blocks
+  // the payment landing. Dynamic import keeps the data module decoupled
+  // from the AI surface.
+  try {
+    const { runClientPatternChangeForEvent } = await import(
+      "@/lib/ai/client-pattern-actions"
+    );
+    void runClientPatternChangeForEvent(project.client_id as string, {
+      kind: "payment",
+      paymentId: paymentRow.id as string,
+      walletId: final.method_id ?? null,
+    }).catch(() => {});
+  } catch {
+    // dynamic-import safety net — ignore.
+  }
 
   revalidatePath("/today");
   revalidatePath("/projects");

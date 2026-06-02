@@ -69,6 +69,17 @@ export const BRAIN_TTL = {
   SADAKA_SUGGESTED_TODAY: 24 * 60 * 60 * 1000,
   SADAKA_CONTRIBUTION_RATE: 0,
   SPEND_SADAKA_CLASSIFIER: 30 * 24 * 60 * 60 * 1000,
+  // Clients workflow.
+  //   EXTRACT_FACTS_FROM_NOTES: Flash Lite, short TTL (5m) — fingerprinted
+  //     by client_id + hash(notes_text), so re-saving identical notes hits
+  //     the cache instead of burning a model call. TTL still acts as a
+  //     safety net if the fingerprint check ever drifts.
+  //   CLIENT_PATTERN_CHANGE: Pro, ~1h TTL — keyed by (client_id, event_id)
+  //     so a single event can't re-fire the brain. Per-event fingerprint
+  //     makes the cache effectively write-once per payment / project
+  //     status change.
+  EXTRACT_FACTS_FROM_NOTES: 5 * 60 * 1000,
+  CLIENT_PATTERN_CHANGE: 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -94,6 +105,8 @@ export const BRAIN_KEYS = {
   SADAKA_SUGGESTED_TODAY: "sadaka_suggested_today",
   SADAKA_CONTRIBUTION_RATE: "sadaka_contribution_rate",
   SPEND_SADAKA_CLASSIFIER: "spend_sadaka_classifier",
+  EXTRACT_FACTS_FROM_NOTES: "extract_facts_from_notes",
+  CLIENT_PATTERN_CHANGE: "client_pattern_change",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -125,6 +138,8 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.SADAKA_SUGGESTED_TODAY]: BRAIN_TTL.SADAKA_SUGGESTED_TODAY,
   [BRAIN_KEYS.SADAKA_CONTRIBUTION_RATE]: BRAIN_TTL.SADAKA_CONTRIBUTION_RATE,
   [BRAIN_KEYS.SPEND_SADAKA_CLASSIFIER]: BRAIN_TTL.SPEND_SADAKA_CLASSIFIER,
+  [BRAIN_KEYS.EXTRACT_FACTS_FROM_NOTES]: BRAIN_TTL.EXTRACT_FACTS_FROM_NOTES,
+  [BRAIN_KEYS.CLIENT_PATTERN_CHANGE]: BRAIN_TTL.CLIENT_PATTERN_CHANGE,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache
@@ -139,6 +154,13 @@ export const ALL_BRAIN_KEYS: readonly BrainKey[] = Object.values(BRAIN_KEYS) as 
 export const FINANCIAL_INVALIDATION_EXEMPT: readonly BrainKey[] = [
   BRAIN_KEYS.YEAR_RECALL,
   BRAIN_KEYS.EID_PREP,
+  // Client-scoped brains — keyed to a specific client + a specific event,
+  // not to the user-wide money state. A spend mutation on the user's wallet
+  // doesn't change the client's pattern baseline; only payments and project
+  // status flips for that client do (and those refresh the baseline via
+  // refreshClientPatternBaselines instead of cache invalidation).
+  BRAIN_KEYS.EXTRACT_FACTS_FROM_NOTES,
+  BRAIN_KEYS.CLIENT_PATTERN_CHANGE,
 ] as const;
 
 // Below-this threshold spends do NOT bust the AI brain cache. A ₱5 cigarette

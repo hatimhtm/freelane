@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { ArrowUpRight, MoreVertical, Plus } from "lucide-react";
+import { MoreVertical, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,9 +16,18 @@ import {
 import { ClientDialog } from "./client-dialog";
 import { PrimaryAction } from "@/components/app/primary-action";
 import { archiveClient, deleteClient } from "@/lib/data/actions";
-import { formatMoney } from "@/lib/money";
-import { cn } from "@/lib/utils";
 import type { Client, CurrencyCode } from "@/lib/supabase/types";
+import {
+  ClientWidget,
+  type ClientWidgetWarning,
+} from "@/components/widgets/client-widget";
+
+// Client cards are now rendered through the locked widget system (M widget
+// shell). The list owns the surrounding chrome (motion stagger + per-card
+// dropdown menu) but the visual identity, AI dot, and warning pills live
+// inside ClientWidget. The dropdown floats over the widget's top-right
+// corner — same affordance as the prior inline implementation, just
+// detached from the card body now that the widget owns layout.
 
 type Enriched = Client & {
   projectCount: number;
@@ -31,11 +39,18 @@ type Enriched = Client & {
   hasMemory: boolean;
   watch: string[];
   facts: string[];
+  // From the Clients workflow: pattern_changed (open notification) +
+  // quiet_14d (existing Quiet Channels Tier 5). Outstanding > 0 is
+  // derived inline below into an overdue pill (X = open project count).
+  patternChangedKind?: string | null;
+  hasQuietChannel?: boolean;
 };
 
 export function ClientNewButton({ openInitial }: { openInitial?: boolean }) {
   const [open, setOpen] = useState(openInitial ?? false);
-  useEffect(() => { if (openInitial) setOpen(true); }, [openInitial]);
+  useEffect(() => {
+    if (openInitial) setOpen(true);
+  }, [openInitial]);
   return (
     <>
       <Button onClick={() => setOpen(true)}>
@@ -60,7 +75,9 @@ export function ClientList({
   const [newOpen, setNewOpen] = useState(openNew ?? false);
   const [editing, setEditing] = useState<Client | null>(null);
 
-  useEffect(() => { if (openNew) setNewOpen(true); }, [openNew]);
+  useEffect(() => {
+    if (openNew) setNewOpen(true);
+  }, [openNew]);
 
   async function onArchive(id: string, next: boolean) {
     try {
@@ -83,119 +100,100 @@ export function ClientList({
     }
   }
 
+  const enriched = useMemo(
+    () =>
+      clients.map((c) => {
+        const warnings: ClientWidgetWarning[] = [];
+        if (c.patternChangedKind) {
+          warnings.push({
+            kind: "pattern_changed",
+            label:
+              c.patternChangedKind === "payment_method"
+                ? "Payment method shift"
+                : c.patternChangedKind === "project_size_shift"
+                ? "Project size shift"
+                : "Pattern shift",
+          });
+        }
+        if (c.hasQuietChannel) {
+          warnings.push({ kind: "quiet_14d", label: "Quiet 14d+" });
+        }
+        if (c.openCount > 0 && c.outstandingBase > 0) {
+          warnings.push({
+            kind: "overdue",
+            label: c.openCount === 1 ? "1 open" : `${c.openCount} open`,
+          });
+        }
+        return { c, warnings };
+      }),
+    [clients],
+  );
+
   return (
     <>
       <div className="grid auto-rows-fr items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {clients.map((c, i) => (
+        {enriched.map(({ c, warnings }, i) => (
           <motion.div
             key={c.id}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: i * 0.03 }}
-            className="h-full"
+            className="relative h-full"
           >
-            <Card
-              role="button"
-              tabIndex={0}
-              onClick={() => router.push(`/clients/${c.id}`)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  router.push(`/clients/${c.id}`);
-                }
+            <ClientWidget
+              client={{
+                id: c.id,
+                name: c.name,
+                company: c.company,
+                // Boolean only — the raw notes string never crosses into
+                // the widget; the top fact (below) carries the privacy-
+                // preserving teaser instead.
+                hasNotes: !!(c.notes && c.notes.trim().length > 0),
+                archived: !!c.archived,
+                paidBase: c.paidBase,
+                outstandingBase: c.outstandingBase,
+                projectCount: c.projectCount,
+                openProjectCount: c.openCount,
+                lastPaidAt: c.lastPaidAt,
+                defaultCurrency: (c.default_currency as CurrencyCode | null) ?? null,
               }}
-              className={cn(
-                "group relative flex h-full min-h-[15rem] flex-col p-5 cursor-pointer transition-all hover:-translate-y-0.5 hover:border-border hover:shadow-md",
-                c.archived && "opacity-60",
-              )}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <Avatar name={c.name} />
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{c.name}</div>
-                    {c.company && (
-                      <div className="truncate text-xs text-muted-foreground">
-                        {c.company}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    aria-label="Open client menu"
-                    className={cn(
-                      "grid h-7 w-7 place-items-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover:opacity-100 data-[popup-open]:opacity-100 data-[popup-open]:bg-muted",
-                    )}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenuItem onClick={() => setEditing(c)}>Edit</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onArchive(c.id, !c.archived)}>
-                      {c.archived ? "Unarchive" : "Archive"}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem variant="destructive" onClick={() => onDelete(c.id)}>
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
-                <div>
-                  <div className="text-xs text-muted-foreground">Landed</div>
-                  <div className="font-medium tabular">
-                    {c.paidBase > 0 ? formatMoney(c.paidBase, baseCurrency, { compact: true }) : "—"}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Outstanding</div>
-                  <div className={cn("font-medium tabular", c.outstandingBase > 0 ? "text-[var(--overdue)]" : "text-muted-foreground")}>
-                    {c.outstandingBase > 0 ? formatMoney(c.outstandingBase, baseCurrency, { compact: true }) : "—"}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Projects</div>
-                  <div className="font-medium tabular">
-                    {c.projectCount}
-                    {c.openCount > 0 && <span className="text-xs text-muted-foreground"> · {c.openCount} open</span>}
-                  </div>
-                </div>
-              </div>
-
-              {/* AI memory tags — watch flags (red) first, capped at 2 so every
-                  card stays the same height. */}
-              {(c.watch.length > 0 || c.facts.length > 0) && (
-                <div className="mt-4 flex flex-wrap items-center gap-1.5">
-                  {(c.watch.length > 0 ? c.watch : c.facts).slice(0, 2).map((t, idx) => (
-                    <span
-                      key={idx}
-                      className={cn(
-                        "max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-medium",
-                        c.watch.length > 0
-                          ? "bg-[var(--overdue)]/12 text-[var(--overdue)]"
-                          : "border border-[var(--brand)]/40 text-muted-foreground",
-                      )}
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
-                {c.default_currency && <Chip>{c.default_currency}</Chip>}
-                {c.feesBase > 0 && <Chip>{formatMoney(c.feesBase, baseCurrency, { compact: true })} fees</Chip>}
-                {c.lastPaidAt && <Chip>last {new Date(c.lastPaidAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</Chip>}
-              </div>
-
-              <div className="pointer-events-none absolute right-4 top-4 opacity-0 transition-opacity group-hover:opacity-100">
-                <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </Card>
+              baseCurrency={baseCurrency}
+              warnings={warnings}
+              // Facts come from c.facts (consolidated memory bullets) for
+              // now — they're rendered as the supporting line on the card
+              // and threaded into the AI dot context. Confidence is a
+              // sentinel (0.7) because the consolidated memory bullets
+              // don't carry per-row confidence yet; the FactsPanel on the
+              // detail sheet still shows the real ai_user_facts.confidence
+              // from getClientFacts().
+              facts={(c.facts ?? []).slice(0, 2).map((f) => ({
+                key: "memory",
+                value: f,
+                confidence: 0.7,
+              }))}
+              onOpen={() => router.push(`/clients/${c.id}`)}
+            />
+            <div className="pointer-events-none absolute right-9 top-2 z-10">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label="Open client menu"
+                  className="pointer-events-auto grid h-7 w-7 place-items-center rounded-md text-muted-foreground opacity-40 transition-all hover:bg-muted hover:text-foreground hover:opacity-100 data-[popup-open]:opacity-100 data-[popup-open]:bg-muted"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuItem onClick={() => setEditing(c)}>Edit</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onArchive(c.id, !c.archived)}>
+                    {c.archived ? "Unarchive" : "Archive"}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={() => onDelete(c.id)}>
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </motion.div>
         ))}
       </div>
@@ -214,32 +212,5 @@ export function ClientList({
         onClick={() => setNewOpen(true)}
       />
     </>
-  );
-}
-
-function Avatar({ name }: { name: string }) {
-  const initials = name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((s) => s[0]?.toUpperCase() ?? "")
-    .join("");
-  const hue = [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
-  return (
-    <div
-      className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-sm font-semibold text-white shadow-inner shadow-white/10"
-      style={{
-        background: `linear-gradient(135deg, oklch(0.65 0.18 ${hue}), oklch(0.55 0.22 ${(hue + 40) % 360}))`,
-      }}
-    >
-      {initials || "?"}
-    </div>
-  );
-}
-
-function Chip({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground">
-      {children}
-    </span>
   );
 }

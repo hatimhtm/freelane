@@ -1,3 +1,5 @@
+import "server-only";
+
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
@@ -1128,6 +1130,188 @@ export async function getRateInsightsForClient(clientId: string, limit = 6) {
     .order("generated_at", { ascending: false })
     .limit(limit);
   return (data ?? []) as RateInsight[];
+}
+
+// ─── Clients workflow — Facts panel + pattern-change timeline ─────────────
+// Facts: live (non-archived) rows from ai_user_facts for the client. The
+// facts panel renders these in confidence order; brains read them via the
+// server-only getFactsForSubject helper. We keep the query here so the
+// detail page can pass facts straight into the panel without re-querying.
+
+export type ClientFactRow = {
+  id: string;
+  key: string;
+  value: Record<string, unknown> | null;
+  confidence: number;
+  source: "user_answered" | "inferred" | "seeded";
+  evidence: string | null;
+  updated_at: string;
+};
+
+export async function getClientFacts(clientId: string): Promise<ClientFactRow[]> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("ai_user_facts")
+    .select("id,key,value,confidence,source,evidence,updated_at")
+    .eq("user_id", user.id)
+    .eq("subject_kind", "client")
+    .eq("subject_id", clientId)
+    .is("archived_at", null)
+    .order("confidence", { ascending: false });
+  return ((data ?? []) as unknown) as ClientFactRow[];
+}
+
+// Pattern-change timeline: a chronological union of answered open-questions
+// AND dispatched client_pattern_change notifications for this client.
+// Two row sources, one merged result so the detail-sheet timeline shows
+// both "the brain asked" and "you answered" without a second query.
+export type ClientPatternHistoryRow = {
+  id: string;
+  source: "notification" | "open_question";
+  pattern_kind: string | null;
+  summary: string | null;
+  question: string | null;
+  answer: string | null;
+  created_at: string;
+};
+
+export async function getClientPatternHistory(
+  clientId: string,
+  limit = 20,
+): Promise<ClientPatternHistoryRow[]> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [{ data: notifications }, { data: questions }] = await Promise.all([
+    // Push the client_id filter into Postgres via a jsonb path expression
+    // so the inbox table doesn't get rescanned in JS on every detail-sheet
+    // render. The defensive JS filter below stays in place as a guard
+    // against payloads written before kind_specific.client_id existed.
+    supabase
+      .from("notifications_inbox")
+      .select("id,subject,body,payload,answer,created_at")
+      .eq("user_id", user.id)
+      .eq("kind", "client_pattern_change")
+      .filter("payload->kind_specific->>client_id", "eq", clientId)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+    supabase
+      .from("ai_open_questions")
+      .select("id,question_text,suggested_answers,fact_key,status,answered_at,created_at")
+      .eq("user_id", user.id)
+      .eq("subject_kind", "client")
+      .eq("subject_id", clientId)
+      .eq("status", "answered")
+      .order("answered_at", { ascending: false })
+      .limit(limit),
+  ]);
+
+  const fromNotifications: ClientPatternHistoryRow[] = (notifications ?? [])
+    .filter((n) => {
+      // Defensive secondary filter — payloads pre-dating kind_specific
+      // may not carry client_id; skip them rather than mis-attribute.
+      const payload = (n.payload ?? {}) as {
+        kind_specific?: { client_id?: string };
+      };
+      return payload.kind_specific?.client_id === clientId;
+    })
+    .map((n) => {
+      const payload = (n.payload ?? {}) as {
+        kind_specific?: {
+          pattern_kind?: string;
+          summary?: string;
+          question?: string;
+        };
+      };
+      const answer = (n.answer ?? null) as
+        | { kind?: string; value?: string }
+        | string
+        | null;
+      const answerText =
+        typeof answer === "string"
+          ? answer
+          : (answer?.value as string | undefined) ?? null;
+      return {
+        id: n.id as string,
+        source: "notification" as const,
+        pattern_kind: (payload.kind_specific?.pattern_kind as string) ?? null,
+        summary: (payload.kind_specific?.summary as string) ?? (n.body as string) ?? null,
+        question: (payload.kind_specific?.question as string) ?? null,
+        answer: answerText,
+        created_at: n.created_at as string,
+      };
+    });
+
+  // Open-questions store the actual chosen answer in ai_user_facts (one
+  // row per fact_key). Pull the matching facts in a single batched query
+  // so the timeline can show "You said: …" for these rows too — without
+  // it, the open-question branch surfaces question text with no payoff,
+  // which is exactly the data point worth seeing.
+  const factKeys = Array.from(
+    new Set(
+      (questions ?? [])
+        .map((q) => (q.fact_key as string | null) ?? null)
+        .filter((k): k is string => !!k),
+    ),
+  );
+  const answersByKey = new Map<string, string>();
+  if (factKeys.length > 0) {
+    const { data: facts } = await supabase
+      .from("ai_user_facts")
+      .select("key,value")
+      .eq("user_id", user.id)
+      .eq("subject_kind", "client")
+      .eq("subject_id", clientId)
+      .in("key", factKeys)
+      .is("archived_at", null);
+    for (const f of facts ?? []) {
+      const value = (f.value ?? {}) as { answer?: unknown };
+      if (typeof value.answer === "string") {
+        answersByKey.set(f.key as string, value.answer);
+      }
+    }
+  }
+
+  const fromQuestions: ClientPatternHistoryRow[] = (questions ?? []).map((q) => ({
+    id: q.id as string,
+    source: "open_question" as const,
+    pattern_kind: (q.fact_key as string) ?? null,
+    summary: null,
+    question: (q.question_text as string) ?? null,
+    answer: answersByKey.get((q.fact_key as string) ?? "") ?? null,
+    created_at: (q.answered_at as string) ?? (q.created_at as string),
+  }));
+
+  return [...fromNotifications, ...fromQuestions]
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .slice(0, limit);
+}
+
+// Open client_pattern_change notifications per client — batched lookup
+// used by the clients page to derive a pattern_changed pill on each card.
+// The select includes a `not.is` guard on payload->kind_specific->>client_id
+// so the row count is bounded to rows that actually carry the field; the
+// per-row JS still extracts the value because PostgREST can't return the
+// jsonb path expression in the select list.
+export async function getOpenClientPatternChangeMap(): Promise<Map<string, string>> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("notifications_inbox")
+    .select("payload,created_at")
+    .eq("user_id", user.id)
+    .eq("kind", "client_pattern_change")
+    .is("read_at", null)
+    .is("dismissed_at", null)
+    .not("payload->kind_specific->>client_id", "is", null)
+    .order("created_at", { ascending: false });
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    const payload = (row.payload ?? {}) as {
+      kind_specific?: { client_id?: string; pattern_kind?: string };
+    };
+    const clientId = payload.kind_specific?.client_id;
+    const patternKind = payload.kind_specific?.pattern_kind ?? "shift";
+    if (clientId && !map.has(clientId)) map.set(clientId, patternKind);
+  }
+  return map;
 }
 
 export async function getShouldIBuySessions(limit = 30) {

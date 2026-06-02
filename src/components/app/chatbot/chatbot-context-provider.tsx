@@ -15,7 +15,7 @@ import {
   endChatSession,
   clearChat,
   sweepStaleSessions,
-} from "@/lib/ai/chat";
+} from "@/lib/ai/chat-actions";
 import { seedInitialOpenQuestions } from "@/lib/ai/open-questions-actions";
 import { toast } from "sonner";
 

@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { rejectAutoDetected } from "@/lib/sadaka/auto-rules";
+import { rejectAutoDetected } from "@/lib/sadaka/auto-rules-actions";
 import type { SadakaLedgerRow } from "@/lib/sadaka/ledger";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import { phtDateString } from "@/lib/utils";

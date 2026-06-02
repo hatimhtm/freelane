@@ -8,8 +8,8 @@ import { useChatbot } from "./chatbot-context-provider";
 import { ChatbotMessage } from "./chatbot-message";
 import { ChatbotPillsBar } from "./chatbot-pills-bar";
 import { ChatbotSessionDigest } from "./chatbot-session-digest";
-import { postChatMessage, listChatHistory } from "@/lib/ai/chat";
-import { getChatbotPills } from "@/lib/ai/pills";
+import { postChatMessage, listChatHistory } from "@/lib/ai/chat-actions";
+import { getChatbotPills } from "@/lib/ai/pills-actions";
 
 // Center-screen chatbot modal. Per the design brief:
 //   - header: page name + clear-chat + close

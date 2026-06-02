@@ -1,9 +1,23 @@
-"use server";
+import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
 import { phtDateString } from "@/lib/utils";
 import { BRAIN_TTL_BY_KEY, type BrainKey } from "./cache-keys";
+
+// Compose a per-subject brain key. Cache rows are keyed by (user_id,
+// brain_key) so a single brain_key column has exactly ONE row per user.
+// Brains that need a separate cache slot per subject (extract-facts per
+// client, future per-vendor brains, etc.) append a stable suffix here so
+// the storage key becomes `${brainKey}::${subjectKind}::${subjectId}`.
+// Keep delimiter in sync with FINANCIAL_INVALIDATION_EXEMPT prefix-match.
+export function scopedBrainKey(
+  brainKey: BrainKey,
+  subjectKind: string,
+  subjectId: string,
+): string {
+  return `${brainKey}::${subjectKind}::${subjectId}`;
+}
 
 // Freelane: canonical AI brain cache read/write helpers.
 //
@@ -38,7 +52,7 @@ export type CachedBrainPayload<T> = {
 const DAY_MS = 86_400_000;
 
 export async function readBrainCache<T>(
-  brainKey: string,
+  brainKey: BrainKey | string,
 ): Promise<CachedBrainPayload<T> | null> {
   const user = await getAuthUser();
   if (!user) return null;
@@ -59,7 +73,7 @@ export async function readBrainCache<T>(
 }
 
 export async function writeBrainCache<T>(
-  brainKey: string,
+  brainKey: BrainKey | string,
   payload: T,
   opts: { ttlMs?: number; fingerprint?: string } = {},
 ): Promise<void> {
@@ -110,8 +124,11 @@ export async function invalidateBrainCache(brainKey: string | string[]): Promise
 // can mount async (TodaysFocus pattern) should call readBrainCache() in the
 // server component, render whatever's there, and trigger regen client-side
 // via a server action.
+// Accepts either a bare BrainKey OR a scopedBrainKey() result (prefix matches
+// a BrainKey, followed by "::"). The TTL lookup splits on "::" so a per-
+// subject cache row still inherits the brain's declared freshness.
 export async function withBrainCache<T>(opts: {
-  brainKey: BrainKey;
+  brainKey: BrainKey | string;
   ttlMs?: number;
   fingerprint?: string;
   force?: boolean;
@@ -124,8 +141,10 @@ export async function withBrainCache<T>(opts: {
   // Look the TTL up from the catalogue when the caller omits it. Keeps the
   // declared per-brain freshness from drifting between BRAIN_TTL and the
   // call site (previously a brain could declare 24h in BRAIN_TTL but a
-  // caller could silently pass a smaller value).
-  const declaredTtl = BRAIN_TTL_BY_KEY[opts.brainKey];
+  // caller could silently pass a smaller value). Scoped keys
+  // (`brain::subjectKind::subjectId`) strip the suffix before lookup.
+  const baseKey = opts.brainKey.split("::")[0] as BrainKey;
+  const declaredTtl = BRAIN_TTL_BY_KEY[baseKey];
   const ttl = opts.ttlMs ?? declaredTtl ?? DAY_MS;
   if (
     process.env.NODE_ENV !== "production" &&

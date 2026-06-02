@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
+import { toast } from "sonner";
 import type { Notification } from "@/lib/notifications/dispatcher";
 import type { NotificationPayload } from "@/lib/notifications/types";
 import {
@@ -10,6 +11,7 @@ import {
 import { TuesdayCheckinLoader } from "@/components/app/tuesday-checkin-loader";
 import { ClarifyingQuestionCard } from "@/components/app/chatbot/clarifying-question-card";
 import { useNotificationModal } from "@/components/app/notification-modal-host";
+import { acceptClientPatternAnswer } from "@/lib/ai/facts-actions";
 
 // Generalized click-routing for notification bell + /notifications + the
 // ?notification=<id> deep-link interceptor.
@@ -85,6 +87,44 @@ const KIND_HANDLERS: Record<string, ClickHandler> = {
   // answer flows into ai_user_facts (source='user_answered', confidence=1.0)
   // and the question itself moves from queued/asked -> answered. The
   // notification's payload carries the question metadata.
+  client_pattern_change: (n, openModal) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: {
+        client_id?: string;
+        pattern_kind?: string;
+        question?: string;
+        summary?: string;
+        suggested_answers?: string[];
+      };
+    };
+    const clientId = payload.kind_specific?.client_id;
+    const patternKind = payload.kind_specific?.pattern_kind;
+    const question = payload.kind_specific?.question ?? n.body ?? n.subject;
+    const summary = payload.kind_specific?.summary ?? n.body ?? "";
+    const suggested = payload.kind_specific?.suggested_answers ?? [];
+    if (!clientId || !patternKind) {
+      // Malformed — dev warning, no modal.
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[notifications] client_pattern_change missing client_id or pattern_kind",
+          n,
+        );
+      }
+      return;
+    }
+    openModal(
+      <ClientPatternAnswerModalBody
+        notificationId={n.id}
+        clientId={clientId}
+        patternKind={patternKind}
+        question={question}
+        summary={summary}
+        suggested={suggested}
+      />,
+      { title: n.subject, description: undefined },
+    );
+  },
   ai_clarifying_question: (n, openModal) => {
     const payload = (n.payload ?? {}) as {
       choices?: string[];
@@ -140,6 +180,89 @@ function FreeTextModalBody({
   const { closeModal } = useNotificationModal();
   return (
     <FreeTextAnswer n={n} placeholder={placeholder} onSubmitted={closeModal} />
+  );
+}
+
+// Body for the client_pattern_change kind. Renders the suggested answers
+// as chips + an optional free-text "Other" fallback. Selection routes
+// through acceptClientPatternAnswer which UPSERTs an ai_user_facts row
+// (subject_kind=client, key=pattern_change_<kind>, source=user_answered).
+function ClientPatternAnswerModalBody({
+  notificationId,
+  clientId,
+  patternKind,
+  question,
+  summary,
+  suggested,
+}: {
+  notificationId: string;
+  clientId: string;
+  patternKind: string;
+  question: string;
+  summary: string;
+  suggested: string[];
+}) {
+  const { closeModal } = useNotificationModal();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const [other, setOther] = useState("");
+
+  const submit = (answer: string) => {
+    if (!answer.trim()) return;
+    setBusy(answer);
+    start(async () => {
+      const res = await acceptClientPatternAnswer(
+        notificationId,
+        clientId,
+        patternKind,
+        answer.trim(),
+      );
+      if (!res.ok) {
+        toast.error(res.error || "Couldn't save.");
+        setBusy(null);
+        return;
+      }
+      closeModal();
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      {summary && (
+        <p className="text-sm leading-snug text-muted-foreground">{summary}</p>
+      )}
+      <p className="text-sm font-medium text-foreground">{question}</p>
+      <div className="flex flex-col gap-2">
+        {suggested.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => submit(s)}
+            disabled={pending}
+            className="w-full rounded-lg border border-border/70 bg-card px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-50"
+          >
+            {busy === s ? "Saving…" : s}
+          </button>
+        ))}
+        <div className="flex gap-2 pt-1">
+          <input
+            type="text"
+            value={other}
+            onChange={(e) => setOther(e.target.value)}
+            placeholder="Other (optional)"
+            className="flex-1 rounded-lg border border-border/70 bg-card px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => submit(other)}
+            disabled={pending || !other.trim()}
+            className="rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-40"
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

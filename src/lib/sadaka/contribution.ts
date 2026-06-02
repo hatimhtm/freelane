@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { insertSadakaLedgerRow, readPoolBalance } from "./ledger";

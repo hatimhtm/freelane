@@ -30,6 +30,12 @@ import { MemoryComposer } from "./memory-composer";
 import { FollowUpButton } from "./follow-up-button";
 import { QuietChannelBanner } from "./quiet-channel-banner";
 import { RateInsightsSection } from "./rate-insights-section";
+import { FactsPanel } from "./facts-panel";
+import { PatternChangeHistory } from "./pattern-change-history";
+import type {
+  ClientFactRow,
+  ClientPatternHistoryRow,
+} from "@/lib/data/queries";
 
 type ProjectView = { id: string; title: string; amount: number; currency: CurrencyCode; status: ProjectStatus; outstandingNative: number };
 type Entry = { id: string; content: string; createdAt: string; consolidated: boolean };
@@ -54,6 +60,8 @@ export function ClientDetail({
   hasOutstanding,
   quietChannel,
   rateInsights,
+  facts,
+  patternHistory,
 }: {
   client: Client;
   currency: CurrencyCode;
@@ -67,6 +75,8 @@ export function ClientDetail({
   hasOutstanding: boolean;
   quietChannel: QuietChannel | null;
   rateInsights: RateInsight[];
+  facts: ClientFactRow[];
+  patternHistory: ClientPatternHistoryRow[];
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -132,14 +142,31 @@ export function ClientDetail({
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[1.3fr_1fr]">
         <section>
-          <h2 className="mb-3 text-sm font-medium">Memory</h2>
+          {/* Two distinct data sources under explicit headings — Notes feeds
+              client_memory (consolidated summary), and FactsPanel below
+              renders its own "What the AI has learned" heading off
+              ai_user_facts. A single shared "Memory" heading would imply
+              the composer writes into the panel, but the two have
+              different write paths today (clients.notes via Edit dialog →
+              extract-facts-from-notes brain → ai_user_facts, vs.
+              MemoryComposer → consolidateClientMemoryAction →
+              client_memory). Keep the headings honest. */}
+          <h2 className="mb-3 text-sm font-medium">Notes</h2>
           <MemoryComposer clientId={client.id} entries={memory} consolidated={consolidated} />
+          <div className="mt-8">
+            <FactsPanel facts={facts} />
+          </div>
         </section>
 
         <div className="space-y-10">
           {aiEnabled && (
             <RateInsightsSection insights={rateInsights} />
           )}
+
+          {/* Pattern-change timeline sits next to RateInsights so the right
+              column carries every "brain noticed something" view in one
+              place. Empty state hidden by the component itself. */}
+          <PatternChangeHistory rows={patternHistory} />
 
           <section>
             <h2 className="mb-3 text-sm font-medium">Projects</h2>

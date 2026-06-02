@@ -1,7 +1,11 @@
 import { Users } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
-import { getClients } from "@/lib/data/queries";
+import {
+  getClients,
+  getOpenQuietChannels,
+  getOpenClientPatternChangeMap,
+} from "@/lib/data/queries";
 import { createClient as createSupabase } from "@/lib/supabase/server";
 import { toBase } from "@/lib/money";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
@@ -19,16 +23,29 @@ export default async function ClientsPage({
   const clients = await getClients();
 
   const supabase = await createSupabase();
-  const [projectsRes, paymentsRes, ratesRes, settingsRes] = await Promise.all([
-    supabase.from("projects").select("id,client_id,amount,currency,status"),
-    supabase.from("payments").select("project_id,currency,net_amount_base,paid_at,implied_fee_base"),
-    supabase.from("exchange_rates").select("code,rate_to_base"),
-    supabase.from("settings").select("base_currency").maybeSingle(),
-  ]);
+  const [projectsRes, paymentsRes, ratesRes, settingsRes, patternMap, quietChannels] =
+    await Promise.all([
+      supabase.from("projects").select("id,client_id,amount,currency,status"),
+      supabase.from("payments").select("project_id,currency,net_amount_base,paid_at,implied_fee_base"),
+      supabase.from("exchange_rates").select("code,rate_to_base"),
+      supabase.from("settings").select("base_currency").maybeSingle(),
+      // Single batched query for "is there an open client_pattern_change
+      // notification for this client?" — per-card querying would be N+1.
+      getOpenClientPatternChangeMap().catch(() => new Map<string, string>()),
+      // Reuse the existing Tier 5 QuietChannel surface for the quiet_14d
+      // warning pill. getOpenQuietChannels already filters resolved_at,
+      // so we just bucket by client_id.
+      getOpenQuietChannels(50).catch(() => []),
+    ]);
   const projects = projectsRes.data ?? [];
   const payments = paymentsRes.data ?? [];
   const rates = (ratesRes.data ?? []) as Pick<ExchangeRate, "code" | "rate_to_base">[];
   const baseCurrency = (settingsRes.data?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
+  const quietByClient = new Set<string>(
+    (quietChannels ?? [])
+      .map((q) => q.client_id as string | null)
+      .filter((id): id is string => !!id),
+  );
 
   const enriched = clients.map((c) => {
     const clientProjects = projects.filter((p) => p.client_id === c.id);
@@ -70,7 +87,10 @@ export default async function ClientsPage({
       // AI "watch" flags (the red ones) make the best at-a-glance tags; fall
       // back to a fact so a card with memory always shows a little context.
       watch: (c.memory_consolidated?.watch ?? []).slice(0, 2),
-      facts: (c.memory_consolidated?.facts ?? []).slice(0, 1),
+      facts: (c.memory_consolidated?.facts ?? []).slice(0, 2),
+      // Clients workflow warnings — fed into the ClientWidget below.
+      patternChangedKind: patternMap.get(c.id) ?? null,
+      hasQuietChannel: quietByClient.has(c.id),
     };
   });
 

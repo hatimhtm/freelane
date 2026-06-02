@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import {
   getClientDetail,
+  getClientFacts,
+  getClientPatternHistory,
   getOpenQuietChannelForClient,
   getRateInsightsForClient,
   getSettings,
@@ -24,11 +26,15 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     { rates, settings },
     quietChannel,
     rateInsights,
+    facts,
+    patternHistory,
   ] = await Promise.all([
     getClientDetail(id),
     getSettings(),
     getOpenQuietChannelForClient(id).catch(() => null),
     getRateInsightsForClient(id, 8).catch(() => []),
+    getClientFacts(id).catch(() => []),
+    getClientPatternHistory(id, 20).catch(() => []),
   ]);
   if (!client) notFound();
 
@@ -69,6 +75,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       hasOutstanding={outstandingTotal > 0}
       quietChannel={quietChannel}
       rateInsights={rateInsights}
+      facts={facts}
+      patternHistory={patternHistory}
     />
   );
 }

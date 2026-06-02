@@ -1,6 +1,6 @@
 import { readPoolBalance, listLedgerEvents } from "@/lib/sadaka/ledger";
 import { getSuggestedToday } from "@/lib/sadaka/suggestion";
-import { listAutoRules } from "@/lib/sadaka/auto-rules";
+import { listAutoRules } from "@/lib/sadaka/auto-rules-actions";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import { getDashboardData } from "@/lib/data/queries";
 import type { CurrencyCode } from "@/lib/supabase/types";

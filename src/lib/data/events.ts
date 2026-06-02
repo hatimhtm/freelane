@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createClient } from "@/lib/supabase/server";
 import type { EventKind } from "@/lib/supabase/types";
 
