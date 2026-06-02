@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, Clock } from "lucide-react";
+import { Calendar, Clock, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/money";
 import type { Client, Payment, Project } from "@/lib/supabase/types";
@@ -42,10 +42,20 @@ export function ProjectCard({
       role="button"
       tabIndex={0}
       className={cn(
-        "group cursor-pointer select-none rounded-lg border border-border/60 bg-card p-3 text-left shadow-sm transition-all hover:border-border hover:shadow-md",
+        "group relative cursor-pointer select-none rounded-lg border border-border/60 bg-card p-3 text-left shadow-sm transition-all hover:border-border hover:shadow-md",
         dragging && "cursor-grabbing shadow-2xl",
       )}
     >
+      {/* Drag-handle grip — purely decorative. The entire card is still the
+          drag listener target (dnd-kit attaches listeners on the parent).
+          Sits hard left vertically centered along the card edge so it never
+          collides with the amount label at top-right. Hidden on coarse
+          pointers (mobile/iPad) to keep small cards clean. */}
+      <GripVertical
+        aria-hidden
+        className="pointer-events-none absolute -left-0.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/60 opacity-30 transition-opacity group-hover:opacity-100 [@media(pointer:coarse)]:hidden"
+      />
+
       <div className="mb-1.5 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{project.title}</div>
@@ -77,14 +87,20 @@ export function ProjectCard({
 
       {(isUnpaid || project.tags?.length > 0 || dueDate) && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {/* Status crescendo per freelane-projects-design.md:
+              slate (muted) → terracotta (overdue) → rose (rose).
+              ≥30d open = the highest band → rose. ≥14d = terracotta.
+              Below 14d = slate. The locked spec calls for this exact warm-warning
+              scale; mid-band terracotta + top-band rose ensures the escalation
+              ramps INTO the warning palette rather than staying inside amber. */}
           {isUnpaid && daysOpen > 0 && (
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular",
                 daysOpen >= 30
-                  ? "bg-destructive/15 text-destructive"
+                  ? "bg-[var(--rose)]/15 text-[var(--rose)]"
                   : daysOpen >= 14
-                    ? "bg-[var(--chart-3)]/15 text-[var(--chart-3)]"
+                    ? "bg-[var(--overdue)]/15 text-[var(--overdue)]"
                     : "bg-muted text-muted-foreground",
               )}
               title={`Open for ${daysOpen} day${daysOpen === 1 ? "" : "s"}`}
@@ -98,7 +114,7 @@ export function ProjectCard({
               className={cn(
                 "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]",
                 overdue
-                  ? "bg-destructive/15 text-destructive"
+                  ? "bg-[var(--rose)]/15 text-[var(--rose)]"
                   : "bg-muted text-muted-foreground",
               )}
             >

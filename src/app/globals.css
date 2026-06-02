@@ -42,6 +42,7 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-overdue: var(--overdue);
+  --color-rose: var(--rose);
   --color-success: var(--success);
   --color-warning: var(--warning);
 
@@ -86,6 +87,9 @@
 
    Every theme defines the SAME set of var names. Invariants across all themes:
      • --overdue stays a terracotta / red-orange
+     • --rose stays a deeper red-pink (one step past terracotta on the
+       warm-warning scale — used for the highest band of the
+       slate → terracotta → rose status crescendo on Projects)
      • --success stays a green
    ─────────────────────────────────────────────────────────────────────────── */
 
@@ -121,6 +125,7 @@
 
   --destructive: oklch(0.64 0.15 36);
   --overdue: oklch(0.64 0.15 36);          /* terracotta */
+  --rose: oklch(0.62 0.18 12);             /* rose — deeper than terracotta */
   --success: oklch(0.68 0.13 150);         /* green */
   --warning: oklch(0.78 0.14 75);
 
@@ -176,6 +181,7 @@
 
   --destructive: oklch(0.64 0.15 36);
   --overdue: oklch(0.64 0.15 36);          /* terracotta */
+  --rose: oklch(0.62 0.18 12);             /* rose — deeper than terracotta */
   --success: oklch(0.7 0.13 152);          /* green */
   --warning: oklch(0.79 0.14 78);
 
@@ -231,6 +237,7 @@
 
   --destructive: oklch(0.57 0.16 32);
   --overdue: oklch(0.57 0.16 32);          /* terracotta */
+  --rose: oklch(0.55 0.2 10);              /* rose — deeper than terracotta */
   --success: oklch(0.56 0.12 150);         /* green */
   --warning: oklch(0.7 0.13 75);
 
@@ -286,6 +293,7 @@
 
   --destructive: oklch(0.58 0.17 30);
   --overdue: oklch(0.58 0.17 30);          /* terracotta */
+  --rose: oklch(0.56 0.2 10);              /* rose — deeper than terracotta */
   --success: oklch(0.58 0.13 152);         /* green */
   --warning: oklch(0.72 0.14 75);
 
@@ -341,6 +349,7 @@
 
   --destructive: oklch(0.57 0.14 36);      /* terracotta */
   --overdue: oklch(0.57 0.14 36);          /* terracotta */
+  --rose: oklch(0.55 0.18 12);             /* rose — deeper than terracotta */
   --success: oklch(0.58 0.11 150);         /* green */
   --warning: oklch(0.72 0.13 75);
 
@@ -396,6 +405,7 @@
 
   --destructive: oklch(0.63 0.15 36);
   --overdue: oklch(0.63 0.15 36);          /* terracotta */
+  --rose: oklch(0.6 0.18 12);              /* rose — deeper than terracotta */
   --success: oklch(0.67 0.13 150);         /* green */
   --warning: oklch(0.77 0.14 75);
 

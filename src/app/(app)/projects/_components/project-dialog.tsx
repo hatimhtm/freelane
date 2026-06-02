@@ -44,6 +44,7 @@ import type {
 } from "@/lib/supabase/types";
 import { formatMoney } from "@/lib/money";
 import { cn, phtToday } from "@/lib/utils";
+import { AiDot } from "@/components/widgets/ai-dot";
 
 const CURRENCIES = ["PHP", "MAD", "USD", "EUR", "CNY"];
 
@@ -68,11 +69,17 @@ export function ProjectDialog({
   const [pending, start] = useTransition();
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState("");
+  // Tracks whether loadPayments() has completed for the current project, so
+  // the AiDot's chatbot payload can distinguish "no payments yet" from "still
+  // loading". Without this guard, clicking the dot in the brief window before
+  // payments arrive would hand the chatbot an empty array silently.
+  const [paymentsLoaded, setPaymentsLoaded] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     if (project) {
       setState(project);
+      setPaymentsLoaded(false);
       loadPayments(project.id);
     } else {
       setState({
@@ -81,6 +88,7 @@ export function ProjectDialog({
         client_id: clients[0]?.id,
       });
       setPayments([]);
+      setPaymentsLoaded(false);
     }
   }, [open, project, defaultStatus, clients]);
 
@@ -92,6 +100,7 @@ export function ProjectDialog({
       .eq("project_id", projectId)
       .order("paid_at", { ascending: false });
     setPayments((data ?? []) as Payment[]);
+    setPaymentsLoaded(true);
   }
 
   function update<K extends keyof Project>(key: K, value: Project[K] | null | undefined) {
@@ -150,6 +159,39 @@ export function ProjectDialog({
     }
   }
 
+  // Detail-sheet AI affordance — only when editing an existing project (we
+  // need real project context to scope the chatbot). New-project mode skips
+  // the dot entirely.
+  //
+  // The AiDot ships with `absolute right-2 top-2` for in-card usage. As a
+  // title adornment we override those positioning utilities to render the
+  // dot inline (static), so its optical center sits on the title baseline
+  // instead of floating ~8px above-and-right of its wrapper.
+  //
+  // `payments: paymentsLoaded ? payments : null` makes the loading state
+  // explicit to the chatbot brain — empty array no longer ambiguously means
+  // "still loading" vs "this project genuinely has no payments".
+  const aiAdornment = project
+    ? (() => {
+        const client = clients.find((c) => c.id === project.client_id);
+        return (
+          <AiDot
+            className="static right-auto top-auto"
+            card={{
+              key: `project:${project.id}`,
+              label: project.title,
+              data: {
+                project,
+                client,
+                payments: paymentsLoaded ? payments : null,
+                notes: project.description ?? null,
+              },
+            }}
+          />
+        );
+      })()
+    : null;
+
   return (
     <CenterModal
       open={open}
@@ -157,6 +199,7 @@ export function ProjectDialog({
       title={project ? "Edit project" : "New project"}
       description={project ? "Tweak the details or log a new payment." : "Add a project for a client."}
       size="lg"
+      titleAdornment={aiAdornment}
     >
       <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
         <CenterModalBody>

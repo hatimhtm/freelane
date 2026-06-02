@@ -26,6 +26,13 @@ type CenterModalProps = {
   className?: string;
   /** Hide the default close button (rare; default true). */
   showCloseButton?: boolean;
+  /**
+   * Optional node rendered inline next to the title text. Currently used by
+   * detail sheets (e.g. project-dialog) to mount an AiDot in the header.
+   * Layout-safe: the title row is a flex with items-center + gap-2, so this
+   * sits as a sibling of the title without disturbing existing modals.
+   */
+  titleAdornment?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -52,6 +59,7 @@ export function CenterModal({
   size = "md",
   className,
   showCloseButton = true,
+  titleAdornment,
   children,
 }: CenterModalProps) {
   return (
@@ -68,9 +76,12 @@ export function CenterModal({
         >
           <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
             <div className="min-w-0 flex-1">
-              <DialogTitle className="font-display text-base leading-tight font-medium">
-                {title}
-              </DialogTitle>
+              <div className="flex items-center gap-2">
+                <DialogTitle className="font-display text-base leading-tight font-medium">
+                  {title}
+                </DialogTitle>
+                {titleAdornment}
+              </div>
               {description && (
                 <DialogDescription className="mt-1 text-xs leading-snug text-muted-foreground">
                   {description}
