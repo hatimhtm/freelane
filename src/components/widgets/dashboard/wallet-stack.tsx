@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Wallet } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { MethodGlyph } from "@/components/brand/method-glyph";
 import {
   DndContext,
   PointerSensor,
@@ -184,7 +184,13 @@ function SortableWalletCell({ id, holding, tone, warning, onOpen }: CellProps) {
       <SWidget
         label={holding.name}
         tone={tone}
-        icon={<Wallet className="h-4 w-4" />}
+        icon={
+          <MethodGlyph
+            name={holding.name}
+            brandKey={holding.brandKey ?? null}
+            className="h-5 w-5"
+          />
+        }
         hero={<NumberHero value={Math.round(holding.balance)} maximumFractionDigits={0} />}
         sub={<span>{holding.name}</span>}
         warning={

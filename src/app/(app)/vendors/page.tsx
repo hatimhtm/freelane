@@ -1,4 +1,4 @@
-import { getVendorsData } from "@/lib/data/queries";
+import { getVendorsData, getVendorIconCache } from "@/lib/data/queries";
 import { vendorHeartbeat } from "@/lib/ai/vendor-heartbeat";
 import { vendorAbsences } from "@/lib/ai/vendor-absence";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
@@ -9,6 +9,7 @@ export const metadata = { title: "Vendors" };
 
 export default async function VendorsPage() {
   const { vendors, aliases, links, spends, settings } = await getVendorsData();
+  const vendorIconCache = await getVendorIconCache().catch(() => []);
   const baseCurrency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
   const now = new Date();
 
@@ -30,6 +31,7 @@ export default async function VendorsPage() {
       links={links}
       spends={spends}
       baseCurrency={baseCurrency}
+      vendorIconCache={vendorIconCache}
     />
   );
 }

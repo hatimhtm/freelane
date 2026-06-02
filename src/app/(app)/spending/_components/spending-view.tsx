@@ -17,6 +17,11 @@ import { InvestmentVsConsumption } from "@/components/spending/investment-vs-con
 import { extractVendorToken, vendorSlug } from "@/lib/spending/vendor-extract";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import {
+  resolveVendorIcon,
+  normalizeVendorName,
+  indexVendorIconCache,
+} from "@/lib/brand/vendor-icon";
 import type {
   CurrencyCode,
   PriceIntelligenceRow,
@@ -24,6 +29,7 @@ import type {
   SpendCategory,
   SpendCategoryLink,
   SpendItem,
+  VendorIconCacheRow,
 } from "@/lib/supabase/types";
 import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import type { SpendingAnomaly } from "@/lib/ai/spending-anomalies";
@@ -65,6 +71,7 @@ export function SpendingView({
   openNew,
   defaultCategoryId,
   tab = "spends",
+  vendorIconCache,
 }: {
   rows: SpendRow[];
   categories: SpendCategory[];
@@ -83,6 +90,7 @@ export function SpendingView({
   openNew?: boolean;
   defaultCategoryId?: string;
   tab?: SpendingTab;
+  vendorIconCache?: VendorIconCacheRow[];
 }) {
   const showSpends = tab === "spends";
   const showTrends = tab === "trends";
@@ -167,6 +175,14 @@ export function SpendingView({
         return t >= monthRange.start && t < monthRange.end;
       }),
     [recentSpends, monthRange],
+  );
+
+  // Vendor icon cache index keyed by normalized name. The resolver does
+  // its own normalization, so the index is built once per render rather
+  // than per row.
+  const vendorIconCacheByName = useMemo(
+    () => indexVendorIconCache(vendorIconCache ?? []),
+    [vendorIconCache],
   );
 
   // Wallet chips reflect actually-used wallets in this month.
@@ -370,7 +386,7 @@ export function SpendingView({
             windowLabel={monthHeatmapLabel(month)}
           />
           <Panel eyebrow="Top vendors" subtitle="Lifetime pattern, click for detail.">
-            <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} />
+            <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} vendorIconCache={vendorIconCache} />
           </Panel>
         </div>
       </section>
@@ -392,7 +408,7 @@ export function SpendingView({
             </p>
           </div>
           <Panel eyebrow="Top vendors" subtitle="Lifetime pattern, click for detail.">
-            <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} />
+            <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} vendorIconCache={vendorIconCache} />
           </Panel>
         </section>
       )}
@@ -509,6 +525,7 @@ export function SpendingView({
                 row={row}
                 baseCurrency={baseCurrency}
                 categoryNameById={categoryNameById}
+                vendorIconCacheByName={vendorIconCacheByName}
                 index={i}
               />
             ))}
@@ -658,11 +675,13 @@ function SpendItemRow({
   row,
   baseCurrency,
   categoryNameById,
+  vendorIconCacheByName,
   index,
 }: {
   row: SpendRow;
   baseCurrency: CurrencyCode;
   categoryNameById: Map<string, string>;
+  vendorIconCacheByName: Map<string, VendorIconCacheRow>;
   index: number;
 }) {
   const tags = row.categoryIds
@@ -677,6 +696,22 @@ function SpendItemRow({
     ? `/spending/vendor/${vendorSlug(vendorMatch.vendor)}`
     : null;
 
+  // Brand-aware vendor glyph (Brand Identity workflow). Resolver checks
+  // curated registry → AI cache → generic fallback. We feed it the
+  // detected vendor token when available, otherwise the raw description
+  // so unknown rows still get a paper-tile-with-initial.
+  const vendorTokenForIcon = vendorMatch.vendor ?? row.description ?? "";
+  const vendorIconCacheRow =
+    vendorTokenForIcon
+      ? vendorIconCacheByName.get(normalizeVendorName(vendorTokenForIcon)) ?? null
+      : null;
+  const resolved = vendorTokenForIcon
+    ? resolveVendorIcon(vendorTokenForIcon, {
+        cache: vendorIconCacheRow,
+        className: "size-6",
+      })
+    : null;
+
   return (
     <motion.li
       initial={{ opacity: 0 }}
@@ -687,6 +722,8 @@ function SpendItemRow({
       <div className="w-12 shrink-0 text-[11px] tabular text-muted-foreground">
         {formatDate(row.spentAt)}
       </div>
+
+      {resolved && <div className="shrink-0">{resolved.icon}</div>}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">

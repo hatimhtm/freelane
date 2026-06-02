@@ -80,6 +80,14 @@ export const BRAIN_TTL = {
   //     status change.
   EXTRACT_FACTS_FROM_NOTES: 5 * 60 * 1000,
   CLIENT_PATTERN_CHANGE: 60 * 60 * 1000,
+  // Brand Identity workflow.
+  //   VENDOR_ICON_IDENTIFY: Flash Lite brain that resolves a vendor name
+  //     into { canonical_name, brand_color_hex, glyph_kind, glyph_value,
+  //     confidence, category_hint }. Write-once per vendor_name_normalized
+  //     into finance.vendor_icon_cache. 30-day TTL is a shelf marker — the
+  //     cache row IS the source of truth for the resolver and survives
+  //     even after this in-memory TTL expires.
+  VENDOR_ICON_IDENTIFY: 30 * 24 * 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -107,6 +115,7 @@ export const BRAIN_KEYS = {
   SPEND_SADAKA_CLASSIFIER: "spend_sadaka_classifier",
   EXTRACT_FACTS_FROM_NOTES: "extract_facts_from_notes",
   CLIENT_PATTERN_CHANGE: "client_pattern_change",
+  VENDOR_ICON_IDENTIFY: "vendor_icon_identify",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -140,6 +149,7 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.SPEND_SADAKA_CLASSIFIER]: BRAIN_TTL.SPEND_SADAKA_CLASSIFIER,
   [BRAIN_KEYS.EXTRACT_FACTS_FROM_NOTES]: BRAIN_TTL.EXTRACT_FACTS_FROM_NOTES,
   [BRAIN_KEYS.CLIENT_PATTERN_CHANGE]: BRAIN_TTL.CLIENT_PATTERN_CHANGE,
+  [BRAIN_KEYS.VENDOR_ICON_IDENTIFY]: BRAIN_TTL.VENDOR_ICON_IDENTIFY,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache
@@ -161,6 +171,10 @@ export const FINANCIAL_INVALIDATION_EXEMPT: readonly BrainKey[] = [
   // refreshClientPatternBaselines instead of cache invalidation).
   BRAIN_KEYS.EXTRACT_FACTS_FROM_NOTES,
   BRAIN_KEYS.CLIENT_PATTERN_CHANGE,
+  // Brand Identity — vendor icon identification is keyed off the
+  // normalized vendor name, never the user's money state. Spend / payment
+  // mutations don't change a vendor's brand identity.
+  BRAIN_KEYS.VENDOR_ICON_IDENTIFY,
 ] as const;
 
 // Below-this threshold spends do NOT bust the AI brain cache. A ₱5 cigarette

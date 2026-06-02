@@ -52,6 +52,8 @@ import type {
   QuietChannel,
   RateInsight,
   ShouldIBuySession,
+  VendorIconCacheRow,
+  WalletPlatformMetadataRow,
 } from "@/lib/supabase/types";
 
 async function userOrThrow() {
@@ -1398,5 +1400,42 @@ export const getDashboardActiveYears = cache(
     }
 
     return Array.from(set).sort((a, b) => b - a);
+  },
+);
+
+// ─────────────────────────── Brand Identity workflow fetchers ──
+
+// Per-user vendor icon cache rows. Read by PaymentsView / SpendingView /
+// VendorsView so the resolveVendorIcon resolver picks up tier-2 AI hits
+// without an N+1 round-trip per spend row.
+export const getVendorIconCache = cache(
+  async (): Promise<VendorIconCacheRow[]> => {
+    const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+    const { data } = await supabase
+      .from("vendor_icon_cache")
+      .select("*")
+      .eq("user_id", user.id);
+    return (data ?? []) as VendorIconCacheRow[];
+  },
+);
+
+// Reference-data table — wallet platform metadata. Read-all RLS policy
+// means any authenticated user can fetch every row; we filter by the
+// brand_keys the caller cares about so the chatbot context payload
+// stays tight. Wrapped in React `cache()` so request-scoped dedupe
+// kicks in across callers (today the chatbot fetcher; a wallet detail
+// sheet or withdrawal modal could read it next without an extra round
+// trip). cache() keys on argument identity, so passing the same array
+// reference at multiple call sites is fine — distinct arrays dedupe on
+// identity, not contents.
+export const getWalletPlatformMetadata = cache(
+  async (brandKeys?: string[]): Promise<WalletPlatformMetadataRow[]> => {
+    const supabase = await createClient();
+    let q = supabase.from("wallet_platform_metadata").select("*");
+    if (brandKeys && brandKeys.length > 0) {
+      q = q.in("brand_key", brandKeys);
+    }
+    const { data } = await q;
+    return (data ?? []) as WalletPlatformMetadataRow[];
   },
 );

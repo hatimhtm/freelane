@@ -12,8 +12,9 @@ import {
 import { formatMoney } from "@/lib/money";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
+import { MethodGlyph } from "@/components/brand/method-glyph";
 
-export type WalletPickerOption = { id: string; name: string };
+export type WalletPickerOption = { id: string; name: string; brandKey?: string | null };
 
 type WalletStatus = "positive" | "within_tolerance" | "over_overdraft";
 
@@ -113,6 +114,7 @@ export function WalletPickerWithBalance({
             return (
               <span className="flex min-w-0 items-center gap-1.5">
                 {statusDot(st)}
+                <MethodGlyph name={m.name} brandKey={m.brandKey ?? null} className="size-4" />
                 <span className="truncate">{m.name}</span>
                 {typeof bal === "number" && (
                   <>
@@ -148,6 +150,7 @@ export function WalletPickerWithBalance({
               <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
                 <span className="flex min-w-0 items-center gap-1.5 truncate">
                   {statusDot(st)}
+                  <MethodGlyph name={m.name} brandKey={m.brandKey ?? null} className="size-4" />
                   <span className="truncate">{m.name}</span>
                 </span>
                 {typeof bal === "number" && (

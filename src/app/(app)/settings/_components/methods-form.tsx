@@ -25,6 +25,7 @@ import {
   deletePaymentMethod,
   updatePaymentMethod,
 } from "@/lib/data/actions";
+import { WALLET_BRANDS } from "@/lib/brand/wallets";
 import type { Currency, CurrencyCode, PaymentMethod, PaymentMethodKind } from "@/lib/supabase/types";
 
 const KINDS: { value: PaymentMethodKind; label: string }[] = [
@@ -148,7 +149,63 @@ function IconBtn({ children, onClick, label, danger }: { children: React.ReactNo
   );
 }
 
-type MethodValues = { name: string; kind: string; currency_in: string | null; currency_out: string | null; monthly_fee_php: number; monthly_fee_currency: string | null; is_holding: boolean; overdraft_tolerance_base: number; notes: string | null };
+// Brand picker tiles. The 6 canonical wallets seeded in
+// wallet_platform_metadata + an "Auto" tile that clears brand_key so the
+// resolver falls back to fuzzy name matching. Selection writes the tile's
+// brand_key to the form state; submit pipes that into createPaymentMethod
+// / updatePaymentMethod (which both accept brand_key now).
+function BrandPicker({
+  selected,
+  onSelect,
+}: {
+  selected: string | null;
+  onSelect: (key: string | null) => void;
+}) {
+  const tiles = Object.values(WALLET_BRANDS);
+  const autoActive = !selected;
+  return (
+    <div className="mt-1.5 grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+      <button
+        type="button"
+        onClick={() => onSelect(null)}
+        aria-pressed={autoActive}
+        className={cn(
+          "flex flex-col items-center justify-center gap-1 rounded-lg border px-2 py-2.5 text-[11px] transition-colors",
+          autoActive
+            ? "border-foreground bg-foreground/5 text-foreground"
+            : "border-border/60 text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <span aria-hidden className="grid size-7 place-items-center rounded-md border border-dashed border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">A</span>
+        <span>Auto</span>
+      </button>
+      {tiles.map((brand) => {
+        const active = selected === brand.brandKey;
+        const Glyph = brand.Glyph;
+        return (
+          <button
+            key={brand.brandKey}
+            type="button"
+            onClick={() => onSelect(brand.brandKey)}
+            aria-pressed={active}
+            className={cn(
+              "flex flex-col items-center justify-center gap-1 rounded-lg border px-2 py-2.5 text-[11px] transition-colors",
+              active
+                ? "border-foreground bg-foreground/5 text-foreground"
+                : "border-border/60 text-muted-foreground hover:text-foreground",
+            )}
+            style={brand.color ? { borderColor: active ? brand.color : undefined } : undefined}
+          >
+            <Glyph className="size-7" />
+            <span className="truncate">{brand.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+type MethodValues = { name: string; kind: string; currency_in: string | null; currency_out: string | null; monthly_fee_php: number; monthly_fee_currency: string | null; is_holding: boolean; overdraft_tolerance_base: number; notes: string | null; brand_key: string | null };
 
 function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial?: PaymentMethod; currencies: Currency[]; baseCurrency: string; onSubmit: (v: MethodValues) => Promise<void> }) {
   const [v, setV] = useState({
@@ -161,6 +218,7 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
     is_holding: initial?.is_holding ?? false,
     overdraft_tolerance_base: Number(initial?.overdraft_tolerance_base ?? 0),
     notes: initial?.notes ?? "",
+    brand_key: initial?.brand_key ?? null,
   });
   const [pending, start] = useTransition();
   const ANY = "__any__";
@@ -178,6 +236,7 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
         is_holding: v.is_holding,
         overdraft_tolerance_base: Math.max(0, Number(v.overdraft_tolerance_base) || 0),
         notes: v.notes.trim() || null,
+        brand_key: v.brand_key,
       });
     });
   }
@@ -263,6 +322,16 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
             </p>
           </div>
         )}
+        <div>
+          <Label className="text-xs">Brand</Label>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+            Pick the brand so the right glyph + colour show up everywhere. Leave it on Auto for a fuzzy match against the wallet name.
+          </p>
+          <BrandPicker
+            selected={v.brand_key}
+            onSelect={(key) => setV({ ...v, brand_key: key })}
+          />
+        </div>
         <div>
           <Label className="text-xs">Notes</Label>
           <Input value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} placeholder="optional" />

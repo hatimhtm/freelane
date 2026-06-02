@@ -182,6 +182,10 @@ export interface HoldingBalanceRow {
   // only — safe-to-spend treats the wallet at its actual balance.
   overdraftToleranceBase: number;
   status: WalletStatus;
+  // Brand Identity (migration 0078) — stable wallet brand key used by
+  // resolveWalletBrand to paint brand glyphs + tint backgrounds. NULL
+  // falls back to fuzzy name-slug matching at render time.
+  brandKey?: string | null;
 }
 
 export type WalletStatus = "positive" | "within_tolerance" | "over_overdraft";
@@ -244,6 +248,7 @@ export function holdingBalances(
         balance,
         overdraftToleranceBase: tolerance,
         status: walletStatus(balance, tolerance),
+        brandKey: m.brand_key ?? null,
       });
     }
     // If the ledger covered every holding wallet, return its results.
@@ -320,6 +325,7 @@ export function holdingBalances(
         balance,
         overdraftToleranceBase: tolerance,
         status: walletStatus(balance, tolerance),
+        brandKey: m.brand_key ?? null,
       };
     })
     // Show wallets the user has anchored OR that have seen money. Hide pure

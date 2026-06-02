@@ -576,9 +576,48 @@ export interface PaymentMethod {
   // + alarm threshold ONLY — never folded into safe-to-spend math. Wallet
   // renders terracotta while balance > -tolerance, rose past it.
   overdraft_tolerance_base: number;
+  // Stable wallet brand key (migration 0078). Resolves to the WALLET_BRANDS
+  // registry in src/lib/brand/wallets.ts. NULL falls back to fuzzy
+  // name-slug matching at render time.
+  brand_key: string | null;
   notes: string | null;
   archived: boolean;
   created_at: string;
+  updated_at: string;
+}
+
+// Per-user cache row for the vendor icon AI-fallback brain (migration
+// 0079). Read by src/lib/brand/vendor-icon.ts at render time.
+export interface VendorIconCacheRow {
+  id: string;
+  user_id: string;
+  vendor_name_normalized: string;
+  canonical_name: string | null;
+  brand_color_hex: string | null;
+  glyph_kind: "letter" | "symbol" | "category" | "none";
+  glyph_value: string | null;
+  category_hint: string | null;
+  confidence: number | null;
+  generated_at: string;
+  user_overridden: boolean;
+}
+
+// Reference row in finance.wallet_platform_metadata (migration 0080).
+// Reference data; read by chatbot when answering withdrawal-routing
+// questions. typical_fee_fraction is a [0,1] fraction (0.006 = 0.6%),
+// shares units with paymentFee().pct so the brain can compare typical-
+// vs-actual without a 100x unit clash.
+export interface WalletPlatformMetadataRow {
+  brand_key: string;
+  display_name: string;
+  platform_type: "crypto" | "ewallet" | "bank" | "remittance" | "cash";
+  base_currency: string | null;
+  typical_fee_fraction: number | null;
+  typical_fee_flat_php: number | null;
+  typical_speed_hours: number | null;
+  supports_inbound: boolean;
+  supports_outbound: boolean;
+  notes: string | null;
   updated_at: string;
 }
 
@@ -1259,6 +1298,10 @@ export type Database = {
       invoice_projects:            Table<{ invoice_id: string; project_id: string }>;
       project_templates:           Table<ProjectTemplate>;
       events:                      Table<ActivityEvent>;
+      // Migration 0079 — vendor icon resolver cache (Brand Identity workflow).
+      vendor_icon_cache:           Table<VendorIconCacheRow>;
+      // Migration 0080 — wallet platform reference data (Payments workflow).
+      wallet_platform_metadata:    Table<WalletPlatformMetadataRow>;
     };
     Views: {
       project_totals: View<{

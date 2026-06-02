@@ -5,7 +5,7 @@
 // searchParams so server-rendered month state matches the URL on first
 // paint (matters for trends/spends which share the navigated month).
 
-import { getSpendingData } from "@/lib/data/queries";
+import { getSpendingData, getVendorIconCache } from "@/lib/data/queries";
 import { computeSafeToSpendFromData } from "@/lib/safe-to-spend";
 import { holdingBalances } from "@/lib/payment-chain";
 import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
@@ -129,6 +129,11 @@ export async function loadSpendingProps(params: {
     categoryLinks: spendCategoryLinks,
   });
 
+  // Brand Identity workflow — vendor icon cache for the spend list + the
+  // vendor leaderboard. Failure swallowed (resolver falls through to
+  // tier 1 / tier 3 without the cache row).
+  const vendorIconCache = await getVendorIconCache().catch(() => []);
+
   return {
     rows,
     categories: spendCategories,
@@ -145,6 +150,7 @@ export async function loadSpendingProps(params: {
     initialMonth,
     openNew: params.new === "1",
     defaultCategoryId: params.category,
+    vendorIconCache,
   };
 }
 

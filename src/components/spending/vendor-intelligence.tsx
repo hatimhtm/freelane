@@ -8,11 +8,21 @@ import {
   vendorIntelligence,
 } from "@/lib/spending/vendor-extract";
 import { formatMoney } from "@/lib/money";
-import type { CurrencyCode, Spend } from "@/lib/supabase/types";
+import {
+  resolveVendorIcon,
+  normalizeVendorName,
+  indexVendorIconCache,
+} from "@/lib/brand/vendor-icon";
+import type {
+  CurrencyCode,
+  Spend,
+  VendorIconCacheRow,
+} from "@/lib/supabase/types";
 
 interface VendorIntelligenceProps {
   spends: Spend[];
   baseCurrency: CurrencyCode;
+  vendorIconCache?: VendorIconCacheRow[];
 }
 
 interface VendorRow {
@@ -49,7 +59,12 @@ function formatLastSeen(days: number): string {
 export function VendorIntelligence({
   spends,
   baseCurrency,
+  vendorIconCache,
 }: VendorIntelligenceProps) {
+  const cacheByName = useMemo(
+    () => indexVendorIconCache(vendorIconCache ?? []),
+    [vendorIconCache],
+  );
   const rows = useMemo<VendorRow[]>(() => {
     const grouped = groupSpendsByVendor(spends);
     const out: VendorRow[] = [];
@@ -96,12 +111,17 @@ export function VendorIntelligence({
           r.lastSeenAt !== null ? formatLastSeen(daysAgo(r.lastSeenAt, now)) : "—";
         const visitsLabel = `${r.count} ${r.count === 1 ? "visit" : "visits"}`;
         const avgLabel = `avg ${formatMoney(r.avgTicket, baseCurrency, { compact: true })}`;
+        const resolved = resolveVendorIcon(r.vendor, {
+          cache: cacheByName.get(normalizeVendorName(r.vendor)) ?? null,
+          className: "size-5",
+        });
         return (
           <li key={r.slug}>
             <Link
               href={`/spending/vendor/${r.slug}`}
               className="flex h-11 items-center justify-between gap-3 px-4 transition-colors duration-300 hover:bg-ink/4"
             >
+              <div className="shrink-0">{resolved.icon}</div>
               <div className="min-w-0 flex-1">
                 <div
                   className={

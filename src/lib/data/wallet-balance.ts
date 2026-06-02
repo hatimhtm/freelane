@@ -175,6 +175,7 @@ export async function getWalletBalanceRowsFromLedger(
       balance: entry.balance,
       overdraftToleranceBase: tolerance,
       status: walletStatus(entry.balance, tolerance),
+      brandKey: m.brand_key ?? null,
     });
   }
   return out;

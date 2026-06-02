@@ -1555,6 +1555,11 @@ export type PaymentMethodInput = {
   // only; never folded into safe-to-spend math.
   overdraft_tolerance_base?: number;
   notes?: string | null;
+  // Stable brand identifier from src/lib/brand/wallets.ts (migration 0078).
+  // Explicit picker write — what the resolver fallback comment calls out
+  // as the user's escape hatch when fuzzy-match misses an idiosyncratic
+  // wallet name. Pass null to clear and fall back to fuzzy matching.
+  brand_key?: string | null;
 };
 
 export async function createPaymentMethod(input: PaymentMethodInput) {
@@ -1572,6 +1577,7 @@ export async function createPaymentMethod(input: PaymentMethodInput) {
       is_holding: input.is_holding ?? false,
       overdraft_tolerance_base: input.overdraft_tolerance_base ?? 0,
       notes: input.notes ?? null,
+      brand_key: input.brand_key ?? null,
     })
     .select("id")
     .single();
@@ -1592,6 +1598,39 @@ export async function updatePaymentMethod(id: string, input: Partial<PaymentMeth
   await logEvent({ userId, kind: "method.updated", title: `Updated method${input.name ? ` · ${input.name}` : ""}`, entityType: "payment_method", entityId: id });
   revalidatePath("/settings");
   revalidatePath("/payments");
+}
+
+// Dedicated brand-picker write. Wraps updatePaymentMethod with the result
+// shape the picker UI needs (ActionResult so the toast can surface the
+// real underlying error) and the explicit "set to null = clear" semantics
+// the resolver fallback path relies on. Mirrors the brief's call-out of
+// the picker as the user's escape hatch for idiosyncratically named
+// wallets — fuzzy fallback stays in place once brand_key is null again.
+export async function updateMethodBrand(
+  id: string,
+  brandKey: string | null,
+): Promise<ActionResult<{ id: string; brand_key: string | null }>> {
+  return safeRun("updateMethodBrand", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const normalized = brandKey?.trim() ? brandKey.trim() : null;
+    const { error } = await supabase
+      .from("payment_methods")
+      .update({ brand_key: normalized })
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    await logEvent({
+      userId,
+      kind: "method.updated",
+      title: `Updated wallet brand${normalized ? ` · ${normalized}` : " · cleared"}`,
+      entityType: "payment_method",
+      entityId: id,
+    });
+    revalidatePath("/settings");
+    revalidatePath("/payments");
+    revalidatePath("/dashboard");
+    return { id, brand_key: normalized };
+  });
 }
 
 export async function archivePaymentMethod(id: string, archived = true) {
@@ -3708,6 +3747,16 @@ export async function createVendor(input: VendorInput) {
   // New vendor = structural event — chatbot brain may want to ask
   // about this place. Fire-and-forget.
   await maybeSurfaceClarifyingQuestion();
+  // Brand Identity workflow — fire the vendor icon brain in the
+  // background. Failures are swallowed by safeRun and never block the
+  // create. Cache row lands in finance.vendor_icon_cache; resolver picks
+  // it up on the next render.
+  try {
+    const { identifyVendorIconAction } = await import("@/lib/ai/vendor-icon-actions");
+    void identifyVendorIconAction(name);
+  } catch {
+    /* best-effort — module load failure cannot block vendor create */
+  }
   revalidatePath("/vendors");
   revalidatePath("/spending");
   return data;
@@ -3741,6 +3790,18 @@ export async function updateVendor(id: string, input: Partial<VendorInput>) {
     entityType: "vendor",
     entityId: id,
   });
+  // Brand Identity — re-identify ONLY when the canonical name actually
+  // changed. The action wrapper itself short-circuits if a non-overridden
+  // cache row already exists with high confidence, so this is also
+  // idempotent on repeated updates.
+  if (input.canonical_name) {
+    try {
+      const { identifyVendorIconAction } = await import("@/lib/ai/vendor-icon-actions");
+      void identifyVendorIconAction(input.canonical_name);
+    } catch {
+      /* best-effort */
+    }
+  }
   revalidatePath("/vendors");
   revalidatePath(`/vendors/${id}`);
   revalidatePath("/spending");

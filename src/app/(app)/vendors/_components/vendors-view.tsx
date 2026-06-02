@@ -14,12 +14,19 @@ import { Label } from "@/components/ui/label";
 import { PrimaryAction } from "@/components/app/primary-action";
 import { formatMoney } from "@/lib/money";
 import { archiveVendor, createVendor } from "@/lib/data/actions";
+import { setVendorIconOverride } from "@/lib/ai/vendor-icon-actions";
+import {
+  resolveVendorIcon,
+  normalizeVendorName,
+  indexVendorIconCache,
+} from "@/lib/brand/vendor-icon";
 import type {
   CurrencyCode,
   Spend,
   SpendVendorLink,
   Vendor,
   VendorAlias,
+  VendorIconCacheRow,
 } from "@/lib/supabase/types";
 import type { VendorHeartbeat } from "@/lib/ai/vendor-heartbeat";
 import type { VendorAbsence } from "@/lib/ai/vendor-absence";
@@ -32,6 +39,7 @@ interface VendorsViewProps {
   links: SpendVendorLink[];
   spends: Spend[];
   baseCurrency: CurrencyCode;
+  vendorIconCache?: VendorIconCacheRow[];
 }
 
 export function VendorsView({
@@ -42,7 +50,12 @@ export function VendorsView({
   links,
   spends,
   baseCurrency,
+  vendorIconCache,
 }: VendorsViewProps) {
+  const cacheByName = useMemo(
+    () => indexVendorIconCache(vendorIconCache ?? []),
+    [vendorIconCache],
+  );
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -134,11 +147,19 @@ export function VendorsView({
             const total = totalsByVendor.get(h.vendor.id) ?? 0;
             const count = spendCountByVendor.get(h.vendor.id) ?? 0;
             const myAliases = aliasesByVendor.get(h.vendor.id) ?? [];
+            const resolved = resolveVendorIcon(h.vendor.canonical_name, {
+              cache:
+                cacheByName.get(
+                  normalizeVendorName(h.vendor.canonical_name),
+                ) ?? null,
+              className: "size-6",
+            });
             return (
               <li
                 key={h.vendor.id}
-                className="grid grid-cols-[1fr_auto] items-baseline gap-3 px-3 py-2.5 hover:bg-muted/40"
+                className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2.5 hover:bg-muted/40"
               >
+                <div className="shrink-0">{resolved.icon}</div>
                 <Link
                   href={`/vendors/${h.vendor.id}`}
                   className="block min-w-0"
@@ -165,6 +186,45 @@ export function VendorsView({
                   </div>
                 </Link>
                 <div className="flex items-center gap-1.5 text-right">
+                  {resolved.source === "fallback" && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={async () => {
+                        try {
+                          // Pin the currently-resolved fallback icon as the
+                          // user's choice. Marks the cache row as
+                          // user_overridden=true so the brain never overwrites
+                          // it. Only offered on tier-3 fallbacks — curated
+                          // (tier 1) already wins among non-overridden
+                          // lookups, and pinning a curated row through this
+                          // path would flatten its rich SVG glyph to a
+                          // single-letter generic. Cache rows (tier 2) are
+                          // similarly skipped — re-pinning would just
+                          // duplicate what's already persisted.
+                          const res = await setVendorIconOverride({
+                            vendorName: h.vendor.canonical_name,
+                            canonical_name: resolved.label,
+                            brand_color_hex: resolved.color,
+                            glyph_kind: "letter",
+                            glyph_value: resolved.label.slice(0, 1).toUpperCase(),
+                          });
+                          if (res.ok) {
+                            toast.success("Pinned vendor glyph");
+                            router.refresh();
+                          } else {
+                            toast.error(res.error);
+                          }
+                        } catch (err) {
+                          toast.error((err as Error).message);
+                        }
+                      }}
+                      aria-label={`Pin glyph for ${h.vendor.canonical_name}`}
+                      title="Pin glyph"
+                    >
+                      <span aria-hidden className="text-[10px]">★</span>
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon-sm"

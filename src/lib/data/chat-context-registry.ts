@@ -88,7 +88,13 @@ export function pageKeyFromPath(pathname: string): string {
     return segments[1] ? "letters.detail" : "letters";
   }
   if (segments[0] === "plans") return "plans";
-  if (segments[0] === "payments") return "payments";
+  if (segments[0] === "payments") {
+    // Payments has three subtabs (wallets / withdrawals / history) since
+    // the Design Structure restructure. Brand Identity workflow extends
+    // the chatbot context per subtab so withdrawal-routing answers can
+    // lean on wallet_platform_metadata for the specific surface.
+    return segments[1] ? `payments.${segments[1]}` : "payments";
+  }
   if (segments[0] === "should-i-buy") return "should_i_buy";
   if (segments[0] === "settings") {
     return segments[1] ? `settings.${segments[1]}` : "settings";
@@ -111,6 +117,7 @@ const DEFAULT_CONTEXT: (path: string) => PageContext = (path) => ({
 import "@/app/(app)/today/_components/today-chatbot-context";
 import "@/app/(app)/dashboard/_components/dashboard-data";
 import "@/app/(app)/spending/_components/spending-data";
+import "@/app/(app)/payments/_components/payments-data";
 
 export async function getChatbotContextForPath(
   pathname: string,

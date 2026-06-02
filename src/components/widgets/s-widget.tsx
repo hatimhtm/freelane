@@ -30,6 +30,11 @@ export type SWidgetProps = {
   // Phase 1.5 — optional AI dot in the top-right corner. Click opens the
   // chatbot scoped to this card via the freelane:open-chatbot event.
   aiDot?: AiDotCardContext;
+  // Phase 1.5 — icon slot variant. "tile" = 28px tile with neutral halo
+  // (original behavior). "bare" = 32px unframed glyph; used when the card
+  // already carries a brand tint and the neutral halo would compete with it
+  // (Payments wallet cards). Default keeps existing surfaces intact.
+  iconSlot?: "tile" | "bare";
 };
 
 const TONE_RING: Record<NonNullable<SWidgetProps["tone"]>, string> = {
@@ -41,7 +46,7 @@ const TONE_RING: Record<NonNullable<SWidgetProps["tone"]>, string> = {
 };
 
 export const SWidget = forwardRef<HTMLDivElement, SWidgetProps>(function SWidget(
-  { label, icon, hero, sub, className, tone = "default", live, onOpen, warning, aiDot },
+  { label, icon, hero, sub, className, tone = "default", live, onOpen, warning, aiDot, iconSlot = "tile" },
   ref,
 ) {
   const clickable = !!onOpen;
@@ -73,9 +78,18 @@ export const SWidget = forwardRef<HTMLDivElement, SWidgetProps>(function SWidget
             >
               <div className="flex items-start justify-between">
                 {icon ? (
-                  <div className="grid h-7 w-7 place-items-center rounded-md bg-foreground/[0.04] text-foreground/70">
-                    {icon}
-                  </div>
+                  iconSlot === "bare" ? (
+                    // Brand-tinted cards (Payments wallets) carry their identity
+                    // via the card tint itself — the neutral halo would compete.
+                    // Render the glyph naked at 32px (spec size).
+                    <div className="grid h-8 w-8 place-items-center text-foreground/70">
+                      {icon}
+                    </div>
+                  ) : (
+                    <div className="grid h-7 w-7 place-items-center rounded-md bg-foreground/[0.04] text-foreground/70">
+                      {icon}
+                    </div>
+                  )
                 ) : (
                   // No spacer — empty icon tile reads as decoration on Sleep /
                   // Today's Focus / Diary / Fees / Biggest debtor / Avg days.
