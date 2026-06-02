@@ -86,6 +86,19 @@ export function WalletRunwayWidget({ holdings, dailyBurnByWallet, currency }: Pr
       }
       supporting={<Stamp tone={stampTone}>{stampLabel}</Stamp>}
       tone={overOverdraftCount > 0 ? "rose" : withinToleranceCount > 0 ? "terracotta" : "default"}
+      aiDot={{
+        key: "money.wallet_runway",
+        label: "Wallet runway",
+        data: {
+          totalBalance,
+          totalBurn,
+          runwayDays: runwayDays === Infinity ? null : runwayDays,
+          overdrawn,
+          overOverdraftCount,
+          withinToleranceCount,
+          walletCount: holdings.length,
+        },
+      }}
     />
   );
 }

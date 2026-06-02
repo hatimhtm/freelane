@@ -11,6 +11,8 @@ import {
 import { BRAIN_KEYS } from "./cache-keys";
 import { safeToSpend } from "@/lib/safe-to-spend";
 import { holdingBalances } from "@/lib/payment-chain";
+import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
+import { logLedgerReadFailure } from "@/lib/data/money-ledger";
 import { buildCashflowAtlas } from "@/lib/cashflow-atlas";
 import { plannedInRange, committedPoolBase } from "@/lib/planned-spends";
 import { formatMoney } from "@/lib/money";
@@ -203,14 +205,26 @@ async function computeTightModeRegen(inputs: TightModeInputs): Promise<TightMode
   const active = shouldShowTightMode(inputs.calmWeather);
 
   // Compute deterministic facts first (cheap; we always need them).
-  const safe = safeToSpend({ ...inputs, now });
-  const atlas = buildCashflowAtlas({ ...inputs, now });
+  // Phase 1.5: ledger reader first; thread through safe-to-spend + atlas
+  // so they read the same canonical wallet truth.
+  const tightLedgerBalanceMap = await computeWalletBalancesFromLedger(inputs.methods).catch(
+    (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      void logLedgerReadFailure(`tight-mode wallet-balance read: ${message}`);
+      return new Map();
+    },
+  );
+  const tightLedgerBalanceForChain = new Map<string, number>();
+  for (const [k, v] of tightLedgerBalanceMap) tightLedgerBalanceForChain.set(k, v.balance);
+  const safe = safeToSpend({ ...inputs, ledgerBalances: tightLedgerBalanceForChain, now });
+  const atlas = buildCashflowAtlas({ ...inputs, ledgerBalances: tightLedgerBalanceForChain, now });
   const holdings = holdingBalances(
     inputs.methods,
     inputs.payments,
     inputs.stepsByPayment,
     inputs.withdrawals,
     inputs.spends,
+    tightLedgerBalanceForChain,
   );
   const walletTotalBase = holdings.reduce((s, h) => s + h.balance, 0);
 

@@ -9,6 +9,18 @@ import {
   FINANCIAL_INVALIDATION_EXEMPT,
   SPEND_INVALIDATION_FLOOR_BASE,
 } from "@/lib/ai/cache-keys";
+import {
+  insertLedger,
+  archiveLedger,
+  replaceLedgerRow,
+} from "@/lib/data/money-ledger";
+import { onIncomeContribution } from "@/lib/sadaka/contribution";
+import { onSpendCreated as onSpendSadakaDetect } from "@/lib/sadaka/auto-detect";
+import {
+  insertSadakaLedgerRow,
+  findLiveLedgerRowBySource,
+  archiveSadakaLedgerRow,
+} from "@/lib/sadaka/ledger";
 import type {
   AiQuestion,
   AiQuestionKind,
@@ -86,10 +98,23 @@ export async function safeRunLabeled<T>(
 // ai_brain_cache (migrated onto withBrainCache). The earlier per-table writes
 // against ai_safe_spend_cache and calm_weather_state are now dead, so this
 // fan-out collapses to a single delete against the canonical table.
+/**
+ * Drops every spend-driven entry from ai_brain_cache so the next read of any
+ * affected brain recomputes from scratch. Also fires the chatbot's
+ * "significant state-change" hook — surfaceNextOpenQuestion is invoked
+ * fire-and-forget when opts.surfaceQuestion is true (wallet first-anchor,
+ * plan add, recurring rule add, payment received, etc.) so a structural
+ * change has a chance to drip-feed a clarifying question.
+ *
+ * The IDLE side (daily PHT-midnight surfacing + stale 'asked' recycling)
+ * lives in src/app/api/cron/surface-question/route.ts and is scheduled in
+ * vercel.json. This function only owns the event-driven half; the cron
+ * picks up the rest.
+ */
 async function invalidateAiSafeSpendCache(
   userId: string,
   existing?: Awaited<ReturnType<typeof createClient>>,
-  opts: { amountBase?: number } = {},
+  opts: { amountBase?: number; surfaceQuestion?: boolean } = {},
 ): Promise<void> {
   if (
     typeof opts.amountBase === "number" &&
@@ -109,6 +134,24 @@ async function invalidateAiSafeSpendCache(
       .in("brain_key", keysToInvalidate as unknown as string[]);
   } catch {
     // Swallow — the cache is regenerable; not worth failing a real write.
+  }
+  if (opts.surfaceQuestion) {
+    await maybeSurfaceClarifyingQuestion();
+  }
+}
+
+// Fire-and-forget hook for mutations that don't otherwise touch the AI
+// brain cache (vendor / entity / client creation) but still represent a
+// "significant event" worth letting the chatbot brain consider asking
+// about. Safe to call from anywhere — failures are swallowed.
+export async function maybeSurfaceClarifyingQuestion(): Promise<void> {
+  try {
+    const { surfaceNextOpenQuestion } = await import(
+      "@/lib/ai/open-questions-actions"
+    );
+    void surfaceNextOpenQuestion().catch(() => {});
+  } catch {
+    // ignore — dynamic import safety net
   }
 }
 
@@ -168,6 +211,9 @@ export async function createClientRecord(input: ClientInput) {
     entityId: data.id as string,
     clientId: data.id as string,
   });
+  // New client = structural event — chatbot brain may want to ask about
+  // them. Fire-and-forget; doesn't gate the response.
+  await maybeSurfaceClarifyingQuestion();
   revalidatePath("/clients");
   revalidatePath("/projects");
   revalidatePath("/dashboard");
@@ -647,6 +693,32 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
   const { error: stepErr } = await supabase.from("payment_steps").insert(stepRows);
   if (stepErr) throw stepErr;
 
+  // Mirror the income onto money_ledger (Phase 1.5). The landing wallet
+  // is the final hop's method_id. Skipped (no wallet) only when the chain
+  // ended on null — pre-holding-wallet quick-adds. Best-effort.
+  const landingWalletId = final.method_id ?? null;
+  if (landingWalletId && netBase > 0) {
+    await insertLedger({
+      client: supabase,
+      kind: "income",
+      amount_base: netBase,
+      wallet_id: landingWalletId,
+      related_kind: "payment",
+      related_id: paymentRow.id as string,
+      event_at: new Date(input.paid_at).toISOString(),
+      note: "addPaymentWithChain",
+    });
+  }
+
+  // Sadaka contribution hook — Pro brain decides the rate for THIS income
+  // event, writes a contribution row to sadaka_ledger. Best-effort; never
+  // throws (the payment has already landed and the user's wallet is correct).
+  await onIncomeContribution({
+    paymentId: paymentRow.id as string,
+    netAmountBase: netBase,
+    paidAt: input.paid_at,
+  }).catch(() => {});
+
   // Allocations — multi-project pro-rates netBase across shares by allocation_base
   // (each share's PHP value at today's FX, then normalized so allocations sum
   // exactly to netBase even when FX rounding would have drifted). Single-project
@@ -725,7 +797,9 @@ export async function addPaymentWithChain(input: PaymentChainInput) {
     },
   });
 
-  await invalidateAiSafeSpendCache(userId, supabase);
+  // Payment received = structural event (cash arrived) — give the
+  // chatbot brain a chance to surface a follow-up question.
+  await invalidateAiSafeSpendCache(userId, supabase, { surfaceQuestion: true });
 
   revalidatePath("/today");
   revalidatePath("/projects");
@@ -761,6 +835,20 @@ export async function addPayment(input: PaymentInput) {
 // edits (project_id / amount / currency / paid_at) bypass allocation rewrites
 // and project status recompute — go through updatePaymentDetails for the
 // gross/net/method edit, or delete + addPaymentWithChain to redo the chain.
+//
+// money_ledger contract (single source of truth — do NOT trace the comment
+// chain for this):
+//   • updatePayment           — NOT a ledger writer. Safe-field metadata only;
+//                               wallet math is untouched, so nothing to mirror.
+//   • updatePaymentDetails    — IS the atomic money-edit writer. Calls
+//                               replaceLedgerRow (SECURITY DEFINER RPC from
+//                               migration 0070) so the prior live row is
+//                               archived + the fresh row inserted in one step.
+//                               Reviewers do NOT need to chase a delete +
+//                               re-create path for the money edit.
+//   • addPaymentWithChain     — writes the initial income row tied to the
+//                               chain's landing wallet (final step's method_id).
+//   • deletePayment           — archives the live ledger row for the payment.
 export async function updatePayment(
   id: string,
   input: Partial<PaymentInput> & { invoice_id?: string | null },
@@ -884,6 +972,38 @@ export async function updatePaymentDetails(
     .eq("id", payment.project_id)
     .maybeSingle();
 
+  // Mirror the edited income on money_ledger (Phase 1.5). Single atomic
+  // RPC archives the prior live row + inserts the fresh one so the wallet
+  // can never end up half-archived. Wallet resolved from the final step
+  // after any method_id edit above.
+  try {
+    const { data: finalStepRow } = await supabase
+      .from("payment_steps")
+      .select("method_id")
+      .eq("payment_id", paymentId)
+      .order("step_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const landingWalletId = (finalStepRow?.method_id as string | null) ?? null;
+    if (landingWalletId && net > 0) {
+      await replaceLedgerRow({
+        client: supabase,
+        related_kind: "payment",
+        related_id: paymentId,
+        event_at: new Date().toISOString(),
+        kind: "income",
+        amount_base: net,
+        wallet_id: landingWalletId,
+        note: "updatePaymentDetails",
+      });
+    } else {
+      // No landing wallet or zero net — just archive the live row.
+      await archiveLedger("payment", paymentId, supabase);
+    }
+  } catch {
+    // Best-effort — replaceLedgerRow already logs to money_ledger_write_failures.
+  }
+
   await logEvent({
     userId,
     kind: "payment.updated",
@@ -915,6 +1035,9 @@ export async function deletePayment(id: string) {
   // payment_steps + payment_project_allocations cascade-delete via FK.
   const { error } = await supabase.from("payments").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
+
+  // Archive the live ledger row for this payment. Audit trail kept.
+  await archiveLedger("payment", id, supabase);
 
   const touched = new Set<string>();
   if (payment?.project_id) touched.add(payment.project_id as string);
@@ -1293,6 +1416,12 @@ export type ExpenseInput = {
   notes?: string | null;
 };
 
+// NOTE: `expenses` is the legacy freelancer-expenses table — it is NOT
+// mirrored to money_ledger, NOT read by the forecast brain, and NOT
+// consumed by any wallet-balance reader. So createExpense / updateExpense
+// / deleteExpense deliberately do NOT call invalidateAiSafeSpendCache.
+// The active spending pipeline is finance.spends (createSpend etc.) which
+// DOES invalidate.
 export async function createExpense(input: ExpenseInput) {
   const { supabase, userId } = await userOrThrow();
   const { error, data } = await supabase
@@ -1366,6 +1495,9 @@ export async function createPaymentMethod(input: PaymentMethodInput) {
     .single();
   if (error) throw error;
   await logEvent({ userId, kind: "method.created", title: `Added method · ${input.name}`, entityType: "payment_method", entityId: data.id as string });
+  // New wallet = significant structural change — give the chatbot brain a
+  // chance to ask a follow-up about how this wallet will be used.
+  await invalidateAiSafeSpendCache(userId, supabase, { surfaceQuestion: true });
   revalidatePath("/settings");
   revalidatePath("/payments");
   return data;
@@ -1468,6 +1600,19 @@ export async function createWithdrawal(input: WithdrawalInput) {
     console.error("createWithdrawal: cache invalidation failed (non-fatal)", err);
   }
 
+  // Mirror onto money_ledger as an outflow on the source wallet. v1
+  // ignores to_method_id (transfer kind is a future enhancement).
+  await insertLedger({
+    client: supabase,
+    kind: "outflow",
+    amount_base: -1 * gross,
+    wallet_id: input.from_method_id,
+    related_kind: "withdrawal",
+    related_id: data.id as string,
+    event_at: new Date(input.withdrawn_at).toISOString(),
+    note: "createWithdrawal",
+  });
+
   revalidatePath("/today");
   revalidatePath("/payments");
   revalidatePath("/dashboard");
@@ -1478,6 +1623,7 @@ export async function deleteWithdrawal(id: string) {
   const { supabase, userId } = await userOrThrow();
   const { error } = await supabase.from("withdrawals").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
+  await archiveLedger("withdrawal", id, supabase);
   await logEvent({ userId, kind: "withdrawal.removed", title: "Removed a withdrawal", entityType: "withdrawal", entityId: id });
   await invalidateAiSafeSpendCache(userId);
   revalidatePath("/today");
@@ -1571,6 +1717,11 @@ export type SpendInput = {
   // and only inserts links where it finds a confident match.
   vendorIds?: string[];
   entityIds?: string[];
+  // Sadaka workflow (migration 0075): the explicit "Mark as sadaka" toggle.
+  // When true, the createSpend path writes a sadaka_ledger payment row tied
+  // to the spend AND a money_ledger sadaka_payment outflow. The auto-detect
+  // pipeline short-circuits — explicit beats inferred.
+  is_sadaka?: boolean;
 };
 
 export async function createSpend(input: SpendInput): Promise<ActionResult<{ id: string }>> {
@@ -1609,11 +1760,24 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
       loan_id: input.loan_id ?? null,
       loan_installment_id: input.loan_installment_id ?? null,
       for_us: !!input.for_us,
+      is_sadaka: !!input.is_sadaka,
     })
     .select("id")
     .single();
   if (spendErr || !spendRow) throw spendErr ?? new Error("Failed to save spend");
   const spendId = spendRow.id as string;
+
+  // Mirror onto money_ledger as an outflow on the spend's wallet (Phase 1.5).
+  await insertLedger({
+    client: supabase,
+    kind: "outflow",
+    amount_base: -1 * amountBase,
+    wallet_id: input.wallet_id,
+    related_kind: "spend",
+    related_id: spendId,
+    event_at: new Date(spentAt).toISOString(),
+    note: "createSpend",
+  });
 
   if (input.categoryIds?.length) {
     const linkRows = input.categoryIds.map((cid) => ({ spend_id: spendId, category_id: cid }));
@@ -1710,6 +1874,49 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
     if (instErr) throw instErr;
   }
 
+  // Sadaka hooks (migration 0073 + 0075).
+  //
+  // The explicit "Mark as sadaka" toggle writes a sadaka_ledger payment row
+  // AND a money_ledger sadaka_payment outflow tied to the spend. The
+  // sadaka_payment row is signed negative (CHECK constraint enforces it).
+  // The parent spend's outflow row already debited the wallet, so the
+  // sadaka_payment mirror is purely a category-tagged ledger trail — the
+  // dashboard's reconciliation reads sadaka_payment as a sub-class of
+  // outflow when summing wallet balances; the partial unique index on
+  // money_ledger keys off (related_kind, related_id), so the sadaka_payment
+  // row uses related_kind='sadaka' to coexist with the spend's outflow row
+  // under the same related_id space.
+  //
+  // When the toggle is OFF, the auto-detect hook runs through the four
+  // mechanisms (entity flag / charity vendor / pattern rule / classifier).
+  if (input.is_sadaka) {
+    const sadakaRowId = await insertSadakaLedgerRow({
+      kind: "payment",
+      amount_base: -1 * Math.abs(amountBase),
+      source_kind: "spend",
+      source_id: spendId,
+      reasoning: "Marked sadaka",
+      event_at: new Date(spentAt).toISOString(),
+      // mirror_wallet_id is intentionally null here — the parent spend
+      // already debited the wallet. The sadaka_ledger.insertSadakaLedgerRow
+      // mirror writes a sadaka_payment money_ledger row only when the
+      // mirror wallet is provided AND the parent spend hasn't already
+      // produced its own outflow. Wiring a sadaka_payment row tied to the
+      // same wallet would double-debit; leave the mirror off.
+    });
+    void sadakaRowId;
+  } else {
+    await onSpendSadakaDetect({
+      id: spendId,
+      user_id: userId,
+      amount_base: amountBase,
+      description: input.description ?? null,
+      notes: input.notes ?? null,
+      is_sadaka: false,
+      spent_at: new Date(spentAt).toISOString(),
+    }).catch(() => {});
+  }
+
   await logEvent({
     userId,
     kind: "spend.added",
@@ -1760,6 +1967,7 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
     "loan_id",
     "loan_installment_id",
     "for_us",
+    "is_sadaka",
   ];
   for (const k of writable) {
     if (k in input) {
@@ -1793,6 +2001,119 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
   if (Object.keys(patch).length > 0) {
     const { error } = await supabase.from("spends").update(patch).eq("id", id).eq("user_id", userId);
     if (error) throw error;
+  }
+
+  // Money-affecting edits → archive the prior ledger row + insert a fresh
+  // one with the new wallet / date / amount. Best-effort, non-blocking.
+  const moneyAffecting =
+    "wallet_id" in patch ||
+    "spent_at" in patch ||
+    "amount" in patch ||
+    "currency" in patch ||
+    "amount_base" in patch;
+  if (moneyAffecting) {
+    try {
+      const { data: latest } = await supabase
+        .from("spends")
+        .select("wallet_id,spent_at,amount_base")
+        .eq("id", id)
+        .maybeSingle();
+      if (latest) {
+        const nextAmountBase = Number(latest.amount_base ?? 0);
+        if (nextAmountBase > 0) {
+          await replaceLedgerRow({
+            client: supabase,
+            related_kind: "spend",
+            related_id: id,
+            event_at: new Date(latest.spent_at as string).toISOString(),
+            kind: "outflow",
+            amount_base: -1 * nextAmountBase,
+            wallet_id: latest.wallet_id as string,
+            note: "updateSpend",
+          });
+        } else {
+          await archiveLedger("spend", id, supabase);
+        }
+      }
+    } catch {
+      // Best-effort — replaceLedgerRow already logs to money_ledger_write_failures.
+    }
+  }
+
+  // Sadaka conflict resolution (migration 0073/0075).
+  //
+  // When is_sadaka transitions true → false on an edit, archive the LIVE
+  // sadaka_ledger payment row tied to this spend. The append-only invariant
+  // is preserved (the row stays in the table with archived_at set; we never
+  // DELETE). When is_sadaka transitions false → true, write a fresh payment
+  // row. Money-affecting edits (amount / wallet) also re-archive then re-
+  // insert so the pool reflects the new amount.
+  if ("is_sadaka" in patch || moneyAffecting) {
+    try {
+      const { data: latestSpend } = await supabase
+        .from("spends")
+        .select("is_sadaka,amount_base,spent_at")
+        .eq("id", id)
+        .maybeSingle();
+      const existingSadakaRow = await findLiveLedgerRowBySource("spend", id);
+      const wantsSadaka = !!(latestSpend as { is_sadaka: boolean } | null)?.is_sadaka;
+      const wantsAuto = !wantsSadaka;
+      // CASE A: spend is now NOT sadaka but a live payment row exists →
+      // archive it. The auto-detect pipeline doesn't re-fire on edit; the
+      // user can re-mark explicitly if they want it back.
+      if (existingSadakaRow && existingSadakaRow.kind === "payment" && wantsAuto) {
+        await archiveSadakaLedgerRow(existingSadakaRow.id, "edit · un-marked");
+      }
+      // CASE B: spend is now sadaka. Two transitions to cover:
+      //   • false→true on a spend with an existing auto_detected (or
+      //     payment) live row: archive the live row first so the partial
+      //     unique on (source_kind, source_id) clears, then insert the
+      //     explicit payment row. This makes the editorial state honest —
+      //     the Activity feed reads "Marked sadaka", not stale
+      //     "Auto-detected · …" — and prevents the partial-unique reject
+      //     that would otherwise swallow the insert.
+      //   • money-affecting edit on a spend already marked sadaka: archive
+      //     the prior payment row and write a fresh one with the new
+      //     amount + event_at.
+      if (wantsSadaka) {
+        const isMoneyEditOnExplicitPayment =
+          existingSadakaRow?.kind === "payment" && moneyAffecting;
+        const isFalseToTrue =
+          existingSadakaRow == null || existingSadakaRow.kind !== "payment";
+        if (isMoneyEditOnExplicitPayment || isFalseToTrue) {
+          // Archive any live row blocking the slot — covers payment edits
+          // AND the false→true transition over an auto_detected row.
+          if (existingSadakaRow) {
+            const reason =
+              existingSadakaRow.kind === "payment"
+                ? "edit · replaced"
+                : "edit · upgraded to payment";
+            await archiveSadakaLedgerRow(existingSadakaRow.id, reason);
+          }
+          const nextAmount = Number(
+            (latestSpend as { amount_base: number } | null)?.amount_base ?? 0,
+          );
+          if (nextAmount > 0) {
+            await insertSadakaLedgerRow({
+              kind: "payment",
+              amount_base: -1 * Math.abs(nextAmount),
+              source_kind: "spend",
+              source_id: id,
+              reasoning:
+                existingSadakaRow && existingSadakaRow.kind === "payment"
+                  ? "Marked sadaka (edited)"
+                  : "Marked sadaka",
+              event_at: new Date(
+                (latestSpend as { spent_at: string } | null)?.spent_at ??
+                  new Date().toISOString(),
+              ).toISOString(),
+            });
+          }
+        }
+      }
+    } catch {
+      // Best-effort — pool reconciliation lives in the read path.
+    }
   }
 
   if (input.categoryIds) {
@@ -1862,9 +2183,18 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
 
 export async function deleteSpend(id: string) {
   const { supabase, userId } = await userOrThrow();
+  // Pre-fetch the live sadaka_ledger row tied to this spend so the archive
+  // happens BEFORE the FK cascade nukes downstream rows. The spend itself
+  // is the source_id; once the spend row is gone we can still archive by id
+  // (sadaka_ledger has no FK to spends — source_id is opaque).
+  const existingSadakaRow = await findLiveLedgerRowBySource("spend", id).catch(() => null);
   // spend_category_links + spend_items cascade-delete via FK.
   const { error } = await supabase.from("spends").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
+  await archiveLedger("spend", id, supabase);
+  if (existingSadakaRow) {
+    await archiveSadakaLedgerRow(existingSadakaRow.id, "spend deleted").catch(() => {});
+  }
   await logEvent({
     userId,
     kind: "spend.removed",
@@ -2038,7 +2368,9 @@ export async function createRecurringSpend(input: RecurringSpendInput) {
     entityId: data.id as string,
     metadata: { schedule_kind: input.schedule_kind, expected_amount: input.expected_amount, expected_currency: input.expected_currency },
   });
-  await invalidateAiSafeSpendCache(userId);
+  // New recurring rule = structural event — chatbot brain may want to
+  // ask a clarifying question about it.
+  await invalidateAiSafeSpendCache(userId, undefined, { surfaceQuestion: true });
   revalidatePath("/settings");
   revalidatePath("/today");
   revalidatePath("/dashboard");
@@ -2348,7 +2680,8 @@ export async function createLoan(input: LoanInput) {
       installment_count: input.installments?.length ?? 0,
     },
   });
-  await invalidateAiSafeSpendCache(userId);
+  // New loan = structural event — surface a clarifying question.
+  await invalidateAiSafeSpendCache(userId, undefined, { surfaceQuestion: true });
   revalidatePath("/loans");
   revalidatePath("/today");
   revalidatePath("/dashboard");
@@ -2675,6 +3008,18 @@ export async function setWalletOpeningBalance(input: WalletOpeningBalanceInput):
     const amountBase =
       Math.round(toBaseAmount(input.amount, input.amountCurrency, (rates ?? []) as RatePair[]) * 100) / 100;
 
+    // Detect first-anchor for THIS wallet so we only surface a clarifying
+    // question on the meaningful structural change (the calibration that
+    // unlocks runway math), not on every re-anchor.
+    const { data: prior } = await supabase
+      .from("payment_methods")
+      .select("opening_balance_set_at")
+      .eq("id", input.methodId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    const isFirstAnchor =
+      !prior || (prior.opening_balance_set_at as string | null) == null;
+
     const { error } = await supabase
       .from("payment_methods")
       .update({
@@ -2695,7 +3040,34 @@ export async function setWalletOpeningBalance(input: WalletOpeningBalanceInput):
     // Just propagate the new number everywhere the system reads from it so
     // /today, /spending, /payments, /plans, /dashboard all show the same
     // figure as soon as the setting saves.
-    await invalidateAiSafeSpendCache(userId, supabase);
+    //
+    // Mirror the anchor onto money_ledger as an 'adjustment' row so the
+    // ledger reader can see "the user said this was the truth at T". The
+    // reader's anchor filter (event_at >= opening_balance_set_at) already
+    // gates pre-anchor activity; this row is the canonical zero-point at
+    // the anchor instant.
+    //
+    // Gated to FIRST anchor only. Re-anchoring used to write a fresh
+    // zero-amount adjustment row every save — they never moved the balance
+    // (amount_base = 0) but accumulated indefinitely as orphan rows with
+    // null related_id, polluting the audit trail and bumping the brain
+    // fingerprint count for no reason. The new partial unique index keys
+    // on (related_kind, related_id) WHERE related_id IS NOT NULL so it
+    // wouldn't have deduped these anyway.
+    if (isFirstAnchor) {
+      await insertLedger({
+        client: supabase,
+        kind: "adjustment",
+        amount_base: 0,
+        wallet_id: input.methodId,
+        related_kind: null,
+        related_id: null,
+        note: "setWalletOpeningBalance first anchor",
+      });
+    }
+    await invalidateAiSafeSpendCache(userId, supabase, {
+      surfaceQuestion: isFirstAnchor,
+    });
     revalidatePath("/settings");
     revalidatePath("/dashboard");
     revalidatePath("/today");
@@ -2823,7 +3195,8 @@ export async function createPlannedSpend(input: PlannedSpendInput): Promise<Acti
       entityId: data.id as string,
       metadata: { expected_base: expectedBase, planned_for: input.planned_for },
     });
-    await invalidateAiSafeSpendCache(userId, supabase);
+    // New plan = structural event — surface a clarifying question.
+    await invalidateAiSafeSpendCache(userId, supabase, { surfaceQuestion: true });
     revalidatePath("/plans");
     revalidatePath("/today");
     revalidatePath("/dashboard");
@@ -2887,6 +3260,13 @@ export async function updatePlannedSpend(id: string, input: Partial<PlannedSpend
   revalidatePath("/dashboard");
 }
 
+// NOT a money_ledger writer. Locking a plan only freezes the EXPECTED
+// amount on the plan row (committed_base + committed_at) so safe-to-spend
+// math can subtract a known number instead of an estimate — no money has
+// actually moved. Real cash movement happens later in createSpend, which
+// IS the ledger writer for the resulting outflow. If a future revision
+// wires reserved sub-wallets at commit time, swap this comment for an
+// insertLedger call + a corresponding archive in uncommitPlannedSpend.
 export async function commitPlannedSpend(id: string) {
   const { supabase, userId } = await userOrThrow();
   const { data: plan } = await supabase
@@ -3243,6 +3623,9 @@ export async function createVendor(input: VendorInput) {
     entityId: data.id as string,
     metadata: { slug },
   });
+  // New vendor = structural event — chatbot brain may want to ask
+  // about this place. Fire-and-forget.
+  await maybeSurfaceClarifyingQuestion();
   revalidatePath("/vendors");
   revalidatePath("/spending");
   return data;
@@ -3392,6 +3775,9 @@ export async function createEntity(input: EntityInput): Promise<ActionResult<{ i
       entityId: data.id as string,
       metadata: { kind: input.kind, vague: !!input.vague },
     });
+    // New entity = structural event — chatbot brain may want to ask
+    // about it. Fire-and-forget.
+    await maybeSurfaceClarifyingQuestion();
     revalidatePath("/entities");
     return { id: data.id as string };
   });

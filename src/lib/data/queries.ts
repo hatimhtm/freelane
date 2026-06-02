@@ -1,5 +1,7 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
+import { phtDateString } from "@/lib/utils";
 import type {
   Client,
   Project,
@@ -1138,3 +1140,79 @@ export async function getShouldIBuySessions(limit = 30) {
     .limit(limit);
   return (data ?? []) as ShouldIBuySession[];
 }
+
+// ─── Dashboard stats chips (Phase 1.5) ───────────────────────────────────
+//
+// Years with ANY LifeOS activity — money_ledger rows OR diary entries.
+// The Dashboard header renders a [Lifetime] chip followed by one chip per
+// active year, each linking to the corresponding /stats scope.
+
+// Memoized per request so a Dashboard sub-page render that fans into Money +
+// State + Body + Commitments (or a layout that prefetches all four) only
+// pays for the round trip once. The set of active years changes at most
+// once per day per user, so per-request memoization is the right scope —
+// no cross-request stale risk.
+//
+// Year derivation: money_ledger.event_at is timestamptz (PostgREST returns
+// UTC ISO 8601). For a PHT user a row stamped at 2026-01-01 02:00 PHT is
+// 2025-12-31T18:00:00Z, so a raw .slice(0, 4) would attribute it to 2025.
+// We pass every event_at through phtDateString() before slicing so the
+// year matches the user's PHT calendar.
+//
+// Bounded fetch: PostgREST defaults to 1000 rows; for old accounts that
+// could silently truncate the oldest years. We .order('event_at') asc and
+// pull only the first occurrence per year by walking the result set with
+// a Set early-exit. event_at is index-covered (money_ledger_user_event_idx
+// in 0067) so the asc scan is cheap and we don't need an explicit RPC.
+export const getDashboardActiveYears = cache(
+  async function getDashboardActiveYears(): Promise<number[]> {
+    const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+    const set = new Set<number>();
+
+    // Page through money_ledger via PostgREST range headers so we don't lose
+    // the oldest events to the default 1000-row cap. Each page is cheap
+    // (event_at-only) and we early-exit once we've collected one row per
+    // year-bucket the user could plausibly have.
+    const PAGE = 1000;
+    let from = 0;
+    let lastSize = PAGE;
+    while (lastSize === PAGE) {
+      const { data } = await supabase
+        .from("money_ledger")
+        .select("event_at")
+        .eq("user_id", user.id)
+        .is("archived_at", null)
+        .order("event_at", { ascending: true })
+        .range(from, from + PAGE - 1);
+      const rows = data ?? [];
+      lastSize = rows.length;
+      from += rows.length;
+      for (const row of rows) {
+        const at = row.event_at as string | null;
+        if (!at) continue;
+        const phtDay = phtDateString(new Date(at));
+        const year = Number(phtDay.slice(0, 4));
+        if (year > 0) set.add(year);
+      }
+      // Defensive cap: a single user shouldn't have > 10 pages worth here.
+      if (from > PAGE * 50) break;
+    }
+
+    // Diary entries are date-only (no TZ) — slice is honest.
+    const { data: diaryYears } = await supabase
+      .from("diary_entries")
+      .select("entry_date")
+      .eq("user_id", user.id);
+    for (const row of diaryYears ?? []) {
+      const at = row.entry_date as string | null;
+      if (!at) continue;
+      const match = /^(\d{4})/.exec(at);
+      if (match) {
+        const year = Number(match[1]);
+        if (year > 0) set.add(year);
+      }
+    }
+
+    return Array.from(set).sort((a, b) => b - a);
+  },
+);

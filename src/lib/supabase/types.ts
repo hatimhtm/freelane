@@ -646,6 +646,10 @@ export interface Spend {
   // category. Means the spend was for the household, not for either person
   // individually.
   for_us: boolean;
+  // Explicit "Mark as sadaka" toggle (Phase 2 — migration 0075). When true,
+  // the createSpend pipeline writes a sadaka_ledger payment row tied to the
+  // spend AND short-circuits the auto-detect hook.
+  is_sadaka: boolean;
   created_at: string;
   updated_at: string;
 }

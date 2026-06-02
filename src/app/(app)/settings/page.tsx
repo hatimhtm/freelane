@@ -1,6 +1,7 @@
+import Link from "next/link";
+import { Bell, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { getSettings } from "@/lib/data/queries";
-import { readNotificationPrefs } from "@/lib/notifications/dispatcher";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import { IssuerForm } from "./_components/issuer-form";
 import { MethodsForm } from "./_components/methods-form";
@@ -8,18 +9,14 @@ import { OpeningBalanceForm } from "./_components/opening-balance-form";
 import { CurrenciesForm } from "./_components/currencies-form";
 import { AppearanceForm } from "./_components/appearance-form";
 import { DataForm } from "./_components/data-form";
-import { NotificationsForm } from "./_components/notifications-form";
+import { SadakaConfigForm } from "./_components/sadaka-form";
+import { getSadakaConfig } from "@/lib/sadaka/config";
 
 export const metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
   const { settings, rates, currencies, methods } = await getSettings();
-  let notificationPrefs = {};
-  try {
-    notificationPrefs = await readNotificationPrefs();
-  } catch {
-    notificationPrefs = {};
-  }
+  const sadakaConfig = await getSadakaConfig();
 
   return (
     <div className="mx-auto max-w-4xl p-6 lg:p-10">
@@ -65,9 +62,30 @@ export default async function SettingsPage() {
 
         <Section
           title="Notifications"
-          hint="Pick which kinds reach you. The bell respects these per-kind toggles."
+          hint="Retention, browser push, and per-kind controls — on its own page."
         >
-          <NotificationsForm initial={notificationPrefs} />
+          <Link
+            href="/settings/notifications"
+            className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 transition-colors hover:bg-foreground/[0.04]"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <Bell className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0">
+                <div className="text-sm font-medium">Open notification settings</div>
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                  Retention, push, and per-kind toggles.
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </Link>
+        </Section>
+
+        <Section
+          title="Sadaka"
+          hint="Voluntary-giving pool. Anchored at the 2.5% Islamic zakat base; the brain adjusts around it per income event."
+        >
+          <SadakaConfigForm initial={sadakaConfig} />
         </Section>
 
         <Section title="Appearance" hint="Switch between dark and light.">

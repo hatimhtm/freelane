@@ -53,6 +53,17 @@ export function PackRhythmWidget({ read, baseCurrency }: Props) {
       }
       supporting={read.line}
       trailing={<SparklinePath weekly={series} max={max} />}
+      aiDot={{
+        key: "body.pack_rhythm",
+        label: "Pack rhythm",
+        data: {
+          thisWeekTotal: read.thisWeekTotal,
+          prev,
+          current,
+          trend,
+          line: read.line,
+        },
+      }}
       onOpen={() => router.push("/spending?category=cigarettes")}
     />
   );

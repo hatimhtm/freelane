@@ -1,6 +1,8 @@
 import { getDashboardData, getAiSafeSpendCacheRow, getDiaryEntry, getLetters, getMilestones, getTodayMorningLog } from "@/lib/data/queries";
 import { outstanding, outstandingTotalBase } from "@/lib/dashboard-calc";
 import { holdingBalances } from "@/lib/payment-chain";
+import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
+import { logLedgerReadFailure } from "@/lib/data/money-ledger";
 import { computeSafeToSpendFromData, suggestSadakaForIncome } from "@/lib/safe-to-spend";
 import { hasGemini } from "@/lib/ai/gemini";
 import { readFocusCache } from "@/lib/ai/actions";
@@ -12,6 +14,8 @@ import { nextRamadanPeriod, type RamadanPeriod } from "@/lib/islamic-calendar";
 import { generateLateNightRead } from "@/lib/ai/late-night-cluster";
 import { getPostPaydaySurgeCached } from "@/lib/ai/post-payday-surge";
 import { getSleepSpendEchoCached } from "@/lib/ai/sleep-spend-echo";
+import { readPoolBalance } from "@/lib/sadaka/ledger";
+import { getSuggestedToday } from "@/lib/sadaka/suggestion";
 import { buildYearMemoryRecall, type YearMemoryRecall } from "@/lib/ai/year-memory-recall";
 import { promptForWeek, isCheckinDay } from "@/lib/ai/tuesday-checkin";
 import { postNotification } from "@/lib/notifications/dispatcher";
@@ -81,10 +85,25 @@ export default async function TodayPage() {
   const pendingTotal = outstandingTotalBase(rows);
   const oldestDays = rows[0]?.daysAged ?? 0;
 
-  // Holdings (defensive).
+  // Holdings (defensive). Phase 1.5: prefer the ledger reader; fall back
+  // to source-table math for any wallet without ledger coverage.
+  let ledgerBalanceForChain: Map<string, number> | undefined;
+  try {
+    const ledgerBalanceMap = await computeWalletBalancesFromLedger(methods).catch(
+      (err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        void logLedgerReadFailure(`today wallet-balance read: ${message}`);
+        return new Map();
+      },
+    );
+    ledgerBalanceForChain = new Map<string, number>();
+    for (const [k, v] of ledgerBalanceMap) ledgerBalanceForChain.set(k, v.balance);
+  } catch {
+    ledgerBalanceForChain = undefined;
+  }
   let holdings: ReturnType<typeof holdingBalances>;
   try {
-    holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
+    holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends, ledgerBalanceForChain);
   } catch (err) {
     console.error("Today: holdingBalances threw", err);
     holdings = [];
@@ -120,6 +139,7 @@ export default async function TodayPage() {
         methods,
         stepsByPayment,
         rates,
+        ledgerBalances: ledgerBalanceForChain,
       });
       if (s.suggestedBase > 0) {
         sadakaSuggestion = { suggestedBase: s.suggestedBase, percent: s.percent, reason: s.reason };
@@ -175,6 +195,7 @@ export default async function TodayPage() {
         stepsByPayment,
         rates,
         plannedSpends,
+        ledgerBalances: ledgerBalanceForChain,
       },
       now,
     );
@@ -251,6 +272,18 @@ export default async function TodayPage() {
   // Diary entry for today.
   const diaryEntry = await getDiaryEntry(todayStr).catch(() => null);
 
+  // Sadaka workflow — pool balance + suggested-today brain payload. Both
+  // best-effort: missing tables on a stale schema return zero/empty defaults.
+  const sadakaPool = await readPoolBalance().catch(() => ({
+    rawBase: 0,
+    displayBase: 0,
+  }));
+  const sadakaSuggested = await getSuggestedToday().catch(() => ({
+    suggested_amount: 0,
+    reasoning: "",
+    surface_today: false,
+  }));
+
   // Recent sleep nights — past 3 from morning_log.
   const recentNights: Array<{ slept: number | null }> = [
     { slept: morningLog?.slept_hours != null ? Number(morningLog.slept_hours) : null },
@@ -306,7 +339,10 @@ export default async function TodayPage() {
           kind: "tuesday_checkin",
           subject: prompt,
           body: "A line, two numbers. The echo lands after you save.",
-          linkUrl: "/notifications?open=tuesday",
+          // No link_url — the click-routing registry opens the Tuesday
+          // modal in-place. (Backward-compat for in-flight rows with the
+          // old ?open=tuesday param is handled in notifications-view.)
+          linkUrl: "/notifications",
           dedupKey: `tuesday_checkin:${weekKey}`,
           priority: 1,
         });
@@ -364,6 +400,10 @@ export default async function TodayPage() {
       sadakaSuggestion={sadakaSuggestion}
       triggeringPayment={triggeringPayment}
       sadakaCategoryId={sadakaCategoryId}
+      sadakaPoolBase={sadakaPool.displayBase}
+      sadakaSuggestedToday={sadakaSuggested.suggested_amount}
+      sadakaSuggestedReasoning={sadakaSuggested.reasoning}
+      sadakaSurfaceToday={sadakaSuggested.surface_today}
       rates={rates}
       spendCategories={spendCategories}
       spendCategoryLinks={spendCategoryLinks}

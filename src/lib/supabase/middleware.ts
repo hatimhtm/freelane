@@ -1,7 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/_next", "/favicon.ico", "/icon", "/apple-icon"];
+// /api/cron is intentionally public so scheduled invocations (which arrive
+// without session cookies) can reach the cron handlers. Each cron route
+// does its own CRON_SECRET Bearer check — do NOT broaden this to all /api.
+const PUBLIC_PATHS = [
+  "/login",
+  "/_next",
+  "/favicon.ico",
+  "/icon",
+  "/apple-icon",
+  "/api/cron",
+];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });

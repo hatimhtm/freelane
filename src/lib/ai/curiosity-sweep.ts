@@ -12,6 +12,8 @@ import {
   sortedSteps,
   holdingBalances,
 } from "@/lib/payment-chain";
+import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
+import { logLedgerReadFailure } from "@/lib/data/money-ledger";
 import {
   cashflowMetrics,
   landedInRange,
@@ -387,7 +389,17 @@ async function buildCuriositySnapshot(
   // Mirrors calm-weather: a wallet at -200 with a 500 tolerance is
   // intentionally within tolerance and not an alarm. Only over_overdraft
   // raises a sweep question.
-  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
+  // Phase 1.5: ledger reader first.
+  const curiosityLedgerBalanceMap = await computeWalletBalancesFromLedger(methods).catch(
+    (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      void logLedgerReadFailure(`curiosity-sweep wallet-balance read: ${message}`);
+      return new Map();
+    },
+  );
+  const curiosityLedgerBalanceForChain = new Map<string, number>();
+  for (const [k, v] of curiosityLedgerBalanceMap) curiosityLedgerBalanceForChain.set(k, v.balance);
+  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends, curiosityLedgerBalanceForChain);
   const negativeWallets = holdings.filter((h) => h.status === "over_overdraft");
 
   // ── Category co-occurrence (might warrant merge) ──
@@ -458,6 +470,7 @@ async function buildCuriositySnapshot(
     stepsByPayment,
     rates,
     plannedSpends,
+    ledgerBalances: curiosityLedgerBalanceForChain,
     now,
   });
 

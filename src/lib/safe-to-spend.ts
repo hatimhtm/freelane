@@ -57,6 +57,10 @@ export interface SafeToSpendInputs {
   // The brain treats these as commitments the user has already made to
   // their future self.
   plannedSpends?: PlannedSpend[];
+  // Phase 1.5: optional precomputed ledger-derived wallet balance map.
+  // When provided, holdingBalances() short-circuits to ledger truth for
+  // covered wallets. Undefined → legacy source-table math (unchanged).
+  ledgerBalances?: Map<string, number> | null;
   now?: Date;
   horizonDays?: number;
 }
@@ -110,6 +114,11 @@ export interface SafeToSpendDataLike {
   stepsByPayment: Map<string, PaymentStep[]>;
   rates: ExchangeRate[];
   plannedSpends?: PlannedSpend[];
+  // Phase 1.5: optional ledger-derived balance map threaded through to
+  // holdingBalances(). Callers that have already computed it (Today,
+  // Dashboard, Spending, Plans loaders) pass it in so the safe-to-spend
+  // headline reads the same canonical wallet truth.
+  ledgerBalances?: Map<string, number> | null;
 }
 
 export function computeSafeToSpendFromData(
@@ -127,6 +136,7 @@ export function computeSafeToSpendFromData(
     stepsByPayment: data.stepsByPayment,
     rates: data.rates,
     plannedSpends: data.plannedSpends ?? [],
+    ledgerBalances: data.ledgerBalances,
     now,
   });
 }
@@ -228,6 +238,7 @@ export function safeToSpend(inputs: SafeToSpendInputs): SafeToSpendBreakdown {
     inputs.stepsByPayment,
     inputs.withdrawals,
     inputs.spends,
+    inputs.ledgerBalances,
   );
   const rawWalletBalances = holdings.reduce((s, h) => s + h.balance, 0);
   const walletBalances = Math.max(0, rawWalletBalances);

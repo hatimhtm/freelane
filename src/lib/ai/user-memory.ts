@@ -13,6 +13,8 @@ import {
   recurringExpectedInRange,
 } from "@/lib/dashboard-calc";
 import { holdingBalances } from "@/lib/payment-chain";
+import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
+import { logLedgerReadFailure } from "@/lib/data/money-ledger";
 import { linksBySpend, businessPersonalSplit } from "@/lib/spends";
 import { loansWithBalance, totalOwedBase, totalLentBase } from "@/lib/loans";
 import { safeToSpend } from "@/lib/safe-to-spend";
@@ -182,7 +184,17 @@ export async function consolidateUserMemory(): Promise<void> {
   const lent = totalLentBase(loansBal);
   const overdueLoans = loansBal.filter((l) => l.overdue.length > 0);
 
-  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
+  // Phase 1.5: ledger reader first.
+  const userMemLedgerBalanceMap = await computeWalletBalancesFromLedger(methods).catch(
+    (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      void logLedgerReadFailure(`user-memory wallet-balance read: ${message}`);
+      return new Map();
+    },
+  );
+  const userMemLedgerBalanceForChain = new Map<string, number>();
+  for (const [k, v] of userMemLedgerBalanceMap) userMemLedgerBalanceForChain.set(k, v.balance);
+  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends, userMemLedgerBalanceForChain);
 
   // Pass plannedSpends so the AI's baseline matches the headline the user
   // sees on Today/Dashboard/Spending/Plans. Without it the AI reads a higher
@@ -198,6 +210,7 @@ export async function consolidateUserMemory(): Promise<void> {
     stepsByPayment,
     rates,
     plannedSpends,
+    ledgerBalances: userMemLedgerBalanceForChain,
     now,
   });
 

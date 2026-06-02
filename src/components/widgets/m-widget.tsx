@@ -7,6 +7,7 @@ import {
   BRAND_LIME_VAR_CLASS,
   TERRACOTTA_RING_CLASS,
 } from "@/lib/design/tokens";
+import { AiDot, type AiDotCardContext } from "./ai-dot";
 
 // Freelane M widget — ~340 x 160. Hero + 2-3 supporting lines + optional
 // sparkline / shape on the right. Whole-card click.
@@ -23,6 +24,8 @@ export type MWidgetProps = {
   tone?: "default" | "lime" | "terracotta" | "rose" | "muted";
   live?: boolean;
   onOpen?: () => void;
+  warning?: ReactNode;
+  aiDot?: AiDotCardContext;
 };
 
 const TONE_RING: Record<NonNullable<MWidgetProps["tone"]>, string> = {
@@ -34,7 +37,7 @@ const TONE_RING: Record<NonNullable<MWidgetProps["tone"]>, string> = {
 };
 
 export const MWidget = forwardRef<HTMLDivElement, MWidgetProps>(function MWidget(
-  { label, eyebrow, icon, hero, sub, supporting, trailing, className, tone = "default", live, onOpen },
+  { label, eyebrow, icon, hero, sub, supporting, trailing, className, tone = "default", live, onOpen, warning, aiDot },
   ref,
 ) {
   const clickable = !!onOpen;
@@ -87,6 +90,7 @@ export const MWidget = forwardRef<HTMLDivElement, MWidgetProps>(function MWidget
           {supporting && (
             <div className="text-[11.5px] leading-snug text-muted-foreground">{supporting}</div>
           )}
+          {warning && <div className="pt-1">{warning}</div>}
         </div>
       </div>
       {trailing && (
@@ -94,6 +98,7 @@ export const MWidget = forwardRef<HTMLDivElement, MWidgetProps>(function MWidget
           {trailing}
         </div>
       )}
+      {aiDot && <AiDot card={aiDot} />}
     </div>
   );
 });

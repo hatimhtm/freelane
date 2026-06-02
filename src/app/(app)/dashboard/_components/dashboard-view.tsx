@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowDownLeft,
   ArrowRight,
@@ -16,23 +15,12 @@ import { motion } from "motion/react";
 import { LinkButton } from "@/components/ui/link-button";
 import { EmptyState } from "@/components/app/empty-state";
 import { CalmWeatherBanner } from "@/components/app/calm-weather-banner";
-import { ForecastStoryCard } from "@/components/app/forecast-story-card";
 import { NegativeWalletAlarm } from "@/components/app/negative-wallet-alarm";
-import { CashflowAtlasChart } from "@/components/spending/cashflow-atlas-chart";
-import { IncomeStrip } from "@/components/widgets/dashboard/income-strip";
-import { PackRhythmWidget } from "@/components/widgets/dashboard/pack-rhythm-widget";
 import { NightSpendsRemark } from "@/components/widgets/dashboard/night-spends-remark";
-import { WalletRunwayWidget } from "@/components/widgets/dashboard/wallet-runway-widget";
-import { MWidget } from "@/components/widgets/m-widget";
-import { Stamp } from "@/components/widgets/shapes/stamp";
-import { MoneyFlow } from "@/components/ui/money-flow";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { CalmWeatherState, CurrencyCode } from "@/lib/supabase/types";
-import type { CashflowAtlas } from "@/lib/cashflow-atlas";
-import type { ForecastStory } from "@/lib/ai/forecast-storyteller";
 import type { HoldingBalanceRow } from "@/lib/payment-chain";
-import type { PackRhythmRead } from "@/lib/ai/pack-rhythm";
 import type { LateNightClusterRead } from "@/lib/ai/late-night-cluster";
 
 // ─────────────────────────────────────────────────────────── DENSITY NOTE ──
@@ -58,63 +46,69 @@ function alertGlyph(kind: AlertRow["kind"]) {
   return <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" aria-hidden />;
 }
 
-export function DashboardView({
-  firstName,
-  currency,
-  hasClients,
-  year,
-  // hero strip
-  landedMtd,
-  spentMtd: _spentMtd,
-  feesMtd,
-  outstandingTotal,
-  walletTotal,
-  safeToday,
-  // sparkline
-  landedSeries,
-  spentSeries,
-  // alerts
-  alerts,
-  calmWeather,
-  atlas,
-  forecastStory,
-  holdings = [],
-  dailyBurnByWallet = [],
-  weekLanded = 0,
-  avgDaysToPayment = null,
-  biggestDebtor = null,
-  ytd = 0,
-  trailing30 = 0,
-  packRhythm = null,
-  lateNight = null,
-}: {
+type DashboardTab = "money" | "commitments" | "state" | "body";
+
+// DashboardView is the cross-tab chrome: header, EmptyState path, calm
+// weather banner, NegativeWalletAlarm (Money only), the Alerts band on
+// Money, JumpTo nav on Money + Commitments, and the NightSpendsRemark
+// strip on Body. Every other widget moved into its own subtab page.
+type DashboardViewProps = {
   firstName: string | null;
   currency: CurrencyCode;
   hasClients: boolean;
   year: number;
-  landedMtd: number;
-  spentMtd: number;
-  feesMtd: number;
-  outstandingTotal: number;
-  walletTotal: number;
-  safeToday: number;
-  landedSeries: number[];
-  spentSeries: number[];
   alerts: AlertRow[];
   calmWeather: CalmWeatherState | null;
-  atlas: CashflowAtlas | null;
-  forecastStory: ForecastStory | null;
   holdings?: HoldingBalanceRow[];
+  lateNight?: LateNightClusterRead | null;
+  tab?: DashboardTab;
+  // Legacy slots kept for backwards-compat with subtab pages that still
+  // forward {...props}. The view doesn't render any of these directly
+  // anymore — the brain reads them, the Money page renders the new tiles.
+  landedMtd?: number;
+  spentMtd?: number;
+  feesMtd?: number;
+  outstandingTotal?: number;
+  walletTotal?: number;
+  safeToday?: number;
+  landedSeries?: number[];
+  spentSeries?: number[];
+  atlas?: unknown;
+  forecastStory?: unknown;
   dailyBurnByWallet?: Array<[string, number]>;
   weekLanded?: number;
   avgDaysToPayment?: number | null;
   biggestDebtor?: { name: string; total: number } | null;
   ytd?: number;
   trailing30?: number;
-  packRhythm?: PackRhythmRead | null;
-  lateNight?: LateNightClusterRead | null;
-}) {
-  const router = useRouter();
+  packRhythm?: unknown;
+  // Calm degradation banner — fires when the ledger reader has unresolved
+  // write-failures or threw on this render. We render a single muted strip
+  // above the calm-weather banner so the user knows numbers may have
+  // drifted instead of trusting silent fallback math.
+  dataDegraded?: boolean;
+};
+
+export function DashboardView({
+  firstName,
+  currency,
+  hasClients,
+  year,
+  alerts,
+  calmWeather,
+  holdings = [],
+  lateNight = null,
+  tab = "money",
+  dataDegraded = false,
+}: DashboardViewProps) {
+  // Per-subtab section gating. The view stays a single component (shared
+  // header, EmptyState path, calm-weather banner, JumpTo) so cross-tab
+  // chrome can't drift; only the per-tab sections paint.
+  const showMoney = tab === "money";
+  const showCommitments = tab === "commitments";
+  // showState intentionally NOT used — the State page owns its own widgets
+  // and renders no fallback DashboardView slot.
+  const showBody = tab === "body";
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       {/* Header — tight */}
@@ -152,231 +146,67 @@ export function DashboardView({
         </div>
       ) : (
         <div className="mt-5 space-y-5">
-          {/* Calm Weather Mode — same line the Today page shows. */}
+          {dataDegraded && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-700 dark:text-amber-200"
+            >
+              Dashboard data degraded — some ledger writes did not settle.
+              Numbers shown may lag the source tables until the next
+              reconciliation pass.
+            </div>
+          )}
+          {/* Calm Weather Mode — shared chrome across all subtabs (mirrors
+              Today's calm band, never tab-dependent). */}
           {calmWeather && (
             <CalmWeatherBanner state={calmWeather} variant="dashboard" />
           )}
-          <NegativeWalletAlarm holdings={holdings} />
+          {/* Negative wallet alarm rides with the Money tab — it's a
+              wallet-state surface, not state-of-self. */}
+          {showMoney && <NegativeWalletAlarm holdings={holdings} />}
 
-          {/* Hero — single MWidget carrying the page headline (Safe today).
-              The other five numbers from the old HeroStrip live in the
-              IncomeStrip + WalletRunwayWidget below, so HeroStrip would
-              just have been a fancier copy. */}
-          <MWidget
-            label="Safe today"
-            eyebrow="SAFE TODAY"
-            hero={<MoneyFlow value={safeToday} currency={currency} />}
-            sub={
-              <span>
-                of {formatMoney(walletTotal, currency, { compact: true })} across wallets
-              </span>
-            }
-            supporting={<Stamp tone="lime">STEADY</Stamp>}
-            live
-            onOpen={() => router.push("/spending")}
-          />
-
-          {/* 90-Day Cashflow Atlas — bird's-eye projection. */}
-          {atlas && (
-            <CashflowAtlasChart
-              atlas={atlas}
-              baseCurrency={currency}
-              headline={forecastStory?.headline}
-              narrative={forecastStory?.narrative}
-            />
+          {/* Money tab — Phase 1.5 page owns the headline grid (TotalWallets,
+              ThirtyDayNet, Forecast, WalletStack, SpendTrend, PackRhythm).
+              The legacy MWidget hero + CashflowAtlas + PulseStrip + Forecast
+              Storyteller + IncomeStrip + WalletRunway were all removed
+              from this view to stop the duplicate-forecast / duplicate-net
+              chrome the brief flagged. The hero MWidget is referenced here
+              only via the variables that survived: safeToday + landedMtd
+              etc. are no longer wired on Money. */}
+          {showMoney && (
+            <>
+              {alerts.length > 0 && <Alerts rows={alerts} currency={currency} />}
+              <JumpTo />
+            </>
           )}
 
-          {/* Pulse — landed + spent over 30 days */}
-          <PulseStrip landedSeries={landedSeries} spentSeries={spentSeries} currency={currency} />
-
-          {/* Forecast Storyteller — quiet narrative card. */}
-          {forecastStory && (
-            <ForecastStoryCard story={forecastStory} baseCurrency={currency} />
+          {showCommitments && (
+            <>
+              {/* Commitments page owns the 4 S widgets in its brief.
+                  DashboardView only fills in cross-tab chrome (jump-to nav)
+                  so we don't re-paint IncomeStrip / alerts here. */}
+              <JumpTo />
+            </>
           )}
 
-          {/* T28 — Income strip (8 S widgets). */}
-          <IncomeStrip
-            currency={currency}
-            landedMtd={landedMtd}
-            weekLanded={weekLanded}
-            outstandingTotal={outstandingTotal}
-            feesMtd={feesMtd}
-            avgDaysToPayment={avgDaysToPayment}
-            biggestDebtor={biggestDebtor}
-            ytd={ytd}
-            trailing30={trailing30}
-          />
+          {/* State subtab no longer mounts DashboardView at all — the State
+              page renders PeriodWidget + RecoveryWidget directly. */}
 
-          {/* T30 — Wallet runway M widget with overdraft tri-state colors. */}
-          <WalletRunwayWidget
-            holdings={holdings}
-            dailyBurnByWallet={new Map(dailyBurnByWallet)}
-            currency={currency}
-          />
-
-          {/* T26 + T27 — Body + behavior strip. */}
-          <div className="space-y-3">
-            <PackRhythmWidget read={packRhythm} baseCurrency={currency} />
-            <NightSpendsRemark read={lateNight} />
-          </div>
-
-          {/* Alerts — only render if there is at least one */}
-          {alerts.length > 0 && <Alerts rows={alerts} currency={currency} />}
-
-          {/* Jump-to nav */}
-          <JumpTo />
+          {showBody && (
+            <>
+              {/* T27 — late-night cluster carries the body-side spending
+                  signal. PackRhythmWidget moved to /dashboard/money per
+                  brief — it's a money widget. */}
+              <div className="space-y-3">
+                <NightSpendsRemark read={lateNight} />
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
   );
-}
-
-// ───────────────────────────────────────────────────────── 30-DAY PULSE ──
-
-// Locked palette tokens — acid-lime (positive money in), terracotta (warm
-// attention / spend), slate-muted (informational). NO --chart-1, --success,
-// --overdue, no gradients — those introduce fifth colors outside the locked
-// system.
-const LIME_TOKEN = "oklch(0.85 0.18 120)";
-const TERRACOTTA_TOKEN = "oklch(0.7 0.13 45)";
-
-function PulseStrip({
-  landedSeries,
-  spentSeries,
-  currency,
-}: {
-  landedSeries: number[];
-  spentSeries: number[];
-  currency: CurrencyCode;
-}) {
-  const landedTotal = landedSeries.reduce((s, v) => s + v, 0);
-  const spentTotal = spentSeries.reduce((s, v) => s + v, 0);
-  const net = landedTotal - spentTotal;
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32, delay: 0.04, ease: EASE }}
-      className="rounded-xl bg-card ring-1 ring-foreground/10"
-    >
-      <div className="flex items-end justify-between gap-3 px-5 pt-4">
-        <div className="flex items-center gap-5 text-[13px]">
-          <Legend swatch={LIME_TOKEN} label="Landed" value={landedTotal} currency={currency} />
-          <Legend swatch={TERRACOTTA_TOKEN} label="Spent" value={spentTotal} currency={currency} />
-        </div>
-        <div className="text-right">
-          <div className="display-eyebrow text-muted-foreground">30-day net</div>
-          <div
-            className={cn(
-              "mt-1 font-heading text-base font-medium tabular tracking-tight",
-              // Acid-lime for positive, terracotta for negative — locked palette
-              // (no green --success, no extra color slot).
-              net < 0 ? "text-[oklch(0.7_0.13_45)]" : "text-[oklch(0.85_0.18_120)]",
-            )}
-          >
-            {net < 0 ? "−" : "+"}{formatMoney(Math.abs(net), currency, { compact: true })}
-          </div>
-        </div>
-      </div>
-      <div className="relative px-2 pb-2 pt-1">
-        <DualSparkline landed={landedSeries} spent={spentSeries} />
-      </div>
-    </motion.section>
-  );
-}
-
-function Legend({
-  swatch,
-  label,
-  value,
-  currency,
-}: {
-  swatch: string;
-  label: string;
-  value: number;
-  currency: CurrencyCode;
-}) {
-  // Legend values are NOT hero numbers — they sit alongside the sparkline
-  // labels. Per the locked rule ("AnimatedNumber wraps hero numbers only"),
-  // we keep these as muted small-text rather than display-tabular so they
-  // don't compete with the 30-day-net hero on the right.
-  return (
-    <span className="inline-flex items-baseline gap-1.5">
-      <span aria-hidden className="inline-block size-1.5 translate-y-[-1px] rounded-full" style={{ background: swatch }} />
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-sm tabular-nums text-muted-foreground">
-        {formatMoney(value, currency, { compact: true })}
-      </span>
-    </span>
-  );
-}
-
-// Two overlaid strokes — no gradient halo (per locked widget system: "DON'T
-// add a glow / gradient halo behind the shape"). 1.5px stroke is enough.
-function DualSparkline({ landed, spent }: { landed: number[]; spent: number[] }) {
-  const length = Math.max(landed.length, spent.length);
-  if (length < 2) return <div className="h-12" />;
-  // Pad either array to match length (front-pad with zeros for stability).
-  const L = padFront(landed, length);
-  const S = padFront(spent, length);
-  let max = 1;
-  for (const v of L) if (v > max) max = v;
-  for (const v of S) if (v > max) max = v;
-  const min = 0;
-  const width = 600;
-  const height = 48;
-  const pad = 3;
-  const usable = height - pad * 2;
-  const stepX = width / (length - 1);
-
-  const toPath = (data: number[]) => {
-    const pts = data.map((v, i) => {
-      const x = i * stepX;
-      const y = pad + usable - ((v - min) / (max - min || 1)) * usable;
-      return [x, y] as const;
-    });
-    return smoothPath(pts);
-  };
-
-  const landedPath = toPath(L);
-  const spentPath = toPath(S);
-
-  return (
-    <svg
-      width="100%"
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      aria-hidden
-      className="block"
-    >
-      <path d={landedPath} fill="none" stroke={LIME_TOKEN} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-      <path d={spentPath} fill="none" stroke={TERRACOTTA_TOKEN} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 2" opacity={0.85} />
-    </svg>
-  );
-}
-
-function padFront(arr: number[], length: number): number[] {
-  if (arr.length >= length) return arr;
-  return [...new Array(length - arr.length).fill(0), ...arr];
-}
-
-function smoothPath(points: readonly (readonly [number, number])[]): string {
-  if (points.length < 2) return "";
-  const t = 0.3;
-  const d = [`M${points[0][0].toFixed(1)},${points[0][1].toFixed(1)}`];
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i - 1] ?? points[i];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2] ?? p2;
-    const c1x = p1[0] + (p2[0] - p0[0]) * t;
-    const c1y = p1[1] + (p2[1] - p0[1]) * t;
-    const c2x = p2[0] - (p3[0] - p1[0]) * t;
-    const c2y = p2[1] - (p3[1] - p1[1]) * t;
-    d.push(`C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`);
-  }
-  return d.join(" ");
 }
 
 // ──────────────────────────────────────────────────────────── ALERTS BAND ──

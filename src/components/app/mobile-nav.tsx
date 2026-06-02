@@ -9,6 +9,7 @@ import {
   Calendar,
   FileText,
   FolderKanban,
+  HandHeart,
   HeartHandshake,
   LayoutDashboard,
   Menu,
@@ -50,6 +51,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
       { href: "/payments",  label: "Payments",  icon: Wallet },
       { href: "/spending",  label: "Spending",  icon: Receipt },
       { href: "/plans",     label: "Plans",     icon: Calendar },
+      { href: "/sadaka",    label: "Sadaka",    icon: HandHeart },
     ],
   },
   {

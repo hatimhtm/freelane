@@ -20,6 +20,8 @@ import { linksBySpend } from "@/lib/spends";
 import { loansWithBalance } from "@/lib/loans";
 import { anchorDate } from "@/lib/recurring";
 import { holdingBalances } from "@/lib/payment-chain";
+import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
+import { logLedgerReadFailure } from "@/lib/data/money-ledger";
 import { formatMoney, toBase } from "@/lib/money";
 import { PH_COL_CONTEXT } from "@/lib/ph-col";
 import type {
@@ -240,6 +242,7 @@ function buildSnapshot(args: {
     args.inputs.stepsByPayment,
     args.inputs.withdrawals,
     args.inputs.spends,
+    args.inputs.ledgerBalances,
   );
 
   const categoryById = new Map(args.spendCategories.map((c) => [c.id, c]));
@@ -399,6 +402,23 @@ export async function computeSafeToSpendInsight(args: {
   justLandedNetBase?: number;
   force?: boolean;
 }): Promise<SafeToSpendOverlay> {
+  // Phase 1.5: ledger reader first. Inject into inputs so safeToSpend()
+  // and buildSnapshot()'s holdingBalances() calls both read the canonical
+  // wallet truth.
+  const ledgerBalances = args.inputs.ledgerBalances ?? await (async () => {
+    try {
+      const balanceMap = await computeWalletBalancesFromLedger(args.inputs.methods);
+      const out = new Map<string, number>();
+      for (const [k, v] of balanceMap) out.set(k, v.balance);
+      return out;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      void logLedgerReadFailure(`safe-to-spend-ai wallet-balance read: ${message}`);
+      return undefined;
+    }
+  })();
+  const inputs: SafeToSpendInputs = { ...args.inputs, ledgerBalances };
+  args = { ...args, inputs };
   const baseline = safeToSpend(args.inputs);
 
   const user = await getAuthUser();

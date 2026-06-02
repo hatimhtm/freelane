@@ -129,6 +129,9 @@ export function SpendModal({
   const [currency, setCurrency] = useState<string>(PHP);
   // Tier 2 (F): "It's For Us" tag — household line distinct from Wife.
   const [forUs, setForUs] = useState(false);
+  // Sadaka workflow (Phase 2, migration 0075). Explicit toggle. The action
+  // path writes a sadaka_ledger payment row and short-circuits auto-detect.
+  const [sadaka, setSadaka] = useState(false);
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [businessRelevant, setBusinessRelevant] = useState(false);
@@ -154,6 +157,7 @@ export function SpendModal({
     setNotes(defaults?.note ?? "");
     setBusinessRelevant(false);
     setForUs(false);
+    setSadaka(false);
     setVat("");
     setSelectedCategoryIds(defaults?.categoryId ? [defaults.categoryId] : []);
     setShowItems(false);
@@ -295,6 +299,7 @@ export function SpendModal({
         vat_amount: vatNum && vatNum > 0 ? vatNum : null,
         business_relevant: businessRelevant,
         for_us: forUs,
+        is_sadaka: sadaka,
         covers_periods: recurringSpendId ? Math.max(1, coversPeriods) : 1,
         recurring_spend_id: recurringSpendId,
         categoryIds: selectedCategoryIds,
@@ -482,6 +487,17 @@ export function SpendModal({
             <Switch
               checked={forUs}
               onCheckedChange={setForUs}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-xs font-medium text-foreground">Mark as sadaka</span>
+              <span className="text-[10px] text-muted-foreground">Voluntary giving — writes to the sadaka pool.</span>
+            </div>
+            <Switch
+              checked={sadaka}
+              onCheckedChange={setSadaka}
             />
           </div>
 

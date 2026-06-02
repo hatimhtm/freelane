@@ -1,144 +1,72 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { ArrowDownLeft, ArrowUpRight, Clock } from "lucide-react";
+import { ArrowDownLeft } from "lucide-react";
 import { MoneyFlow } from "@/components/ui/money-flow";
-import { SWidget } from "@/components/widgets/s-widget";
-import { NumberHero } from "@/components/widgets/number-hero";
-import { useMetricSheet } from "@/components/app/metric-sheet";
+import { MWidget } from "@/components/widgets/m-widget";
+import { AiDot } from "@/components/widgets/ai-dot";
 import type { CurrencyCode } from "@/lib/supabase/types";
 
-// T28 — 8 income / comparison S widgets. Comparison-set rule applies: each
-// card stays visible at 0 even when the underlying number is zero.
+// IncomeStrip — canonical brief shape: ONE M widget containing 4 internal
+// cells labelled Week / Month / Year / Lifetime. Comparison-set rule
+// applies: each cell stays visible at 0 even when the underlying number is
+// zero. The four cells come from money_ledger (income / project_receipt)
+// rolled up by time-window — the loader passes pre-summed values.
 //
-// Icon vocabulary: ONLY the locked glyphs from the widget system.
-// Income / paid / YTD / week / trailing-30-landed → ArrowDownLeft (income),
-// ArrowUpRight (spend / outgoing money — fees only here),
-// Clock (time-anchored: outstanding, avg-days, biggest debtor's age).
-// Every S widget carries one canonical glyph so the comparison-set rule
-// (visible at 0) doesn't leave shape-less, icon-less ghost boxes.
-//
-// "Biggest debtor" hero is the OUTSTANDING TOTAL (number), with the client
-// name + age in the sub line — the S contract is "icon + ONE number" and a
-// name as hero fails the 1s glance test.
+// Each cell carries its own AiDot so the chatbot can answer per-window
+// questions (money.week_landed, money.month_landed, etc.) without
+// conflating the four time-buckets into one card context.
 
 type Props = {
   currency: CurrencyCode;
-  landedMtd: number;
   weekLanded: number;
-  outstandingTotal: number;
-  feesMtd: number;
-  avgDaysToPayment: number | null;
-  // oldestDays optional so the sub line ("Name · 12d") can read time as
-  // well as identity without re-computing on the dashboard side.
-  biggestDebtor: { name: string; total: number; oldestDays?: number } | null;
-  ytd: number;
-  trailing30: number;
+  monthLanded: number;
+  yearLanded: number;
+  lifetimeLanded: number;
 };
 
 export function IncomeStrip({
   currency,
-  landedMtd,
   weekLanded,
-  outstandingTotal,
-  feesMtd,
-  avgDaysToPayment,
-  biggestDebtor,
-  ytd,
-  trailing30,
+  monthLanded,
+  yearLanded,
+  lifetimeLanded,
 }: Props) {
-  const router = useRouter();
-  const { open } = useMetricSheet();
+  const cells: Array<{
+    label: string;
+    value: number;
+    aiKey: string;
+  }> = [
+    { label: "Week", value: weekLanded, aiKey: "money.week_landed" },
+    { label: "Month", value: monthLanded, aiKey: "money.month_landed" },
+    { label: "Year", value: yearLanded, aiKey: "money.year_landed" },
+    { label: "Lifetime", value: lifetimeLanded, aiKey: "money.lifetime_landed" },
+  ];
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-      <SWidget
-        label="Landed this month"
-        icon={<ArrowDownLeft className="h-4 w-4" />}
-        hero={<MoneyFlow value={landedMtd} currency={currency} />}
-        sub="this month"
-        onOpen={() => open("landed")}
-      />
-      <SWidget
-        label="This week landed"
-        icon={<ArrowDownLeft className="h-4 w-4" />}
-        hero={<MoneyFlow value={weekLanded} currency={currency} />}
-        sub="this week"
-        onOpen={() => router.push("/payments")}
-      />
-      <SWidget
-        label="Outstanding"
-        icon={<Clock className="h-4 w-4" />}
-        hero={<MoneyFlow value={outstandingTotal} currency={currency} />}
-        sub="open balances"
-        onOpen={() => open("outstanding")}
-      />
-      <SWidget
-        label="Fees this month"
-        icon={<ArrowUpRight className="h-4 w-4" />}
-        hero={<MoneyFlow value={feesMtd} currency={currency} />}
-        sub="rails + FX"
-        onOpen={() => open("fees")}
-      />
-      <SWidget
-        label="Avg days to payment"
-        icon={<Clock className="h-4 w-4" />}
-        hero={
-          avgDaysToPayment === null ? (
-            <span className="text-muted-foreground">—</span>
-          ) : (
-            <NumberHero
-              value={Math.round(avgDaysToPayment)}
-              suffix="d"
-              className="tabular-nums"
-            />
-          )
-        }
-        sub="quote to first payment"
-        onOpen={() => open("avg-days")}
-      />
-      <SWidget
-        label="Biggest debtor"
-        icon={<Clock className="h-4 w-4" />}
-        // S contract: icon + ONE number. Hero answers "how much?"; the sub
-        // line carries identity (name) + age. A name-as-hero failed the 1s
-        // glance test on review — flipped to MoneyFlow.
-        hero={
-          biggestDebtor ? (
-            <MoneyFlow value={biggestDebtor.total} currency={currency} />
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )
-        }
-        sub={
-          biggestDebtor ? (
-            <span className="truncate">
-              {biggestDebtor.name}
-              {typeof biggestDebtor.oldestDays === "number" ? ` · ${biggestDebtor.oldestDays}d` : ""}
-            </span>
-          ) : (
-            "no one"
-          )
-        }
-        onOpen={() => open("debtor")}
-      />
-      <SWidget
-        label="Year to date"
-        icon={<ArrowDownLeft className="h-4 w-4" />}
-        hero={<MoneyFlow value={ytd} currency={currency} />}
-        sub="landed YTD"
-        onOpen={() => router.push("/payments")}
-      />
-      <SWidget
-        label="Trailing 30d landed"
-        // ArrowDownLeft (income glyph). The dashboard sources trailing30 from
-        // landedInRange(payments) — it's landed income, not outflow. Earlier
-        // pairing with ArrowUpRight read as a fee/outflow chip and contradicted
-        // the underlying metric.
-        icon={<ArrowDownLeft className="h-4 w-4" />}
-        hero={<MoneyFlow value={trailing30} currency={currency} />}
-        sub="landed last 30 days"
-        onOpen={() => router.push("/payments")}
-      />
-    </div>
+    <MWidget
+      label="Landed income"
+      eyebrow="Landed"
+      icon={<ArrowDownLeft className="h-4 w-4" />}
+      hero={
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4">
+          {cells.map((c) => (
+            <div key={c.aiKey} className="relative min-w-0">
+              <div className="text-[28px] leading-none tabular-nums text-foreground">
+                <MoneyFlow value={c.value} currency={currency} />
+              </div>
+              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                {c.label}
+              </div>
+              <AiDot
+                card={{
+                  key: c.aiKey,
+                  label: `${c.label} landed`,
+                  data: { currency, value: c.value },
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      }
+    />
   );
 }

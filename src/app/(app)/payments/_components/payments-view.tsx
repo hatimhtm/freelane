@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { MetricTile } from "@/components/stats/stat";
 import { MethodLeaderboard } from "@/components/app/method-leaderboard";
+import { MethodGlyph } from "@/components/brand/method-glyph";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { updatePaymentDetails, consolidateClientMemoryAction, deleteWithdrawal } from "@/lib/data/actions";
@@ -73,6 +74,8 @@ export type WithdrawalRow = {
 
 type ChainProject = { id: string; title: string; currency: CurrencyCode; clientName: string; outstanding: number };
 
+type PaymentsTab = "wallets" | "withdrawals" | "history";
+
 export function PaymentsView({
   rows,
   leaderboard,
@@ -92,6 +95,7 @@ export function PaymentsView({
   openNew,
   openWithdraw,
   defaultProjectId,
+  tab = "wallets",
 }: {
   rows: PaymentRow[];
   leaderboard: MethodLeaderboardRow[];
@@ -111,7 +115,11 @@ export function PaymentsView({
   openNew?: boolean;
   openWithdraw?: boolean;
   defaultProjectId?: string;
+  tab?: PaymentsTab;
 }) {
+  const showWallets = tab === "wallets";
+  const showWithdrawals = tab === "withdrawals";
+  const showHistory = tab === "history";
   const [sheetOpen, setSheetOpen] = useState(openNew ?? false);
   const [withdrawOpen, setWithdrawOpen] = useState(openWithdraw ?? false);
   // Landing-wallet filter for the payments list ("" = all).
@@ -139,94 +147,132 @@ export function PaymentsView({
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 lg:px-10 lg:py-12">
       <PageHeader
-        title="Payments"
-        description="Every payment, its chain, and what each rail cost."
+        title={
+          showWithdrawals
+            ? "Payments · Withdrawals"
+            : showHistory
+              ? "Payments · History"
+              : "Payments"
+        }
+        description={
+          showWithdrawals
+            ? "Money pulled out of holding wallets — and the fees that ate it."
+            : showHistory
+              ? "Every payment, its chain, and what each rail cost."
+              : "Wallets, balances, and the cheapest rails to get paid."
+        }
         actions={
           <div className="flex items-center gap-2">
-            {canWithdraw && (
+            {(showWallets || showWithdrawals) && canWithdraw && (
               <Button variant="outline" onClick={() => setWithdrawOpen(true)}>
                 <ArrowDownToLine className="mr-1.5 h-4 w-4" /> Log withdrawal
               </Button>
             )}
-            <Button onClick={() => setSheetOpen(true)} disabled={allProjects.length === 0}>
-              <Plus className="mr-1.5 h-4 w-4" /> Log payment
-            </Button>
+            {(showWallets || showHistory) && (
+              <Button onClick={() => setSheetOpen(true)} disabled={allProjects.length === 0}>
+                <Plus className="mr-1.5 h-4 w-4" /> Log payment
+              </Button>
+            )}
           </div>
         }
       />
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
-        <MetricTile label="Landed this month" value={receivedThisMonth} currency={currency} accent />
-        <MetricTile label="Lifetime" value={lifetime} currency={currency} delay={0.04} />
-        <MetricTile label="Fees this month" value={feesThisMonth} currency={currency} hint="rails + FX + withdrawals" delay={0.08} />
-      </div>
+      {/* Wallets tab — 3-up metric grid + held-in-wallets grid + leaderboard. */}
+      {showWallets && (
+        <>
+          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+            <MetricTile label="Landed this month" value={receivedThisMonth} currency={currency} accent />
+            <MetricTile label="Lifetime" value={lifetime} currency={currency} delay={0.04} />
+            <MetricTile label="Fees this month" value={feesThisMonth} currency={currency} hint="rails + FX + withdrawals" delay={0.08} />
+          </div>
 
-      {holdings.length > 0 && (
-        <section className="mt-10">
-          <div className="mb-3 flex items-end justify-between">
-            <div>
-              <h2 className="text-sm font-medium">Held in wallets</h2>
-              <p className="text-xs text-muted-foreground">Money parked, waiting to be withdrawn</p>
-            </div>
-            {canWithdraw && (
-              <Button size="sm" variant="ghost" onClick={() => setWithdrawOpen(true)}>
-                <ArrowDownToLine className="mr-1.5 h-3.5 w-3.5" /> Withdraw
-              </Button>
+          {holdings.length > 0 && (
+            <section className="mt-10">
+              <div className="mb-3 flex items-end justify-between">
+                <div>
+                  <h2 className="text-sm font-medium">Held in wallets</h2>
+                  <p className="text-xs text-muted-foreground">Money parked, waiting to be withdrawn</p>
+                </div>
+                {canWithdraw && (
+                  <Button size="sm" variant="ghost" onClick={() => setWithdrawOpen(true)}>
+                    <ArrowDownToLine className="mr-1.5 h-3.5 w-3.5" /> Withdraw
+                  </Button>
+                )}
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {holdings.map((h) => (
+                  <HoldingCard key={h.methodId} row={h} currency={currency} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="mt-10">
+            <h2 className="mb-3 text-sm font-medium">Cheapest ways to get paid</h2>
+            <MethodLeaderboard rows={leaderboard} baseCurrency={currency} />
+          </section>
+        </>
+      )}
+
+      {/* Withdrawals tab — full list, or an empty-state. */}
+      {showWithdrawals && (
+        <section className="mt-8">
+          <h2 className="mb-3 text-sm font-medium">Withdrawals</h2>
+          {withdrawals.length === 0 ? (
+            <EmptyState
+              icon={ArrowDownToLine}
+              title="No withdrawals yet."
+              description="Pulling money out of a holding wallet — coin.ph to your bank, for instance — logs here so the fee count stays honest."
+              action={
+                canWithdraw ? (
+                  <Button onClick={() => setWithdrawOpen(true)}>
+                    <ArrowDownToLine className="mr-1.5 h-4 w-4" /> Log withdrawal
+                  </Button>
+                ) : null
+              }
+            />
+          ) : (
+            <Card className="overflow-hidden p-0">
+              {withdrawals.map((w, i) => (
+                <WithdrawalItem key={w.id} row={w} baseCurrency={currency} last={i === withdrawals.length - 1} />
+              ))}
+            </Card>
+          )}
+        </section>
+      )}
+
+      {/* History tab — full payments table with landing-wallet filter. */}
+      {showHistory && (
+        <section className="mt-8">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium">All payments</h2>
+            {landingNames.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <FilterChip active={landingFilter === ""} onClick={() => setLandingFilter("")}>All</FilterChip>
+                {landingNames.map((n) => (
+                  <FilterChip key={n} active={landingFilter === n} onClick={() => setLandingFilter(n)}>{n}</FilterChip>
+                ))}
+              </div>
             )}
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {holdings.map((h) => (
-              <HoldingCard key={h.methodId} row={h} currency={currency} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="mt-10">
-        <h2 className="mb-3 text-sm font-medium">Cheapest ways to get paid</h2>
-        <MethodLeaderboard rows={leaderboard} baseCurrency={currency} />
-      </section>
-
-      {withdrawals.length > 0 && (
-        <section className="mt-10">
-          <h2 className="mb-3 text-sm font-medium">Withdrawals</h2>
-          <Card className="overflow-hidden p-0">
-            {withdrawals.map((w, i) => (
-              <WithdrawalItem key={w.id} row={w} baseCurrency={currency} last={i === withdrawals.length - 1} />
-            ))}
-          </Card>
-        </section>
-      )}
-
-      <section className="mt-10">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-medium">All payments</h2>
-          {landingNames.length > 1 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <FilterChip active={landingFilter === ""} onClick={() => setLandingFilter("")}>All</FilterChip>
-              {landingNames.map((n) => (
-                <FilterChip key={n} active={landingFilter === n} onClick={() => setLandingFilter(n)}>{n}</FilterChip>
+          {rows.length === 0 ? (
+            <EmptyState
+              icon={Wallet}
+              title="Nothing landed yet."
+              description="Log your first payment and Freelane starts tracking what each rail really costs you."
+              action={<Button onClick={() => setSheetOpen(true)} disabled={allProjects.length === 0}>Log a payment</Button>}
+            />
+          ) : visibleRows.length === 0 ? (
+            <Card className="px-4 py-8 text-center text-sm text-muted-foreground">No payments landed in {landingFilter}.</Card>
+          ) : (
+            <Card className="overflow-hidden p-0">
+              {visibleRows.map((r, i) => (
+                <PaymentItem key={r.id} row={r} baseCurrency={currency} methods={methods} last={i === visibleRows.length - 1} index={i} />
               ))}
-            </div>
+            </Card>
           )}
-        </div>
-        {rows.length === 0 ? (
-          <EmptyState
-            icon={Wallet}
-            title="Nothing landed yet."
-            description="Log your first payment and Freelane starts tracking what each rail really costs you."
-            action={<Button onClick={() => setSheetOpen(true)} disabled={allProjects.length === 0}>Log a payment</Button>}
-          />
-        ) : visibleRows.length === 0 ? (
-          <Card className="px-4 py-8 text-center text-sm text-muted-foreground">No payments landed in {landingFilter}.</Card>
-        ) : (
-          <Card className="overflow-hidden p-0">
-            {visibleRows.map((r, i) => (
-              <PaymentItem key={r.id} row={r} baseCurrency={currency} methods={methods} last={i === visibleRows.length - 1} index={i} />
-            ))}
-          </Card>
-        )}
-      </section>
+        </section>
+      )}
 
       <ChainModal
         open={sheetOpen}
@@ -249,7 +295,10 @@ export function PaymentsView({
         defaultToId={cashMethodId}
       />
 
-      {allProjects.length > 0 && (
+      {/* PrimaryAction lives on the History tab — it's the surface that
+          shows the full payment list, so the floating CTA reinforces the
+          log action there. */}
+      {showHistory && allProjects.length > 0 && (
         <PrimaryAction
           icon={Plus}
           label="Log a payment"
@@ -286,7 +335,7 @@ function HoldingCard({ row, currency }: { row: HoldingRow; currency: CurrencyCod
     >
       <Card className="p-5">
         <div className="flex items-center gap-2">
-          <Wallet className="size-4 text-foreground/60" />
+          <MethodGlyph name={row.name} className="size-5" />
           <span className="text-sm font-medium">{row.name}</span>
         </div>
         <div className={cn("mt-3 text-2xl font-semibold tabular", balanceClass)}>

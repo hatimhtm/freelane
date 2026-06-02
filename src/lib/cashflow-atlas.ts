@@ -50,6 +50,10 @@ export interface CashflowAtlasInputs {
   methods: PaymentMethod[];
   stepsByPayment: Map<string, PaymentStep[]>;
   rates: ExchangeRate[];
+  // Phase 1.5: optional precomputed ledger-derived balance map. When
+  // provided, holdingBalances() short-circuits to ledger truth for covered
+  // wallets. Undefined → source-table math (unchanged).
+  ledgerBalances?: Map<string, number> | null;
   now?: Date;
   horizonDays?: number;
 }
@@ -89,6 +93,7 @@ export function buildCashflowAtlas(inputs: CashflowAtlasInputs): CashflowAtlas {
     inputs.stepsByPayment,
     inputs.withdrawals,
     inputs.spends,
+    inputs.ledgerBalances,
   );
   const startingBalance = holdings.reduce((s, h) => s + h.balance, 0);
 

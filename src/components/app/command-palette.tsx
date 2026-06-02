@@ -9,13 +9,14 @@ import {
   CalendarRange,
   FileText,
   FolderKanban,
+  HandHeart,
   HeartHandshake,
   LayoutDashboard,
+  LogOut,
   MessagesSquare,
   Plus,
   Receipt,
   RefreshCw,
-  Search,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -33,8 +34,12 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
+import { createClient } from "@/lib/supabase/client";
 
-export function CommandTrigger() {
+// CommandPaletteHost — headless ⌘K listener + dialog. Mounted once in
+// the (app) layout. Replaces the old top-bar trigger button (search now
+// lives ONLY in this palette per the design-structure restructure).
+export function CommandPaletteHost() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
 
@@ -54,19 +59,16 @@ export function CommandTrigger() {
     router.push(path);
   };
 
+  async function lockFreelane() {
+    setOpen(false);
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
+
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="group inline-flex h-9 items-center gap-2 rounded-[6px] border border-border/70 bg-background px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <Search className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Search or jump to…</span>
-        <kbd className="ml-2 hidden items-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-flex">
-          ⌘K
-        </kbd>
-      </button>
-
       <CommandDialog open={open} onOpenChange={setOpen}>
         <CommandInput placeholder="Search clients, projects, payments…" />
         <CommandList>
@@ -95,6 +97,9 @@ export function CommandTrigger() {
             </CommandItem>
             <CommandItem onSelect={() => go("/plans")}>
               <Calendar className="mr-2 h-4 w-4" /> Plans
+            </CommandItem>
+            <CommandItem onSelect={() => go("/sadaka")}>
+              <HandHeart className="mr-2 h-4 w-4" /> Sadaka
             </CommandItem>
           </CommandGroup>
           <CommandSeparator />
@@ -132,6 +137,9 @@ export function CommandTrigger() {
             <CommandItem onSelect={() => go("/settings")}>
               <Settings className="mr-2 h-4 w-4" /> Settings
             </CommandItem>
+            <CommandItem onSelect={lockFreelane}>
+              <LogOut className="mr-2 h-4 w-4" /> Lock Freelane
+            </CommandItem>
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading="Quick actions">
@@ -149,7 +157,11 @@ export function CommandTrigger() {
               onSelect={() => {
                 setOpen(false);
                 if (typeof window !== "undefined") {
-                  window.dispatchEvent(new CustomEvent("freelane:open-ask-ai"));
+                  // The new chatbot listens for freelane:open-chatbot; the
+                  // legacy freelane:open-ask-ai event name still works (the
+                  // provider listens for both during the transition) but
+                  // new dispatchers should use the modern name.
+                  window.dispatchEvent(new CustomEvent("freelane:open-chatbot"));
                 }
               }}
             >

@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
 import { safeToSpend, type SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import { holdingBalances } from "@/lib/payment-chain";
+import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
+import { logLedgerReadFailure } from "@/lib/data/money-ledger";
 import { buildCashflowAtlas, type CashflowAtlas } from "@/lib/cashflow-atlas";
 import { bigPlansUpcoming } from "@/lib/planned-spends";
 import { formatMoney } from "@/lib/money";
@@ -68,6 +70,9 @@ export interface CalmWeatherInputs {
   methods: PaymentMethod[];
   stepsByPayment: Map<string, PaymentStep[]>;
   rates: ExchangeRate[];
+  // Phase 1.5: optional ledger-derived balance map (computed once at the
+  // async entry and threaded through computeSignals + buildSnapshot).
+  ledgerBalances?: Map<string, number> | null;
   now?: Date;
 }
 
@@ -99,6 +104,7 @@ function computeSignals(inputs: CalmWeatherInputs): PureSignals {
     inputs.stepsByPayment,
     inputs.withdrawals,
     inputs.spends,
+    inputs.ledgerBalances,
   );
   const startingBalance = holdings.reduce((s, h) => s + h.balance, 0);
   // Honour the overdraft tolerance (migration 0054). A wallet at -200 with a
@@ -410,6 +416,7 @@ function buildSnapshot(args: {
     args.inputs.stepsByPayment,
     args.inputs.withdrawals,
     args.inputs.spends,
+    args.inputs.ledgerBalances,
   );
   const walletLines = wallets.map((w) => `- ${w.name}: ${m(w.balance)}`).join("\n") || "- (none yet)";
 
@@ -526,6 +533,22 @@ export async function computeCalmWeatherState(
   const user = await getAuthUser();
   if (!user) throw new Error("Unauthenticated");
 
+  // Phase 1.5: ledger reader first. Computed ONCE here and injected into
+  // inputs so both computeSignals + buildSnapshot's holdingBalances calls
+  // read the canonical wallet truth without re-querying.
+  if (!args.inputs.ledgerBalances) {
+    const calmLedgerBalanceMap = await computeWalletBalancesFromLedger(args.inputs.methods).catch(
+      (err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        void logLedgerReadFailure(`calm-weather wallet-balance read: ${message}`);
+        return new Map();
+      },
+    );
+    const calmLedgerBalanceForChain = new Map<string, number>();
+    for (const [k, v] of calmLedgerBalanceMap) calmLedgerBalanceForChain.set(k, v.balance);
+    args = { ...args, inputs: { ...args.inputs, ledgerBalances: calmLedgerBalanceForChain } };
+  }
+
   // Trigger #4 — fingerprint backstop. The last 5 spend ids + last payment +
   // last withdrawal + wallet anchor versions are the inputs that actually
   // move the weather signal. A change to any of them busts the cache even
@@ -622,6 +645,34 @@ export async function computeCalmWeatherState(
         entityId: user.id,
         metadata: { band, confidence, used_ai: !!gem },
       });
+
+      // storm_active producer (Phase 1.5). Fire ONCE when the band
+      // transitions OUT of any non-storm state INTO storm — the
+      // dedupKey buckets per PHT day (phtDateString below) so a single
+      // tight stretch doesn't re-notify every refresh. PHT-first is a
+      // Freelane invariant; UTC bucketing would split a single PHT day
+      // across two notifications. The notification kind is registered in
+      // src/lib/notifications/kinds.ts and routed by click-routing.tsx.
+      if (band === "storm" && priorBand !== "storm") {
+        try {
+          const { postNotification } = await import(
+            "@/lib/notifications/dispatcher"
+          );
+          const phtDay = phtDateString(new Date());
+          await postNotification({
+            kind: "storm_active",
+            subject: "Tight stretch just opened.",
+            body:
+              fallback.secondary ??
+              `Runway ${Math.max(0, Math.round(signals.runwayDays))}d.`,
+            linkUrl: "/today",
+            dedupKey: `storm_active:${phtDay}`,
+            priority: 1,
+          });
+        } catch {
+          // Notification is best-effort — never block the weather refresh.
+        }
+      }
 
       return state;
     },

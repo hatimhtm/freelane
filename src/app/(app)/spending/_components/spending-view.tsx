@@ -45,6 +45,7 @@ export type SpendRow = {
 };
 
 type BusinessFilter = "all" | "business" | "personal";
+type SpendingTab = "spends" | "trends" | "vendors";
 
 export function SpendingView({
   rows,
@@ -63,6 +64,7 @@ export function SpendingView({
   initialMonth,
   openNew,
   defaultCategoryId,
+  tab = "spends",
 }: {
   rows: SpendRow[];
   categories: SpendCategory[];
@@ -80,7 +82,11 @@ export function SpendingView({
   initialMonth: MonthValue;
   openNew?: boolean;
   defaultCategoryId?: string;
+  tab?: SpendingTab;
 }) {
+  const showSpends = tab === "spends";
+  const showTrends = tab === "trends";
+  const showVendors = tab === "vendors";
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -219,47 +225,49 @@ export function SpendingView({
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <PageMonthNav
-        value={month}
-        onChange={setMonthValue}
-        maxMonth={currentMonthValue()}
-        summary={
-          <>
-            <MonthNavStat
-              label="Spent"
-              value={
-                <NumberFlow
-                  value={Math.round(monthTotal)}
-                  format={{
-                    style: "currency",
-                    currency: baseCurrency,
-                    maximumFractionDigits: 0,
-                  }}
-                  className="font-fraunces tabular text-base leading-none"
-                />
-              }
-            />
-            {deltaPct !== null && (
+      {(showSpends || showTrends) && (
+        <PageMonthNav
+          value={month}
+          onChange={setMonthValue}
+          maxMonth={currentMonthValue()}
+          summary={
+            <>
               <MonthNavStat
-                label="vs prev"
-                tone={deltaPct > 0 ? "warning" : "positive"}
+                label="Spent"
                 value={
-                  <span className="inline-flex items-center gap-0.5">
-                    {deltaPct > 0 ? (
-                      <ArrowUpRight className="h-3 w-3" />
-                    ) : (
-                      <ArrowDownRight className="h-3 w-3" />
-                    )}
-                    {Math.abs(deltaPct).toFixed(0)}%
-                  </span>
+                  <NumberFlow
+                    value={Math.round(monthTotal)}
+                    format={{
+                      style: "currency",
+                      currency: baseCurrency,
+                      maximumFractionDigits: 0,
+                    }}
+                    className="font-fraunces tabular text-base leading-none"
+                  />
                 }
               />
-            )}
-          </>
-        }
-      />
+              {deltaPct !== null && (
+                <MonthNavStat
+                  label="vs prev"
+                  tone={deltaPct > 0 ? "warning" : "positive"}
+                  value={
+                    <span className="inline-flex items-center gap-0.5">
+                      {deltaPct > 0 ? (
+                        <ArrowUpRight className="h-3 w-3" />
+                      ) : (
+                        <ArrowDownRight className="h-3 w-3" />
+                      )}
+                      {Math.abs(deltaPct).toFixed(0)}%
+                    </span>
+                  }
+                />
+              )}
+            </>
+          }
+        />
+      )}
 
-      {showRecoveryCaption && (
+      {(showSpends || showTrends) && showRecoveryCaption && (
         <div className="mt-4 rounded-[8px] border-l-2 border-[var(--color-warning,theme(colors.orange.400))] bg-foreground/[0.03] py-2 pl-3 pr-3 text-[12px] leading-snug text-muted-foreground">
           Recovery mode — trailing spend ran ahead of income. Daily floor softened{" "}
           {formatMoney(safeToSpendBaseline.recoveryDailyTaxBase, baseCurrency, { compact: true })}
@@ -267,27 +275,50 @@ export function SpendingView({
         </div>
       )}
 
-      {/* Stat strip — compact horizontal row of mini stats. */}
-      <StatStrip
-        items={[
-          { label: "Total", value: formatMoney(monthTotal, baseCurrency, { compact: true }) },
-          deltaPct === null
-            ? { label: "vs prev", value: "—" }
-            : {
-                label: "vs prev",
-                value: `${deltaPct > 0 ? "+" : ""}${deltaPct.toFixed(0)}%`,
-                tone: deltaPct > 0 ? "warning" : "positive",
-              },
-          { label: "Avg/day", value: formatMoney(avgDaily, baseCurrency, { compact: true }) },
-          {
-            label: "Biggest day",
-            value: formatMoney(biggestDay, baseCurrency, { compact: true }),
-          },
-          { label: "Business", value: `${businessSharePct.toFixed(0)}%` },
-        ]}
-      />
+      {/* Stat strip — compact horizontal row of mini stats. Rides with the
+          Spends and Trends tabs (it summarizes the navigated month). */}
+      {(showSpends || showTrends) && (
+        <StatStrip
+          items={[
+            { label: "Total", value: formatMoney(monthTotal, baseCurrency, { compact: true }) },
+            deltaPct === null
+              ? { label: "vs prev", value: "—" }
+              : {
+                  label: "vs prev",
+                  value: `${deltaPct > 0 ? "+" : ""}${deltaPct.toFixed(0)}%`,
+                  tone: deltaPct > 0 ? "warning" : "positive",
+                },
+            { label: "Avg/day", value: formatMoney(avgDaily, baseCurrency, { compact: true }) },
+            {
+              label: "Biggest day",
+              value: formatMoney(biggestDay, baseCurrency, { compact: true }),
+            },
+            { label: "Business", value: `${businessSharePct.toFixed(0)}%` },
+          ]}
+        />
+      )}
 
-      {/* Two-column rhythm: charts on the left, intelligence on the right. */}
+      {/* Daily rhythm — Spends subtab keeps the heatmap above the filters so
+          the calendar-shape of the month reads before you start drilling. */}
+      {showSpends && (
+        <section className="mt-5">
+          <Panel
+            eyebrow={monthHeatmapLabel(month)}
+            subtitle="Daily rhythm — darker means more spent."
+          >
+            <SpendHeatmap
+              spends={monthSpends}
+              year={month.year}
+              month={month.month - 1}
+              baseCurrency={baseCurrency}
+            />
+          </Panel>
+        </section>
+      )}
+
+      {/* Two-column rhythm: charts on the left, intelligence on the right.
+          Trends subtab only — full-width analytical surface. */}
+      {showTrends && (
       <section className="mt-5 grid gap-4 lg:grid-cols-5">
         {/* LEFT (~60%): trend + heatmap */}
         <div className="space-y-4 lg:col-span-3">
@@ -343,8 +374,31 @@ export function SpendingView({
           </Panel>
         </div>
       </section>
+      )}
 
-      {/* Filters — compact chip rows + search. */}
+      {/* Vendors subtab placeholder — surface ships with the Vendors
+          workflow. Holds the structural shell so the route resolves and
+          SubtabBar stays consistent across the three tabs. */}
+      {showVendors && (
+        <section className="mt-5 space-y-4">
+          <div className="rounded-[14px] border border-foreground/10 bg-card/40 p-5">
+            <div className="display-eyebrow text-muted-foreground">Vendors</div>
+            <p className="mt-2 text-[13px] text-foreground/85">
+              Vendor management surface arrives next.
+            </p>
+            <p className="mt-1.5 text-[12px] text-muted-foreground">
+              Lifetime totals, spend rhythm, and per-vendor memory will live
+              here once the Vendors workflow ships.
+            </p>
+          </div>
+          <Panel eyebrow="Top vendors" subtitle="Lifetime pattern, click for detail.">
+            <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} />
+          </Panel>
+        </section>
+      )}
+
+      {/* Filters — compact chip rows + search. Spends subtab. */}
+      {showSpends && (
       <section className="mt-6">
         <div className="flex flex-col gap-2">
           <ChipRow>
@@ -415,8 +469,10 @@ export function SpendingView({
           </div>
         )}
       </section>
+      )}
 
-      {/* Dense list */}
+      {/* Dense list — Spends subtab only. */}
+      {showSpends && (
       <section className="mt-4">
         {rows.length === 0 ? (
           <EmptyState
@@ -459,8 +515,12 @@ export function SpendingView({
           </ul>
         )}
       </section>
+      )}
 
-      <FloatingLogButton onClick={openFresh} />
+      {/* Floating CTA + modal — the spend log surface. Keep mounted on the
+          Spends subtab only so the modal doesn't compete with the Trends
+          analytical reading mode. */}
+      {showSpends && <FloatingLogButton onClick={openFresh} />}
 
       <SpendModal
         open={sheetOpen}

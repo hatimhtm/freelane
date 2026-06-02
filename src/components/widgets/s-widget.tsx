@@ -8,6 +8,7 @@ import {
   BRAND_LIME_VAR_CLASS,
   TERRACOTTA_RING_CLASS,
 } from "@/lib/design/tokens";
+import { AiDot, type AiDotCardContext } from "./ai-dot";
 
 // Freelane S widget — ~160 sq. Icon + one hero value. Label lives in a hover
 // tooltip; the whole card is clickable. Reuse: pass `onOpen` to mount details.
@@ -21,6 +22,14 @@ export type SWidgetProps = {
   tone?: "default" | "lime" | "terracotta" | "rose" | "muted";
   live?: boolean;
   onOpen?: () => void;
+  // Phase 1.5 — optional inline warning pill at the bottom of the card.
+  // Renders a WarningPill (or any small ReactNode) below `sub`. Caller is
+  // responsible for not stacking enough pills to break the icon+ONE-number
+  // S contract.
+  warning?: ReactNode;
+  // Phase 1.5 — optional AI dot in the top-right corner. Click opens the
+  // chatbot scoped to this card via the freelane:open-chatbot event.
+  aiDot?: AiDotCardContext;
 };
 
 const TONE_RING: Record<NonNullable<SWidgetProps["tone"]>, string> = {
@@ -32,7 +41,7 @@ const TONE_RING: Record<NonNullable<SWidgetProps["tone"]>, string> = {
 };
 
 export const SWidget = forwardRef<HTMLDivElement, SWidgetProps>(function SWidget(
-  { label, icon, hero, sub, className, tone = "default", live, onOpen },
+  { label, icon, hero, sub, className, tone = "default", live, onOpen, warning, aiDot },
   ref,
 ) {
   const clickable = !!onOpen;
@@ -83,7 +92,9 @@ export const SWidget = forwardRef<HTMLDivElement, SWidgetProps>(function SWidget
                 {sub && (
                   <div className="text-[11px] leading-tight text-muted-foreground">{sub}</div>
                 )}
+                {warning && <div className="pt-1">{warning}</div>}
               </div>
+              {aiDot && <AiDot card={aiDot} />}
             </div>
           }
         />

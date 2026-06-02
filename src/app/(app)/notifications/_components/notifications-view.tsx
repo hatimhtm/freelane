@@ -1,78 +1,103 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Check, X } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Notification } from "@/lib/notifications/dispatcher";
-import type { WellbeingCheckin } from "@/lib/supabase/types";
 import {
   clearDismissedAction,
   dismissNotificationAction,
   markAllReadAction,
   markNotificationReadAction,
 } from "@/lib/notifications/actions";
+import { routeNotificationClick } from "@/lib/notifications/click-routing";
+import { iconForKind } from "@/lib/notifications/kinds";
+import { relativeTime } from "@/lib/notifications/types";
+import { useNotificationModal } from "@/components/app/notification-modal-host";
+import { TuesdayCheckinLoader } from "@/components/app/tuesday-checkin-loader";
 import { EmptyState } from "@/components/app/empty-state";
-import { TuesdayCheckinModal } from "@/components/app/tuesday-checkin-modal";
-import { cn, phtTimeHHMM } from "@/lib/utils";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 type Props = {
   rows: Notification[];
   icon?: LucideIcon;
-  openTuesday?: boolean;
-  tuesdayPrompt?: string;
-  tuesdayCheckin?: WellbeingCheckin | null;
+  retentionDays: number;
+  retentionForever: boolean;
+  // Backward-compat: the older Today→notifications hand-off used
+  // ?open=tuesday. The click-routing registry replaces this convention,
+  // but in-flight rows that already have the old link_url still arrive
+  // here, so we honor the query param for one release.
+  legacyOpenTuesday?: boolean;
 };
 
-function bucket(iso: string): "today" | "week" | "older" {
-  const now = Date.now();
-  const ts = new Date(iso).getTime();
-  const ageDays = (now - ts) / 86_400_000;
-  if (ageDays < 1) return "today";
-  if (ageDays < 7) return "week";
-  return "older";
-}
-
-// PHT-anchored HH:mm — matches the Tuesday check-in's PHT dedup key so the
-// timestamp the user reads can't jump on timezone boundaries (created_at is
-// stored UTC, the inbox renders in PHT everywhere else).
-function shortTime(iso: string): string {
-  return phtTimeHHMM(new Date(iso));
+function deletionCountdown(
+  readIso: string | null,
+  retentionDays: number,
+  retentionForever: boolean,
+): string | null {
+  if (retentionForever) return "kept forever";
+  if (!readIso) return null;
+  const ageMs = Date.now() - new Date(readIso).getTime();
+  const remainingDays = retentionDays - ageMs / 86_400_000;
+  if (remainingDays <= 0) return "deleting soon";
+  if (remainingDays < 1) return "deletes in <1d";
+  return `deletes in ${Math.ceil(remainingDays)}d`;
 }
 
 export function NotificationsView({
   rows,
   icon: Icon = Bell,
-  openTuesday = false,
-  tuesdayPrompt = "",
-  tuesdayCheckin = null,
+  retentionDays,
+  retentionForever,
+  legacyOpenTuesday = false,
 }: Props) {
   const router = useRouter();
+  const { openModal } = useNotificationModal();
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useState(rows);
-  const [tuesdayOpen, setTuesdayOpen] = useState(openTuesday);
 
-  const grouped = useMemo(() => {
-    const today: Notification[] = [];
-    const week: Notification[] = [];
-    const older: Notification[] = [];
+  // Backward-compat: ?open=tuesday — synthesize a click on the most recent
+  // tuesday_checkin row through the registry.
+  useEffect(() => {
+    if (!legacyOpenTuesday) return;
+    const tuesday = rows.find((r) => r.kind === "tuesday_checkin");
+    if (!tuesday) return;
+    openModal(<TuesdayCheckinLoader notification={tuesday} />, {
+      title: "Tuesday check-in",
+      description: "A line and two numbers. The echo lands after you save.",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legacyOpenTuesday]);
+
+  const { unread, read } = useMemo(() => {
+    const unread: Notification[] = [];
+    const read: Notification[] = [];
     for (const n of optimistic) {
-      const b = bucket(n.created_at);
-      if (b === "today") today.push(n);
-      else if (b === "week") week.push(n);
-      else older.push(n);
+      if (n.read_at) read.push(n);
+      else unread.push(n);
     }
-    return { today, week, older };
+    return { unread, read };
   }, [optimistic]);
 
   const openNotification = (n: Notification) => {
     setOptimistic((cur) =>
-      cur.map((row) => (row.id === n.id ? { ...row, read_at: row.read_at ?? new Date().toISOString() } : row)),
+      cur.map((row) =>
+        row.id === n.id
+          ? { ...row, read_at: row.read_at ?? new Date().toISOString() }
+          : row,
+      ),
     );
     startTransition(async () => {
       await markNotificationReadAction(n.id);
-      if (n.link_url) router.push(n.link_url);
     });
+    routeNotificationClick(n, openModal, (href) => router.push(href));
   };
 
   const dismiss = (id: string) => {
@@ -82,17 +107,13 @@ export function NotificationsView({
     });
   };
 
-  const markRead = (id: string) => {
-    setOptimistic((cur) =>
-      cur.map((row) => (row.id === id ? { ...row, read_at: row.read_at ?? new Date().toISOString() } : row)),
-    );
-    startTransition(async () => {
-      await markNotificationReadAction(id);
-    });
-  };
-
   const markAll = () => {
-    setOptimistic((cur) => cur.map((row) => ({ ...row, read_at: row.read_at ?? new Date().toISOString() })));
+    setOptimistic((cur) =>
+      cur.map((row) => ({
+        ...row,
+        read_at: row.read_at ?? new Date().toISOString(),
+      })),
+    );
     startTransition(async () => {
       await markAllReadAction();
     });
@@ -105,94 +126,118 @@ export function NotificationsView({
     });
   };
 
-  const renderGroup = (title: string, list: Notification[]) => {
-    if (list.length === 0) return null;
+  const renderList = (list: Notification[], variant: "unread" | "read") => {
+    if (list.length === 0) {
+      return (
+        <div className="rounded-xl border border-border/60 bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+          {variant === "unread" ? "Nothing new." : "Nothing read yet."}
+        </div>
+      );
+    }
     return (
-      <section className="space-y-3">
-        <h2 className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{title}</h2>
-        <ul className="overflow-hidden rounded-xl border border-border/60 bg-card">
-          {list.map((n, idx) => (
-            <li
-              key={n.id}
+      <ul className="overflow-hidden rounded-xl border border-border/60 bg-card">
+        {list.map((n, idx) => {
+          const KindIcon = iconForKind(n.kind);
+          return (
+          <li
+            key={n.id}
+            className={cn(
+              "group flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-foreground/[0.025]",
+              idx > 0 && "border-t border-border/40",
+              n.priority >= 2 && "ring-1 ring-rose-500/15",
+            )}
+          >
+            <KindIcon
+              aria-hidden
               className={cn(
-                "group flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-foreground/[0.025]",
-                idx > 0 && "border-t border-border/40",
-                n.priority >= 2 && "ring-1 ring-rose-500/15",
+                "mt-0.5 h-4 w-4 shrink-0",
+                variant === "read" ? "text-muted-foreground/70" : "text-muted-foreground",
               )}
+            />
+            <button
+              type="button"
+              onClick={() => openNotification(n)}
+              className="flex-1 cursor-pointer text-left"
             >
+              <div className="flex items-baseline justify-between gap-2">
+                <span
+                  className={cn(
+                    "text-[14px] leading-snug",
+                    variant === "read"
+                      ? "text-foreground/70"
+                      : "font-medium text-foreground",
+                  )}
+                >
+                  {n.subject}
+                </span>
+                <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                  {relativeTime(n.created_at)}
+                </span>
+              </div>
+              {n.body && (
+                <p
+                  className={cn(
+                    "mt-1 text-[12.5px] leading-snug",
+                    variant === "read"
+                      ? "text-muted-foreground/80"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {n.body}
+                </p>
+              )}
+              <div className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-muted-foreground/70">
+                <span>{n.kind.replace(/_/g, " ")}</span>
+                {variant === "read" && (
+                  <span>
+                    {deletionCountdown(
+                      n.read_at,
+                      retentionDays,
+                      retentionForever,
+                    )}
+                  </span>
+                )}
+              </div>
+            </button>
+            <div className="flex shrink-0 items-center gap-1">
               <button
                 type="button"
-                onClick={() => openNotification(n)}
-                className="flex-1 cursor-pointer text-left"
+                aria-label="Dismiss"
+                onClick={() => dismiss(n.id)}
+                disabled={pending}
+                className="grid h-7 w-7 place-items-center rounded text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-rose-500"
               >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span
-                    className={cn(
-                      "text-[14px] leading-snug",
-                      n.read_at ? "text-foreground/75" : "text-foreground font-medium",
-                    )}
-                  >
-                    {n.subject}
-                  </span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
-                    {shortTime(n.created_at)}
-                  </span>
-                </div>
-                {n.body && (
-                  <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground">
-                    {n.body}
-                  </p>
-                )}
-                <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground/70">
-                  {n.kind.replace(/_/g, " ")}
-                </div>
+                <X className="h-3.5 w-3.5" />
               </button>
-              <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                {!n.read_at && (
-                  <button
-                    type="button"
-                    aria-label="Mark read"
-                    onClick={() => markRead(n.id)}
-                    disabled={pending}
-                    className="grid h-7 w-7 place-items-center rounded text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  aria-label="Dismiss"
-                  onClick={() => dismiss(n.id)}
-                  disabled={pending}
-                  className="grid h-7 w-7 place-items-center rounded text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-rose-500"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+            </div>
+          </li>
+          );
+        })}
+      </ul>
     );
   };
 
   const total = optimistic.length;
-  const unread = optimistic.filter((n) => !n.read_at).length;
+  const unreadCount = unread.length;
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-8 md:px-6">
       <header className="flex items-end justify-between gap-4">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Inbox</div>
-          <h1 className="display-headline mt-1 text-3xl md:text-4xl">Notifications</h1>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+            Inbox
+          </div>
+          <h1 className="display-headline mt-1 text-3xl md:text-4xl">
+            Notifications
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {total === 0
               ? "Nothing in the inbox yet."
-              : `${unread} unread of ${total}.`}
+              : `${unreadCount} unread of ${total}.`}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-[12px]">
-          {unread > 0 && (
+          {unreadCount > 0 && (
             <button
               type="button"
               onClick={markAll}
@@ -220,19 +265,16 @@ export function NotificationsView({
           description="When something needs you — a check-in, a stale anchor, a question about a spend — it'll show up here."
         />
       ) : (
-        <div className="space-y-8">
-          {renderGroup("Today", grouped.today)}
-          {renderGroup("Earlier this week", grouped.week)}
-          {renderGroup("Older", grouped.older)}
-        </div>
-      )}
-      {tuesdayPrompt && (
-        <TuesdayCheckinModal
-          open={tuesdayOpen}
-          onOpenChange={setTuesdayOpen}
-          prompt={tuesdayPrompt}
-          checkin={tuesdayCheckin}
-        />
+        <Tabs defaultValue="unread">
+          <TabsList>
+            <TabsTrigger value="unread">
+              Unread{unreadCount > 0 && ` · ${unreadCount}`}
+            </TabsTrigger>
+            <TabsTrigger value="read">Read · {read.length}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="unread">{renderList(unread, "unread")}</TabsContent>
+          <TabsContent value="read">{renderList(read, "read")}</TabsContent>
+        </Tabs>
       )}
     </div>
   );

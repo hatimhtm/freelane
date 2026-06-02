@@ -6,6 +6,8 @@ import { getAuthUser } from "@/lib/auth";
 import { phtDateString } from "@/lib/utils";
 import { gemini, MODEL, hasGemini } from "./gemini";
 import { methodLeaderboard, chainSignature, sortedSteps, monthlyFeeBase, holdingBalances } from "@/lib/payment-chain";
+import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
+import { logLedgerReadFailure } from "@/lib/data/money-ledger";
 import {
   cashflowMetrics,
   outstanding,
@@ -137,7 +139,17 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
   const projectsById = new Map(projects.map((p) => [p.id, p]));
   const methodsById = new Map(methods.map((m) => [m.id, m]));
   const leaderboard = methodLeaderboard(payments, stepsByPayment, methodsById, rates);
-  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
+  // Phase 1.5: ledger reader first; thread through safeToSpend below.
+  const actionsLedgerBalanceMap = await computeWalletBalancesFromLedger(methods).catch(
+    (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      void logLedgerReadFailure(`actions wallet-balance read: ${message}`);
+      return new Map();
+    },
+  );
+  const actionsLedgerBalanceForChain = new Map<string, number>();
+  for (const [k, v] of actionsLedgerBalanceMap) actionsLedgerBalanceForChain.set(k, v.balance);
+  const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends, actionsLedgerBalanceForChain);
 
   const m = (n: number) => formatMoney(n, currency, { compact: true });
 
@@ -232,6 +244,7 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
     stepsByPayment,
     rates,
     plannedSpends,
+    ledgerBalances: actionsLedgerBalanceForChain,
     now,
   });
 

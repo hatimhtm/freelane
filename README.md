@@ -118,7 +118,8 @@ supabase/migrations/                      0001 .. 0014 (numbered, append-only)
 
 1. **Supabase** — run `supabase/migrations/0001..0014` in order in the SQL editor. Create the hidden user (`owner@freelane.local`) in Auth; set its UUID in `0003_seed_owner.sql`.
 2. **Env** — copy `.env.example` → `.env.local` and fill `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `GEMINI_API_KEY` (get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)). On Vercel these live in Project Settings → Environment Variables. **Never commit the key** (`.env*` is gitignored).
-3. **Run** — `pnpm install && pnpm dev`.
+3. **Web Push** — generate VAPID keys with `npx web-push generate-vapid-keys`. Paste the public key into `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, the private into `VAPID_PRIVATE_KEY`. Set `VAPID_SUBJECT` to a `mailto:` address. Set `CRON_SECRET` to a random string (used to authenticate the daily notification-retention cron).
+4. **Run** — `pnpm install && pnpm dev`.
 
 ---
 

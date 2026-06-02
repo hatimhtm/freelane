@@ -15,6 +15,7 @@ import {
   Calendar,
   Sparkles,
   Store,
+  HandHeart,
   HeartHandshake,
   FileText,
   ShoppingBag,
@@ -42,6 +43,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
       { href: "/payments",  label: "Payments",  icon: Wallet },
       { href: "/spending",  label: "Spending",  icon: Receipt },
       { href: "/plans",     label: "Plans",     icon: Calendar },
+      { href: "/sadaka",    label: "Sadaka",    icon: HandHeart },
     ],
   },
   {

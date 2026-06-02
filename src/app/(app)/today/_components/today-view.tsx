@@ -9,7 +9,6 @@ import { IncomeSadakaSuggestion } from "@/components/app/income-sadaka-suggestio
 import { LatestLetterCard } from "@/components/app/latest-letter-card";
 import { NegativeWalletAlarm } from "@/components/app/negative-wallet-alarm";
 import { RamadanModeBanner } from "@/components/app/ramadan-mode-banner";
-import { TodayQuestionPills } from "@/components/app/today-question-pills";
 import { YearMemoryRecallCard } from "@/components/app/year-memory-recall-card";
 
 import { CigarettesWidget } from "@/components/widgets/today/cigarettes-widget";
@@ -18,6 +17,7 @@ import { EidPrepWidget } from "@/components/widgets/today/eid-prep-widget";
 import { OutstandingWidget } from "@/components/widgets/today/outstanding-widget";
 import { PostPaydaySurgeWidget } from "@/components/widgets/today/post-payday-surge-widget";
 import { SadakaRhythmWidget } from "@/components/widgets/today/sadaka-rhythm-widget";
+import { SadakaPoolTodayWidget } from "@/components/widgets/today/sadaka-pool-today-widget";
 import { SafeToSpendWidget } from "@/components/widgets/today/safe-to-spend-widget";
 import { SleepSpendEchoWidget } from "@/components/widgets/today/sleep-spend-echo-widget";
 import { TightModeWidget } from "@/components/widgets/today/tight-mode-widget";
@@ -109,6 +109,14 @@ type TodayViewProps = {
   sadakaSuggestion: { suggestedBase: number; percent: number; reason: string } | null;
   triggeringPayment: { client: string; net: number; paid_at: string } | null;
   sadakaCategoryId: string | null;
+  // Phase 2 sadaka pool — independent of the on-income suggestion. The
+  // SadakaPoolTodayWidget renders only when surfaceToday=true AND the
+  // suggested amount > 0; otherwise the renderMoneyRhythmCard pipe falls
+  // through to the next signal.
+  sadakaPoolBase: number;
+  sadakaSuggestedToday: number;
+  sadakaSuggestedReasoning: string;
+  sadakaSurfaceToday: boolean;
 
   // Spend modal plumbing — kept so ⌘K / ⌘L can open it.
   rates: ExchangeRate[];
@@ -158,6 +166,10 @@ export function TodayView(props: TodayViewProps) {
     sadakaSuggestion,
     triggeringPayment,
     sadakaCategoryId,
+    sadakaPoolBase,
+    sadakaSuggestedToday,
+    sadakaSuggestedReasoning,
+    sadakaSurfaceToday,
     rates,
     spendCategories,
     spendCategoryLinks,
@@ -198,9 +210,9 @@ export function TodayView(props: TodayViewProps) {
       <CalmWeatherBanner state={calmWeather} variant="today" />
       <NegativeWalletAlarm holdings={holdings} />
 
-      {/* Today-only AI question pills — top row per Today brief. The general
-          SUGGESTIONS list stays inside the Ask AI modal. */}
-      {aiEnabled && <TodayQuestionPills />}
+      {/* Starter pills moved into the chatbot modal (chatbot-pills-bar) —
+          single source of conversation-openers per page, lazy on modal
+          open. See freelane-chatbot-design memory. */}
 
       {/* TOP GLANCE ROW — Safe-to-Spend top-left, Outstanding + Focus next.
           4-column grid on md so the M (col-span-2) + 2 S widgets read as one
@@ -264,6 +276,10 @@ export function TodayView(props: TodayViewProps) {
           sadakaSuggestion,
           triggeringPayment,
           sadakaCategoryId,
+          sadakaPoolBase,
+          sadakaSuggestedToday,
+          sadakaSuggestedReasoning,
+          sadakaSurfaceToday,
           tightMode,
           tightModeGeneratedAt,
           postPayday,
@@ -314,6 +330,10 @@ function renderMoneyRhythmCard(args: {
   sadakaSuggestion: TodayViewProps["sadakaSuggestion"];
   triggeringPayment: TodayViewProps["triggeringPayment"];
   sadakaCategoryId: TodayViewProps["sadakaCategoryId"];
+  sadakaPoolBase: TodayViewProps["sadakaPoolBase"];
+  sadakaSuggestedToday: TodayViewProps["sadakaSuggestedToday"];
+  sadakaSuggestedReasoning: TodayViewProps["sadakaSuggestedReasoning"];
+  sadakaSurfaceToday: TodayViewProps["sadakaSurfaceToday"];
   tightMode: TodayViewProps["tightMode"];
   tightModeGeneratedAt: TodayViewProps["tightModeGeneratedAt"];
   postPayday: TodayViewProps["postPayday"];
@@ -327,6 +347,10 @@ function renderMoneyRhythmCard(args: {
     sadakaSuggestion,
     triggeringPayment,
     sadakaCategoryId,
+    sadakaPoolBase,
+    sadakaSuggestedToday,
+    sadakaSuggestedReasoning,
+    sadakaSurfaceToday,
     tightMode,
     tightModeGeneratedAt,
     postPayday,
@@ -336,16 +360,37 @@ function renderMoneyRhythmCard(args: {
     aiEnabled,
     currency,
   } = args;
-  // Priority: a fresh sadaka income event is the most time-sensitive; then
-  // tight-mode (storm/gust); then post-payday surge; then the standing
-  // sadaka rhythm read. Each rhythm widget is cache-first + async-regen so
-  // first paint never blocks on a Gemini call.
+  // Priority order (each renderer self-hides when no signal):
+  //   1. fresh sadaka income event (most time-sensitive)
+  //   2. standing sadaka-pool prompt (relevance-gated by the brain)
+  //   3. tight-mode (storm/gust)
+  //   4. post-payday surge
+  //   5. standing sadaka rhythm read
+  // Trade-off note: the pool prompt outranks tight-mode by design — the
+  // pool reflects an obligation the user committed to, while tight-mode
+  // is a transient liquidity pill that the rest of the page already
+  // covers. Revisit if user testing shows the storm pill should win.
+  // Each rhythm widget is cache-first + async-regen so first paint never
+  // blocks on a Gemini call.
   if (sadakaSuggestion && triggeringPayment && sadakaCategoryId) {
     return (
       <IncomeSadakaSuggestion
         suggestion={sadakaSuggestion}
         triggeringPayment={triggeringPayment}
         sadakaCategoryId={sadakaCategoryId}
+      />
+    );
+  }
+  // Sadaka pool today card — relevance-gated by the brain's surface_today
+  // boolean AND a non-zero suggested amount. Sits ABOVE tight-mode so the
+  // standing pool prompt isn't shadowed by a transient storm pill.
+  if (sadakaSurfaceToday && sadakaSuggestedToday > 0) {
+    return (
+      <SadakaPoolTodayWidget
+        poolBase={sadakaPoolBase}
+        suggestedAmount={sadakaSuggestedToday}
+        currency={currency}
+        reasoning={sadakaSuggestedReasoning}
       />
     );
   }

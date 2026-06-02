@@ -200,16 +200,56 @@ export function landingMethodId(steps: PaymentStep[]): string | null {
   return finalStep(steps)?.method_id ?? null;
 }
 
+// Phase 1.5: optional precomputed ledger-derived balance map. When passed
+// in, the four-input math below is bypassed and the canonical reader's
+// values are returned for the requested wallets. The legacy received/
+// withdrawn/spent breakdown is filled with zeros (callers that genuinely
+// need it should query the source tables, not the rolled-up balance).
+//
+// Why this seam rather than pure replacement: until the 0068 backfill has
+// run for every user, the ledger map may be empty / partial. Falling back
+// to the source-table math keeps existing dashboards correct in that
+// window. When ledgerBalances is provided and non-empty, the reader wins.
 export function holdingBalances(
   methods: PaymentMethod[],
   payments: Payment[],
   stepsByPayment: Map<string, PaymentStep[]>,
   withdrawals: Withdrawal[],
   spends: Spend[] = [],
+  ledgerBalances?: Map<string, number> | null,
 ): HoldingBalanceRow[] {
   const holding = methods.filter((m) => m.is_holding);
   if (holding.length === 0) return [];
   const holdingIds = new Set(holding.map((m) => m.id));
+
+  // Phase 1.5: ledger short-circuit. When the caller provides a
+  // ledger-derived balance map and any holding wallet has an entry, we
+  // trust the canonical reader and skip the source-table sums. Wallets
+  // without a ledger entry fall through to the math below — covers
+  // partially-backfilled accounts cleanly.
+  if (ledgerBalances && ledgerBalances.size > 0) {
+    const ledgerRows: HoldingBalanceRow[] = [];
+    for (const m of holding) {
+      if (!ledgerBalances.has(m.id)) continue;
+      const opening = Number(m.opening_balance_base ?? 0);
+      const balance = ledgerBalances.get(m.id) ?? opening;
+      const tolerance = Number(m.overdraft_tolerance_base ?? 0);
+      ledgerRows.push({
+        methodId: m.id,
+        name: m.name,
+        opening,
+        received: 0,
+        withdrawn: 0,
+        spent: 0,
+        balance,
+        overdraftToleranceBase: tolerance,
+        status: walletStatus(balance, tolerance),
+      });
+    }
+    // If the ledger covered every holding wallet, return its results.
+    // Otherwise fall through and merge with source-table math for the gaps.
+    if (ledgerRows.length === holding.length) return ledgerRows;
+  }
 
   // Anchor on payment_methods is two columns:
   //   - opening_balance_set_at (TIMESTAMPTZ, migration 0049) — the moment the

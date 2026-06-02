@@ -14,7 +14,11 @@ import { GoogleGenAI } from "@google/genai";
 
 let client: GoogleGenAI | null = null;
 
-export const HEAVY_MODEL = "gemini-3.1-pro-preview";
+// Both tiers accept env overrides so ops can flip models without a code
+// change when Google promotes a preview alias to stable (or yanks it).
+// GEMINI_HEAVY_MODEL mirrors the GEMINI_FAST_MODEL pattern below.
+export const HEAVY_MODEL =
+  process.env.GEMINI_HEAVY_MODEL ?? "gemini-3.1-pro-preview";
 
 export const FAST_MODEL =
   process.env.GEMINI_FAST_MODEL ?? "gemini-2.5-flash-lite";

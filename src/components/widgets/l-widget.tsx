@@ -2,6 +2,7 @@
 
 import { forwardRef, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { AiDot, type AiDotCardContext } from "./ai-dot";
 
 // Freelane L widget — ~340 x 340. Hero + chart + 4-6 supporting. Opt-in only.
 
@@ -16,6 +17,8 @@ export type LWidgetProps = {
   className?: string;
   tone?: "default" | "lime" | "terracotta" | "rose" | "muted";
   onOpen?: () => void;
+  warning?: ReactNode;
+  aiDot?: AiDotCardContext;
 };
 
 const TONE_RING: Record<NonNullable<LWidgetProps["tone"]>, string> = {
@@ -27,7 +30,7 @@ const TONE_RING: Record<NonNullable<LWidgetProps["tone"]>, string> = {
 };
 
 export const LWidget = forwardRef<HTMLDivElement, LWidgetProps>(function LWidget(
-  { label, eyebrow, icon, hero, sub, chart, supporting, className, tone = "default", onOpen },
+  { label, eyebrow, icon, hero, sub, chart, supporting, className, tone = "default", onOpen, warning, aiDot },
   ref,
 ) {
   const clickable = !!onOpen;
@@ -78,6 +81,8 @@ export const LWidget = forwardRef<HTMLDivElement, LWidgetProps>(function LWidget
       {supporting && (
         <div className="text-[12px] leading-snug text-muted-foreground">{supporting}</div>
       )}
+      {warning && <div>{warning}</div>}
+      {aiDot && <AiDot card={aiDot} />}
     </div>
   );
 });

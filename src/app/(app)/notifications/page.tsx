@@ -1,7 +1,10 @@
 import { Bell } from "lucide-react";
-import { listInbox, type Notification } from "@/lib/notifications/dispatcher";
-import { getCurrentWellbeingCheckin } from "@/lib/data/queries";
-import { promptForWeek } from "@/lib/ai/tuesday-checkin";
+import {
+  listInbox,
+  readNotificationSettings,
+  type Notification,
+} from "@/lib/notifications/dispatcher";
+import { DEFAULT_NOTIFICATION_SETTINGS } from "@/lib/notifications/types";
 import { NotificationsView } from "./_components/notifications-view";
 
 export const metadata = { title: "Notifications" };
@@ -15,30 +18,26 @@ export default async function NotificationsPage({
 }) {
   const sp = (await searchParams) ?? {};
   let rows: Notification[] = [];
-  let tuesdayPrompt = "";
-  let tuesdayCheckin: Awaited<ReturnType<typeof getCurrentWellbeingCheckin>> = null;
+  let retentionDays = DEFAULT_NOTIFICATION_SETTINGS.retention_days;
+  let retentionForever = DEFAULT_NOTIFICATION_SETTINGS.retention_forever;
   try {
-    rows = await listInbox(120);
+    const [r, settings] = await Promise.all([
+      listInbox(120),
+      readNotificationSettings(),
+    ]);
+    rows = r;
+    retentionDays = settings.retention_days;
+    retentionForever = settings.retention_forever;
   } catch {
     rows = [];
-  }
-  if (sp.open === "tuesday") {
-    try {
-      [tuesdayPrompt, tuesdayCheckin] = await Promise.all([
-        promptForWeek(),
-        getCurrentWellbeingCheckin(),
-      ]);
-    } catch {
-      tuesdayPrompt = "";
-    }
   }
   return (
     <NotificationsView
       rows={rows}
       icon={Bell}
-      openTuesday={sp.open === "tuesday"}
-      tuesdayPrompt={tuesdayPrompt}
-      tuesdayCheckin={tuesdayCheckin}
+      retentionDays={retentionDays}
+      retentionForever={retentionForever}
+      legacyOpenTuesday={sp.open === "tuesday"}
     />
   );
 }

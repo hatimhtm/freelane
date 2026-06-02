@@ -4,6 +4,8 @@ import { gemini, hasGemini } from "./gemini";
 import { HEAVY_MODEL } from "./models";
 import { buildCashflowAtlas, type CashflowAtlas } from "@/lib/cashflow-atlas";
 import { holdingBalances } from "@/lib/payment-chain";
+import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
+import { logLedgerReadFailure } from "@/lib/data/money-ledger";
 import { plannedInRange } from "@/lib/planned-spends";
 import { formatMoney } from "@/lib/money";
 import { phtDateString } from "@/lib/utils";
@@ -159,13 +161,24 @@ function extractMoments(atlas: CashflowAtlas): ForecastMoment[] {
 
 export async function generateForecastStory(inputs: ForecastInputs): Promise<ForecastStory> {
   const now = inputs.now ?? new Date();
-  const atlas = buildCashflowAtlas({ ...inputs, now, horizonDays: HORIZON_DAYS });
+  // Phase 1.5: ledger reader first; thread through atlas + holdings.
+  const forecastLedgerBalanceMap = await computeWalletBalancesFromLedger(inputs.methods).catch(
+    (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      void logLedgerReadFailure(`forecast-storyteller wallet-balance read: ${message}`);
+      return new Map();
+    },
+  );
+  const forecastLedgerBalanceForChain = new Map<string, number>();
+  for (const [k, v] of forecastLedgerBalanceMap) forecastLedgerBalanceForChain.set(k, v.balance);
+  const atlas = buildCashflowAtlas({ ...inputs, ledgerBalances: forecastLedgerBalanceForChain, now, horizonDays: HORIZON_DAYS });
   const holdings = holdingBalances(
     inputs.methods,
     inputs.payments,
     inputs.stepsByPayment,
     inputs.withdrawals,
     inputs.spends,
+    forecastLedgerBalanceForChain,
   );
   const startBalance = holdings.reduce((s, h) => s + h.balance, 0);
   const moments = extractMoments(atlas);

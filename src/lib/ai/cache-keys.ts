@@ -30,6 +30,45 @@ export const BRAIN_TTL = {
   YEAR_RECALL: 24 * 60 * 60 * 1000,
   INCOME_STRIP: 24 * 60 * 60 * 1000,
   TIGHT_MODE: 24 * 60 * 60 * 1000,
+  // Chatbot stack (see freelane-chatbot-design memory).
+  //   CHATBOT_PILLS: lazy on modal open — 5m is fine, the page snapshot
+  //     barely shifts in that window. Forced regen on financial mutation
+  //     via ALL_BRAIN_KEYS still keeps things honest.
+  //   STATE_SNAPSHOT: full Freelane situation digest sent into the Pro
+  //     chat-answer brain on session start. 5m TTL + significant-event
+  //     invalidation gives the model fresh ground without re-billing every
+  //     keystroke.
+  //   SESSION_DIGEST: terminal (written once per session-end); the value
+  //     never changes after that, so the TTL is effectively the row's
+  //     lifetime. 24h here is just a cache-shelf marker.
+  //   PICK_NEXT_QUESTION: selection is cheap to re-run on state change —
+  //     1h is the calm-time freshness; explicit invalidation on new
+  //     wallet/client/vendor/plan still beats the TTL.
+  CHATBOT_PILLS: 5 * 60 * 1000,
+  STATE_SNAPSHOT: 5 * 60 * 1000,
+  SESSION_DIGEST: 24 * 60 * 60 * 1000,
+  PICK_NEXT_QUESTION: 60 * 60 * 1000,
+  // Dashboard money tab forecast — plain-English summary of the next 30
+  // days driven by the unified ledger + active plans + upcoming recurring
+  // outflows. 24h TTL like the rest of the Pro-model brains. Explicit
+  // invalidation on every spend/payment/plan mutation keeps the freshness
+  // honest between calendar buckets.
+  FORECAST_SUMMARY: 24 * 60 * 60 * 1000,
+  // Sadaka workflow.
+  //   SADAKA_SUGGESTED_TODAY: 24h, PHT-day anchored. The daily nudge
+  //     re-evaluates once per PHT day; financial-mutation invalidation
+  //     keeps it honest between bills + spends.
+  //   SADAKA_CONTRIBUTION_RATE: catalogue-only — the brain runs uncached
+  //     (no withBrainCache wrapper at the call site). TTL is set to 0 so a
+  //     reader of this table sees the truth instead of a stale "60s"
+  //     marker. The entry exists so invalidation logic that iterates
+  //     ALL_BRAIN_KEYS keeps parity.
+  //   SPEND_SADAKA_CLASSIFIER: very long TTL — write-once per spend (the
+  //     fingerprint includes the spend_id, so re-classifying the same spend
+  //     is a cache hit until the spend is edited or the cache is dropped).
+  SADAKA_SUGGESTED_TODAY: 24 * 60 * 60 * 1000,
+  SADAKA_CONTRIBUTION_RATE: 0,
+  SPEND_SADAKA_CLASSIFIER: 30 * 24 * 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -47,6 +86,14 @@ export const BRAIN_KEYS = {
   YEAR_RECALL: "year_recall",
   INCOME_STRIP: "income_strip",
   TIGHT_MODE: "tight_mode",
+  CHATBOT_PILLS: "chatbot_pills",
+  STATE_SNAPSHOT: "state_snapshot",
+  SESSION_DIGEST: "session_digest",
+  PICK_NEXT_QUESTION: "pick_next_question",
+  FORECAST_SUMMARY: "forecast_summary",
+  SADAKA_SUGGESTED_TODAY: "sadaka_suggested_today",
+  SADAKA_CONTRIBUTION_RATE: "sadaka_contribution_rate",
+  SPEND_SADAKA_CLASSIFIER: "spend_sadaka_classifier",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -70,6 +117,14 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.YEAR_RECALL]: BRAIN_TTL.YEAR_RECALL,
   [BRAIN_KEYS.INCOME_STRIP]: BRAIN_TTL.INCOME_STRIP,
   [BRAIN_KEYS.TIGHT_MODE]: BRAIN_TTL.TIGHT_MODE,
+  [BRAIN_KEYS.CHATBOT_PILLS]: BRAIN_TTL.CHATBOT_PILLS,
+  [BRAIN_KEYS.STATE_SNAPSHOT]: BRAIN_TTL.STATE_SNAPSHOT,
+  [BRAIN_KEYS.SESSION_DIGEST]: BRAIN_TTL.SESSION_DIGEST,
+  [BRAIN_KEYS.PICK_NEXT_QUESTION]: BRAIN_TTL.PICK_NEXT_QUESTION,
+  [BRAIN_KEYS.FORECAST_SUMMARY]: BRAIN_TTL.FORECAST_SUMMARY,
+  [BRAIN_KEYS.SADAKA_SUGGESTED_TODAY]: BRAIN_TTL.SADAKA_SUGGESTED_TODAY,
+  [BRAIN_KEYS.SADAKA_CONTRIBUTION_RATE]: BRAIN_TTL.SADAKA_CONTRIBUTION_RATE,
+  [BRAIN_KEYS.SPEND_SADAKA_CLASSIFIER]: BRAIN_TTL.SPEND_SADAKA_CLASSIFIER,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache

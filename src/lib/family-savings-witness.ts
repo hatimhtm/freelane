@@ -37,6 +37,10 @@ export interface FamilySavingsInputs {
   methods: PaymentMethod[];
   stepsByPayment: Map<string, PaymentStep[]>;
   rates: ExchangeRate[];
+  // Phase 1.5: optional precomputed ledger-derived balance map. When
+  // provided, holdingBalances() short-circuits to ledger truth for covered
+  // wallets. Undefined → source-table math (unchanged).
+  ledgerBalances?: Map<string, number> | null;
   now?: Date;
 }
 
@@ -48,6 +52,7 @@ export function computeFamilySavings(inputs: FamilySavingsInputs): FamilySavings
     inputs.stepsByPayment,
     inputs.withdrawals,
     inputs.spends,
+    inputs.ledgerBalances,
   );
   const totalWallets = holdings.reduce((s, h) => s + h.balance, 0);
 
