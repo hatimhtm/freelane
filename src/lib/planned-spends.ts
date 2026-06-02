@@ -35,7 +35,11 @@ export function plannedInRange(
 ): PlannedSpendsInRange {
   const includeWindow = opts.includeWindow ?? true;
   const rows = planned.filter((p) => {
-    if (p.status !== "planned") return false;
+    // Migration 0088 — 'active' is the redesign-vocabulary alias for
+    // "intent declared, not yet bought". Old 'planned' rows still count
+    // identically, so both flow through here. 'bought'/'done'/'cancelled'/
+    // 'abandoned' are EXCLUDED — they're history, not future obligation.
+    if (p.status !== "planned" && p.status !== "active") return false;
     const center = parseLocalDate(p.planned_for);
     if (includeWindow) {
       const win = p.planned_for_window_days || 0;
@@ -49,13 +53,13 @@ export function plannedInRange(
   return { total, rows };
 }
 
-// The committed pool — what's already locked. Subtracted from holding wallet
-// "spendable" surface so safe-to-spend reflects "after the lock" without
-// touching the raw balance.
-export function committedPoolBase(planned: PlannedSpend[]): number {
-  return planned
-    .filter((p) => p.status === "committed")
-    .reduce((s, p) => s + Number(p.committed_base ?? p.expected_base ?? 0), 0);
+// Migration 0088 collapsed the lock mechanism — there is no "committed
+// pool" anymore. The function is preserved as a 0-returning stub so
+// any historical call site keeps compiling until they migrate. New code
+// should NOT call this — daily safe is governed entirely by the
+// safe-to-spend.applyStrategy hook now.
+export function committedPoolBase(_planned: PlannedSpend[]): number {
+  return 0;
 }
 
 // Mirror parseLocalDate from dashboard-calc to handle "YYYY-MM-DD" without
@@ -87,7 +91,7 @@ export function bigPlansUpcoming(
   const horizonEnd = new Date(now.getTime() + withinDays * DAY_MS);
   return planned
     .filter((p) => p.is_big_plan)
-    .filter((p) => p.status === "planned" || p.status === "committed")
+    .filter((p) => p.status === "planned" || p.status === "active")
     .filter((p) => {
       const d = parseLocalDate(p.planned_for);
       return d >= now && d <= horizonEnd;

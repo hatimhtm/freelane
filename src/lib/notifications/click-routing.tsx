@@ -12,6 +12,7 @@ import { TuesdayCheckinLoader } from "@/components/app/tuesday-checkin-loader";
 import { ClarifyingQuestionCard } from "@/components/app/chatbot/clarifying-question-card";
 import { useNotificationModal } from "@/components/app/notification-modal-host";
 import { acceptClientPatternAnswer } from "@/lib/ai/facts-actions";
+import { rateSatisfaction } from "@/app/(app)/plans/_actions/plan-actions";
 
 // Generalized click-routing for notification bell + /notifications + the
 // ?notification=<id> deep-link interceptor.
@@ -82,6 +83,46 @@ const KIND_HANDLERS: Record<string, ClickHandler> = {
   },
   sadaka_nudge: (_n, _openModal, navigate) => {
     navigate("/sadaka");
+  },
+  // Plans redesign — three new kinds.
+  plan_satisfaction_check: (n, openModal) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: {
+        plan_id?: string;
+        plan_label?: string;
+        question_text?: string | null;
+        suggested_followups?: string[];
+      };
+    };
+    const planId = payload.kind_specific?.plan_id;
+    const planLabel = payload.kind_specific?.plan_label ?? "purchase";
+    const questionText =
+      payload.kind_specific?.question_text || n.subject || null;
+    const suggested = payload.kind_specific?.suggested_followups ?? [];
+    if (!planId) return;
+    openModal(
+      <PlanSatisfactionModalBody
+        planId={planId}
+        planLabel={planLabel}
+        questionText={questionText}
+        suggestedFollowups={suggested}
+      />,
+      { title: n.subject, description: undefined },
+    );
+  },
+  plan_strategy_stale: (n, _openModal, navigate) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: { plan_id?: string };
+    };
+    const planId = payload.kind_specific?.plan_id;
+    navigate(planId ? `/plans?focus=${planId}` : "/plans");
+  },
+  plan_target_approaching: (n, _openModal, navigate) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: { plan_id?: string };
+    };
+    const planId = payload.kind_specific?.plan_id;
+    navigate(planId ? `/plans?focus=${planId}` : "/plans");
   },
   // ai_clarifying_question routes through the chatbot's renderer so the
   // answer flows into ai_user_facts (source='user_answered', confidence=1.0)
@@ -317,6 +358,112 @@ function ClientPatternAnswerModalBody({
             Send
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Plan satisfaction body: 1-5 star picker + AI-tailored question +
+// 2-3 quick-tap suggested follow-ups (toggleable chips) + optional
+// free-text note. Writes via rateSatisfaction; the action persists the
+// rating + satisfaction_note (migration 0090 separates this from the
+// user's general plan notes).
+function PlanSatisfactionModalBody({
+  planId,
+  planLabel,
+  questionText,
+  suggestedFollowups,
+}: {
+  planId: string;
+  planLabel: string;
+  questionText: string | null;
+  suggestedFollowups: string[];
+}) {
+  const { closeModal } = useNotificationModal();
+  const [stars, setStars] = useState<number>(0);
+  const [note, setNote] = useState<string>("");
+  const [chips, setChips] = useState<Set<string>>(new Set());
+  const [pending, start] = useTransition();
+  const toggleChip = (s: string) => {
+    setChips((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+  };
+  const submit = () => {
+    if (stars <= 0) return;
+    // Compose the saved note from selected chips + free-text. Chip
+    // labels come first so the saved string reads like a tag list
+    // followed by the optional sentence.
+    const chipPart = Array.from(chips).join(", ");
+    const composed = [chipPart, note.trim()].filter(Boolean).join(" — ");
+    start(async () => {
+      const res = await rateSatisfaction(planId, stars, composed || null);
+      if (!res.ok) {
+        toast.error(res.error || "Couldn't save.");
+        return;
+      }
+      closeModal();
+    });
+  };
+  const question = questionText ?? `How is the ${planLabel} working out?`;
+  return (
+    <div className="space-y-3">
+      <p className="text-sm font-medium text-foreground">{question}</p>
+      <div className="flex gap-1.5">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setStars(n)}
+            className={
+              "rounded-full border px-3 py-1.5 text-sm font-medium " +
+              (stars >= n
+                ? "border-foreground bg-foreground text-background"
+                : "border-border/70 text-foreground/80 hover:bg-muted")
+            }
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      {suggestedFollowups.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {suggestedFollowups.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => toggleChip(s)}
+              className={
+                "rounded-full border px-3 py-1 text-[12px] " +
+                (chips.has(s)
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border/70 text-foreground/80 hover:bg-muted")
+              }
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Optional note — what worked, what didn't"
+        rows={3}
+        className="w-full resize-none rounded-lg border border-border/70 bg-card px-3 py-2 text-sm"
+      />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={submit}
+          disabled={pending || stars <= 0}
+          className="rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-40"
+        >
+          {pending ? "Saving..." : "Save"}
+        </button>
       </div>
     </div>
   );

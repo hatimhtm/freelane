@@ -143,8 +143,10 @@ async function buildEidPrepCard(
     return d >= lastYearStart && d <= lastYearEnd;
   });
   const lastYearTotal = lastYearSpends.reduce((sum, s) => sum + Number(s.amount_base ?? 0), 0);
+  // Migration 0088 — committed_base column is gone. Plans contribute
+  // their expected_base directly to the parking estimate.
   const existingPlansBase = w.existingPlans.reduce(
-    (sum, p) => sum + Number(p.committed_base ?? p.expected_base ?? 0),
+    (sum, p) => sum + Number(p.expected_base ?? 0),
     0,
   );
   // Suggested parking: last year's total minus what's already planned. Floor 0.

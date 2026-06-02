@@ -7,6 +7,7 @@
 // dispatches the kind will be wired by default.
 
 import {
+  AlertCircle,
   AlertTriangle,
   Bell,
   CalendarClock,
@@ -17,6 +18,7 @@ import {
   MessageCircle,
   RefreshCw,
   Sparkles,
+  Star,
   Store,
   UserCog,
   Wallet,
@@ -90,6 +92,22 @@ export const KNOWN_KINDS: KindMeta[] = [
     label: "Tell me about a vendor",
     description: "The brain spotted an unknown vendor and wants a quick description to find a brand glyph.",
   },
+  // Plans redesign (migrations 0088-0089) — three new kinds.
+  {
+    key: "plan_satisfaction_check",
+    label: "Plan satisfaction check",
+    description: "Two weeks after a purchase — a 1-5 rating plus an optional note.",
+  },
+  {
+    key: "plan_strategy_stale",
+    label: "Plan strategy off-track",
+    description: "An active savings strategy hasn't been holding up. Alternatives are ready.",
+  },
+  {
+    key: "plan_target_approaching",
+    label: "Plan target approaching",
+    description: "Thirty days before a plan's target date — a quiet heads-up.",
+  },
 ];
 
 export const KNOWN_KIND_KEYS = new Set(KNOWN_KINDS.map((k) => k.key));
@@ -110,6 +128,9 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   sadaka_nudge: HandHeart,
   client_pattern_change: UserCog,
   vendor_identify_request: Store,
+  plan_satisfaction_check: Star,
+  plan_strategy_stale: AlertCircle,
+  plan_target_approaching: CalendarClock,
 };
 
 export function iconForKind(kind: string): LucideIcon {

@@ -181,18 +181,24 @@ export function buildCashflowAtlas(inputs: CashflowAtlasInputs): CashflowAtlas {
     slot.events.push({ kind: "loan", label: "Loan installment", amount: amt });
   }
 
-  // Planned + committed spends — count at planned_for date. Cancelled + done
-  // are EXCLUDED. Committed plans show on the atlas because the spend still
-  // physically happens on the planned date (the lock just earmarks the money
-  // ahead of time, it doesn't fast-forward the outflow).
+  // Planned spends — count at planned_for date. Terminal statuses
+  // (bought / done / cancelled / abandoned) are EXCLUDED. Migration 0088
+  // collapsed the lock mechanism — 'active' and 'planned' both signal
+  // a forward obligation now.
   for (const plan of inputs.plannedSpends) {
-    if (plan.status === "cancelled" || plan.status === "done") continue;
+    if (
+      plan.status === "cancelled" ||
+      plan.status === "done" ||
+      plan.status === "bought" ||
+      plan.status === "abandoned"
+    )
+      continue;
     const due = parseLocalDate(plan.planned_for);
     if (due < start) continue;
     const dueKey = keyForDay(due);
     const slot = byKey.get(dueKey);
     if (!slot) continue;
-    const amt = Number(plan.committed_base ?? plan.expected_base ?? 0);
+    const amt = Number(plan.expected_base ?? 0);
     slot.plannedSpend += amt;
     slot.events.push({ kind: "planned", label: plan.label, amount: amt });
   }

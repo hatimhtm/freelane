@@ -5,6 +5,7 @@ import type {
   PaymentMethod,
   PaymentStep,
   PlannedSpend,
+  PlanStrategy,
   RecurringSpend,
   RecurringSpendSkip,
   Spend,
@@ -19,7 +20,7 @@ import {
 } from "@/lib/dashboard-calc";
 import { holdingBalances } from "@/lib/payment-chain";
 import { PH_DAILY_FLOOR_BASE } from "@/lib/ph-col";
-import { committedPoolBase, plannedInRange } from "@/lib/planned-spends";
+import { plannedInRange } from "@/lib/planned-spends";
 
 const DAY_MS = 86_400_000;
 
@@ -61,6 +62,11 @@ export interface SafeToSpendInputs {
   // When provided, holdingBalances() short-circuits to ledger truth for
   // covered wallets. Undefined → legacy source-table math (unchanged).
   ledgerBalances?: Map<string, number> | null;
+  // Migration 0089 — active plan strategies. When supplied, each
+  // strategy's monthly_save_estimate / 30 is subtracted from the daily
+  // safe (applyStrategy below). Pluggable so future workflows can
+  // introduce more user-activated reductions without re-wiring.
+  activePlanStrategies?: PlanStrategy[];
   now?: Date;
   horizonDays?: number;
 }
@@ -119,6 +125,8 @@ export interface SafeToSpendDataLike {
   // Dashboard, Spending, Plans loaders) pass it in so the safe-to-spend
   // headline reads the same canonical wallet truth.
   ledgerBalances?: Map<string, number> | null;
+  // Migration 0089 — see SafeToSpendInputs.activePlanStrategies.
+  activePlanStrategies?: PlanStrategy[];
 }
 
 export function computeSafeToSpendFromData(
@@ -137,9 +145,69 @@ export function computeSafeToSpendFromData(
     rates: data.rates,
     plannedSpends: data.plannedSpends ?? [],
     ledgerBalances: data.ledgerBalances,
+    activePlanStrategies: data.activePlanStrategies ?? [],
     now,
   });
 }
+
+// ─────────────────────────── Plan strategy hooks (migration 0089) ──
+//
+// Active plan strategies reduce the live daily safe by their daily
+// equivalent (monthly_save_estimate / 30). Plans is the FIRST external
+// consumer of this hook; future workflows can supply their own strategy
+// rows that share the shape.
+//
+// Pure transformer — no DB, no IO. The reducer is applied INSIDE
+// safeToSpend() so every surface that reads computeSafeToSpendFromData
+// inherits the reduction automatically when the caller passes
+// activePlanStrategies through.
+
+export interface DailySafeReductionStrategy {
+  strategy_id: string;
+  plan_id: string;
+  kind: string;
+  monthly_save_estimate: number | null;
+  active: boolean;
+}
+
+// Daily reduction contribution from a single active strategy.
+// Returns 0 for inactive strategies or non-numeric estimates so callers
+// can safely .map / .reduce without guards.
+//
+// The /30 divisor is intentional and DOES NOT scale with horizonDays.
+// The strategy's monthly_save_estimate is a per-month commitment the
+// user has opted into; the daily equivalent is m/30 regardless of how
+// many days the caller is projecting over. Other commitments (recurring
+// forward, loan forward, planned horizon, recovery tax) ARE scaled to
+// horizonDays in safeToSpend() because they represent windowed totals,
+// not per-month rates. Don't unify these without rethinking the model
+// — at horizonDays=60 the surplus must absorb 60 days of strategy
+// reduction (m/30 * 60 = 2m) which already happens because the daily
+// safe is per-day, not per-window.
+export function strategyDailyReductionBase(s: DailySafeReductionStrategy): number {
+  if (!s.active) return 0;
+  const m = Number(s.monthly_save_estimate ?? 0);
+  if (!Number.isFinite(m) || m <= 0) return 0;
+  return m / 30;
+}
+
+// Total daily reduction across an array of strategies. The sum is
+// already in base currency / day.
+export function totalStrategyDailyReductionBase(
+  strategies: DailySafeReductionStrategy[],
+): number {
+  return strategies.reduce((s, st) => s + strategyDailyReductionBase(st), 0);
+}
+
+// applyStrategiesToLive / removeStrategiesFromLive used to exist here as
+// public composers that layered the daily reduction on top of a
+// previously-computed SafeToSpendLive. They were never called —
+// activePlanStrategies is now threaded through safeToSpend() directly,
+// so the reduction is baked into safeTodayBase (and therefore
+// initialForToday) before computeSafeToSpend ever sees it. Dropped to
+// avoid two-source-of-truth drift; the underlying clamping asymmetry
+// (apply clamped at 0 while remove did not) made them unsafe as
+// general inverses anyway.
 
 // ─────────────────────────── LIVE DAILY SAFE (Spendings workflow) ──
 // computeSafeToSpend exposes the two-number contract the Spend modal,
@@ -281,17 +349,15 @@ export function safeToSpend(inputs: SafeToSpendInputs): SafeToSpendBreakdown {
     (trailingFeesTotal * horizonDays) / TRAILING_LOOKBACK_DAYS,
   );
 
-  // Planned spends inside [now, horizonEnd] + the always-locked committed pool.
-  // The committed pool is OUTSIDE horizon-bound (it's locked regardless of when
-  // it'll spend); planned-in-horizon is the window-specific obligation.
+  // Planned spends inside [now, horizonEnd]. Migration 0088 collapsed
+  // the lock mechanism; "committed plans" no longer exist. The daily
+  // pressure of a plan is governed by active plan_strategies via the
+  // strategy reduction below.
   const planned = inputs.plannedSpends ?? [];
   const plannedHorizon = plannedInRange(planned, now, horizonEnd).total;
-  const committed = committedPoolBase(planned);
+  const committed = 0;
   if (plannedHorizon > 0) {
     notes.push(`Planned spends in window: ${plannedHorizon.toFixed(0)} (subtracted before allowance).`);
-  }
-  if (committed > 0) {
-    notes.push(`Locked (committed plans): ${committed.toFixed(0)} parked, not spendable.`);
   }
 
   const committedPool = recurringForward + loanForward + feeFloor + plannedHorizon + committed;
@@ -344,7 +410,28 @@ export function safeToSpend(inputs: SafeToSpendInputs): SafeToSpendBreakdown {
   const dailyAllowance = Math.max(colFloor, dailyAllowanceRaw);
   const patternMultiplier = 1.0;  // Phase 3: AI replaces with learned per-you value
   const surplus = Math.max(0, dailyAllowanceRaw - colFloor);
-  const safeToday = colFloor + surplus * stabilityMultiplier * patternMultiplier;
+  // Migration 0089 — active plan strategies subtract their daily
+  // equivalent from the surplus. The COL floor is never breached: if
+  // the reduction would push below the floor, the floor wins and the
+  // remaining reduction is absorbed by the "we'll get there a bit
+  // slower" reality. Plans is the first external consumer; future
+  // strategy sources plug in via the same input list.
+  const strategyReduction = totalStrategyDailyReductionBase(
+    (inputs.activePlanStrategies ?? []).map((s) => ({
+      strategy_id: s.id,
+      plan_id: s.plan_id,
+      kind: s.strategy_kind,
+      monthly_save_estimate: s.monthly_save_estimate,
+      active: s.active,
+    })),
+  );
+  if (strategyReduction > 0) {
+    notes.push(
+      `Active plan strategies trim ${strategyReduction.toFixed(0)}/day from surplus.`,
+    );
+  }
+  const adjustedSurplus = Math.max(0, surplus * stabilityMultiplier * patternMultiplier - strategyReduction);
+  const safeToday = colFloor + adjustedSurplus;
 
   if (dailyAllowanceRaw < colFloor) {
     notes.push(

@@ -32,6 +32,7 @@ import type {
   AiQuestion,
   PriceIntelligenceRow,
   PlannedSpend,
+  PlanStrategy,
   CalmWeatherState,
   AppChangelogEntry,
   Vendor,
@@ -198,6 +199,16 @@ export async function getDashboardData() {
       .maybeSingle(),
   ]);
 
+  // Migration 0089 — active strategies feed safe-to-spend so the
+  // dashboard headline reflects the user's plan choices. We read after
+  // the Promise.all batch above so the daily-safe surfaces (Income
+  // Strip, Pack Rhythm, Wallet Runway) inherit the reduction.
+  const activePlanStrategiesQ = await supabase
+    .from("plan_strategies")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("active", true);
+
   const paymentRows = (payments.data ?? []) as Payment[];
   const spendRows = (spends.data ?? []) as Spend[];
   const [
@@ -257,6 +268,7 @@ export async function getDashboardData() {
     paymentAllocations,
     openAiQuestions: (openAiQuestions.data ?? []) as AiQuestion[],
     plannedSpends: (plannedSpends.data ?? []) as PlannedSpend[],
+    activePlanStrategies: (activePlanStrategiesQ.data ?? []) as PlanStrategy[],
     calmWeather: ((calmWeather.data?.payload as CalmWeatherState | undefined) ?? null) as CalmWeatherState | null,
     vendors: (vendors.data ?? []) as Vendor[],
     vendorAliases: (vendorAliases.data ?? []) as VendorAlias[],
@@ -547,7 +559,7 @@ export async function getSpendingData() {
   ]);
   const spendRows = (spends.data ?? []) as Spend[];
   const paymentRows = (payments.data ?? []) as Payment[];
-  const [spendCategoryLinks, spendItems, stepsByPayment] = await Promise.all([
+  const [spendCategoryLinks, spendItems, stepsByPayment, activePlanStrategiesQ] = await Promise.all([
     fetchSpendCategoryLinks(supabase, spendRows.map((s) => s.id)),
     (async () => {
       if (spendRows.length === 0) return [] as SpendItem[];
@@ -559,6 +571,13 @@ export async function getSpendingData() {
       return (data ?? []) as SpendItem[];
     })(),
     fetchStepsByPayment(supabase, paymentRows.map((p) => p.id)),
+    // Migration 0089 — active strategies feed safe-to-spend so the
+    // Spending dial inherits the daily-safe reduction.
+    supabase
+      .from("plan_strategies")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("active", true),
   ]);
   return {
     spends: spendRows,
@@ -578,6 +597,7 @@ export async function getSpendingData() {
     stepsByPayment,
     openAiQuestions: (openAiQuestions.data ?? []) as AiQuestion[],
     plannedSpends: (plannedSpends.data ?? []) as PlannedSpend[],
+    activePlanStrategies: (activePlanStrategiesQ.data ?? []) as PlanStrategy[],
     calmWeather: ((calmWeather.data?.payload as CalmWeatherState | undefined) ?? null) as CalmWeatherState | null,
   };
 }
@@ -768,6 +788,7 @@ export async function getPlansData() {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
   const [
     plannedSpends,
+    planStrategies,
     spends,
     payments,
     withdrawals,
@@ -782,6 +803,15 @@ export async function getPlansData() {
     calmWeather,
   ] = await Promise.all([
     supabase.from("planned_spends").select("*").eq("user_id", user.id).order("planned_for"),
+    // Migration 0089 — all proposed + active strategies for the user.
+    // The detail sheet reads per-plan slices; the daily-safe math reads
+    // the activePlanStrategies subset.
+    supabase
+      .from("plan_strategies")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("plan_id")
+      .order("rank"),
     supabase.from("spends").select("*").eq("user_id", user.id).order("spent_at", { ascending: false }),
     supabase.from("payments").select("*").eq("user_id", user.id).order("paid_at", { ascending: false }),
     supabase.from("withdrawals").select("*").eq("user_id", user.id).order("withdrawn_at", { ascending: false }),
@@ -807,8 +837,14 @@ export async function getPlansData() {
   ]);
   const paymentRows = (payments.data ?? []) as Payment[];
   const stepsByPayment = await fetchStepsByPayment(supabase, paymentRows.map((p) => p.id));
+  const strategies = (planStrategies.data ?? []) as PlanStrategy[];
   return {
     plannedSpends: (plannedSpends.data ?? []) as PlannedSpend[],
+    planStrategies: strategies,
+    // Slice of strategies the safe-to-spend math should reduce daily
+    // surplus by. Read by every surface that calls
+    // computeSafeToSpendFromData with activePlanStrategies.
+    activePlanStrategies: strategies.filter((s) => s.active),
     spends: (spends.data ?? []) as Spend[],
     payments: paymentRows,
     stepsByPayment,

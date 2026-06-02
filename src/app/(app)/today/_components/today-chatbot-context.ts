@@ -42,6 +42,10 @@ async function buildTodayContext(_userId: string): Promise<PageContext> {
     rates: data.rates,
     plannedSpends: data.plannedSpends,
     ledgerBalances: todayCtxLedgerBalanceForChain,
+    // Migration 0089 — strategy reduction. Chatbot must see the same
+    // Daily Safe the headlines show; otherwise it quotes a number that
+    // contradicts the dial.
+    activePlanStrategies: data.activePlanStrategies,
   });
   const holdings = holdingBalances(
     data.methods,

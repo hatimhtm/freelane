@@ -3392,17 +3392,18 @@ export async function runCuriositySweepAction(): Promise<{
   return summary;
 }
 
-// ───────────────────────────────────────── Planned spends (Tier 1) ──
+// ───────────────────────────────────────── Planned spends (Tier 1 + Plans redesign 2026-06) ──
 //
 // Future intent rows the runway math counts as if already on the calendar.
-// Lifecycle: planned → committed (money parked) → done (materialized as real
-// spend) → or cancelled. Hatim's MacBook + Apple Dev renewal live here.
+// Lifecycle (post-0088 redesign):
+//   planned/active → bought (markPlanBought writes a spend) → or abandoned
+//                  → or cancelled (kept for back-compat with pre-redesign UI)
 //
-// commitPlannedSpend parks the expected_base into a "committed" state. The
-// safe-to-spend formula subtracts that locked amount from the discretionary
-// pool — the money is still physically in the wallet, it's just earmarked.
-// materializePlannedSpend creates a real spends row + links done_spend_id.
-// cancelPlannedSpend drops it from forward math without deleting history.
+// The lock mechanism (committed status + committed_base + committed_at)
+// was removed in migration 0088 — the user can edit any plan anytime,
+// and money no longer parks per plan. AI-proposed savings strategies
+// stored in finance.plan_strategies replace the lock as the way users
+// commit to a plan (via safe-to-spend.applyStrategy).
 
 export type PlannedSpendInput = {
   label: string;
@@ -3415,6 +3416,11 @@ export type PlannedSpendInput = {
   default_category_ids?: string[];
   is_big_plan?: boolean;
   notes?: string | null;
+  // Plans redesign (0088) additions — all optional so callers from older
+  // code paths still type-check.
+  price_source?: "user" | "ai" | "adjusted";
+  target_date?: string | null;
+  justification?: string | null;
 };
 
 export async function createPlannedSpend(input: PlannedSpendInput): Promise<ActionResult<{ id: string }>> {
@@ -3422,8 +3428,8 @@ export async function createPlannedSpend(input: PlannedSpendInput): Promise<Acti
     const { supabase, userId } = await userOrThrow();
     const label = input.label.trim();
     if (!label) throw new Error("Plan needs a label.");
-    if (!(Number(input.expected_amount) > 0)) {
-      throw new Error("Expected amount must be greater than 0.");
+    if (!(Number(input.expected_amount) >= 0)) {
+      throw new Error("Expected amount must be 0 or greater.");
     }
     if (!input.planned_for) throw new Error("Pick a date.");
 
@@ -3451,6 +3457,9 @@ export async function createPlannedSpend(input: PlannedSpendInput): Promise<Acti
         default_category_ids: input.default_category_ids ?? [],
         is_big_plan: !!input.is_big_plan,
         notes: input.notes ?? null,
+        price_source: input.price_source ?? "user",
+        target_date: input.target_date ?? null,
+        justification: input.justification ?? null,
       })
       .select("id")
       .single();
@@ -3484,6 +3493,10 @@ export async function updatePlannedSpend(id: string, input: Partial<PlannedSpend
   if ("default_category_ids" in input) patch.default_category_ids = input.default_category_ids ?? [];
   if ("is_big_plan" in input) patch.is_big_plan = !!input.is_big_plan;
   if ("notes" in input) patch.notes = input.notes ?? null;
+  // Plans redesign (0088) — new fields editable anytime.
+  if ("price_source" in input) patch.price_source = input.price_source ?? "user";
+  if ("target_date" in input) patch.target_date = input.target_date ?? null;
+  if ("justification" in input) patch.justification = input.justification ?? null;
 
   if (input.expected_amount !== undefined || input.expected_currency !== undefined) {
     const { data: existing } = await supabase
@@ -3494,7 +3507,11 @@ export async function updatePlannedSpend(id: string, input: Partial<PlannedSpend
     if (!existing) throw new Error("Plan not found");
     const amount = Number(input.expected_amount ?? existing.expected_amount);
     const currency = (input.expected_currency ?? existing.expected_currency) as string;
-    if (!(amount > 0)) throw new Error("Expected amount must be greater than 0.");
+    // Mirror createPlannedSpend's >= 0 contract — Plans redesign (0088)
+    // supports the "blank price + AI fills" flow on EDIT too, not just
+    // create. A user who clears the price on an existing plan should hit
+    // the same AI re-lookup path as a brand-new plan.
+    if (!(amount >= 0)) throw new Error("Expected amount must be 0 or greater.");
     const { data: rates } = await supabase
       .from("exchange_rates")
       .select("code,rate_to_base")
@@ -3529,99 +3546,18 @@ export async function updatePlannedSpend(id: string, input: Partial<PlannedSpend
   revalidatePath("/dashboard");
 }
 
-// NOT a money_ledger writer. Locking a plan only freezes the EXPECTED
-// amount on the plan row (committed_base + committed_at) so safe-to-spend
-// math can subtract a known number instead of an estimate — no money has
-// actually moved. Real cash movement happens later in createSpend, which
-// IS the ledger writer for the resulting outflow. If a future revision
-// wires reserved sub-wallets at commit time, swap this comment for an
-// insertLedger call + a corresponding archive in uncommitPlannedSpend.
-export async function commitPlannedSpend(id: string) {
-  const { supabase, userId } = await userOrThrow();
-  const { data: plan } = await supabase
-    .from("planned_spends")
-    .select("expected_base,label,status")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!plan) throw new Error("Plan not found");
-  if (plan.status === "done") throw new Error("Plan is already done — can't lock.");
-  if (plan.status === "cancelled") throw new Error("Plan is cancelled — uncancel before locking.");
-  const { error } = await supabase
-    .from("planned_spends")
-    .update({
-      status: "committed",
-      committed_base: Number(plan.expected_base ?? 0),
-      committed_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "planned_spend.committed",
-    title: `Locked · ${plan.label}`,
-    entityType: "planned_spend",
-    entityId: id,
-    metadata: { committed_base: Number(plan.expected_base ?? 0) },
-  });
-  await invalidateAiSafeSpendCache(userId, supabase);
-  // Tier 3 hook: quiet receipt for the lock.
-  try {
-    const { recordQuietReceipt } = await import("@/lib/ai/quiet-receipt-writer");
-    await recordQuietReceipt({
-      kind: "plan_committed",
-      sourceEntityType: "planned_spend",
-      sourceEntityId: id,
-      context: {
-        label: plan.label,
-        committed_base: Number(plan.expected_base ?? 0),
-      },
-    });
-  } catch {
-    // Best-effort.
-  }
-  revalidatePath("/plans");
-  revalidatePath("/today");
-  revalidatePath("/dashboard");
-}
+// Plans redesign (migration 0088) — the lock mechanism (commitPlannedSpend /
+// uncommitPlannedSpend) is REMOVED. The user can edit any plan anytime,
+// and money no longer parks per plan. AI-proposed savings strategies
+// stored in finance.plan_strategies (migration 0089) replace the lock as
+// the way users commit to a plan (via safe-to-spend.applyStrategy).
+//
+// markPlanBought replaces materializePlannedSpend: it still writes a real
+// spend through createSpend, but the plan row tracks bought_at +
+// bought_actual_price for the archive view + the satisfaction-check
+// notification flow.
 
-// Reverse a commit (user changed mind before materializing).
-export async function uncommitPlannedSpend(id: string) {
-  const { supabase, userId } = await userOrThrow();
-  const { data: plan } = await supabase
-    .from("planned_spends")
-    .select("status")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!plan) throw new Error("Plan not found");
-  if (plan.status !== "committed") {
-    throw new Error("Only locked plans can be unlocked.");
-  }
-  const { error } = await supabase
-    .from("planned_spends")
-    .update({ status: "planned", committed_base: null, committed_at: null })
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "planned_spend.updated",
-    title: "Unlocked a plan",
-    entityType: "planned_spend",
-    entityId: id,
-  });
-  await invalidateAiSafeSpendCache(userId, supabase);
-  revalidatePath("/plans");
-  revalidatePath("/today");
-  revalidatePath("/dashboard");
-}
-
-// Materializes the plan into a real spend. Caller provides amount + currency
-// (in case the actual differs from expected) + wallet. Tags inherited from
-// default_category_ids unless overridden.
-export type MaterializePlanInput = {
+export type MarkPlanBoughtInput = {
   amount: number;
   currency: string;
   wallet_id: string;
@@ -3635,70 +3571,107 @@ export type MaterializePlanInput = {
   items?: SpendItemInput[];
 };
 
-export async function materializePlannedSpend(id: string, input: MaterializePlanInput) {
-  const { supabase, userId } = await userOrThrow();
-  const { data: plan } = await supabase
-    .from("planned_spends")
-    .select("*")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!plan) throw new Error("Plan not found");
-  if (plan.status === "done") throw new Error("Plan is already done");
+export async function markPlanBought(
+  id: string,
+  input: MarkPlanBoughtInput,
+): Promise<ActionResult<{ id: string }>> {
+  return safeRun("markPlanBought", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const { data: plan } = await supabase
+      .from("planned_spends")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!plan) throw new Error("Plan not found");
+    if (plan.status === "bought" || plan.status === "done") {
+      throw new Error("Plan is already bought");
+    }
 
-  const result = await createSpend({
-    wallet_id: input.wallet_id,
-    spent_at: input.spent_at,
-    spent_time: input.spent_time ?? null,
-    amount: input.amount,
-    currency: input.currency,
-    description: input.description ?? plan.label,
-    notes: input.notes ?? plan.notes,
-    vat_amount: input.vat_amount ?? null,
-    business_relevant: input.business_relevant,
-    categoryIds: input.categoryIds ?? (plan.default_category_ids ?? []),
-    items: input.items,
-  });
-  if (!result.ok) throw new Error(result.error);
-  const spendId = result.data.id;
-
-  await supabase
-    .from("planned_spends")
-    .update({
-      status: "done",
-      done_spend_id: spendId,
-      done_at: new Date().toISOString(),
-    })
-    .eq("id", id);
-
-  await logEvent({
-    userId,
-    kind: "planned_spend.done",
-    title: `Plan done · ${plan.label}`,
-    entityType: "planned_spend",
-    entityId: id,
-    metadata: { spend_id: spendId },
-  });
-  // Tier 3 hook: quiet receipt for the plan landing.
-  try {
-    const { recordQuietReceipt } = await import("@/lib/ai/quiet-receipt-writer");
-    await recordQuietReceipt({
-      kind: "plan_done",
-      sourceEntityType: "planned_spend",
-      sourceEntityId: id,
-      context: {
-        label: plan.label,
-        spend_id: spendId,
-      },
+    const result = await createSpend({
+      wallet_id: input.wallet_id,
+      spent_at: input.spent_at,
+      spent_time: input.spent_time ?? null,
+      amount: input.amount,
+      currency: input.currency,
+      description: input.description ?? plan.label,
+      notes: input.notes ?? plan.notes,
+      vat_amount: input.vat_amount ?? null,
+      business_relevant: input.business_relevant,
+      categoryIds: input.categoryIds ?? (plan.default_category_ids ?? []),
+      items: input.items,
     });
-  } catch {
-    // Best-effort.
-  }
-  // createSpend above already invalidates both the safe-to-spend cache and
-  // calm_weather_state via invalidateAiSafeSpendCache, so we don't need an
-  // extra mark here. revalidatePath only.
-  revalidatePath("/plans");
-  return { id: spendId };
+    if (!result.ok) throw new Error(result.error);
+    const spendId = result.data.id;
+
+    // Compute the actual price in base for the archive view. The base
+    // rate snapshot lives on the spend row already; we duplicate the
+    // base figure on planned_spends so the archive table doesn't need a
+    // join to render.
+    const { data: rates } = await supabase
+      .from("exchange_rates")
+      .select("code,rate_to_base")
+      .eq("user_id", userId);
+    const actualBase =
+      Math.round(
+        toBaseAmount(Number(input.amount), input.currency, (rates ?? []) as RatePair[]) * 100,
+      ) / 100;
+
+    const boughtAt = input.spent_at ?? phtToday();
+    await supabase
+      .from("planned_spends")
+      .update({
+        status: "bought",
+        done_spend_id: spendId,
+        done_at: new Date().toISOString(),
+        bought_at: boughtAt,
+        bought_actual_price: actualBase,
+      })
+      .eq("id", id);
+
+    // Deactivate any active strategy for the plan — the plan has
+    // completed its cycle. Best-effort: a failure here is harmless
+    // because the daily-safe reduction is read-time only.
+    try {
+      await supabase
+        .from("plan_strategies")
+        .update({ active: false, deactivated_at: new Date().toISOString() })
+        .eq("user_id", userId)
+        .eq("plan_id", id)
+        .eq("active", true);
+    } catch {
+      // Best-effort.
+    }
+
+    await logEvent({
+      userId,
+      kind: "planned_spend.done",
+      title: `Plan bought · ${plan.label}`,
+      entityType: "planned_spend",
+      entityId: id,
+      metadata: { spend_id: spendId, bought_at: boughtAt, actual_base: actualBase },
+    });
+    // Tier 3 hook: quiet receipt for the plan landing.
+    try {
+      const { recordQuietReceipt } = await import("@/lib/ai/quiet-receipt-writer");
+      await recordQuietReceipt({
+        kind: "plan_done",
+        sourceEntityType: "planned_spend",
+        sourceEntityId: id,
+        context: {
+          label: plan.label,
+          spend_id: spendId,
+        },
+      });
+    } catch {
+      // Best-effort.
+    }
+    // createSpend above already invalidates both the safe-to-spend cache and
+    // calm_weather_state via invalidateAiSafeSpendCache, so we don't need an
+    // extra mark here. revalidatePath only.
+    revalidatePath("/plans");
+    return { id: spendId };
+  });
 }
 
 export async function cancelPlannedSpend(id: string) {
@@ -3710,13 +3683,28 @@ export async function cancelPlannedSpend(id: string) {
     .eq("user_id", userId)
     .maybeSingle();
   if (!plan) throw new Error("Plan not found");
-  if (plan.status === "done") throw new Error("Plan is already done — can't cancel.");
+  if (plan.status === "done" || plan.status === "bought") {
+    throw new Error("Plan is already bought — can't cancel.");
+  }
   const { error } = await supabase
     .from("planned_spends")
-    .update({ status: "cancelled", committed_base: null, committed_at: null })
+    .update({ status: "cancelled" })
     .eq("id", id)
     .eq("user_id", userId);
   if (error) throw error;
+  // Cancel MUST deactivate the plan's active strategy, otherwise the
+  // daily-safe reduction keeps shaving surplus indefinitely. Same fix
+  // markPlanBought already applies (lines 3631-3640 above).
+  try {
+    await supabase
+      .from("plan_strategies")
+      .update({ active: false, deactivated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("plan_id", id)
+      .eq("active", true);
+  } catch {
+    // Best-effort.
+  }
   await logEvent({
     userId,
     kind: "planned_spend.cancelled",
@@ -3728,6 +3716,7 @@ export async function cancelPlannedSpend(id: string) {
   revalidatePath("/plans");
   revalidatePath("/today");
   revalidatePath("/dashboard");
+  revalidatePath("/spending");
 }
 
 export async function deletePlannedSpend(id: string) {

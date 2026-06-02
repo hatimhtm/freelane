@@ -1,117 +1,103 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Lock, Plus, Trash2, Unlock, Wallet } from "lucide-react";
-import { toast } from "sonner";
-import { motion } from "motion/react";
+import { Plus, Wallet } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { CashflowAtlasChart } from "@/components/spending/cashflow-atlas-chart";
 import { PrimaryAction } from "@/components/app/primary-action";
+import { MWidget } from "@/components/widgets/m-widget";
+
 import { PlanModal } from "./plan-modal";
-import { PreMortemCard } from "./pre-mortem-card";
+import { PlanDetailSheet } from "./plan-detail-sheet";
 
 import { formatMoney } from "@/lib/money";
-import { cancelPlannedSpend, commitPlannedSpend, uncommitPlannedSpend, deletePlannedSpend } from "@/lib/data/actions";
-import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
-import type { CashflowAtlas } from "@/lib/cashflow-atlas";
 import type {
-  CalmWeatherState,
   CurrencyCode,
   PlannedSpend,
-  PlannedSpendStatus,
-  SpendCategory,
+  PlanStrategy,
 } from "@/lib/supabase/types";
 import type { WalletOpt } from "@/app/(app)/spending/_components/spend-modal";
 
-const EASE = [0.22, 1, 0.36, 1] as const;
+// Plans redesign view (2026-06).
+//
+// Header: Plans   [+ New plan]
+// Active section: M widgets, one per active/planned plan. Card click
+//   opens detail sheet. AI dot top-right via MWidget aiDot prop.
+// Archive: <details> collapsed by default. Bought + abandoned +
+//   cancelled rows. Per-row click opens detail sheet (read-only).
+// Stat tiles (Wallets / Locked / Planned / Daily safe), cashflow atlas
+// chart, pre-mortem cards, lock/unlock buttons, status sections — all
+// REMOVED per brief.
 
 export interface PlansViewProps {
   plans: PlannedSpend[];
-  bigPlans: PlannedSpend[];
-  atlas: CashflowAtlas;
-  safe: SafeToSpendBreakdown;
-  walletTotal: number;
+  strategies: PlanStrategy[];
   wallets: WalletOpt[];
-  spendCategories: SpendCategory[];
-  currencies: string[];
   baseCurrency: CurrencyCode;
-  forecastHeadline: string | null;
-  forecastNarrative: string | null;
-  calmWeather: CalmWeatherState | null;
   openNew: boolean;
   focusPlanId: string | null;
 }
 
-const STATUS_LABEL: Record<PlannedSpendStatus, string> = {
-  planned: "Planned",
-  committed: "Locked",
-  done: "Done",
-  cancelled: "Cancelled",
-};
-
-const STATUS_ORDER: PlannedSpendStatus[] = ["committed", "planned", "done", "cancelled"];
+const ACTIVE_STATUSES = new Set(["active", "planned"]);
+const ARCHIVE_STATUSES = new Set(["bought", "done", "cancelled", "abandoned"]);
 
 export function PlansView({
   plans,
-  bigPlans,
-  atlas,
-  safe,
-  walletTotal,
+  strategies,
   wallets,
-  spendCategories,
-  currencies,
   baseCurrency,
-  forecastHeadline,
-  forecastNarrative,
   openNew,
   focusPlanId,
 }: PlansViewProps) {
-  const router = useRouter();
   const [modalOpen, setModalOpen] = useState(openNew);
   const [editingPlan, setEditingPlan] = useState<PlannedSpend | null>(null);
-  // Plans the user just deleted/cancelled — optimistically hidden until
-  // router.refresh() lands the fresh data so the UI feels instant.
-  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
+  const [detailPlan, setDetailPlan] = useState<PlannedSpend | null>(() => {
+    if (!focusPlanId) return null;
+    return plans.find((p) => p.id === focusPlanId) ?? null;
+  });
 
-  const visiblePlans = useMemo(
-    () => plans.filter((p) => !removedIds.has(p.id)),
-    [plans, removedIds],
-  );
-
-  const grouped = useMemo(() => groupByStatus(visiblePlans), [visiblePlans]);
-  const committedTotal = useMemo(
-    () => visiblePlans
-      .filter((p) => p.status === "committed")
-      .reduce((s, p) => s + Number(p.committed_base ?? p.expected_base ?? 0), 0),
-    [visiblePlans],
-  );
-  const plannedActiveTotal = useMemo(
-    () => visiblePlans
-      .filter((p) => p.status === "planned")
-      .reduce((s, p) => s + Number(p.expected_base ?? 0), 0),
-    [visiblePlans],
-  );
+  const { active, archive } = useMemo(() => {
+    const a: PlannedSpend[] = [];
+    const h: PlannedSpend[] = [];
+    for (const p of plans) {
+      if (ACTIVE_STATUSES.has(p.status)) a.push(p);
+      else if (ARCHIVE_STATUSES.has(p.status)) h.push(p);
+    }
+    // Active sorted by target_date asc (no target_date → end), then by
+    // planned_for. Archive by bought_at / planned_for desc.
+    // A plan with no target_date must sort AFTER any target-dated plan,
+    // not get its planned_for substituted into the comparator (which
+    // produced interleaved order, sometimes ahead of target-dated plans).
+    a.sort((x, y) => {
+      const tx = x.target_date;
+      const ty = y.target_date;
+      if (!tx && !ty) {
+        return (x.planned_for ?? "").localeCompare(y.planned_for ?? "");
+      }
+      if (!tx) return 1;
+      if (!ty) return -1;
+      return tx.localeCompare(ty);
+    });
+    h.sort((x, y) => {
+      const tx = x.bought_at ?? x.planned_for ?? "";
+      const ty = y.bought_at ?? y.planned_for ?? "";
+      return ty.localeCompare(tx);
+    });
+    return { active: a, archive: h };
+  }, [plans]);
 
   function openCreate() {
     setEditingPlan(null);
     setModalOpen(true);
   }
-  function openEdit(plan: PlannedSpend) {
-    setEditingPlan(plan);
-    setModalOpen(true);
-  }
 
   return (
     <div className="mx-auto flex max-w-[1080px] flex-col gap-5 p-4 sm:p-6">
-      {/* Page hero */}
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <div className="min-w-0">
           <h1 className="font-display text-lg leading-tight">Plans</h1>
           <p className="text-xs text-muted-foreground">
-            Future outflows the runway is already counting against.
+            Big planned purchases the runway should know about.
           </p>
         </div>
         <Button onClick={openCreate} className="h-8 gap-1.5">
@@ -120,85 +106,43 @@ export function PlansView({
         </Button>
       </header>
 
-      {/* Headline numbers */}
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Wallets" value={walletTotal} baseCurrency={baseCurrency} />
-        <Stat
-          label="Locked"
-          value={committedTotal}
-          baseCurrency={baseCurrency}
-          accent={committedTotal > 0 ? "lime" : undefined}
-        />
-        <Stat label="Planned" value={plannedActiveTotal} baseCurrency={baseCurrency} />
-        <Stat
-          label="Daily safe"
-          value={Math.round(safe.safeTodayBase)}
-          baseCurrency={baseCurrency}
-        />
-      </section>
-
-      {/* 90-day Pre-Commitment Runway atlas */}
-      <CashflowAtlasChart
-        atlas={atlas}
-        baseCurrency={baseCurrency}
-        headline={forecastHeadline ?? undefined}
-        narrative={forecastNarrative ?? undefined}
-      />
-
-      {/* Pre-Mortem cards (one per big plan) */}
-      {bigPlans.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-display text-sm font-medium">
-            Pre-Mortem · {bigPlans.length} big plan{bigPlans.length === 1 ? "" : "s"} on the horizon
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {bigPlans.slice(0, 4).map((plan) => (
-              <PreMortemCard
-                key={plan.id}
-                plan={plan}
-                atlas={atlas}
-                walletTotal={walletTotal}
-                baseCurrency={baseCurrency}
-                highlighted={focusPlanId === plan.id}
-                onCommit={() => doCommit(plan, router)}
-                onUncommit={() => doUncommit(plan, router)}
-              />
-            ))}
-          </div>
+      {active.length === 0 ? (
+        <div className="rounded-md border border-dashed border-border/60 px-4 py-8 text-center text-xs text-muted-foreground">
+          No active plans yet — start with a name and the AI will estimate the price.
+        </div>
+      ) : (
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {active.map((p) => (
+            <ActivePlanWidget
+              key={p.id}
+              plan={p}
+              strategies={strategies.filter(
+                (s) => s.plan_id === p.id && s.active,
+              )}
+              baseCurrency={baseCurrency}
+              onOpen={() => setDetailPlan(p)}
+            />
+          ))}
         </section>
       )}
 
-      {/* Status sections */}
-      <section className="flex flex-col gap-4">
-        {STATUS_ORDER.map((status) => {
-          const list = grouped[status] ?? [];
-          if (list.length === 0) return null;
-          return (
-            <PlanGroup
-              key={status}
-              status={status}
-              plans={list}
-              baseCurrency={baseCurrency}
-              onEdit={openEdit}
-              onCommit={(p) => doCommit(p, router)}
-              onUncommit={(p) => doUncommit(p, router)}
-              onCancel={(p) => {
-                setRemovedIds((s) => new Set(s).add(p.id));
-                doCancel(p, router);
-              }}
-              onDelete={(p) => {
-                setRemovedIds((s) => new Set(s).add(p.id));
-                doDelete(p, router);
-              }}
-            />
-          );
-        })}
-        {visiblePlans.length === 0 && (
-          <div className="rounded-md border border-dashed border-border/60 px-4 py-8 text-center text-xs text-muted-foreground">
-            No plans yet — add one to start parking money before you spend it.
-          </div>
-        )}
-      </section>
+      {archive.length > 0 && (
+        <details className="rounded-[10px] border border-border/60 bg-card/30">
+          <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-foreground/80 hover:text-foreground">
+            Archive · {archive.length}
+          </summary>
+          <ul className="flex flex-col divide-y divide-border/40 border-t border-border/40">
+            {archive.map((p) => (
+              <ArchiveRow
+                key={p.id}
+                plan={p}
+                baseCurrency={baseCurrency}
+                onOpen={() => setDetailPlan(p)}
+              />
+            ))}
+          </ul>
+        </details>
+      )}
 
       <PlanModal
         open={modalOpen}
@@ -207,11 +151,21 @@ export function PlansView({
           if (!v) setEditingPlan(null);
         }}
         editing={editingPlan}
-        wallets={wallets}
-        currencies={currencies}
         baseCurrency={baseCurrency}
-        categories={spendCategories}
       />
+
+      {detailPlan && (
+        <PlanDetailSheet
+          open={!!detailPlan}
+          onOpenChange={(v) => {
+            if (!v) setDetailPlan(null);
+          }}
+          plan={detailPlan}
+          strategies={strategies.filter((s) => s.plan_id === detailPlan.id)}
+          wallets={wallets}
+          baseCurrency={baseCurrency}
+        />
+      )}
 
       <PrimaryAction
         icon={Plus}
@@ -223,243 +177,169 @@ export function PlansView({
   );
 }
 
-function Stat({
-  label,
-  value,
+function ActivePlanWidget({
+  plan,
+  strategies,
   baseCurrency,
-  accent,
+  onOpen,
 }: {
-  label: string;
-  value: number;
+  plan: PlannedSpend;
+  strategies: PlanStrategy[];
   baseCurrency: CurrencyCode;
-  accent?: "lime" | "terracotta";
+  onOpen: () => void;
 }) {
-  return (
-    <div className="rounded-[10px] border border-border/60 bg-card/40 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </div>
-      <div
-        className={`font-display tabular text-base ${accent === "lime" ? "text-acid-lime" : accent === "terracotta" ? "text-overdue" : ""}`}
-      >
-        {formatMoney(value, baseCurrency, { compact: true })}
-      </div>
-    </div>
-  );
-}
+  const price = Number(plan.expected_base ?? 0);
+  const activeStrategy = strategies[0];
+  // Progress bar — a rough "fraction of price covered IF the user
+  // perfectly followed the active strategy every day since activation".
+  // We do NOT measure actual category-spend deltas vs. baseline yet, so
+  // the bar is a PROJECTION, not a measurement. Labelled accordingly
+  // (see below) — lying motion bars erode trust faster than missing ones.
+  const progressPct = (() => {
+    if (!activeStrategy || !activeStrategy.activated_at) return 0;
+    const m = Number(activeStrategy.monthly_save_estimate ?? 0);
+    if (!(m > 0) || !(price > 0)) return 0;
+    const daysActive =
+      (Date.now() - new Date(activeStrategy.activated_at).getTime()) /
+      86_400_000;
+    const saved = (m / 30) * Math.max(0, daysActive);
+    return Math.max(0, Math.min(100, Math.round((saved / price) * 100)));
+  })();
+  const hasActiveStrategy = !!(activeStrategy && activeStrategy.activated_at);
 
-function groupByStatus(plans: PlannedSpend[]) {
-  const out: Record<PlannedSpendStatus, PlannedSpend[]> = {
-    planned: [],
-    committed: [],
-    done: [],
-    cancelled: [],
-  };
-  for (const p of plans) out[p.status].push(p);
-  return out;
-}
+  const targetLine = plan.target_date
+    ? `by ${formatTargetDate(plan.target_date)}`
+    : null;
 
-function PlanGroup({
-  status,
-  plans,
-  baseCurrency,
-  onEdit,
-  onCommit,
-  onUncommit,
-  onCancel,
-  onDelete,
-}: {
-  status: PlannedSpendStatus;
-  plans: PlannedSpend[];
-  baseCurrency: CurrencyCode;
-  onEdit: (p: PlannedSpend) => void;
-  onCommit: (p: PlannedSpend) => void;
-  onUncommit: (p: PlannedSpend) => void;
-  onCancel: (p: PlannedSpend) => void;
-  onDelete: (p: PlannedSpend) => void;
-}) {
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between">
-        <h3 className="font-display text-sm font-medium">{STATUS_LABEL[status]}</h3>
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          {plans.length} · {formatMoney(plans.reduce((s, p) => s + Number(p.expected_base ?? 0), 0), baseCurrency, { compact: true })}
+    <MWidget
+      label={plan.label}
+      eyebrow="Plan"
+      icon={<Wallet className="h-4 w-4" />}
+      hero={
+        <span className="display-headline text-[28px] leading-none">
+          {formatMoney(price, baseCurrency, { compact: true })}
         </span>
-      </div>
-      <ul className="flex flex-col divide-y divide-border/40 rounded-[10px] border border-border/50 bg-card/30">
-        {plans.map((p) => (
-          <PlanRow
-            key={p.id}
-            plan={p}
-            baseCurrency={baseCurrency}
-            onEdit={() => onEdit(p)}
-            onCommit={() => onCommit(p)}
-            onUncommit={() => onUncommit(p)}
-            onCancel={() => onCancel(p)}
-            onDelete={() => onDelete(p)}
-          />
-        ))}
-      </ul>
+      }
+      sub={
+        <div className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-foreground">
+            {plan.label}
+          </span>
+          <ProgressBar pct={progressPct} />
+          {hasActiveStrategy && (
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              projected · {progressPct}%
+            </span>
+          )}
+        </div>
+      }
+      supporting={
+        <div className="flex flex-col gap-0.5">
+          {targetLine && <span>{targetLine}</span>}
+          {activeStrategy && (
+            <span>strategy: {activeStrategy.title}</span>
+          )}
+        </div>
+      }
+      onOpen={onOpen}
+      aiDot={{
+        key: `plan.${plan.id}`,
+        label: plan.label,
+        data: {
+          plan_id: plan.id,
+          price_base: price,
+          target_date: plan.target_date,
+          status: plan.status,
+        },
+      }}
+    />
+  );
+}
+
+function ProgressBar({ pct }: { pct: number }) {
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.08]">
+      <div
+        className="h-full rounded-full bg-foreground/60"
+        style={{ width: `${pct}%` }}
+      />
     </div>
   );
 }
 
-function PlanRow({
+function ArchiveRow({
   plan,
   baseCurrency,
-  onEdit,
-  onCommit,
-  onUncommit,
-  onCancel,
-  onDelete,
+  onOpen,
 }: {
   plan: PlannedSpend;
   baseCurrency: CurrencyCode;
-  onEdit: () => void;
-  onCommit: () => void;
-  onUncommit: () => void;
-  onCancel: () => void;
-  onDelete: () => void;
+  onOpen: () => void;
 }) {
-  const isLocked = plan.status === "committed";
-  const isDone = plan.status === "done";
-  const isCancelled = plan.status === "cancelled";
+  // bought/done = a real receipt landed. abandoned/cancelled = the
+  // money never moved, so the planned price isn't "spent" — render it
+  // as the planned amount with a clear label so the eye doesn't read
+  // an unspent ₱70k as money out.
+  const wasBought = plan.status === "bought" || plan.status === "done";
+  const actual = wasBought
+    ? plan.bought_actual_price !== null
+      ? Number(plan.bought_actual_price)
+      : Number(plan.expected_base ?? 0)
+    : Number(plan.expected_base ?? 0);
+  const toneClass =
+    plan.status === "bought" || plan.status === "done"
+      ? "bg-[color:var(--lime,#a8c540)]/15 text-foreground/80"
+      : "bg-foreground/[0.06] text-foreground/55";
   return (
     <li
-      className="grid grid-cols-[1fr_auto] items-start gap-3 px-3 py-2.5 hover:bg-muted/40"
-      onClick={(e) => {
-        if ((e.target as HTMLElement).closest("button")) return;
-        onEdit();
-      }}
+      className="grid grid-cols-[1fr_auto] items-start gap-3 px-4 py-2.5 hover:bg-muted/40 cursor-pointer"
+      onClick={onOpen}
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-1.5">
-          <span className="text-sm font-medium text-foreground">{plan.label}</span>
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {plan.certainty}
+          <span className="text-sm font-medium text-foreground">
+            {plan.label}
           </span>
-          {plan.is_big_plan && (
-            <Badge variant="outline" className="h-4 px-1 text-[9px] tracking-wide">
-              BIG
-            </Badge>
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${toneClass}`}
+          >
+            {plan.status}
+          </span>
+          {plan.satisfaction_rating !== null && (
+            <span className="text-[11px] text-foreground/60">
+              {"★".repeat(plan.satisfaction_rating)}
+            </span>
           )}
         </div>
-        <div className="text-[11px] text-muted-foreground">
-          {plan.planned_for}
-          {plan.planned_for_window_days ? ` ±${plan.planned_for_window_days}d` : ""}
-          {plan.notes ? ` · ${plan.notes.slice(0, 80)}${plan.notes.length > 80 ? "…" : ""}` : ""}
-        </div>
+        {plan.satisfaction_note ? (
+          <div className="text-[11px] text-muted-foreground">
+            {plan.satisfaction_note.slice(0, 80)}
+            {plan.satisfaction_note.length > 80 ? "..." : ""}
+          </div>
+        ) : plan.notes ? (
+          <div className="text-[11px] text-muted-foreground">
+            {plan.notes.slice(0, 80)}
+            {plan.notes.length > 80 ? "..." : ""}
+          </div>
+        ) : null}
       </div>
-      <div className="flex items-center gap-1.5 text-right">
+      <div className="text-right">
         <div className="font-display tabular text-sm">
-          {formatMoney(Number(plan.expected_base ?? 0), baseCurrency, { compact: true })}
+          {formatMoney(actual, baseCurrency, { compact: true })}
         </div>
-        {!isDone && !isCancelled && (
-          <>
-            {isLocked ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUncommit();
-                }}
-                aria-label={`Unlock plan ${plan.label}`}
-                title="Unlock"
-              >
-                <Unlock className="h-3.5 w-3.5" />
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCommit();
-                }}
-                aria-label={`Lock money for ${plan.label}`}
-                title="Lock for this"
-              >
-                <Lock className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCancel();
-              }}
-              aria-label={`Cancel plan ${plan.label}`}
-              title="Cancel"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </>
-        )}
-        {(isDone || isCancelled) && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            aria-label={`Delete plan ${plan.label} from history`}
-            title="Delete from history"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          {wasBought
+            ? (plan.bought_at ?? plan.planned_for)
+            : `planned · ${plan.planned_for ?? ""}`}
+        </div>
       </div>
     </li>
   );
 }
 
-function doCommit(plan: PlannedSpend, router: ReturnType<typeof useRouter>) {
-  void (async () => {
-    try {
-      await commitPlannedSpend(plan.id);
-      toast.success(`Locked ${plan.label}`);
-      router.refresh();
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  })();
-}
-
-function doUncommit(plan: PlannedSpend, router: ReturnType<typeof useRouter>) {
-  void (async () => {
-    try {
-      await uncommitPlannedSpend(plan.id);
-      toast.success(`Unlocked ${plan.label}`);
-      router.refresh();
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  })();
-}
-
-function doCancel(plan: PlannedSpend, router: ReturnType<typeof useRouter>) {
-  void (async () => {
-    try {
-      await cancelPlannedSpend(plan.id);
-      toast.success(`Cancelled ${plan.label}`);
-      router.refresh();
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  })();
-}
-
-function doDelete(plan: PlannedSpend, router: ReturnType<typeof useRouter>) {
-  void (async () => {
-    try {
-      await deletePlannedSpend(plan.id);
-      toast.success(`Deleted ${plan.label}`);
-      router.refresh();
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  })();
+function formatTargetDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }

@@ -100,6 +100,28 @@ export const BRAIN_TTL = {
   //     in-memory marker).
   DAILY_SAFE_INITIAL: 24 * 60 * 60 * 1000,
   VENDOR_IDENTIFY_FROM_CHAT: 30 * 24 * 60 * 60 * 1000,
+  // Plans workflow (migration 0088-0089).
+  //   PLAN_PRICE_LOOKUP: Flash Lite, write-mostly-once per plan. 7d TTL
+  //     is a shelf marker — the ai_price_at column on planned_spends is
+  //     the durable truth, regen only on explicit refresh.
+  //   PLAN_STRATEGY_PROPOSALS: Pro brain, 24h TTL + state_hash
+  //     fingerprint so wallet / income / sadaka movement invalidates
+  //     the cached strategy set inside the day. Scoped per plan_id.
+  //   PLAN_PURCHASE_DECISION: Pro brain, FRESH each invocation —
+  //     NO withBrainCache wrapper at the call site. The catalogue
+  //     entry is a NO-OP placeholder kept ONLY so iterators over
+  //     ALL_BRAIN_KEYS stay symmetric (the per-key delete is a
+  //     guaranteed cache-miss). Do not wire withBrainCache around
+  //     runPlanPurchaseDecisionSupport — the whole point of this
+  //     brain is "snapshot at decision time", and a cached answer
+  //     would mislead the user.
+  //   PLAN_SATISFACTION_CHECK: Flash Lite, write-once per plan; the
+  //     notification carries the question text generated at +14d. 30d
+  //     TTL is just a shelf marker.
+  PLAN_PRICE_LOOKUP: 7 * 24 * 60 * 60 * 1000,
+  PLAN_STRATEGY_PROPOSALS: 24 * 60 * 60 * 1000,
+  PLAN_PURCHASE_DECISION: 0,
+  PLAN_SATISFACTION_CHECK: 30 * 24 * 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -130,6 +152,11 @@ export const BRAIN_KEYS = {
   VENDOR_ICON_IDENTIFY: "vendor_icon_identify",
   DAILY_SAFE_INITIAL: "daily_safe_initial",
   VENDOR_IDENTIFY_FROM_CHAT: "vendor_identify_from_chat",
+  // Plans workflow.
+  PLAN_PRICE_LOOKUP: "plan_price_lookup",
+  PLAN_STRATEGY_PROPOSALS: "plan_strategy_proposals",
+  PLAN_PURCHASE_DECISION: "plan_purchase_decision",
+  PLAN_SATISFACTION_CHECK: "plan_satisfaction_check",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -166,6 +193,10 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.VENDOR_ICON_IDENTIFY]: BRAIN_TTL.VENDOR_ICON_IDENTIFY,
   [BRAIN_KEYS.DAILY_SAFE_INITIAL]: BRAIN_TTL.DAILY_SAFE_INITIAL,
   [BRAIN_KEYS.VENDOR_IDENTIFY_FROM_CHAT]: BRAIN_TTL.VENDOR_IDENTIFY_FROM_CHAT,
+  [BRAIN_KEYS.PLAN_PRICE_LOOKUP]: BRAIN_TTL.PLAN_PRICE_LOOKUP,
+  [BRAIN_KEYS.PLAN_STRATEGY_PROPOSALS]: BRAIN_TTL.PLAN_STRATEGY_PROPOSALS,
+  [BRAIN_KEYS.PLAN_PURCHASE_DECISION]: BRAIN_TTL.PLAN_PURCHASE_DECISION,
+  [BRAIN_KEYS.PLAN_SATISFACTION_CHECK]: BRAIN_TTL.PLAN_SATISFACTION_CHECK,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache
@@ -194,6 +225,15 @@ export const FINANCIAL_INVALIDATION_EXEMPT: readonly BrainKey[] = [
   // Same reasoning: chat-driven vendor identification keys off the
   // vendor row, not the user's money state.
   BRAIN_KEYS.VENDOR_IDENTIFY_FROM_CHAT,
+  // Plans workflow — per-plan brains. Strategy proposals deliberately
+  // OPT IN to financial invalidation (its state_hash is the whole
+  // point of regen), so it's NOT listed here. Price lookup is keyed
+  // off the plan label; satisfaction check is one-shot per bought
+  // plan; purchase decision is fresh-each-invocation. Spend mutations
+  // don't change any of those three.
+  BRAIN_KEYS.PLAN_PRICE_LOOKUP,
+  BRAIN_KEYS.PLAN_PURCHASE_DECISION,
+  BRAIN_KEYS.PLAN_SATISFACTION_CHECK,
 ] as const;
 
 // Below-this threshold spends do NOT bust the AI brain cache. A ₱5 cigarette

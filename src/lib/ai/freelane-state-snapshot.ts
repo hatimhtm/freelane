@@ -90,6 +90,7 @@ async function buildSnapshot(userId: string): Promise<FreelaneSnapshot> {
     { data: recurringSkips },
     { data: loanInstallments },
     { data: plannedSpends },
+    { data: activePlanStrategies },
     { data: spendCategories },
     { data: spendCategoryLinks },
     { data: facts },
@@ -107,6 +108,14 @@ async function buildSnapshot(userId: string): Promise<FreelaneSnapshot> {
     supabase.from("recurring_spend_skips").select("*").eq("user_id", userId),
     supabase.from("loan_installments").select("*").eq("user_id", userId),
     supabase.from("planned_spends").select("*").eq("user_id", userId),
+    // Migration 0089 — active plan strategies. Without these the
+    // brain reads an inflated safeTodayBase and can propose redundant
+    // strategies on top of ones the user already has active.
+    supabase
+      .from("plan_strategies")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("active", true),
     supabase.from("spend_categories").select("*").eq("user_id", userId),
     supabase.from("spend_category_links").select("*"),
     supabase
@@ -205,6 +214,11 @@ async function buildSnapshot(userId: string): Promise<FreelaneSnapshot> {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           plannedSpends: (plannedSpends ?? []) as any,
           ledgerBalances: stateLedgerBalanceForChain,
+          // Migration 0089 — strategy reduction. Keeps the snapshot
+          // numbers (and every brain reading them) consistent with the
+          // headline dial across surfaces.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          activePlanStrategies: (activePlanStrategies ?? []) as any,
         } as never,
         now,
       );

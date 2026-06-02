@@ -327,7 +327,7 @@ function fallbackOneMove(args: {
   runwayDays: number;
 }): string {
   const m = (n: number) => formatMoney(n, "PHP", { compact: true });
-  const planned = args.inputs.plannedSpends.filter((p) => p.status === "planned" || p.status === "committed");
+  const planned = args.inputs.plannedSpends.filter((p) => p.status === "planned" || p.status === "active");
   const biggestPlan = planned.sort((a, b) => Number(b.expected_base ?? 0) - Number(a.expected_base ?? 0))[0];
   if (biggestPlan && Number(biggestPlan.expected_base ?? 0) > 5000) {
     return `Defer or downsize ${biggestPlan.label} (${m(Number(biggestPlan.expected_base ?? 0))}) so the runway widens past ${args.runwayDays + 14}d.`;

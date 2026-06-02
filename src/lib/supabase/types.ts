@@ -40,11 +40,19 @@ export type UserMemorySource = "observation" | "user_note" | "insight";
 
 export type SpendCategoryKind = "consumption" | "investment" | "neutral";
 
+// Migration 0088 (Plans redesign) collapsed the lock mechanism — 'committed'
+// is no longer written by the app. 'active' is the new "user has declared
+// intent" alias the redesign UI surfaces. 'bought' replaces 'done' for new
+// purchases. 'abandoned' is the new "user gave up without buying" state
+// distinct from 'cancelled' (which stays for back-compat). 'done' is kept
+// for historical materialized rows.
 export type PlannedSpendStatus =
+  | "active"
   | "planned"
-  | "committed"
+  | "bought"
   | "done"
-  | "cancelled";
+  | "cancelled"
+  | "abandoned";
 
 export type PlannedSpendCertainty = "firm" | "probable" | "maybe";
 
@@ -899,11 +907,64 @@ export interface PlannedSpend {
   wallet_id: string | null;
   default_category_ids: string[];
   is_big_plan: boolean;
-  committed_base: number | null;
-  committed_at: string | null;
+  // Migration 0088 (Plans redesign) — AI price lookup + target_date +
+  // justification + bought tracking + satisfaction rating. All optional;
+  // older rows have nulls until first edited.
+  price_source: "user" | "ai" | "adjusted";
+  ai_price_range_low: number | null;
+  ai_price_range_high: number | null;
+  ai_price_sources: string[] | null;
+  ai_price_at: string | null;
+  target_date: string | null;
+  justification: string | null;
+  bought_at: string | null;
+  bought_actual_price: number | null;
+  satisfaction_rating: number | null;
+  // Migration 0090 — dedicated column for the +14d satisfaction note so
+  // it can't clobber the user's pre-existing implementation notes.
+  satisfaction_note: string | null;
+  // Legacy materialize-spend link from 0027 — still populated for
+  // historical 'done' rows; new 'bought' rows don't necessarily fill it
+  // (markPlanBought writes a spend but only persists bought_at /
+  // bought_actual_price for the archive view).
   done_spend_id: string | null;
   done_at: string | null;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Migration 0089 — AI-proposed savings strategies attached to a plan.
+// Surfaced as 2-3 ranked cards inside the plan detail sheet. Activating
+// one writes safe-to-spend.applyStrategy() over the live daily safe.
+export type PlanStrategyKind =
+  | "reduce_safe"
+  | "skip_category"
+  | "channel_sadaka_overflow"
+  | "wait_for_payment"
+  | "cut_eating_out"
+  | "pause_other_plan"
+  | "alternative_route";
+
+export interface PlanStrategy {
+  id: string;
+  user_id: string;
+  plan_id: string;
+  strategy_kind: PlanStrategyKind;
+  rank: number;
+  title: string;
+  body: {
+    side_effects?: string[];
+    [k: string]: unknown;
+  };
+  estimated_completion: string | null;
+  monthly_save_estimate: number | null;
+  realism_score: number | null;
+  applicable_now: boolean;
+  active: boolean;
+  proposed_at: string;
+  activated_at: string | null;
+  deactivated_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1270,6 +1331,8 @@ export type Database = {
       ai_questions:                Table<AiQuestion>;
       price_intelligence:          Table<PriceIntelligenceRow>;
       planned_spends:              Table<PlannedSpend>;
+      // Migration 0089 — AI-proposed savings strategies per plan.
+      plan_strategies:             Table<PlanStrategy>;
       app_changelog:               Table<AppChangelogEntry>;
       calm_weather_state:          Table<CalmWeatherState>;
       vendors:                     Table<Vendor>;
@@ -1306,6 +1369,10 @@ export type Database = {
         read_at: string | null;
         dismissed_at: string | null;
         created_at: string;
+        // Migration 0090 — optional scheduled delivery time. Null means
+        // deliver immediately. Sweeps flip rows visible by checking
+        // deliver_at IS NULL OR deliver_at <= now().
+        deliver_at: string | null;
       }>;
       notification_prefs:          Table<{
         user_id: string;

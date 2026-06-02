@@ -148,7 +148,7 @@ async function gatherFacts(): Promise<FactBundle | null> {
       .eq("user_id", user.id),
     supabase
       .from("planned_spends")
-      .select("expected_base,committed_base,status")
+      .select("expected_base,status")
       .eq("user_id", user.id),
     supabase
       .from("exchange_rates")
@@ -174,7 +174,6 @@ async function gatherFacts(): Promise<FactBundle | null> {
   }>;
   const plans = (pick(3)?.data ?? []) as Array<{
     expected_base: number | null;
-    committed_base: number | null;
     status: string | null;
   }>;
   const rates = pick(4)?.data ?? [];
@@ -218,12 +217,13 @@ async function gatherFacts(): Promise<FactBundle | null> {
       0,
     );
 
+  // Migration 0088 — 'active' is the redesign alias for "intent declared".
+  // Lock mechanism + committed_base column are gone; the safe-to-spend
+  // strategy hook covers what the lock used to.
   const activePlans = (plans ?? []).filter(
-    (p) => p.status === "planned" || p.status === "committed",
+    (p) => p.status === "planned" || p.status === "active",
   ).length;
-  const committedBase = (plans ?? [])
-    .filter((p) => p.status === "committed")
-    .reduce((s, p) => s + Number(p.committed_base ?? 0), 0);
+  const committedBase = 0;
 
   return {
     ledger90d: {

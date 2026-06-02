@@ -1,17 +1,19 @@
 import { getPlansData } from "@/lib/data/queries";
-import { computeSafeToSpendFromData } from "@/lib/safe-to-spend";
-import { holdingBalances } from "@/lib/payment-chain";
 import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
 import { logLedgerReadFailure } from "@/lib/data/money-ledger";
-import { buildCashflowAtlas } from "@/lib/cashflow-atlas";
-import { bigPlansUpcoming } from "@/lib/planned-spends";
-import { generateForecastStory } from "@/lib/ai/forecast-storyteller";
-import { hasGemini } from "@/lib/ai/gemini";
+import { holdingBalances } from "@/lib/payment-chain";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
-import type { CurrencyCode, PlannedSpend } from "@/lib/supabase/types";
+import type { CurrencyCode } from "@/lib/supabase/types";
 import { PlansView, type PlansViewProps } from "./_components/plans-view";
 
 export const metadata = { title: "Plans" };
+
+// Plans redesign (2026-06) loader.
+//
+// Forecast Storyteller / CashflowAtlasChart / Pre-Mortem cards are
+// REMOVED from this page per brief. The Plans tab is now scoped to
+// "big planned purchases the runway should know about" — narrative
+// runway widgets live on the dashboard.
 
 export default async function PlansPage({
   searchParams,
@@ -21,85 +23,25 @@ export default async function PlansPage({
   const params = await searchParams;
   const data = await getPlansData();
   const baseCurrency = (data.settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
-  const now = new Date();
 
-  // Phase 1.5: ledger reader first — computed once and threaded through
-  // the cashflow atlas, safe-to-spend, holdingBalances + the forecast
-  // brain so every surface reads the same canonical wallet truth.
-  const plansLedgerBalanceMap = await computeWalletBalancesFromLedger(data.methods).catch(
+  // Wallet picker balances for the purchase-decision modal. Ledger-
+  // derived map → holdingBalances() → WalletOpt[].
+  const ledgerMap = await computeWalletBalancesFromLedger(data.methods).catch(
     (err) => {
       const message = err instanceof Error ? err.message : String(err);
       void logLedgerReadFailure(`plans wallet-balance read: ${message}`);
       return new Map();
     },
   );
-  const plansLedgerBalanceForChain = new Map<string, number>();
-  for (const [k, v] of plansLedgerBalanceMap) plansLedgerBalanceForChain.set(k, v.balance);
-
-  // Atlas drives both the Pre-Commitment Runway chart and the Pre-Mortem
-  // narrative around each big plan.
-  const atlas = buildCashflowAtlas({
-    payments: data.payments,
-    withdrawals: data.withdrawals,
-    spends: data.spends,
-    recurring: data.recurring,
-    recurringSkips: data.recurringSkips,
-    loanInstallments: data.loanInstallments,
-    plannedSpends: data.plannedSpends,
-    methods: data.methods,
-    stepsByPayment: data.stepsByPayment,
-    rates: data.rates,
-    ledgerBalances: plansLedgerBalanceForChain,
-    now,
-    horizonDays: 90,
-  });
-
-  // Forecast Storyteller for the page hero — quietly opinionated narrative
-  // over the 30-day window.
-  const story = hasGemini()
-    ? await generateForecastStory({
-        payments: data.payments,
-        withdrawals: data.withdrawals,
-        spends: data.spends,
-        recurring: data.recurring,
-        recurringSkips: data.recurringSkips,
-        loanInstallments: data.loanInstallments,
-        plannedSpends: data.plannedSpends,
-        methods: data.methods,
-        stepsByPayment: data.stepsByPayment,
-        rates: data.rates,
-        now,
-      }).catch(() => null)
-    : null;
-
-  // Safe-to-spend baseline via the shared single-source helper — keeps the
-  // headline identical across Today / Dashboard / Spending / Plans.
-  const safe = computeSafeToSpendFromData(
-    {
-      payments: data.payments,
-      withdrawals: data.withdrawals,
-      spends: data.spends,
-      recurring: data.recurring,
-      recurringSkips: data.recurringSkips,
-      loanInstallments: data.loanInstallments,
-      methods: data.methods,
-      stepsByPayment: data.stepsByPayment,
-      rates: data.rates,
-      plannedSpends: data.plannedSpends,
-      ledgerBalances: plansLedgerBalanceForChain,
-    },
-    now,
-  );
-
-  // Holdings → wallet picker balances for the planned-spend modal. Uses
-  // the same ledger-derived map as safe-to-spend + atlas above.
+  const chainMap = new Map<string, number>();
+  for (const [k, v] of ledgerMap) chainMap.set(k, v.balance);
   const holdings = holdingBalances(
     data.methods,
     data.payments,
     data.stepsByPayment,
     data.withdrawals,
     data.spends,
-    plansLedgerBalanceForChain,
+    chainMap,
   );
   const holdingByMethod = new Map(holdings.map((h) => [h.methodId, h]));
   const wallets = data.methods
@@ -116,21 +58,11 @@ export default async function PlansPage({
       };
     });
 
-  const bigPlans: PlannedSpend[] = bigPlansUpcoming(data.plannedSpends, now, 90);
-
   const viewProps: PlansViewProps = {
     plans: data.plannedSpends,
-    bigPlans,
-    atlas,
-    safe,
-    walletTotal: holdings.reduce((s, h) => s + h.balance, 0),
+    strategies: data.planStrategies,
     wallets,
-    spendCategories: data.spendCategories,
-    currencies: data.currencies.map((c) => c.code),
     baseCurrency,
-    forecastHeadline: story?.headline ?? null,
-    forecastNarrative: story?.narrative ?? null,
-    calmWeather: data.calmWeather,
     openNew: params.new === "1",
     focusPlanId: params.focus ?? null,
   };

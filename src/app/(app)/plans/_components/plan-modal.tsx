@@ -13,146 +13,148 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { WalletPickerWithBalance } from "@/components/app/wallet-picker";
 
 import { createPlannedSpend, updatePlannedSpend } from "@/lib/data/actions";
+import { requestAiPriceLookup } from "@/app/(app)/plans/_actions/plan-actions";
 import { cn, phtToday } from "@/lib/utils";
-import type {
-  CurrencyCode,
-  PlannedSpend,
-  PlannedSpendCertainty,
-  SpendCategory,
-} from "@/lib/supabase/types";
-import type { WalletOpt } from "@/app/(app)/spending/_components/spend-modal";
+import { formatMoney } from "@/lib/money";
+import type { CurrencyCode, PlannedSpend } from "@/lib/supabase/types";
 
-const CERTAINTIES: PlannedSpendCertainty[] = ["firm", "probable", "maybe"];
+// Plans redesign (2026-06) — narrowed plan modal. Four fields only:
+//   1. Name
+//   2. Price (auto from AI when blank — clickable edit chip with
+//      range + sources + confidence)
+//   3. Target date (optional)
+//   4. Why I want this (optional, freeform justification)
+//
+// Wallet picker, certainty toggle, big-plan switch, category toggles,
+// ±window — all REMOVED. The detail sheet handles edit anytime; the
+// AI price lookup runs on first save when price is blank.
 
 export function PlanModal({
   open,
   onOpenChange,
   editing,
-  wallets,
-  currencies,
   baseCurrency,
-  categories,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   editing: PlannedSpend | null;
-  wallets: WalletOpt[];
-  currencies: string[];
   baseCurrency: CurrencyCode;
-  categories: SpendCategory[];
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const [label, setLabel] = useState("");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState(baseCurrency);
-  const [plannedFor, setPlannedFor] = useState(() => phtToday());
-  const [windowDays, setWindowDays] = useState("0");
-  const [certainty, setCertainty] = useState<PlannedSpendCertainty>("firm");
-  const [walletId, setWalletId] = useState<string>("");
-  const [categoryIds, setCategoryIds] = useState<string[]>([]);
-  const [isBigPlan, setIsBigPlan] = useState(false);
-  const [notes, setNotes] = useState("");
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const [targetDate, setTargetDate] = useState<string>("");
+  const [justification, setJustification] = useState("");
+  // AI estimate snapshot — populated after requestAiPriceLookup runs on
+  // save. Persists in the modal so the user can see "range / sources /
+  // confidence" right after the plan is created without re-opening.
+  const [aiHint, setAiHint] = useState<{
+    range_low: number;
+    range_high: number;
+    sources: string[];
+    confidence: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
     if (editing) {
-      setLabel(editing.label);
-      setAmount(String(editing.expected_amount));
-      setCurrency(editing.expected_currency as CurrencyCode);
-      setPlannedFor(editing.planned_for);
-      setWindowDays(String(editing.planned_for_window_days));
-      setCertainty(editing.certainty);
-      setWalletId(editing.wallet_id ?? "");
-      setCategoryIds(editing.default_category_ids ?? []);
-      setIsBigPlan(editing.is_big_plan);
-      setNotes(editing.notes ?? "");
+      setName(editing.label);
+      setPrice(
+        editing.expected_amount > 0 ? String(editing.expected_amount) : "",
+      );
+      setTargetDate(editing.target_date ?? "");
+      setJustification(editing.justification ?? "");
+      if (editing.ai_price_range_high && editing.ai_price_range_low) {
+        setAiHint({
+          range_low: Number(editing.ai_price_range_low),
+          range_high: Number(editing.ai_price_range_high),
+          sources: editing.ai_price_sources ?? [],
+          confidence: 0.7,
+        });
+      } else {
+        setAiHint(null);
+      }
     } else {
-      setLabel("");
-      setAmount("");
-      setCurrency(baseCurrency);
-      setPlannedFor(phtToday());
-      setWindowDays("0");
-      setCertainty("firm");
-      setWalletId("");
-      setCategoryIds([]);
-      setIsBigPlan(false);
-      setNotes("");
+      setName("");
+      setPrice("");
+      setTargetDate("");
+      setJustification("");
+      setAiHint(null);
     }
     setError(null);
-  }, [open, editing, baseCurrency]);
-
-  const balancesByMethod = new Map<string, number>();
-  for (const w of wallets) {
-    if (typeof w.balanceBase === "number") balancesByMethod.set(w.id, w.balanceBase);
-  }
-
-  function toggleCategory(id: string) {
-    setCategoryIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  }
+  }, [open, editing]);
 
   function save() {
     setError(null);
-    if (!label.trim()) {
-      setError("Give the plan a label.");
+    if (!name.trim()) {
+      setError("Give it a name.");
       return;
     }
-    const amt = Number(amount);
-    if (!(amt > 0)) {
-      setError("Enter an amount.");
+    const priceN = price.trim() === "" ? 0 : Number(price);
+    if (!(priceN >= 0)) {
+      setError("Price must be 0 or greater.");
       return;
     }
-    const winDays = Math.max(0, Math.floor(Number(windowDays) || 0));
     start(async () => {
       try {
+        let planId = editing?.id ?? null;
+        const wantAiPrice = priceN === 0;
         if (editing) {
-          await updatePlannedSpend(editing.id, {
-            label: label.trim(),
-            expected_amount: amt,
-            expected_currency: currency,
-            planned_for: plannedFor,
-            planned_for_window_days: winDays,
-            certainty,
-            wallet_id: walletId || null,
-            default_category_ids: categoryIds,
-            is_big_plan: isBigPlan,
-            notes: notes.trim() || null,
-          });
-          toast.success(`Updated · ${label}`);
+          // planned_for (spend-date estimate) and target_date ("by
+          // when") are distinct concepts (migration 0088). The edit
+          // path leaves planned_for untouched — it's only set on
+          // create. price_source only flips when the price input
+          // actually changed; editing only the target_date or
+          // justification preserves the audit trail.
+          const priceChanged = priceN !== Number(editing.expected_amount ?? 0);
+          const editPatch: Parameters<typeof updatePlannedSpend>[1] = {
+            label: name.trim(),
+            expected_amount: priceN,
+            expected_currency: baseCurrency,
+            target_date: targetDate || null,
+            justification: justification.trim() || null,
+          };
+          if (priceChanged) {
+            editPatch.price_source = wantAiPrice ? "ai" : "adjusted";
+          }
+          await updatePlannedSpend(editing.id, editPatch);
         } else {
           const result = await createPlannedSpend({
-            label: label.trim(),
-            expected_amount: amt,
-            expected_currency: currency,
-            planned_for: plannedFor,
-            planned_for_window_days: winDays,
-            certainty,
-            wallet_id: walletId || null,
-            default_category_ids: categoryIds,
-            is_big_plan: isBigPlan,
-            notes: notes.trim() || null,
+            label: name.trim(),
+            expected_amount: priceN,
+            expected_currency: baseCurrency,
+            // planned_for is the "estimated spend date" and target_date
+            // is "by when I want it" — distinct concepts per migration
+            // 0088. Previously planned_for fell back to target_date,
+            // which conflated them and pushed the plan's full price
+            // into a multi-month projection horizon even though the
+            // user hadn't committed to spending it that far out. Anchor
+            // planned_for at today; target_date carries the aspiration.
+            planned_for: phtToday(),
+            target_date: targetDate || null,
+            justification: justification.trim() || null,
+            price_source: "user",
           });
           if (!result.ok) {
             setError(result.error || "Couldn't save the plan.");
             return;
           }
-          toast.success(`Planned · ${label}`);
+          planId = result.data.id;
         }
+        // If price was empty, kick off the AI lookup AFTER the plan
+        // exists (requestAiPriceLookup needs a real plan_id).
+        if (wantAiPrice && planId) {
+          const lookup = await requestAiPriceLookup(planId);
+          if (lookup.ok && lookup.data.range_high > 0) {
+            setAiHint(lookup.data);
+          }
+        }
+        toast.success(editing ? `Updated ${name}` : `Planned ${name}`);
         onOpenChange(false);
         router.refresh();
       } catch (err) {
@@ -161,12 +163,25 @@ export function PlanModal({
     });
   }
 
+  const confidenceLabel =
+    aiHint == null
+      ? null
+      : aiHint.confidence >= 0.85
+        ? "high confidence"
+        : aiHint.confidence >= 0.5
+          ? "rough range"
+          : "low confidence";
+
   return (
     <CenterModal
       open={open}
       onOpenChange={onOpenChange}
-      title={editing ? "Edit plan" : "Plan a future spend"}
-      description={editing ? "Update the intent." : "Tell the math what's coming."}
+      title={editing ? "Edit plan" : "New plan"}
+      description={
+        editing
+          ? "Edit anything anytime."
+          : "Big purchases the runway should know about."
+      }
       size="md"
     >
       <CenterModalBody>
@@ -176,133 +191,61 @@ export function PlanModal({
           </div>
         )}
         <div className="grid gap-3">
-          <Field label="Label">
+          <Field label="Name">
             <Input
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="MacBook M3 Pro, Apple Dev renewal, Eid envelope"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="MacBook M3 Pro, Apple Dev renewal, …"
               className="h-9 text-sm"
             />
           </Field>
 
-          <div className="grid grid-cols-[1fr_120px] gap-3">
-            <Field label="Amount">
-              <div className="flex items-center gap-1.5">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="h-9 flex-1 text-right tabular text-sm"
-                />
-                <Select
-                  items={currencies.map((c) => ({ value: c, label: c }))}
-                  value={currency}
-                  onValueChange={(v) => v && setCurrency(v as CurrencyCode)}
-                >
-                  <SelectTrigger className="h-9 w-[78px] shrink-0 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {currencies.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </Field>
-            <Field label="Date">
-              <Input
-                type="date"
-                value={plannedFor}
-                onChange={(e) => setPlannedFor(e.target.value)}
-                className="h-9 tabular text-sm"
-              />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Window ±days">
+          <Field label={`Price (${baseCurrency})`}>
+            <div className="flex items-center gap-2">
               <Input
                 type="number"
-                inputMode="numeric"
-                value={windowDays}
-                onChange={(e) => setWindowDays(e.target.value)}
-                className="h-9 text-right tabular text-sm"
+                inputMode="decimal"
+                step="1"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="Leave blank — AI will estimate"
+                className={cn(
+                  "h-9 flex-1 text-right tabular text-sm",
+                  aiHint && price === "" && "italic text-muted-foreground",
+                )}
               />
-            </Field>
-            <Field label="Certainty">
-              <div className="flex flex-wrap gap-1">
-                {CERTAINTIES.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCertainty(c)}
-                    className={cn(
-                      "rounded-full border px-2.5 py-1 text-xs font-medium",
-                      certainty === c
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-border/70 text-foreground/80 hover:bg-muted",
-                    )}
-                  >
-                    {c}
-                  </button>
-                ))}
+            </div>
+            {aiHint && aiHint.range_high > 0 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span>
+                  range:{" "}
+                  <span className="tabular text-foreground/80">
+                    {formatMoney(aiHint.range_low, baseCurrency, { compact: true })}–
+                    {formatMoney(aiHint.range_high, baseCurrency, { compact: true })}
+                  </span>
+                </span>
+                {aiHint.sources.length > 0 && (
+                  <span>· sources: {aiHint.sources.join(", ")}</span>
+                )}
+                {confidenceLabel && <span>· {confidenceLabel}</span>}
               </div>
-            </Field>
-          </div>
+            )}
+          </Field>
 
-          <Field label="Wallet (optional)">
-            <WalletPickerWithBalance
-              value={walletId || undefined}
-              onValueChange={setWalletId}
-              methods={wallets.map((w) => ({ id: w.id, name: w.name }))}
-              balances={balancesByMethod}
-              baseCurrency={baseCurrency}
-              placeholder="Where you'll spend from"
-              includeNone
+          <Field label="Target date" optional>
+            <Input
+              type="date"
+              value={targetDate}
+              onChange={(e) => setTargetDate(e.target.value)}
+              className="h-9 tabular text-sm"
             />
           </Field>
 
-          <Field label="Tags">
-            <div className="flex flex-wrap gap-1.5">
-              {categories.filter((c) => !c.archived).map((c) => {
-                const on = categoryIds.includes(c.id);
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => toggleCategory(c.id)}
-                    className={cn(
-                      "rounded-full border px-2.5 py-1 text-xs font-medium",
-                      on
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-border/70 text-foreground/80 hover:bg-muted",
-                    )}
-                  >
-                    {c.name}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-
-          <div className="flex items-center justify-between gap-3 border-t border-border/40 pt-2">
-            <span className="text-xs font-medium">
-              Big plan — surface Pre-Mortem
-            </span>
-            <Switch checked={isBigPlan} onCheckedChange={setIsBigPlan} />
-          </div>
-
-          <Field label="Notes" optional>
+          <Field label="Why I want this" optional>
             <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Why this, what tied to it, what could shift"
+              value={justification}
+              onChange={(e) => setJustification(e.target.value)}
+              placeholder="The reason in your own words — the AI references this later."
               rows={3}
               className="resize-none text-sm"
             />
@@ -313,8 +256,8 @@ export function PlanModal({
         <Button variant="ghost" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
-        <Button onClick={save} disabled={pending || !label.trim() || !amount}>
-          {pending ? "Saving…" : editing ? "Update plan" : "Save plan"}
+        <Button onClick={save} disabled={pending || !name.trim()}>
+          {pending ? "Saving..." : editing ? "Update plan" : "Save plan"}
         </Button>
       </CenterModalFooter>
     </CenterModal>
@@ -344,5 +287,3 @@ function Field({
     </div>
   );
 }
-
-// phtToday is imported from @/lib/utils.

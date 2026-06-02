@@ -156,6 +156,7 @@ export async function loadDashboardProps(): Promise<DashboardProps> {
     loanInstallments,
     openAiQuestions,
     plannedSpends,
+    activePlanStrategies,
     calmWeather: cachedCalmWeather,
   } = await getDashboardData();
 
@@ -218,6 +219,11 @@ export async function loadDashboardProps(): Promise<DashboardProps> {
     rates,
     plannedSpends,
     ledgerBalances: ledgerBalanceForChain,
+    // Migration 0089 — strategy reduction. Without this, the dashboard
+    // snapshot upsert on first read of the day would persist the
+    // UNREDUCED initialForToday and every later read would stick on
+    // it until PHT midnight rolls.
+    activePlanStrategies,
   });
   let initialSafeForToday = 0;
   let liveSafeRemaining = 0;

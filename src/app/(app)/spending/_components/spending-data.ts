@@ -51,6 +51,7 @@ export async function loadSpendingProps(params: {
     payments,
     stepsByPayment,
     plannedSpends,
+    activePlanStrategies,
   } = await getSpendingData();
   const baseCurrency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
 
@@ -117,6 +118,9 @@ export async function loadSpendingProps(params: {
     rates,
     plannedSpends,
     ledgerBalances: ledgerBalanceForChain,
+    // Migration 0089 — strategy reduction. Keeps Spending's dial in
+    // lockstep with Today / Dashboard / Plans.
+    activePlanStrategies,
   });
 
   // BUG FIX #2 (LIVE DAILY SAFE) — read today's PHT-anchored snapshot.

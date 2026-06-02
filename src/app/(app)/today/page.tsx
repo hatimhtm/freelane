@@ -78,6 +78,7 @@ export default async function TodayPage() {
     loanInstallments,
     stepsByPayment,
     plannedSpends,
+    activePlanStrategies,
     calmWeather: cachedCalmWeather,
     islamicCalendar,
     phCulturalEvents,
@@ -192,8 +193,11 @@ export default async function TodayPage() {
 
   let safeToSpendBaseline: SafeToSpendBreakdown;
   try {
-    // Single-source-of-truth helper — passes plannedSpends so the headline
-    // can never drift between Today / Dashboard / Spending / Plans.
+    // Single-source-of-truth helper — passes plannedSpends AND
+    // activePlanStrategies so the headline can never drift between
+    // Today / Dashboard / Spending / Plans. Migration 0089 added the
+    // strategy reduction; every surface that calls
+    // computeSafeToSpendFromData must thread both inputs through.
     safeToSpendBaseline = computeSafeToSpendFromData(
       {
         payments,
@@ -207,6 +211,7 @@ export default async function TodayPage() {
         rates,
         plannedSpends,
         ledgerBalances: ledgerBalanceForChain,
+        activePlanStrategies,
       },
       now,
     );
