@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 import { withBrainCache, fingerprintFromIds } from "@/lib/ai/cache";
 import { BRAIN_KEYS } from "@/lib/ai/cache-keys";

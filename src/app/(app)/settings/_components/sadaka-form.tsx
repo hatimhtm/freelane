@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { updateSadakaConfig, type SadakaConfig } from "@/lib/sadaka/config";
+import type { SadakaConfig } from "@/lib/sadaka/config";
+import { updateSadakaConfig } from "@/lib/sadaka/config-actions";
 
 // Settings → Sadaka. Four knobs:
 //   • base_contribution_pct — anchored at 2.5% (Islamic zakat).
