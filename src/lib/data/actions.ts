@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { logEvent } from "@/lib/data/events";
 import { phtToday } from "@/lib/utils";
+import {
+  ALL_BRAIN_KEYS,
+  FINANCIAL_INVALIDATION_EXEMPT,
+  SPEND_INVALIDATION_FLOOR_BASE,
+} from "@/lib/ai/cache-keys";
 import type {
   AiQuestion,
   AiQuestionKind,
@@ -34,41 +39,76 @@ export type ActionResult<T> =
   | { ok: false; error: string };
 
 async function safeRun<T>(label: string, fn: () => Promise<T>): Promise<ActionResult<T>> {
+  return safeRunLabeled("freelane-action", label, fn);
+}
+
+// Canonical labeled-prefix variant — exported so notifications/actions.ts
+// (and any future "use server" module) can reuse the exact same error +
+// console-log contract without re-declaring its own copy. The prefix lets
+// each caller surface its own log namespace (freelane-action, freelane-notif,
+// …) while keeping ONE implementation of the try/catch + ActionResult shape.
+export async function safeRunLabeled<T>(
+  prefix: string,
+  label: string,
+  fn: () => Promise<T>,
+): Promise<ActionResult<T>> {
   try {
     const data = await fn();
     return { ok: true, data };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     // eslint-disable-next-line no-console
-    console.error(`[freelane-action:${label}]`, message);
+    console.error(`[${prefix}:${label}]`, message);
     return { ok: false, error: message || "Something went wrong." };
   }
 }
 
-// Drops the AI safe-to-spend cache row AND marks calm_weather_state stale so
-// the next read of either recomputes from scratch. Called from every mutation
-// that changes the math (spends, payments, withdrawals, recurring paid/skipped,
-// loan installments, rule edits). The two caches are coupled here so we never
-// re-invalidate one and forget the other (Tier-1 reviewer flagged this as a
-// critical correctness gap). Best-effort: failures don't block the parent
-// mutation. Reuses the caller's supabase client when passed to avoid the
-// redundant createClient() round-trip on hot paths.
+// Drops every spend-driven entry from ai_brain_cache so the next read of any
+// affected brain recomputes from scratch. Called from every mutation that
+// changes the math (spends, payments, withdrawals, recurring paid/skipped,
+// loan installments, rule edits). Best-effort: failures don't block the
+// parent mutation. Reuses the caller's supabase client when passed to avoid
+// the redundant createClient() round-trip on hot paths.
+//
+// The brain-key list is driven off the canonical ALL_BRAIN_KEYS catalogue
+// in cache-keys.ts — adding a new brain there automatically buses it here.
+// FINANCIAL_INVALIDATION_EXEMPT brains (year_recall, eid_prep) are
+// deliberately excluded because their freshness is calendar-driven, not
+// spend-driven; they refresh on TTL alone.
+//
+// The optional `opts.amountBase` gate lets the caller skip invalidation for
+// trivially small spends (< SPEND_INVALIDATION_FLOOR_BASE). A ₱5 cigarette
+// doesn't change the headline; a ₱200+ spend does. All other mutation kinds
+// (payments, wallet anchors, recurring rules, plans) pass no amount and
+// invalidate unconditionally.
+//
+// As of 2026-06-02 calm-weather and safe-to-spend-ai both live in
+// ai_brain_cache (migrated onto withBrainCache). The earlier per-table writes
+// against ai_safe_spend_cache and calm_weather_state are now dead, so this
+// fan-out collapses to a single delete against the canonical table.
 async function invalidateAiSafeSpendCache(
   userId: string,
   existing?: Awaited<ReturnType<typeof createClient>>,
+  opts: { amountBase?: number } = {},
 ): Promise<void> {
+  if (
+    typeof opts.amountBase === "number" &&
+    opts.amountBase < SPEND_INVALIDATION_FLOOR_BASE
+  ) {
+    return; // tiny spend — TTL/fingerprint still catches the drift if needed
+  }
   try {
     const supabase = existing ?? (await createClient());
-    // Two writes; run in parallel since they target different tables.
-    await Promise.all([
-      supabase.from("ai_safe_spend_cache").delete().eq("user_id", userId),
-      supabase
-        .from("calm_weather_state")
-        .update({ expires_at: new Date().toISOString() })
-        .eq("user_id", userId),
-    ]);
+    const keysToInvalidate = ALL_BRAIN_KEYS.filter(
+      (k) => !FINANCIAL_INVALIDATION_EXEMPT.includes(k),
+    );
+    await supabase
+      .from("ai_brain_cache")
+      .delete()
+      .eq("user_id", userId)
+      .in("brain_key", keysToInvalidate as unknown as string[]);
   } catch {
-    // Swallow — both caches are regenerable; not worth failing a real write.
+    // Swallow — the cache is regenerable; not worth failing a real write.
   }
 }
 
@@ -1300,6 +1340,9 @@ export type PaymentMethodInput = {
   monthly_fee_php?: number;
   monthly_fee_currency?: string | null;
   is_holding?: boolean;
+  // T14 — per-wallet overdraft tolerance (₱ base). Display + alarm threshold
+  // only; never folded into safe-to-spend math.
+  overdraft_tolerance_base?: number;
   notes?: string | null;
 };
 
@@ -1316,6 +1359,7 @@ export async function createPaymentMethod(input: PaymentMethodInput) {
       monthly_fee_php: input.monthly_fee_php ?? 0,
       monthly_fee_currency: input.monthly_fee_currency ?? null,
       is_holding: input.is_holding ?? false,
+      overdraft_tolerance_base: input.overdraft_tolerance_base ?? 0,
       notes: input.notes ?? null,
     })
     .select("id")
@@ -1684,7 +1728,10 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
     },
   });
 
-  await invalidateAiSafeSpendCache(userId, supabase);
+  // Tiny spends (< floor) skip the AI brain bust — TTL/fingerprint still
+  // catches drift if it matters. Keeps the LLM cost honest on the chatty
+  // ₱5 cigarette case.
+  await invalidateAiSafeSpendCache(userId, supabase, { amountBase });
   revalidatePath("/spending");
   revalidatePath("/today");
   revalidatePath("/dashboard");
@@ -3740,71 +3787,9 @@ export async function saveMorningLogAction(input: MorningLogInput): Promise<Acti
   });
 }
 
-export type IntentMirrorInput = {
-  weekStarts?: string;
-  intentionsText?: string;
-  intentions?: Record<string, unknown>;
-};
-
-export async function saveIntentionsAction(input: IntentMirrorInput) {
-  const { supabase, userId } = await userOrThrow();
-  // Compute Monday of the current PHT week if not provided.
-  let weekStarts = input.weekStarts;
-  if (!weekStarts) {
-    const today = new Date(phtToday());
-    const dow = today.getDay() || 7;
-    const monday = new Date(today.getTime() - (dow - 1) * 86_400_000);
-    weekStarts = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
-  }
-  const { error } = await supabase
-    .from("intent_mirror")
-    .upsert(
-      {
-        user_id: userId,
-        week_starts: weekStarts,
-        intentions: input.intentions ?? {},
-        intentions_text: input.intentionsText ?? null,
-      },
-      { onConflict: "user_id,week_starts" },
-    );
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "intent_mirror.saved",
-    title: "Logged weekly intentions",
-    entityType: "intent_mirror",
-    entityId: userId,
-    metadata: { week_starts: weekStarts },
-  });
-  revalidatePath("/today");
-}
-
-export async function refreshIntentMirrorAction(weekStarts?: string): Promise<{ id: string } | null> {
-  const [{ refreshIntentMirror }, { getDashboardData }] = await Promise.all([
-    import("@/lib/ai/journal-vs-spend-mirror"),
-    import("@/lib/data/queries"),
-  ]);
-  const data = await getDashboardData();
-  const out = await refreshIntentMirror({
-    weekStarts,
-    payments: data.payments,
-    spends: data.spends,
-    spendCategories: data.spendCategories,
-    spendCategoryLinks: data.spendCategoryLinks,
-  });
-  if (out) {
-    await logEvent({
-      userId: out.user_id,
-      kind: "intent_mirror.refreshed",
-      title: "Weekly mirror refreshed",
-      entityType: "intent_mirror",
-      entityId: out.id,
-      metadata: { week_starts: out.week_starts },
-    });
-  }
-  revalidatePath("/today");
-  return out ? { id: out.id } : null;
-}
+// T11 — intent_mirror UI surfaces removed. saveDiaryEntryAction (below) is the
+// daily-grain replacement. The intent_mirror table is kept as an archive
+// (see migration 0053) — readers/writers from this layer are gone.
 
 // ───────────────────────────────────────── Tier 5 (AI conversation) ──
 
@@ -3910,4 +3895,45 @@ export async function deleteShouldIBuySessionAction(id: string): Promise<void> {
     .eq("user_id", userId);
   if (error) throw error;
   revalidatePath("/should-i-buy");
+}
+
+// ─────────────────────────────────────── Diary (T11) ──
+// Daily diary entry — replaces the weekly intent_mirror surface. One row per
+// (user, day). NO AI mirror — pure user-written. Mood + energy optional.
+//
+// Type is single-sourced in queries.ts (DiaryEntry); re-exported here as
+// DiaryEntryRow for callers that imported it from the actions module.
+// Drop the alias once every call site updates to DiaryEntry directly.
+export type { DiaryEntry as DiaryEntryRow } from "./queries";
+
+export type SaveDiaryEntryInput = {
+  entryDate: string;
+  body: string;
+  mood?: number | null;
+  energy?: number | null;
+};
+
+export async function saveDiaryEntryAction(
+  input: SaveDiaryEntryInput,
+): Promise<ActionResult<{ entryDate: string }>> {
+  return safeRun("saveDiaryEntry", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const { error } = await supabase
+      .from("diary_entries")
+      .upsert(
+        {
+          user_id: userId,
+          entry_date: input.entryDate,
+          body: input.body ?? "",
+          mood: input.mood ?? null,
+          energy: input.energy ?? null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,entry_date" },
+      );
+    if (error) throw error;
+    revalidatePath("/today");
+    revalidatePath("/");
+    return { entryDate: input.entryDate };
+  });
 }

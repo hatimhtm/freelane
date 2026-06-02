@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
+  Bell,
   Calendar,
   CalendarRange,
   FileText,
   FolderKanban,
   HeartHandshake,
   LayoutDashboard,
+  MessagesSquare,
   Plus,
   Receipt,
   RefreshCw,
@@ -70,11 +72,14 @@ export function CommandTrigger() {
         <CommandList>
           <CommandEmpty>No results.</CommandEmpty>
           <CommandGroup heading="Now">
+            <CommandItem onSelect={() => go("/dashboard")}>
+              <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
+            </CommandItem>
             <CommandItem onSelect={() => go("/today")}>
               <Sun className="mr-2 h-4 w-4" /> Today
             </CommandItem>
-            <CommandItem onSelect={() => go("/dashboard")}>
-              <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
+            <CommandItem onSelect={() => go("/notifications")}>
+              <Bell className="mr-2 h-4 w-4" /> Notifications
             </CommandItem>
           </CommandGroup>
           <CommandSeparator />
@@ -130,6 +135,26 @@ export function CommandTrigger() {
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading="Quick actions">
+            <CommandItem
+              onSelect={() => {
+                setOpen(false);
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent("freelane:open-spend-sheet"));
+                }
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" /> Log a spend
+            </CommandItem>
+            <CommandItem
+              onSelect={() => {
+                setOpen(false);
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent("freelane:open-ask-ai"));
+                }
+              }}
+            >
+              <MessagesSquare className="mr-2 h-4 w-4" /> Ask your money
+            </CommandItem>
             <CommandItem onSelect={() => go("/clients?new=1")}>
               <Plus className="mr-2 h-4 w-4" /> New client
             </CommandItem>
@@ -138,9 +163,6 @@ export function CommandTrigger() {
             </CommandItem>
             <CommandItem onSelect={() => go("/payments?new=1")}>
               <Plus className="mr-2 h-4 w-4" /> Log a payment
-            </CommandItem>
-            <CommandItem onSelect={() => go("/spending?new=1")}>
-              <Plus className="mr-2 h-4 w-4" /> Log a spend
             </CommandItem>
             <CommandItem onSelect={() => go("/settings#rates")}>
               <RefreshCw className="mr-2 h-4 w-4" /> Update exchange rates

@@ -44,7 +44,6 @@ import type {
   QuietReceipt,
   LifeShift,
   MorningLog,
-  IntentMirror,
   WellbeingCheckin,
   QuietChannel,
   RateInsight,
@@ -164,7 +163,11 @@ export async function getDashboardData() {
     supabase.from("exchange_rates").select("*").eq("user_id", user.id),
     supabase.from("clients").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
     supabase.from("currencies").select("*"),
-    supabase.from("payment_methods").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
+    // No .eq("archived", false) filter on payment_methods — archived holding
+    // wallets can still carry a balance, and dropping them here makes the
+    // dashboard's safe-to-spend math disagree with Spending/Today/Plans
+    // (each surface filters archived for display only).
+    supabase.from("payment_methods").select("*").eq("user_id", user.id).order("archived").order("name"),
     supabase.from("withdrawals").select("*").eq("user_id", user.id).order("withdrawn_at", { ascending: false }),
     supabase.from("spends").select("*").eq("user_id", user.id).order("spent_at", { ascending: false }),
     supabase.from("spend_categories").select("*").eq("user_id", user.id).order("sort_order"),
@@ -178,7 +181,15 @@ export async function getDashboardData() {
       .order("created_at", { ascending: false })
       .limit(5),
     supabase.from("planned_spends").select("*").eq("user_id", user.id).order("planned_for"),
-    supabase.from("calm_weather_state").select("*").eq("user_id", user.id).maybeSingle(),
+    // calm-weather moved into ai_brain_cache (2026-06-02) — the payload column
+    // carries the full CalmWeatherState shape that used to live in
+    // calm_weather_state. The legacy table is no longer written.
+    supabase
+      .from("ai_brain_cache")
+      .select("payload,generated_at,stale_at")
+      .eq("user_id", user.id)
+      .eq("brain_key", "calm_weather")
+      .maybeSingle(),
   ]);
 
   const paymentRows = (payments.data ?? []) as Payment[];
@@ -240,7 +251,7 @@ export async function getDashboardData() {
     paymentAllocations,
     openAiQuestions: (openAiQuestions.data ?? []) as AiQuestion[],
     plannedSpends: (plannedSpends.data ?? []) as PlannedSpend[],
-    calmWeather: (calmWeather.data ?? null) as CalmWeatherState | null,
+    calmWeather: ((calmWeather.data?.payload as CalmWeatherState | undefined) ?? null) as CalmWeatherState | null,
     vendors: (vendors.data ?? []) as Vendor[],
     vendorAliases: (vendorAliases.data ?? []) as VendorAlias[],
     spendVendorLinks,
@@ -518,7 +529,15 @@ export async function getSpendingData() {
       .order("created_at", { ascending: false })
       .limit(5),
     supabase.from("planned_spends").select("*").eq("user_id", user.id).order("planned_for"),
-    supabase.from("calm_weather_state").select("*").eq("user_id", user.id).maybeSingle(),
+    // calm-weather moved into ai_brain_cache (2026-06-02) — the payload column
+    // carries the full CalmWeatherState shape that used to live in
+    // calm_weather_state. The legacy table is no longer written.
+    supabase
+      .from("ai_brain_cache")
+      .select("payload,generated_at,stale_at")
+      .eq("user_id", user.id)
+      .eq("brain_key", "calm_weather")
+      .maybeSingle(),
   ]);
   const spendRows = (spends.data ?? []) as Spend[];
   const paymentRows = (payments.data ?? []) as Payment[];
@@ -553,7 +572,7 @@ export async function getSpendingData() {
     stepsByPayment,
     openAiQuestions: (openAiQuestions.data ?? []) as AiQuestion[],
     plannedSpends: (plannedSpends.data ?? []) as PlannedSpend[],
-    calmWeather: (calmWeather.data ?? null) as CalmWeatherState | null,
+    calmWeather: ((calmWeather.data?.payload as CalmWeatherState | undefined) ?? null) as CalmWeatherState | null,
   };
 }
 
@@ -623,15 +642,24 @@ export async function getUserMemory() {
 }
 
 // Cache row for the safe-to-spend AI overlay. Null when no insight has been
-// generated yet (overlay falls back to deterministic copy).
+// generated yet (overlay falls back to deterministic copy). Sourced from
+// ai_brain_cache as of 2026-06-02 — the legacy ai_safe_spend_cache table is
+// retired. The legacy { user_id, insight, generated_at } shape is preserved
+// at the call-site boundary so /today/page.tsx keeps reading the same fields.
 export async function getAiSafeSpendCacheRow() {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
   const { data } = await supabase
-    .from("ai_safe_spend_cache")
-    .select("*")
+    .from("ai_brain_cache")
+    .select("payload,generated_at")
     .eq("user_id", user.id)
+    .eq("brain_key", "safe_to_spend_ai")
     .maybeSingle();
-  return (data ?? null) as { user_id: string; insight: unknown; generated_at: string } | null;
+  if (!data) return null;
+  return {
+    user_id: user.id,
+    insight: data.payload as unknown,
+    generated_at: data.generated_at as string,
+  };
 }
 
 // Open (unanswered + undismissed) AI questions for the life-OS question feed.
@@ -727,7 +755,9 @@ export async function getPlansData() {
     supabase.from("spends").select("*").eq("user_id", user.id).order("spent_at", { ascending: false }),
     supabase.from("payments").select("*").eq("user_id", user.id).order("paid_at", { ascending: false }),
     supabase.from("withdrawals").select("*").eq("user_id", user.id).order("withdrawn_at", { ascending: false }),
-    supabase.from("payment_methods").select("*").eq("user_id", user.id).eq("archived", false).order("name"),
+    // No .eq("archived", false) filter on payment_methods — see note in
+    // getDashboardData. Filtering archived for display is a per-view concern.
+    supabase.from("payment_methods").select("*").eq("user_id", user.id).order("archived").order("name"),
     supabase.from("exchange_rates").select("*").eq("user_id", user.id),
     supabase.from("recurring_spends").select("*").eq("user_id", user.id).order("label"),
     supabase.from("recurring_spend_skips").select("*"),
@@ -735,7 +765,15 @@ export async function getPlansData() {
     supabase.from("spend_categories").select("*").eq("user_id", user.id).order("sort_order"),
     supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
     supabase.from("currencies").select("*"),
-    supabase.from("calm_weather_state").select("*").eq("user_id", user.id).maybeSingle(),
+    // calm-weather moved into ai_brain_cache (2026-06-02) — the payload column
+    // carries the full CalmWeatherState shape that used to live in
+    // calm_weather_state. The legacy table is no longer written.
+    supabase
+      .from("ai_brain_cache")
+      .select("payload,generated_at,stale_at")
+      .eq("user_id", user.id)
+      .eq("brain_key", "calm_weather")
+      .maybeSingle(),
   ]);
   const paymentRows = (payments.data ?? []) as Payment[];
   const stepsByPayment = await fetchStepsByPayment(supabase, paymentRows.map((p) => p.id));
@@ -753,19 +791,22 @@ export async function getPlansData() {
     spendCategories: (spendCategories.data ?? []) as SpendCategory[],
     settings: (settings.data ?? null) as Settings | null,
     currencies: (currencies.data ?? []) as Currency[],
-    calmWeather: (calmWeather.data ?? null) as CalmWeatherState | null,
+    calmWeather: ((calmWeather.data?.payload as CalmWeatherState | undefined) ?? null) as CalmWeatherState | null,
   };
 }
 
-// Calm Weather state — single row per user, regenerated on read when stale.
+// Calm Weather state — single row per user. Now sourced from the canonical
+// ai_brain_cache table (2026-06-02). The payload column carries the full
+// CalmWeatherState shape that used to live in calm_weather_state.
 export async function getCalmWeatherState() {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
   const { data } = await supabase
-    .from("calm_weather_state")
-    .select("*")
+    .from("ai_brain_cache")
+    .select("payload")
     .eq("user_id", user.id)
+    .eq("brain_key", "calm_weather")
     .maybeSingle();
-  return (data ?? null) as CalmWeatherState | null;
+  return ((data?.payload as CalmWeatherState | undefined) ?? null) as CalmWeatherState | null;
 }
 
 // Full app changelog feed — pinned first, then newest first. Single-author
@@ -978,20 +1019,46 @@ export async function getTodayMorningLog() {
   return (data ?? null) as MorningLog | null;
 }
 
-export async function getCurrentIntentMirror() {
+// Note: the weekly intent_mirror reader was removed once the diary surface
+// (one row per PHT day) became the canonical "today's reflection" entry
+// point. The legacy `finance.intent_mirror` table itself stays for one
+// release window so existing rows don't vanish — a follow-up migration will
+// drop it. Don't re-introduce a reader here.
+
+// T11 — daily diary (replaces weekly intent mirror surface). One row per
+// (user, day). entryDate format: YYYY-MM-DD in PHT.
+
+export type DiaryEntry = {
+  id: string;
+  user_id: string;
+  entry_date: string;
+  body: string;
+  mood: number | null;
+  energy: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function getDiaryEntry(entryDate: string): Promise<DiaryEntry | null> {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
-  const { phtToday, phtDateString } = await import("@/lib/utils");
-  const today = new Date(phtToday());
-  const dow = today.getDay() || 7;
-  const monday = new Date(today.getTime() - (dow - 1) * 86_400_000);
-  const weekStarts = phtDateString(monday);
   const { data } = await supabase
-    .from("intent_mirror")
+    .from("diary_entries")
     .select("*")
     .eq("user_id", user.id)
-    .eq("week_starts", weekStarts)
+    .eq("entry_date", entryDate)
     .maybeSingle();
-  return (data ?? null) as IntentMirror | null;
+  return (data ?? null) as DiaryEntry | null;
+}
+
+export async function getRecentDiaryEntries(limit = 30): Promise<DiaryEntry[]> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("diary_entries")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("entry_date", { ascending: false })
+    .limit(limit);
+  return ((data ?? []) as DiaryEntry[]);
 }
 
 // ─────────────────────────── Tier 5 fetchers ──

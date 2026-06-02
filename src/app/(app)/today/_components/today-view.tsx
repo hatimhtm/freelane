@@ -1,182 +1,116 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowUpRight, CalendarRange, Hourglass, Receipt, Sparkles, UserX } from "lucide-react";
-import { motion } from "motion/react";
-import { Card } from "@/components/ui/card";
-import { MetricTile } from "@/components/stats/stat";
-import { AiPanel } from "@/components/app/ai-panel";
-import { MetricTrigger } from "@/components/app/metric-sheet";
-import { TodaysFocus } from "@/components/app/todays-focus";
-import { BlockedMoneyList, type BlockedRow } from "@/components/app/blocked-money-list";
-import { MorningBriefHero } from "@/components/app/morning-brief-hero";
-import { NegativeWalletAlarm } from "@/components/app/negative-wallet-alarm";
-import { IncomeSadakaSuggestion } from "@/components/app/income-sadaka-suggestion";
-import { AiQuestionsCard } from "@/components/app/ai-questions-card";
-import { WalletRunwayCard } from "@/components/app/wallet-runway-card";
-import { RecurringWindowWatch } from "@/components/app/recurring-window-watch";
-import { SadakaQuickLogButton } from "@/components/app/sadaka-quick-log-button";
+import { useEffect, useState } from "react";
+
 import { CalmWeatherBanner } from "@/components/app/calm-weather-banner";
-import { TightModeCoach } from "@/components/app/tight-mode-coach";
-import { ForecastStoryCard } from "@/components/app/forecast-story-card";
 import { CulturalOverlay } from "@/components/app/cultural-overlay";
-import { EidPrepCard } from "@/components/app/eid-prep-card";
-import { RamadanModeBanner } from "@/components/app/ramadan-mode-banner";
-import { SadakaRhythmCard } from "@/components/app/sadaka-rhythm-card";
-import { LatestLetterCard } from "@/components/app/latest-letter-card";
 import { FreshMilestonesCard } from "@/components/app/fresh-milestones-card";
-import { TuesdayCheckinCard } from "@/components/app/tuesday-checkin-card";
+import { IncomeSadakaSuggestion } from "@/components/app/income-sadaka-suggestion";
+import { LatestLetterCard } from "@/components/app/latest-letter-card";
+import { NegativeWalletAlarm } from "@/components/app/negative-wallet-alarm";
+import { RamadanModeBanner } from "@/components/app/ramadan-mode-banner";
+import { TodayQuestionPills } from "@/components/app/today-question-pills";
 import { YearMemoryRecallCard } from "@/components/app/year-memory-recall-card";
-import { ShouldIBuyQuicklink } from "@/components/app/should-i-buy-quicklink";
-import { LogSpendPrimaryAction } from "@/components/app/primary-action";
-import { PackRhythmCard } from "@/components/app/pack-rhythm-card";
-import { FamilySavingsWitnessLine } from "@/components/app/family-savings-witness-line";
-import { LateNightClusterCard } from "@/components/app/late-night-cluster-card";
-import { PostPaydaySurgeCard } from "@/components/app/post-payday-surge-card";
-import { SleepSpendEchoCard } from "@/components/app/sleep-spend-echo-card";
-import { JournalMirrorCard } from "@/components/app/journal-mirror-card";
-import { Reveal } from "@/components/motion/reveal";
-import { formatMoney } from "@/lib/money";
-import { cn } from "@/lib/utils";
-import type {
-  AiQuestion,
-  CalmWeatherState,
-  CurrencyCode,
-  EditorialLetter,
-  ExchangeRate,
-  IntentMirror,
-  IslamicCalendarRow,
-  Milestone,
-  PhCulturalEventRow,
-  RecurringSpend,
-  RecurringSpendSkip,
-  Spend,
-  SpendCategory,
-  SpendCategoryLink,
-  SpendItem,
-  WellbeingCheckin,
-  WifeState,
-} from "@/lib/supabase/types";
-import type { MoneyInsight } from "@/lib/ai/actions";
-import type { SafeToSpendOverlay } from "@/lib/ai/safe-to-spend-ai";
-import type { TightModeRead } from "@/lib/ai/tight-mode-coach";
-import type { ForecastStory } from "@/lib/ai/forecast-storyteller";
-import type { RamadanPeriod } from "@/lib/islamic-calendar";
-import type { EidPrepRead } from "@/lib/ai/eid-prep";
-import type { SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
-import type { PackRhythmRead } from "@/lib/ai/pack-rhythm";
-import type { LateNightClusterRead } from "@/lib/ai/late-night-cluster";
-import type { PostPaydaySurgeRead } from "@/lib/ai/post-payday-surge";
-import type { SleepSpendEcho } from "@/lib/ai/sleep-spend-echo";
-import type { FamilySavingsWitness } from "@/lib/family-savings-witness";
-import type { YearMemoryRecall } from "@/lib/ai/year-memory-recall";
-import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
-import type { HoldingBalanceRow } from "@/lib/payment-chain";
+
+import { CigarettesWidget } from "@/components/widgets/today/cigarettes-widget";
+import { DiaryWidget } from "@/components/widgets/today/diary-widget";
+import { EidPrepWidget } from "@/components/widgets/today/eid-prep-widget";
+import { OutstandingWidget } from "@/components/widgets/today/outstanding-widget";
+import { PostPaydaySurgeWidget } from "@/components/widgets/today/post-payday-surge-widget";
+import { SadakaRhythmWidget } from "@/components/widgets/today/sadaka-rhythm-widget";
+import { SafeToSpendWidget } from "@/components/widgets/today/safe-to-spend-widget";
+import { SleepSpendEchoWidget } from "@/components/widgets/today/sleep-spend-echo-widget";
+import { TightModeWidget } from "@/components/widgets/today/tight-mode-widget";
+import { TodaySpendWidget } from "@/components/widgets/today/today-spend-widget";
+import { TodaysFocusWidget } from "@/components/widgets/today/todays-focus-widget";
+
 import {
   SpendModal,
   type SpendModalDefaults,
   type WalletOpt,
 } from "@/app/(app)/spending/_components/spend-modal";
 
-const EASE = [0.16, 1, 0.3, 1] as const;
+import type {
+  CalmWeatherState,
+  CurrencyCode,
+  EditorialLetter,
+  ExchangeRate,
+  IslamicCalendarRow,
+  Milestone,
+  PhCulturalEventRow,
+  Spend,
+  SpendCategory,
+  SpendCategoryLink,
+  SpendItem,
+  WifeState,
+} from "@/lib/supabase/types";
+import type { MoneyInsight } from "@/lib/ai/actions";
+import type { SafeToSpendOverlay } from "@/lib/ai/safe-to-spend-ai";
+import type { TightModeRead } from "@/lib/ai/tight-mode-coach";
+import type { RamadanPeriod } from "@/lib/islamic-calendar";
+import type { EidPrepRead } from "@/lib/ai/eid-prep";
+import type { SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
+import type { PostPaydaySurgeRead } from "@/lib/ai/post-payday-surge";
+import type { SleepSpendEcho } from "@/lib/ai/sleep-spend-echo";
+import type { YearMemoryRecall } from "@/lib/ai/year-memory-recall";
+import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
+import type { HoldingBalanceRow } from "@/lib/payment-chain";
+import type { DiaryEntryRow } from "@/lib/data/actions";
 
-type Metrics = {
-  mtd: number; lastMonth: number; momDelta: number | null;
-  wtd: number; lastWeek: number; wowDelta: number | null;
-  ytd: number; feesMtd: number;
-};
-
-function greetingFor(hour: number): string {
-  if (hour < 5) return "Still up";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
-}
-
-export function TodayView({
-  firstName,
-  currency,
-  hasClients,
-  metrics,
-  series,
-  pendingTotal,
-  pendingCount,
-  biggestDebtor,
-  avgDaysToPayment,
-  blocked,
-  topClients,
-  recent,
-  situation,
-  year,
-  aiEnabled,
-  focusInsights,
-  focusGeneratedAt,
-  overlay,
-  holdings,
-  dailyBurnByWalletEntries,
-  sadakaSuggestion,
-  triggeringPayment,
-  sadakaCategoryId,
-  openAiQuestions,
-  recurring,
-  recurringSkips,
-  rates,
-  spendCategories,
-  spendCategoryLinks,
-  spendItems,
-  spends,
-  sheetWallets,
-  currencies,
-  safeToSpendBaseline,
-  calmWeather,
-  tightMode,
-  forecastStory,
-  islamicCalendar,
-  phCulturalEvents,
-  ramadan,
-  eidPrep,
-  sadaka,
-  wifeState,
-  latestLetter,
-  freshMilestones,
-  familySavings,
-  packRhythm,
-  lateNight,
-  postPayday,
-  sleepEcho,
-  intentMirror,
-  tuesdayPrompt,
-  tuesdayCheckin,
-  isTuesday,
-  yearRecall,
-}: {
+type TodayViewProps = {
   firstName: string | null;
   currency: CurrencyCode;
   hasClients: boolean;
-  metrics: Metrics;
-  series: number[];
-  pendingTotal: number;
-  pendingCount: number;
-  biggestDebtor: { name: string; total: number } | null;
-  avgDaysToPayment: number | null;
-  blocked: BlockedRow[];
-  topClients: { name: string; value: number }[];
-  recent: { id: string; net: number; paidAt: string; projectTitle: string; clientName: string }[];
-  situation: string;
   year: number;
-  aiEnabled: boolean;
+
+  // Glance numbers.
+  outstandingTotal: number;
+  oldestDays: number;
+  todaySpendBase: number;
+  last7DaySpendCount: number;
+
+  // Widget data.
+  safeToSpendBaseline: SafeToSpendBreakdown;
+  overlay: SafeToSpendOverlay | null;
+  recentNights: Array<{ slept: number | null }>;
+  cigarettesTodayCount: number;
+  cigarettesBaselineDailyCount: number;
+  diaryEntry: DiaryEntryRow | null;
+  diaryEntryDate: string;
+
   focusInsights: MoneyInsight[];
   focusGeneratedAt: string | null;
-  overlay: SafeToSpendOverlay | null;
+  aiEnabled: boolean;
+
+  // Contextual band data. The 5 brains below are CACHE-FIRST: payload is the
+  // cached row (possibly stale), generatedAt drives the widget's PHT-day
+  // staleness check, and each widget fires its own refresh server action
+  // after first paint when needed.
   holdings: HoldingBalanceRow[];
-  dailyBurnByWalletEntries: Array<[string, number]>;
+  calmWeather: CalmWeatherState | null;
+  tightMode: TightModeRead | null;
+  tightModeGeneratedAt: string | null;
+  ramadan: RamadanPeriod | null;
+  islamicCalendar: IslamicCalendarRow[];
+  phCulturalEvents: PhCulturalEventRow[];
+  eidPrep: EidPrepRead | null;
+  eidPrepGeneratedAt: string | null;
+  sadaka: SadakaRhythmRead | null;
+  sadakaGeneratedAt: string | null;
+  postPayday: PostPaydaySurgeRead | null;
+  postPaydayGeneratedAt: string | null;
+  sleepEcho: SleepSpendEcho | null;
+  sleepEchoGeneratedAt: string | null;
+  wifeState: WifeState | null;
+  yearRecall: YearMemoryRecall | null;
+  latestLetter: EditorialLetter | null;
+  freshMilestones: Milestone[];
+
   sadakaSuggestion: { suggestedBase: number; percent: number; reason: string } | null;
   triggeringPayment: { client: string; net: number; paid_at: string } | null;
   sadakaCategoryId: string | null;
-  openAiQuestions: AiQuestion[];
-  recurring: RecurringSpend[];
-  recurringSkips: RecurringSpendSkip[];
+
+  // Spend modal plumbing — kept so ⌘K / ⌘L can open it.
   rates: ExchangeRate[];
   spendCategories: SpendCategory[];
   spendCategoryLinks: SpendCategoryLink[];
@@ -184,395 +118,176 @@ export function TodayView({
   spends: Spend[];
   sheetWallets: WalletOpt[];
   currencies: string[];
-  safeToSpendBaseline: SafeToSpendBreakdown;
-  calmWeather: CalmWeatherState | null;
-  tightMode: TightModeRead | null;
-  forecastStory: ForecastStory | null;
-  islamicCalendar: IslamicCalendarRow[];
-  phCulturalEvents: PhCulturalEventRow[];
-  ramadan: RamadanPeriod | null;
-  eidPrep: EidPrepRead | null;
-  sadaka: SadakaRhythmRead | null;
-  wifeState: WifeState | null;
-  latestLetter: EditorialLetter | null;
-  freshMilestones: Milestone[];
-  familySavings: FamilySavingsWitness;
-  packRhythm: PackRhythmRead | null;
-  lateNight: LateNightClusterRead | null;
-  postPayday: PostPaydaySurgeRead | null;
-  sleepEcho: SleepSpendEcho | null;
-  intentMirror: IntentMirror | null;
-  tuesdayPrompt: string;
-  tuesdayCheckin: WellbeingCheckin | null;
-  isTuesday: boolean;
-  yearRecall: YearMemoryRecall | null;
-}) {
-  const [greeting, setGreeting] = useState("Welcome back");
-  useEffect(() => {
-    setGreeting(greetingFor(new Date().getHours()));
-  }, []);
+};
 
+export function TodayView(props: TodayViewProps) {
+  const {
+    currency,
+    outstandingTotal,
+    oldestDays,
+    todaySpendBase,
+    last7DaySpendCount,
+    safeToSpendBaseline,
+    overlay,
+    recentNights,
+    sleepEcho,
+    sleepEchoGeneratedAt,
+    cigarettesTodayCount,
+    cigarettesBaselineDailyCount,
+    diaryEntry,
+    diaryEntryDate,
+    focusInsights,
+    focusGeneratedAt,
+    aiEnabled,
+    holdings,
+    calmWeather,
+    tightMode,
+    tightModeGeneratedAt,
+    ramadan,
+    islamicCalendar,
+    phCulturalEvents,
+    eidPrep,
+    eidPrepGeneratedAt,
+    sadaka,
+    sadakaGeneratedAt,
+    postPayday,
+    postPaydayGeneratedAt,
+    yearRecall,
+    latestLetter,
+    freshMilestones,
+    sadakaSuggestion,
+    triggeringPayment,
+    sadakaCategoryId,
+    rates,
+    spendCategories,
+    spendCategoryLinks,
+    spendItems,
+    spends,
+    sheetWallets,
+    currencies,
+  } = props;
+
+  // Spend modal — opened via ⌘K Quick Action or any chip dispatching the event.
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetDefaults, setSheetDefaults] = useState<SpendModalDefaults | undefined>(undefined);
 
-  // Mirrors spending-view: one global event, one sheet — keeps the form's
-  // state machine in a single place across screens.
   useEffect(() => {
-    function onOpen(e: Event) {
+    const onOpen = (e: Event) => {
       const detail = (e as CustomEvent).detail as SpendModalDefaults | undefined;
       setSheetDefaults(detail);
       setSheetOpen(true);
-    }
+    };
     window.addEventListener("freelane:open-spend-sheet", onOpen);
-    return () => window.removeEventListener("freelane:open-spend-sheet", onOpen);
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        setSheetDefaults(undefined);
+        setSheetOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("freelane:open-spend-sheet", onOpen);
+      window.removeEventListener("keydown", onKey);
+    };
   }, []);
 
-  const today = new Date().toLocaleDateString(undefined, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-
-  const dailyBurnByWallet = useMemo(
-    () => new Map(dailyBurnByWalletEntries),
-    [dailyBurnByWalletEntries],
-  );
-
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-5 lg:px-8 lg:py-6">
-      {/* Greeting + date */}
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: EASE }}
-        className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
-      >
-        <h1 className="display-headline text-2xl md:text-3xl">
-          {greeting}{firstName ? `, ${firstName}.` : "."}
-        </h1>
-        <span className="text-xs text-muted-foreground tabular">{today}</span>
-      </motion.div>
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-6">
+      {/* Escalated alerts only — Calm Weather banner self-hides on calm. */}
+      <CalmWeatherBanner state={calmWeather} variant="today" />
+      <NegativeWalletAlarm holdings={holdings} />
 
-      {/* Page stack — cards grouped by intent, with breathing room between
-          groups so the Today screen doesn't read as one long undifferentiated
-          column. Within-group: space-y-3; between groups: space-y-6. */}
-      <div className="mt-5 space-y-6">
+      {/* Today-only AI question pills — top row per Today brief. The general
+          SUGGESTIONS list stays inside the Ask AI modal. */}
+      {aiEnabled && <TodayQuestionPills />}
 
-        {/* ── Alerts ── Calm Weather is the master line; cultural/seasonal
-            banners + alarms cluster with it so urgency reads as a single
-            block. */}
-        <div className="space-y-3">
-          {calmWeather && <CalmWeatherBanner state={calmWeather} variant="today" />}
-          <CulturalOverlay islamic={islamicCalendar} phCultural={phCulturalEvents} />
-          <RamadanModeBanner period={ramadan} />
-          {tightMode && tightMode.active && (
-            <TightModeCoach read={tightMode} baseCurrency={currency} />
-          )}
-          {holdings.some((h) => h.balance < 0) && (
-            <NegativeWalletAlarm holdings={holdings} />
-          )}
+      {/* TOP GLANCE ROW — Safe-to-Spend top-left, Outstanding + Focus next.
+          4-column grid on md so the M (col-span-2) + 2 S widgets read as one
+          balanced hero row. Mobile collapses to 2-cols (M spans 2, S widgets
+          stack underneath). */}
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="col-span-2 md:col-span-2">
+          <SafeToSpendWidget
+            baseline={safeToSpendBaseline}
+            overlay={overlay}
+            currency={currency}
+          />
         </div>
+        <OutstandingWidget
+          totalBase={outstandingTotal}
+          oldestDays={oldestDays}
+          currency={currency}
+        />
+        <TodaysFocusWidget
+          initial={focusInsights}
+          generatedAt={focusGeneratedAt}
+          aiEnabled={aiEnabled}
+        />
+      </section>
 
-        {/* ── Hero ── Safe-to-spend is the centerpiece; the savings line and
-            forecast read straight beneath it as a single hero block. */}
-        <div className="space-y-3">
-          <MorningBriefHero overlay={overlay} />
-          <FamilySavingsWitnessLine read={familySavings} baseCurrency={currency} />
-          {forecastStory && (
-            <ForecastStoryCard story={forecastStory} baseCurrency={currency} />
-          )}
-        </div>
+      {/* Noise floor — S widgets for the less-urgent today data. Explicit
+          3-col grid on md so each S box stays at its locked ~160 sq size
+          (instead of stretching wider when the row has fewer children than
+          the parent 4-col grid expects). */}
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <TodaySpendWidget
+          todayBase={todaySpendBase}
+          last7DayCount={last7DaySpendCount}
+          currency={currency}
+        />
+        <SleepSpendEchoWidget
+          initial={sleepEcho}
+          generatedAt={sleepEchoGeneratedAt}
+          aiEnabled={aiEnabled}
+          recentNights={recentNights}
+        />
+        <CigarettesWidget
+          todayCount={cigarettesTodayCount}
+          baselineDailyCount={cigarettesBaselineDailyCount}
+        />
+      </section>
 
-        {/* ── Seasonal & sadaka ── Hidden entirely when neither surfaces. */}
-        {((eidPrep && eidPrep.windows.length > 0) || sadaka) && (
-          <div className="space-y-3">
-            {eidPrep && eidPrep.windows.map((card) => (
-              <EidPrepCard key={`${card.kind}-${card.date}`} card={card} baseCurrency={currency} />
-            ))}
-            {sadaka && <SadakaRhythmCard read={sadaka} baseCurrency={currency} />}
-          </div>
-        )}
+      {/* MIDDLE — diary M widget. */}
+      <section>
+        <DiaryWidget existing={diaryEntry} entryDate={diaryEntryDate} />
+      </section>
 
-        {/* ── Editorial ── Letter + milestones + year-recall read as one
-            "stories" cluster. Each piece self-hides when empty. */}
-        <div className="space-y-3">
-          <LatestLetterCard letter={latestLetter} />
-          <FreshMilestonesCard milestones={freshMilestones} />
-          <YearMemoryRecallCard recall={yearRecall} />
-        </div>
-
-        {/* ── Body & behaviour ── Sleep, intentions, late-night, payday and
-            pack-rhythm reads. Tuesday check-in lands here because it's a
-            weekly emotional ledger. */}
-        <div className="space-y-3">
-          <SleepSpendEchoCard echo={sleepEcho} />
-          <JournalMirrorCard mirror={intentMirror} />
-          <TuesdayCheckinCard prompt={tuesdayPrompt} checkin={tuesdayCheckin} isCheckinDay={isTuesday} />
-          {postPayday && <PostPaydaySurgeCard read={postPayday} />}
-          {lateNight && <LateNightClusterCard read={lateNight} />}
-          {packRhythm && <PackRhythmCard read={packRhythm} baseCurrency={currency} />}
-        </div>
-
-        {/* ── Wife glance + just-landed nudges ── Both self-hide when empty. */}
-        {(wifeState?.preferences_consolidated?.summary || (sadakaSuggestion && triggeringPayment)) && (
-          <div className="space-y-3">
-            {wifeState?.preferences_consolidated?.summary && (
-              <section className="rounded-[12px] border border-border/60 bg-card/30 px-3.5 py-3">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Wife preferences
-                </div>
-                <p className="mt-0.5 text-sm leading-snug text-foreground">
-                  {String(wifeState.preferences_consolidated.summary)}
-                </p>
-              </section>
-            )}
-            {sadakaSuggestion && triggeringPayment && (
-              <Reveal delay={0.04}>
-                <IncomeSadakaSuggestion
-                  suggestion={sadakaSuggestion}
-                  triggeringPayment={triggeringPayment}
-                  sadakaCategoryId={sadakaCategoryId}
-                />
-              </Reveal>
-            )}
-          </div>
-        )}
-
-        {/* ── AI questions ── Letter-style prompt surface. Always renders the
-            wrapper when AI is enabled so the user can request a fresh sweep
-            even when nothing is queued. */}
-        {aiEnabled && (
-          <Reveal delay={0.06}>
-            <AiQuestionsCard questions={openAiQuestions} />
-          </Reveal>
-        )}
-
-        {/* ── Operations ── Wallet runway + this week's recurring + AI focus
-            insights. These are the "what's the system telling me" cards. */}
-        <div className="space-y-4">
-          <section>
-            <SectionHead title="Wallet runway" hint="Balance ÷ trailing 30d burn" />
-            <WalletRunwayCard
-              holdings={holdings}
-              dailyBurnByWallet={dailyBurnByWallet}
-              baseCurrency={currency}
-            />
-          </section>
-
-          <section>
-            <SectionHead title="Recurring this week" hint="Next 5 days" />
-            <RecurringWindowWatch
-              recurring={recurring}
-              skips={recurringSkips}
-              holdings={holdings}
-              rates={rates}
-            />
-          </section>
-
-          {aiEnabled && (
-            <Reveal delay={0.1}>
-              <TodaysFocus
-                initialInsights={focusInsights}
-                initialGeneratedAt={focusGeneratedAt}
-                enabled={aiEnabled}
-              />
-            </Reveal>
-          )}
-        </div>
-
-        {/* ── Outstanding strip + Ask AI ── */}
-        <section className="grid items-end gap-4 lg:grid-cols-[1.6fr_1fr]">
-          <p className="max-w-prose text-sm leading-relaxed text-foreground/75">
-            {situation}
-          </p>
-          <Reveal delay={0.14}>
-            <MetricTrigger metricKey="outstanding" className="lift rounded-xl">
-              <Card className="border-border/70 p-4">
-                <div className="display-eyebrow flex items-center gap-2 text-muted-foreground">
-                  <span className="size-1.5 rounded-full bg-[var(--overdue)] animate-breathe" />
-                  Outstanding
-                </div>
-                <div className="display-numeric mt-2 text-3xl tabular">
-                  {formatMoney(pendingTotal, currency, { compact: true })}
-                </div>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Across {pendingCount} open {pendingCount === 1 ? "project" : "projects"}, valued
-                  at today&apos;s rates — moves with FX until paid.
-                </p>
-                <span className="mt-2.5 inline-flex items-center gap-1 text-xs font-medium text-foreground">
-                  View outstanding <ArrowUpRight className="size-3" />
-                </span>
-              </Card>
-            </MetricTrigger>
-          </Reveal>
-        </section>
-
-        {aiEnabled && (
-          <Reveal delay={0.18}>
-            <div className="relative overflow-hidden rounded-xl border border-foreground/15 bg-gradient-to-b from-muted/40 to-card p-1.5">
-              <div className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-[var(--brand)]/10 blur-3xl" />
-              <div className="mb-2 flex items-center gap-2 px-3 pt-2">
-                <span className="grid size-6 place-items-center rounded-full bg-foreground text-background">
-                  <Sparkles className="size-3" />
-                </span>
-                <div>
-                  <div className="display-eyebrow text-muted-foreground">Your money, on demand</div>
-                  <div className="text-sm font-medium">Ask anything, get insights</div>
-                </div>
-              </div>
-              <AiPanel enabled={aiEnabled} />
-            </div>
-          </Reveal>
-        )}
-
-        {/* Richer metric grid — preserved. */}
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <MetricTrigger metricKey="landed" className="h-full">
-            <MetricTile
-              label="Landed this month"
-              value={metrics.mtd}
-              currency={currency}
-              delta={metrics.momDelta}
-              hint="MoM"
-              icon={CalendarRange}
-              delay={0.02}
-            />
-          </MetricTrigger>
-          <MetricTrigger metricKey="landed" className="h-full">
-            <MetricTile
-              label="This week"
-              value={metrics.wtd}
-              currency={currency}
-              delta={metrics.wowDelta}
-              hint="landed · WoW"
-              icon={CalendarRange}
-              delay={0.05}
-            />
-          </MetricTrigger>
-          <MetricTrigger metricKey="outstanding" className="h-full">
-            <MetricTile
-              label="Outstanding"
-              value={pendingTotal}
-              currency={currency}
-              hint={`${pendingCount} open ${pendingCount === 1 ? "project" : "projects"}`}
-              icon={Hourglass}
-              accent
-              delay={0.08}
-            />
-          </MetricTrigger>
-          <MetricTrigger metricKey="fees" className="h-full">
-            <MetricTile
-              label="Fees this month"
-              value={metrics.feesMtd}
-              currency={currency}
-              hint="rails + FX markup"
-              icon={Receipt}
-              delay={0.11}
-            />
-          </MetricTrigger>
-          <MetricTrigger metricKey="avg-days" className="h-full">
-            <MetricTile
-              label="Avg days to payment"
-              text={avgDaysToPayment !== null ? `${avgDaysToPayment.toFixed(1)} days` : "—"}
-              hint={avgDaysToPayment !== null ? "quote → first payment" : "no paid projects yet"}
-              icon={Hourglass}
-              delay={0.14}
-            />
-          </MetricTrigger>
-          <MetricTrigger metricKey="debtor" className="h-full">
-            <MetricTile
-              label="Biggest debtor"
-              text={biggestDebtor?.name ?? "—"}
-              hint={biggestDebtor ? `${formatMoney(biggestDebtor.total, currency, { compact: true })} outstanding` : "nobody owes you"}
-              icon={UserX}
-              delay={0.17}
-            />
-          </MetricTrigger>
-          <MetricTrigger metricKey="landed" className="h-full">
-            <MetricTile
-              label={`Year to date`}
-              value={metrics.ytd}
-              currency={currency}
-              hint={`${year} so far`}
-              icon={CalendarRange}
-              delay={0.2}
-            />
-          </MetricTrigger>
-          {/* The 30d income sparkline still tells the rhythm story — kept here
-              as a compact tile rather than the screen's hero. */}
-          <MetricTrigger metricKey="landed" className="h-full sm:col-span-2 lg:col-span-1">
-            <MetricTile
-              label="Trailing 30 days"
-              value={series.reduce((a, b) => a + b, 0)}
-              currency={currency}
-              hint="income rhythm"
-              icon={CalendarRange}
-              delay={0.23}
-            />
-          </MetricTrigger>
-        </section>
-
-        {/* What needs you + recent payments */}
-        <section className="grid gap-4 lg:grid-cols-2">
-          <div>
-            <SectionHead title="What needs you" hint="Top open balances, ranked" href="/projects" cta="See all" />
-            <BlockedMoneyList rows={blocked} baseCurrency={currency} limit={3} />
-          </div>
-          <div>
-            <SectionHead title="Recent payments" hint={`Last ${recent.length} landed`} href="/payments" cta="Payments" />
-            <Card className="overflow-hidden p-0">
-              {recent.length === 0 ? (
-                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  {hasClients ? "No payments logged yet." : "Add a client to get started."}
-                </div>
-              ) : (
-                <ul>
-                  {recent.map((p, i) => (
-                    <motion.li
-                      key={p.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.35, delay: i * 0.04, ease: EASE }}
-                      className={cn(
-                        "flex items-center justify-between px-4 py-2.5",
-                        i < recent.length - 1 && "border-b border-border/50",
-                      )}
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{p.projectTitle}</div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {p.clientName} · {new Date(p.paidAt).toLocaleDateString()}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1 text-sm font-semibold tabular">
-                        <ArrowUpRight className="h-3.5 w-3.5 text-[var(--success)]" />
-                        {formatMoney(p.net, currency)}
-                      </div>
-                    </motion.li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-
-            {topClients.length > 0 && (
-              <div className="mt-4">
-                <SectionHead title="Top clients" hint={`By landed ${currency}`} />
-                <MetricTrigger metricKey="debtor" className="lift rounded-xl">
-                  <Card className="p-4">
-                    <TopClients data={topClients} currency={currency} />
-                  </Card>
-                </MetricTrigger>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Quick actions — single thin row at the bottom. */}
-        <div className="flex flex-wrap items-center gap-2 pt-2">
-          {sadakaCategoryId && <SadakaQuickLogButton sadakaCategoryId={sadakaCategoryId} />}
-          <ShouldIBuyQuicklink />
-        </div>
-      </div>
+      {/* CONTEXTUAL BAND — modular-relevance-gated, AND capped at 3 cards so
+          Today never turns into a vertical newsfeed on rich-signal days.
+          One pick per category: money-rhythm (TightMode > Sadaka suggestion >
+          PostPayday > SadakaRhythm), cultural (Ramadan > first Eid > Cultural
+          overlay), editorial (Year-Memory > Letter > Milestones — only one
+          shows). Each card still hides on no signal. */}
+      <section className="space-y-3">
+        {renderMoneyRhythmCard({
+          sadakaSuggestion,
+          triggeringPayment,
+          sadakaCategoryId,
+          tightMode,
+          tightModeGeneratedAt,
+          postPayday,
+          postPaydayGeneratedAt,
+          sadaka,
+          sadakaGeneratedAt,
+          aiEnabled,
+          currency,
+        })}
+        {renderCulturalCard({
+          ramadan,
+          eidPrep,
+          eidPrepGeneratedAt,
+          aiEnabled,
+          islamicCalendar,
+          phCulturalEvents,
+          currency,
+        })}
+        {renderEditorialCard({
+          yearRecall,
+          latestLetter,
+          freshMilestones,
+        })}
+      </section>
 
       <SpendModal
         open={sheetOpen}
@@ -588,51 +303,122 @@ export function TodayView({
         safeToSpendBaseline={safeToSpendBaseline}
         defaults={sheetDefaults}
       />
-
-      <LogSpendPrimaryAction />
     </div>
   );
 }
 
-function TopClients({ data, currency }: { data: { name: string; value: number }[]; currency: CurrencyCode }) {
-  const max = Math.max(...data.map((d) => d.value), 1);
-  return (
-    <ol className="space-y-2.5">
-      {data.map((c, i) => (
-        <li key={c.name}>
-          <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
-            <span className="flex items-center gap-2">
-              <span className="inline-flex size-5 items-center justify-center rounded-full bg-muted font-mono text-[10px] text-muted-foreground">{i + 1}</span>
-              <span className="truncate font-medium">{c.name}</span>
-            </span>
-            <span className="shrink-0 tabular text-muted-foreground">{formatMoney(c.value, currency, { compact: true })}</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${(c.value / max) * 100}%` }}
-              transition={{ duration: 0.8, delay: 0.3 + i * 0.08, ease: EASE }}
-              className="h-full rounded-full bg-[var(--chart-1)]"
-            />
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
+// One pick per category — Today contextual band cap (≤ 3 cards). Each
+// renderer self-hides if no signal is present.
+
+function renderMoneyRhythmCard(args: {
+  sadakaSuggestion: TodayViewProps["sadakaSuggestion"];
+  triggeringPayment: TodayViewProps["triggeringPayment"];
+  sadakaCategoryId: TodayViewProps["sadakaCategoryId"];
+  tightMode: TodayViewProps["tightMode"];
+  tightModeGeneratedAt: TodayViewProps["tightModeGeneratedAt"];
+  postPayday: TodayViewProps["postPayday"];
+  postPaydayGeneratedAt: TodayViewProps["postPaydayGeneratedAt"];
+  sadaka: TodayViewProps["sadaka"];
+  sadakaGeneratedAt: TodayViewProps["sadakaGeneratedAt"];
+  aiEnabled: boolean;
+  currency: CurrencyCode;
+}) {
+  const {
+    sadakaSuggestion,
+    triggeringPayment,
+    sadakaCategoryId,
+    tightMode,
+    tightModeGeneratedAt,
+    postPayday,
+    postPaydayGeneratedAt,
+    sadaka,
+    sadakaGeneratedAt,
+    aiEnabled,
+    currency,
+  } = args;
+  // Priority: a fresh sadaka income event is the most time-sensitive; then
+  // tight-mode (storm/gust); then post-payday surge; then the standing
+  // sadaka rhythm read. Each rhythm widget is cache-first + async-regen so
+  // first paint never blocks on a Gemini call.
+  if (sadakaSuggestion && triggeringPayment && sadakaCategoryId) {
+    return (
+      <IncomeSadakaSuggestion
+        suggestion={sadakaSuggestion}
+        triggeringPayment={triggeringPayment}
+        sadakaCategoryId={sadakaCategoryId}
+      />
+    );
+  }
+  // TightMode card is allowed to render its own first-paint copy even when
+  // the cached payload is missing — the widget will fetch + populate on
+  // mount. Pass aiEnabled so the widget can decide whether to fire the
+  // regen at all.
+  if (tightMode && tightMode.active) {
+    return (
+      <TightModeWidget
+        initial={tightMode}
+        generatedAt={tightModeGeneratedAt}
+        aiEnabled={aiEnabled}
+        baseCurrency={currency}
+      />
+    );
+  }
+  if (postPayday && postPayday.surface) {
+    return (
+      <PostPaydaySurgeWidget
+        initial={postPayday}
+        generatedAt={postPaydayGeneratedAt}
+        aiEnabled={aiEnabled}
+      />
+    );
+  }
+  if (sadaka && sadaka.givenCount > 0) {
+    return (
+      <SadakaRhythmWidget
+        initial={sadaka}
+        generatedAt={sadakaGeneratedAt}
+        aiEnabled={aiEnabled}
+        baseCurrency={currency}
+      />
+    );
+  }
+  return null;
 }
 
-function SectionHead({ title, hint, href, cta }: { title: string; hint: string; href?: string; cta?: string }) {
-  return (
-    <div className="mb-2 flex items-end justify-between">
-      <div>
-        <div className="text-sm font-medium">{title}</div>
-        <div className="text-xs text-muted-foreground">{hint}</div>
-      </div>
-      {href && cta && (
-        <Link href={href} className="text-xs font-medium text-muted-foreground hover:text-foreground">
-          {cta} →
-        </Link>
-      )}
-    </div>
-  );
+function renderCulturalCard(args: {
+  ramadan: TodayViewProps["ramadan"];
+  eidPrep: TodayViewProps["eidPrep"];
+  eidPrepGeneratedAt: TodayViewProps["eidPrepGeneratedAt"];
+  aiEnabled: boolean;
+  islamicCalendar: TodayViewProps["islamicCalendar"];
+  phCulturalEvents: TodayViewProps["phCulturalEvents"];
+  currency: CurrencyCode;
+}) {
+  const { ramadan, eidPrep, eidPrepGeneratedAt, aiEnabled, islamicCalendar, phCulturalEvents, currency } = args;
+  if (ramadan) return <RamadanModeBanner period={ramadan} />;
+  const firstEid = eidPrep?.windows?.[0];
+  if (firstEid) {
+    return (
+      <EidPrepWidget
+        initial={eidPrep ?? null}
+        generatedAt={eidPrepGeneratedAt}
+        aiEnabled={aiEnabled}
+        baseCurrency={currency}
+      />
+    );
+  }
+  // CulturalOverlay self-hides if nothing relevant is upcoming.
+  return <CulturalOverlay islamic={islamicCalendar} phCultural={phCulturalEvents} />;
+}
+
+function renderEditorialCard(args: {
+  yearRecall: TodayViewProps["yearRecall"];
+  latestLetter: TodayViewProps["latestLetter"];
+  freshMilestones: TodayViewProps["freshMilestones"];
+}) {
+  const { yearRecall, latestLetter, freshMilestones } = args;
+  if (yearRecall) return <YearMemoryRecallCard recall={yearRecall} />;
+  if (latestLetter) return <LatestLetterCard letter={latestLetter} />;
+  if (freshMilestones.length > 0) return <FreshMilestonesCard milestones={freshMilestones} />;
+  return null;
 }

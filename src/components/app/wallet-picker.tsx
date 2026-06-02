@@ -15,11 +15,17 @@ import { cn } from "@/lib/utils";
 
 export type WalletPickerOption = { id: string; name: string };
 
+type WalletStatus = "positive" | "within_tolerance" | "over_overdraft";
+
 type Props = {
   value: string | undefined;
   onValueChange: (value: string) => void;
   methods: WalletPickerOption[];
   balances: Map<string, number>;
+  // Optional per-wallet tri-state from the canonical walletStatus() helper.
+  // Soft terracotta dot for within_tolerance, rose for over_overdraft. Missing
+  // entries render as before (no dot).
+  statuses?: Map<string, WalletStatus>;
   baseCurrency: CurrencyCode;
   placeholder?: string;
   includeNone?: boolean;
@@ -33,6 +39,21 @@ type Props = {
 
 const NONE_SENTINEL = "__none__";
 
+function statusDot(status: WalletStatus | undefined) {
+  if (!status || status === "positive") return null;
+  const tone =
+    status === "within_tolerance"
+      ? "oklch(0.7 0.13 45)" // terracotta — soft attention
+      : "oklch(0.65 0.22 25)"; // rose — alarm
+  return (
+    <span
+      aria-hidden
+      className="inline-block size-1.5 shrink-0 rounded-full"
+      style={{ background: tone }}
+    />
+  );
+}
+
 /**
  * Drop-in wallet picker. Every option shows "Name · ₱9,566" inline so the
  * balance is part of the choice itself, not a separate lookup. When a method
@@ -43,6 +64,7 @@ export function WalletPickerWithBalance({
   onValueChange,
   methods,
   balances,
+  statuses,
   baseCurrency,
   placeholder = "Pick a wallet",
   includeNone = false,
@@ -87,8 +109,10 @@ export function WalletPickerWithBalance({
             const m = methods.find((x) => x.id === sel);
             if (!m) return <span className="text-muted-foreground">{placeholder}</span>;
             const bal = balances.get(m.id);
+            const st = statuses?.get(m.id);
             return (
               <span className="flex min-w-0 items-center gap-1.5">
+                {statusDot(st)}
                 <span className="truncate">{m.name}</span>
                 {typeof bal === "number" && (
                   <>
@@ -114,6 +138,7 @@ export function WalletPickerWithBalance({
         )}
         {methods.map((m) => {
           const bal = balances.get(m.id);
+          const st = statuses?.get(m.id);
           return (
             <SelectItem
               key={m.id}
@@ -121,7 +146,10 @@ export function WalletPickerWithBalance({
               className="h-9 text-sm"
             >
               <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                <span className="truncate">{m.name}</span>
+                <span className="flex min-w-0 items-center gap-1.5 truncate">
+                  {statusDot(st)}
+                  <span className="truncate">{m.name}</span>
+                </span>
                 {typeof bal === "number" && (
                   <span className="tabular shrink-0 text-xs text-foreground/60">
                     {formatMoney(bal, baseCurrency, { compact: true })}

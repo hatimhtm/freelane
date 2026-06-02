@@ -2,8 +2,13 @@ import "server-only";
 import { phtDateString } from "@/lib/utils";
 import { Type } from "@google/genai";
 import { gemini, MODEL, hasGemini } from "./gemini";
-import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
+import {
+  fingerprintFromIds,
+  invalidateBrainCache,
+  withBrainCache,
+} from "./cache";
+import { BRAIN_KEYS } from "./cache-keys";
 import {
   safeToSpend,
   suggestSadakaForIncome,
@@ -26,7 +31,10 @@ import type {
   UserMemoryConsolidated,
 } from "@/lib/supabase/types";
 
-const CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+// TTL is sourced from BRAIN_TTL_BY_KEY[BRAIN_KEYS.SAFE_TO_SPEND_AI] via the
+// withBrainCache wrapper. Explicit invalidation from any significant financial
+// mutation (spend ≥ ₱200, payment, wallet anchor, planned spend, recurring
+// rule) busts this cache before the TTL anyway.
 const DAY_MS = 86_400_000;
 const TRAILING_LOOKBACK_DAYS = 30;
 const RECENT_NOTES_LIMIT = 12;
@@ -403,147 +411,173 @@ export async function computeSafeToSpendInsight(args: {
       args.inputs,
     );
   }
-  const supabase = await createClient();
 
-  if (!args.force) {
-    const { data } = await supabase
-      .from("ai_safe_spend_cache")
-      .select("insight,generated_at")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (data?.generated_at) {
-      const age = Date.now() - new Date(data.generated_at as string).getTime();
-      if (age < CACHE_TTL_MS && data.insight) {
-        const cached = data.insight as Partial<SafeToSpendOverlay>;
-        return {
-          ...fallbackOverlay(baseline, args.justLandedNetBase, args.inputs),
-          ...cached,
+  const fingerprint = await safeToSpendFingerprint(args.inputs);
+
+  const cached = await withBrainCache<SafeToSpendOverlay>({
+    brainKey: BRAIN_KEYS.SAFE_TO_SPEND_AI,
+    fingerprint,
+    force: args.force,
+    regen: async () => {
+      if (!hasGemini()) {
+        return fallbackWithNote(
           baseline,
-          fromCache: true,
-          generatedAt: data.generated_at as string,
-        };
-      }
-    }
-  }
-
-  if (!hasGemini()) {
-    return fallbackWithNote(
-      baseline,
-      "AI offline",
-      "Gemini not configured — showing rule-based safe-to-spend only.",
-      args.justLandedNetBase,
-      args.inputs,
-    );
-  }
-
-  const snapshot = buildSnapshot({
-    inputs: args.inputs,
-    baseline,
-    spendCategories: args.spendCategories,
-    spendCategoryLinks: args.spendCategoryLinks,
-    loans: args.loans,
-    loanInstallments: args.loanInstallments,
-    userMemory: args.userMemory,
-    justLandedNetBase: args.justLandedNetBase,
-  });
-
-  try {
-    const res = await gemini().models.generateContent({
-      model: MODEL,
-      contents: `Snapshot:\n\n${snapshot}\n\nReturn the JSON object now.`,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        temperature: 0.3,
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-      },
-    });
-    const parsed = JSON.parse((res.text ?? "{}").trim()) as {
-      patternMultiplier?: number;
-      verdict?: SafeToSpendVerdict;
-      oneLineReasoning?: string;
-      watchouts?: SafeToSpendWatchout[];
-      trajectory?: SafeToSpendTrajectory;
-      sadakaSuggestionBase?: number | null;
-    };
-
-    let patternMultiplier = clamp(Number(parsed.patternMultiplier ?? 1), 0.7, 1.2);
-    let verdict: SafeToSpendVerdict = parsed.verdict ?? "watchful";
-    let watchouts: SafeToSpendWatchout[] = (parsed.watchouts ?? []).slice(0, 3);
-
-    const observationDays = args.inputs.spends.length
-      ? Math.floor(
-          (Date.now() -
-            Math.min(...args.inputs.spends.map((s) => new Date(s.spent_at).getTime()))) /
-            DAY_MS,
-        )
-      : 0;
-    if (baseline.isLearning || observationDays < 21) {
-      patternMultiplier = 1.0;
-      verdict = "watchful";
-      const calibrating: SafeToSpendWatchout = {
-        title: "Still calibrating",
-        detail: `AI overlay is learning — ${observationDays} days of spending data so far.`,
-        kind: "trajectory",
-      };
-      watchouts = [calibrating, ...watchouts].slice(0, 3);
-    }
-
-    const surplus = Math.max(0, baseline.dailyAllowanceBase - baseline.colFloorBase);
-    // Mirrors safe-to-spend.ts: colFloor + surplus * stabilityMultiplier * patternMultiplier. patternMultiplier replaces the v1 placeholder of 1.0.
-    const safeTodayBase =
-      baseline.colFloorBase + surplus * patternMultiplier * baseline.stabilityMultiplier;
-
-    let sadakaSuggestionBase: number | null = null;
-    if (args.justLandedNetBase && args.justLandedNetBase > 0) {
-      const aiSuggestion = parsed.sadakaSuggestionBase;
-      if (typeof aiSuggestion === "number" && aiSuggestion >= 0) {
-        const minAllowed = args.justLandedNetBase * 0.015;
-        const maxAllowed = args.justLandedNetBase * 0.05;
-        sadakaSuggestionBase = Math.round(clamp(aiSuggestion, minAllowed, maxAllowed));
-      } else {
-        sadakaSuggestionBase = suggestSadakaForIncome(
+          "AI offline",
+          "Gemini not configured — showing rule-based safe-to-spend only.",
           args.justLandedNetBase,
           args.inputs,
-        ).suggestedBase;
+        );
       }
-    }
 
-    const overlay: SafeToSpendOverlay = {
-      safeTodayBase,
-      ruleBasedBase: baseline.safeTodayBase,
-      patternMultiplier,
-      verdict,
-      oneLineReasoning: parsed.oneLineReasoning ?? "",
-      watchouts,
-      trajectory: parsed.trajectory ?? deriveTrajectory(baseline.stabilityScore),
-      sadakaSuggestionBase,
-      isLearning: baseline.isLearning,
-      fromCache: false,
-      generatedAt: new Date().toISOString(),
+      const snapshot = buildSnapshot({
+        inputs: args.inputs,
+        baseline,
+        spendCategories: args.spendCategories,
+        spendCategoryLinks: args.spendCategoryLinks,
+        loans: args.loans,
+        loanInstallments: args.loanInstallments,
+        userMemory: args.userMemory,
+        justLandedNetBase: args.justLandedNetBase,
+      });
+
+      try {
+        const res = await gemini().models.generateContent({
+          model: MODEL,
+          contents: `Snapshot:\n\n${snapshot}\n\nReturn the JSON object now.`,
+          config: {
+            systemInstruction: SYSTEM_PROMPT,
+            temperature: 0.3,
+            responseMimeType: "application/json",
+            responseSchema: RESPONSE_SCHEMA,
+          },
+        });
+        const parsed = JSON.parse((res.text ?? "{}").trim()) as {
+          patternMultiplier?: number;
+          verdict?: SafeToSpendVerdict;
+          oneLineReasoning?: string;
+          watchouts?: SafeToSpendWatchout[];
+          trajectory?: SafeToSpendTrajectory;
+          sadakaSuggestionBase?: number | null;
+        };
+
+        let patternMultiplier = clamp(Number(parsed.patternMultiplier ?? 1), 0.7, 1.2);
+        let verdict: SafeToSpendVerdict = parsed.verdict ?? "watchful";
+        let watchouts: SafeToSpendWatchout[] = (parsed.watchouts ?? []).slice(0, 3);
+
+        const observationDays = args.inputs.spends.length
+          ? Math.floor(
+              (Date.now() -
+                Math.min(...args.inputs.spends.map((s) => new Date(s.spent_at).getTime()))) /
+                DAY_MS,
+            )
+          : 0;
+        if (baseline.isLearning || observationDays < 21) {
+          patternMultiplier = 1.0;
+          verdict = "watchful";
+          const calibrating: SafeToSpendWatchout = {
+            title: "Still calibrating",
+            detail: `AI overlay is learning — ${observationDays} days of spending data so far.`,
+            kind: "trajectory",
+          };
+          watchouts = [calibrating, ...watchouts].slice(0, 3);
+        }
+
+        const surplus = Math.max(0, baseline.dailyAllowanceBase - baseline.colFloorBase);
+        // Mirrors safe-to-spend.ts: colFloor + surplus * stabilityMultiplier * patternMultiplier. patternMultiplier replaces the v1 placeholder of 1.0.
+        const safeTodayBase =
+          baseline.colFloorBase + surplus * patternMultiplier * baseline.stabilityMultiplier;
+
+        let sadakaSuggestionBase: number | null = null;
+        if (args.justLandedNetBase && args.justLandedNetBase > 0) {
+          const aiSuggestion = parsed.sadakaSuggestionBase;
+          if (typeof aiSuggestion === "number" && aiSuggestion >= 0) {
+            const minAllowed = args.justLandedNetBase * 0.015;
+            const maxAllowed = args.justLandedNetBase * 0.05;
+            sadakaSuggestionBase = Math.round(clamp(aiSuggestion, minAllowed, maxAllowed));
+          } else {
+            sadakaSuggestionBase = suggestSadakaForIncome(
+              args.justLandedNetBase,
+              args.inputs,
+            ).suggestedBase;
+          }
+        }
+
+        return {
+          safeTodayBase,
+          ruleBasedBase: baseline.safeTodayBase,
+          patternMultiplier,
+          verdict,
+          oneLineReasoning: parsed.oneLineReasoning ?? "",
+          watchouts,
+          trajectory: parsed.trajectory ?? deriveTrajectory(baseline.stabilityScore),
+          sadakaSuggestionBase,
+          isLearning: baseline.isLearning,
+          fromCache: false,
+          generatedAt: new Date().toISOString(),
+          baseline,
+        };
+      } catch {
+        return fallbackWithNote(
+          baseline,
+          "AI offline",
+          "Gemini call failed — showing rule-based safe-to-spend only.",
+          args.justLandedNetBase,
+          args.inputs,
+        );
+      }
+    },
+  });
+
+  if (cached) {
+    // Re-hydrate the live baseline so callers always see the freshest math
+    // even when the AI overlay is cached.
+    return {
+      ...cached.payload,
       baseline,
+      fromCache: true,
+      generatedAt: cached.generatedAt,
     };
-
-    await supabase
-      .from("ai_safe_spend_cache")
-      .upsert(
-        { user_id: user.id, insight: overlay, generated_at: overlay.generatedAt },
-        { onConflict: "user_id" },
-      );
-
-    return overlay;
-  } catch {
-    return fallbackWithNote(
-      baseline,
-      "AI offline",
-      "Gemini call failed — showing rule-based safe-to-spend only.",
-      args.justLandedNetBase,
-      args.inputs,
-    );
   }
+
+  return fallbackWithNote(
+    baseline,
+    "AI offline",
+    "Gemini call failed — showing rule-based safe-to-spend only.",
+    args.justLandedNetBase,
+    args.inputs,
+  );
 }
 
-export async function invalidateSafeSpendCacheForUser(userId: string): Promise<void> {
-  const supabase = await createClient();
-  await supabase.from("ai_safe_spend_cache").delete().eq("user_id", userId);
+// Fingerprint = last 5 spend ids + last payment id + last withdrawal id +
+// last planned spend id + payment_method ids. Stable inputs that should
+// invalidate the cached overlay if any of them changes.
+async function safeToSpendFingerprint(inputs: SafeToSpendInputs): Promise<string> {
+  const sortedSpends = [...inputs.spends]
+    .sort((a, b) => b.spent_at.localeCompare(a.spent_at))
+    .slice(0, 5)
+    .map((s) => s.id);
+  const lastPayment = [...inputs.payments]
+    .sort((a, b) => b.paid_at.localeCompare(a.paid_at))[0]?.id ?? null;
+  const lastWithdrawal = [...inputs.withdrawals]
+    .sort((a, b) => b.withdrawn_at.localeCompare(a.withdrawn_at))[0]?.id ?? null;
+  const methodIds = inputs.methods.map((m) => m.id);
+  const lastPlanned =
+    [...(inputs.plannedSpends ?? [])]
+      .sort((a, b) =>
+        (b.updated_at ?? b.created_at ?? "").localeCompare(a.updated_at ?? a.created_at ?? ""),
+      )[0]?.id ?? null;
+  return fingerprintFromIds([
+    ...sortedSpends,
+    lastPayment,
+    lastWithdrawal,
+    lastPlanned,
+    ...methodIds,
+  ]);
+}
+
+export async function invalidateSafeSpendCacheForUser(_userId: string): Promise<void> {
+  // Delegated to the canonical fan-out. The userId argument is preserved for
+  // callers that still pass it; invalidateBrainCache reads the active user
+  // from the request context itself.
+  await invalidateBrainCache(BRAIN_KEYS.SAFE_TO_SPEND_AI);
 }

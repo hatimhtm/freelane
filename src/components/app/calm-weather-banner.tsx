@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import { refreshCalmWeatherAction } from "@/lib/data/actions";
 import { cn } from "@/lib/utils";
+import { BRAND_LIME_CLASS, TERRACOTTA_CLASS } from "@/lib/design/tokens";
 import type {
   CalmWeatherBand,
   CalmWeatherState,
@@ -20,12 +21,21 @@ import type {
 // recommendation chips. Compact enough to live above the Today hero AND
 // inside the dashboard's top section.
 
+// 5 bands mapped onto the 4 locked semantic colours (slate-muted, lime,
+// terracotta, rose). No --overdue alias, no acid-lime ring stack — the
+// previous version added a fifth "bg-foreground/55" tint and a ring-on-ring
+// glyph for calm_after that drifted outside the palette. New mapping:
+//   still      → slate-muted dot (default quiet)
+//   breeze     → slate-muted dot (watchful but calm)
+//   gust       → terracotta (warm attention)
+//   storm      → rose (alarm)
+//   calm_after → lime (positive completion)
 const BAND_RING: Record<CalmWeatherBand, string> = {
   still: "bg-foreground/25",
-  breeze: "bg-foreground/55",
-  gust: "bg-acid-lime",
-  storm: "bg-overdue",
-  calm_after: "bg-foreground/75 ring-2 ring-acid-lime/40 ring-offset-1 ring-offset-card",
+  breeze: "bg-foreground/45",
+  gust: TERRACOTTA_CLASS,
+  storm: "bg-rose-500",
+  calm_after: BRAND_LIME_CLASS,
 };
 
 const BAND_LABEL: Record<CalmWeatherBand, string> = {
@@ -63,10 +73,10 @@ export function CalmWeatherBanner({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
-        "flex flex-col gap-2 rounded-[12px] border px-4 py-3",
-        variant === "today"
-          ? "border-border/60 bg-card/40"
-          : "border-border/40 bg-card/30",
+        // rounded-xl + ring-1 ring-foreground/10 matches the locked widget
+        // primitives so every Today/Dashboard card has the same radius +
+        // edge treatment.
+        "flex flex-col gap-2 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10",
       )}
     >
       <div className="flex items-start gap-3">

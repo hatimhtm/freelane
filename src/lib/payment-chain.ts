@@ -178,6 +178,21 @@ export interface HoldingBalanceRow {
   withdrawn: number;
   spent: number;
   balance: number;
+  // T13 — per-wallet overdraft tolerance (₱ base). Display + alarm threshold
+  // only — safe-to-spend treats the wallet at its actual balance.
+  overdraftToleranceBase: number;
+  status: WalletStatus;
+}
+
+export type WalletStatus = "positive" | "within_tolerance" | "over_overdraft";
+
+// One canonical helper for the tri-state. Used by every wallet renderer so
+// the semantics never drift between Today widget, Dashboard wallet stack,
+// spend modal balance preview, NegativeWalletAlarm, and wallet pickers.
+export function walletStatus(balance: number, toleranceBase: number): WalletStatus {
+  if (balance >= 0) return "positive";
+  const tolerance = Math.max(0, toleranceBase);
+  return balance + tolerance >= 0 ? "within_tolerance" : "over_overdraft";
 }
 
 // The method a payment ultimately landed on = its final step's method.
@@ -253,7 +268,19 @@ export function holdingBalances(
       const r = received.get(m.id) ?? 0;
       const out = withdrawn.get(m.id) ?? 0;
       const sp = spent.get(m.id) ?? 0;
-      return { methodId: m.id, name: m.name, opening, received: r, withdrawn: out, spent: sp, balance: opening + r - out - sp };
+      const balance = opening + r - out - sp;
+      const tolerance = Number(m.overdraft_tolerance_base ?? 0);
+      return {
+        methodId: m.id,
+        name: m.name,
+        opening,
+        received: r,
+        withdrawn: out,
+        spent: sp,
+        balance,
+        overdraftToleranceBase: tolerance,
+        status: walletStatus(balance, tolerance),
+      };
     })
     // Show wallets the user has anchored OR that have seen money. Hide pure
     // empties so the picker doesn't fill with dormant rows.

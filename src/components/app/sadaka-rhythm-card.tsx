@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Heart } from "lucide-react";
+import { Leaf } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
@@ -9,6 +9,11 @@ import type { SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
 // Sadaka Rhythm card — observation, never directive. Quiet card on
 // Today/Dashboard. Hides entirely when there are 0 Sadaka entries (so the
 // surface stays calm for users who don't practice).
+//
+// Iconography: Leaf is the locked Recovery/growth glyph and is the closest
+// semantic match for sadaka-as-growth. Heart is NOT in the vocabulary.
+// Chrome: rounded-xl + ring-1 ring-foreground/10 so the card stacks with the
+// other Today editorial cards.
 
 export function SadakaRhythmCard({
   read,
@@ -24,10 +29,10 @@ export function SadakaRhythmCard({
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      className="rounded-[12px] border border-border/60 bg-card/30 px-3.5 py-3"
+      className="rounded-xl bg-card px-3.5 py-3 ring-1 ring-foreground/10"
     >
       <div className="flex items-start gap-2.5">
-        <Heart className="mt-1 h-3.5 w-3.5 shrink-0 text-foreground/70" />
+        <Leaf className="mt-1 h-3.5 w-3.5 shrink-0 text-foreground/70" />
         <div className="min-w-0 flex-1">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
             Sadaka rhythm

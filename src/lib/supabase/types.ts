@@ -174,6 +174,10 @@ export interface MorningLog {
   updated_at: string;
 }
 
+// TODO(post-0053-drop): IntentMirror* types are dead — no reader/writer
+// remains in actions.ts/queries.ts. Migration 0053 keeps the finance.intent_mirror
+// table as a one-release archive; when 0056 DROPs the table, delete these
+// interfaces + the intent_mirror entry in Tables<> below.
 export interface IntentMirrorIntentions {
   focus?: string;
   family_target_php?: number;
@@ -181,6 +185,7 @@ export interface IntentMirrorIntentions {
   [k: string]: unknown;
 }
 
+// TODO(post-0053-drop): see IntentMirrorIntentions note above.
 export interface IntentMirrorRealitySnapshot {
   landed_total?: number;
   spent_total?: number;
@@ -190,6 +195,7 @@ export interface IntentMirrorRealitySnapshot {
   [k: string]: unknown;
 }
 
+// TODO(post-0053-drop): see IntentMirrorIntentions note above.
 export interface IntentMirror {
   id: string;
   user_id: string;
@@ -384,6 +390,7 @@ export type EventKind =
   | "quiet_receipt.recorded" | "quiet_receipt.replied" | "quiet_receipt.deleted"
   | "life_shift.recorded" | "life_shift.replied" | "life_shift.deleted"
   | "morning_log.saved"
+  // TODO(post-0053-drop): no live event writer remains; drop with the table.
   | "intent_mirror.saved" | "intent_mirror.refreshed"
   | "wellbeing.checkin_saved" | "wellbeing.echo_generated"
   | "quiet_channel.detected" | "quiet_channel.resolved"
@@ -565,6 +572,10 @@ export interface PaymentMethod {
   // compares activity created_at against this to exclude same-day pre-anchor
   // rows precisely. Null on legacy rows — math falls back to date comparison.
   opening_balance_set_at: string | null;
+  // Per-wallet overdraft tolerance in base currency (migration 0054). Display
+  // + alarm threshold ONLY — never folded into safe-to-spend math. Wallet
+  // renders terracotta while balance > -tolerance, rose past it.
+  overdraft_tolerance_base: number;
   notes: string | null;
   archived: boolean;
   created_at: string;
@@ -1194,11 +1205,52 @@ export type Database = {
       quiet_receipts:              Table<QuietReceipt>;
       life_shifts:                 Table<LifeShift>;
       morning_log:                 Table<MorningLog>;
+      // TODO(post-0053-drop): finance.intent_mirror kept as a one-release archive
+      // per migration 0053. When 0056 DROPs the table, delete this row.
       intent_mirror:               Table<IntentMirror>;
       wellbeing_checkins:          Table<WellbeingCheckin>;
       quiet_channels:              Table<QuietChannel>;
       rate_insights:               Table<RateInsight>;
       should_i_buy_sessions:       Table<ShouldIBuySession>;
+      // Migration 0050 — notifications inbox + per-recipient prefs.
+      notifications_inbox:         Table<{
+        id: string;
+        user_id: string;
+        kind: string;
+        subject: string;
+        body: string | null;
+        link_url: string | null;
+        dedup_key: string | null;
+        priority: number;
+        read_at: string | null;
+        dismissed_at: string | null;
+        created_at: string;
+      }>;
+      notification_prefs:          Table<{
+        user_id: string;
+        prefs: unknown;
+        updated_at: string;
+      }>;
+      // Migration 0051 — canonical AI brain cache.
+      ai_brain_cache:              Table<{
+        user_id: string;
+        brain_key: string;
+        payload: unknown;
+        generated_at: string;
+        stale_at: string | null;
+        input_fingerprint: string | null;
+      }>;
+      // Migration 0052 — daily diary (replaces weekly intent_mirror).
+      diary_entries:               Table<{
+        id: string;
+        user_id: string;
+        entry_date: string;
+        body: string;
+        mood: number | null;
+        energy: number | null;
+        created_at: string;
+        updated_at: string;
+      }>;
       invoices:                    Table<Invoice>;
       invoice_projects:            Table<{ invoice_id: string; project_id: string }>;
       project_templates:           Table<ProjectTemplate>;

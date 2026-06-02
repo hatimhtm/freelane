@@ -148,7 +148,7 @@ function IconBtn({ children, onClick, label, danger }: { children: React.ReactNo
   );
 }
 
-type MethodValues = { name: string; kind: string; currency_in: string | null; currency_out: string | null; monthly_fee_php: number; monthly_fee_currency: string | null; is_holding: boolean; notes: string | null };
+type MethodValues = { name: string; kind: string; currency_in: string | null; currency_out: string | null; monthly_fee_php: number; monthly_fee_currency: string | null; is_holding: boolean; overdraft_tolerance_base: number; notes: string | null };
 
 function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial?: PaymentMethod; currencies: Currency[]; baseCurrency: string; onSubmit: (v: MethodValues) => Promise<void> }) {
   const [v, setV] = useState({
@@ -159,6 +159,7 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
     monthly_fee_php: initial?.monthly_fee_php ?? 0,
     monthly_fee_currency: initial?.monthly_fee_currency ?? baseCurrency,
     is_holding: initial?.is_holding ?? false,
+    overdraft_tolerance_base: Number(initial?.overdraft_tolerance_base ?? 0),
     notes: initial?.notes ?? "",
   });
   const [pending, start] = useTransition();
@@ -175,6 +176,7 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
         monthly_fee_php: Number(v.monthly_fee_php) || 0,
         monthly_fee_currency: v.monthly_fee_currency || null,
         is_holding: v.is_holding,
+        overdraft_tolerance_base: Math.max(0, Number(v.overdraft_tolerance_base) || 0),
         notes: v.notes.trim() || null,
       });
     });
@@ -242,6 +244,25 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
           </span>
           <Switch checked={v.is_holding} onCheckedChange={(c) => setV({ ...v, is_holding: c === true })} className="mt-0.5 shrink-0" />
         </label>
+        {v.is_holding && (
+          <div>
+            <Label className="text-xs">Overdraft tolerance (PHP)</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              step="1"
+              min="0"
+              value={v.overdraft_tolerance_base}
+              onChange={(e) =>
+                setV({ ...v, overdraft_tolerance_base: Number(e.target.value) })
+              }
+              placeholder="0"
+            />
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+              How far below zero this wallet may go before raising the over-overdraft alarm. Display + alarm threshold only — never folded into safe-to-spend.
+            </p>
+          </div>
+        )}
         <div>
           <Label className="text-xs">Notes</Label>
           <Input value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} placeholder="optional" />

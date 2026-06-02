@@ -148,6 +148,8 @@ const META: Record<EventKind, KindMeta> = {
   "life_shift.deleted":  { icon: Trash2,   tone: "rose"    },
 
   "morning_log.saved":      { icon: Sun,   tone: "brand"   },
+  // TODO(post-0053-drop): no live writer emits these kinds; remove with the
+  // finance.intent_mirror table when migration 0056 lands.
   "intent_mirror.saved":    { icon: Brain, tone: "neutral" },
   "intent_mirror.refreshed":{ icon: Brain, tone: "success" },
 

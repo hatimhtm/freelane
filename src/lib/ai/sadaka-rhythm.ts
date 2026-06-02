@@ -2,6 +2,13 @@ import "server-only";
 import { Type } from "@google/genai";
 import { gemini, hasGemini } from "./gemini";
 import { HEAVY_MODEL } from "./models";
+import {
+  fingerprintFromIds,
+  readBrainCache,
+  withBrainCache,
+  type CachedBrainPayload,
+} from "./cache";
+import { BRAIN_KEYS } from "./cache-keys";
 import { formatMoney } from "@/lib/money";
 import type {
   Payment,
@@ -59,7 +66,52 @@ GOOD EXAMPLES:
 
 Return JSON: { "line": "<sentence>" }`;
 
-export async function generateSadakaRhythm(args: {
+export async function getSadakaRhythmCached(): Promise<CachedBrainPayload<SadakaRhythmRead> | null> {
+  return readBrainCache<SadakaRhythmRead>(BRAIN_KEYS.SADAKA_RHYTHM);
+}
+
+export async function generateSadakaRhythm(
+  args: {
+    spends: Spend[];
+    payments: Payment[];
+    spendCategories: SpendCategory[];
+    spendCategoryLinks: SpendCategoryLink[];
+    now?: Date;
+  },
+  opts: { force?: boolean } = {},
+): Promise<SadakaRhythmRead> {
+  // Fingerprint = last sadaka-tagged spend ids + last payment id. The
+  // rhythm only moves when one of those changes.
+  const sadakaCatForFingerprint = args.spendCategories.find((c) => /sadaka/i.test(c.name));
+  const sadakaLinkIds = sadakaCatForFingerprint
+    ? new Set(
+        args.spendCategoryLinks
+          .filter((l) => l.category_id === sadakaCatForFingerprint.id)
+          .map((l) => l.spend_id),
+      )
+    : new Set<string>();
+  const recentSadakaIds = args.spends
+    .filter((s) => sadakaLinkIds.has(s.id))
+    .sort((a, b) => b.spent_at.localeCompare(a.spent_at))
+    .slice(0, 5)
+    .map((s) => s.id);
+  const lastPaymentId = [...args.payments]
+    .sort((a, b) => b.paid_at.localeCompare(a.paid_at))[0]?.id ?? null;
+  const fingerprint = await fingerprintFromIds([
+    ...recentSadakaIds,
+    lastPaymentId,
+  ]);
+  const result = await withBrainCache<SadakaRhythmRead>({
+    brainKey: BRAIN_KEYS.SADAKA_RHYTHM,
+    fingerprint,
+    force: opts.force,
+    regen: () => generateSadakaRhythmRegen(args),
+  });
+  if (result) return result.payload;
+  return generateSadakaRhythmRegen(args);
+}
+
+async function generateSadakaRhythmRegen(args: {
   spends: Spend[];
   payments: Payment[];
   spendCategories: SpendCategory[];

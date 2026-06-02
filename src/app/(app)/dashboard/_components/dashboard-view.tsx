@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
+  ArrowDownLeft,
   ArrowRight,
-  CalendarRange,
-  CircleHelp,
-  Layers,
+  ArrowUpRight,
+  Clock,
   Plus,
-  Receipt,
+  Target,
   Users,
   Wallet,
 } from "lucide-react";
@@ -17,12 +17,23 @@ import { LinkButton } from "@/components/ui/link-button";
 import { EmptyState } from "@/components/app/empty-state";
 import { CalmWeatherBanner } from "@/components/app/calm-weather-banner";
 import { ForecastStoryCard } from "@/components/app/forecast-story-card";
+import { NegativeWalletAlarm } from "@/components/app/negative-wallet-alarm";
 import { CashflowAtlasChart } from "@/components/spending/cashflow-atlas-chart";
+import { IncomeStrip } from "@/components/widgets/dashboard/income-strip";
+import { PackRhythmWidget } from "@/components/widgets/dashboard/pack-rhythm-widget";
+import { NightSpendsRemark } from "@/components/widgets/dashboard/night-spends-remark";
+import { WalletRunwayWidget } from "@/components/widgets/dashboard/wallet-runway-widget";
+import { MWidget } from "@/components/widgets/m-widget";
+import { Stamp } from "@/components/widgets/shapes/stamp";
+import { MoneyFlow } from "@/components/ui/money-flow";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { CalmWeatherState, CurrencyCode } from "@/lib/supabase/types";
 import type { CashflowAtlas } from "@/lib/cashflow-atlas";
 import type { ForecastStory } from "@/lib/ai/forecast-storyteller";
+import type { HoldingBalanceRow } from "@/lib/payment-chain";
+import type { PackRhythmRead } from "@/lib/ai/pack-rhythm";
+import type { LateNightClusterRead } from "@/lib/ai/late-night-cluster";
 
 // ─────────────────────────────────────────────────────────── DENSITY NOTE ──
 // Bird's-eye dashboard, small-window-first. Everything here is a SUMMARY —
@@ -36,6 +47,17 @@ type AlertRow =
   | { kind: "recurring-due"; label: string; daysUntil: number; expectedBase: number; currency: CurrencyCode; href: string }
   | { kind: "ai-questions"; count: number; preview: string | null; href: string };
 
+// Per-kind alert glyph — strictly from the locked symbol vocabulary so the
+// alert row reads consistently with every other surface (Wallet for the
+// wallet entity, Clock for time-anchored due dates). AI questions don't have
+// a canonical glyph yet; the count + label do the work without an icon (a
+// small ink dot stays neutral — no vocabulary erosion).
+function alertGlyph(kind: AlertRow["kind"]) {
+  if (kind === "negative-wallet") return <Wallet className="h-3 w-3 text-muted-foreground" />;
+  if (kind === "recurring-due") return <Clock className="h-3 w-3 text-muted-foreground" />;
+  return <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" aria-hidden />;
+}
+
 export function DashboardView({
   firstName,
   currency,
@@ -43,7 +65,7 @@ export function DashboardView({
   year,
   // hero strip
   landedMtd,
-  spentMtd,
+  spentMtd: _spentMtd,
   feesMtd,
   outstandingTotal,
   walletTotal,
@@ -56,6 +78,15 @@ export function DashboardView({
   calmWeather,
   atlas,
   forecastStory,
+  holdings = [],
+  dailyBurnByWallet = [],
+  weekLanded = 0,
+  avgDaysToPayment = null,
+  biggestDebtor = null,
+  ytd = 0,
+  trailing30 = 0,
+  packRhythm = null,
+  lateNight = null,
 }: {
   firstName: string | null;
   currency: CurrencyCode;
@@ -73,7 +104,17 @@ export function DashboardView({
   calmWeather: CalmWeatherState | null;
   atlas: CashflowAtlas | null;
   forecastStory: ForecastStory | null;
+  holdings?: HoldingBalanceRow[];
+  dailyBurnByWallet?: Array<[string, number]>;
+  weekLanded?: number;
+  avgDaysToPayment?: number | null;
+  biggestDebtor?: { name: string; total: number } | null;
+  ytd?: number;
+  trailing30?: number;
+  packRhythm?: PackRhythmRead | null;
+  lateNight?: LateNightClusterRead | null;
 }) {
+  const router = useRouter();
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       {/* Header — tight */}
@@ -87,8 +128,10 @@ export function DashboardView({
           </p>
         </div>
         <div className="flex items-center gap-1.5">
+          {/* Calendar isn't in the locked vocabulary; the year number itself
+              carries the navigation identity (text-only, per the widget-system
+              "drop the icon and let typography do the work" option). */}
           <LinkButton href={`/year/${year}`} variant="ghost" size="sm">
-            <CalendarRange className="mr-1 h-3.5 w-3.5" />
             {year}
           </LinkButton>
           <LinkButton href={hasClients ? "/payments?new=1" : "/clients?new=1"} size="sm">
@@ -113,18 +156,24 @@ export function DashboardView({
           {calmWeather && (
             <CalmWeatherBanner state={calmWeather} variant="dashboard" />
           )}
+          <NegativeWalletAlarm holdings={holdings} />
 
-          {/* Hero strip — six stats */}
-          <HeroStrip
-            currency={currency}
-            items={[
-              { label: "Landed", value: landedMtd, tone: "pos" },
-              { label: "Spent", value: spentMtd, tone: "neg" },
-              { label: "Fees", value: feesMtd, tone: "warn" },
-              { label: "Outstanding", value: outstandingTotal, tone: "muted" },
-              { label: "Wallets", value: walletTotal, tone: "muted" },
-              { label: "Safe today", value: safeToday, tone: "pos", accent: true },
-            ]}
+          {/* Hero — single MWidget carrying the page headline (Safe today).
+              The other five numbers from the old HeroStrip live in the
+              IncomeStrip + WalletRunwayWidget below, so HeroStrip would
+              just have been a fancier copy. */}
+          <MWidget
+            label="Safe today"
+            eyebrow="SAFE TODAY"
+            hero={<MoneyFlow value={safeToday} currency={currency} />}
+            sub={
+              <span>
+                of {formatMoney(walletTotal, currency, { compact: true })} across wallets
+              </span>
+            }
+            supporting={<Stamp tone="lime">STEADY</Stamp>}
+            live
+            onOpen={() => router.push("/spending")}
           />
 
           {/* 90-Day Cashflow Atlas — bird's-eye projection. */}
@@ -145,6 +194,32 @@ export function DashboardView({
             <ForecastStoryCard story={forecastStory} baseCurrency={currency} />
           )}
 
+          {/* T28 — Income strip (8 S widgets). */}
+          <IncomeStrip
+            currency={currency}
+            landedMtd={landedMtd}
+            weekLanded={weekLanded}
+            outstandingTotal={outstandingTotal}
+            feesMtd={feesMtd}
+            avgDaysToPayment={avgDaysToPayment}
+            biggestDebtor={biggestDebtor}
+            ytd={ytd}
+            trailing30={trailing30}
+          />
+
+          {/* T30 — Wallet runway M widget with overdraft tri-state colors. */}
+          <WalletRunwayWidget
+            holdings={holdings}
+            dailyBurnByWallet={new Map(dailyBurnByWallet)}
+            currency={currency}
+          />
+
+          {/* T26 + T27 — Body + behavior strip. */}
+          <div className="space-y-3">
+            <PackRhythmWidget read={packRhythm} baseCurrency={currency} />
+            <NightSpendsRemark read={lateNight} />
+          </div>
+
           {/* Alerts — only render if there is at least one */}
           {alerts.length > 0 && <Alerts rows={alerts} currency={currency} />}
 
@@ -156,55 +231,14 @@ export function DashboardView({
   );
 }
 
-// ────────────────────────────────────────────────────────────── HERO STRIP ──
-
-function HeroStrip({
-  items,
-  currency,
-}: {
-  items: { label: string; value: number; tone: "pos" | "neg" | "warn" | "muted"; accent?: boolean }[];
-  currency: CurrencyCode;
-}) {
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32, ease: EASE }}
-      className="grid grid-cols-2 overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10 sm:grid-cols-3 lg:grid-cols-6"
-    >
-      {items.map((it, i) => (
-        <div
-          key={it.label}
-          className={cn(
-            "relative px-4 py-4 sm:px-5 sm:py-5",
-            // hairline dividers between cells
-            i < items.length - 1 && "after:absolute after:right-0 after:top-3 after:bottom-3 after:hidden after:w-px after:bg-foreground/10 lg:after:block",
-            i % 2 === 1 && "border-l border-foreground/10 lg:border-l-0",
-            i >= 2 && "border-t border-foreground/10 sm:border-t-0",
-            i >= 3 && i % 3 !== 0 && "sm:border-l sm:border-foreground/10 lg:border-l-0",
-            i === 3 && "sm:border-t sm:border-foreground/10 lg:border-t-0",
-            it.accent && "bg-foreground/[0.025]",
-          )}
-        >
-          <div className="display-eyebrow text-muted-foreground">{it.label}</div>
-          <div
-            className={cn(
-              "mt-2 font-heading text-[24px] font-medium tracking-tight tabular leading-none",
-              it.tone === "pos" && "text-foreground",
-              it.tone === "neg" && "text-foreground",
-              it.tone === "warn" && "text-foreground",
-              it.tone === "muted" && "text-foreground",
-            )}
-          >
-            {formatMoney(it.value, currency, { compact: true })}
-          </div>
-        </div>
-      ))}
-    </motion.section>
-  );
-}
-
 // ───────────────────────────────────────────────────────── 30-DAY PULSE ──
+
+// Locked palette tokens — acid-lime (positive money in), terracotta (warm
+// attention / spend), slate-muted (informational). NO --chart-1, --success,
+// --overdue, no gradients — those introduce fifth colors outside the locked
+// system.
+const LIME_TOKEN = "oklch(0.85 0.18 120)";
+const TERRACOTTA_TOKEN = "oklch(0.7 0.13 45)";
 
 function PulseStrip({
   landedSeries,
@@ -227,15 +261,19 @@ function PulseStrip({
     >
       <div className="flex items-end justify-between gap-3 px-5 pt-4">
         <div className="flex items-center gap-5 text-[13px]">
-          <Legend swatch="var(--chart-1)" label="Landed" value={landedTotal} currency={currency} />
-          <Legend swatch="var(--chart-4)" label="Spent" value={spentTotal} currency={currency} />
+          <Legend swatch={LIME_TOKEN} label="Landed" value={landedTotal} currency={currency} />
+          <Legend swatch={TERRACOTTA_TOKEN} label="Spent" value={spentTotal} currency={currency} />
         </div>
         <div className="text-right">
           <div className="display-eyebrow text-muted-foreground">30-day net</div>
-          <div className={cn(
-            "mt-1 font-heading text-base font-medium tabular tracking-tight",
-            net < 0 ? "text-[var(--overdue)]" : "text-[var(--success)]",
-          )}>
+          <div
+            className={cn(
+              "mt-1 font-heading text-base font-medium tabular tracking-tight",
+              // Acid-lime for positive, terracotta for negative — locked palette
+              // (no green --success, no extra color slot).
+              net < 0 ? "text-[oklch(0.7_0.13_45)]" : "text-[oklch(0.85_0.18_120)]",
+            )}
+          >
             {net < 0 ? "−" : "+"}{formatMoney(Math.abs(net), currency, { compact: true })}
           </div>
         </div>
@@ -258,27 +296,32 @@ function Legend({
   value: number;
   currency: CurrencyCode;
 }) {
+  // Legend values are NOT hero numbers — they sit alongside the sparkline
+  // labels. Per the locked rule ("AnimatedNumber wraps hero numbers only"),
+  // we keep these as muted small-text rather than display-tabular so they
+  // don't compete with the 30-day-net hero on the right.
   return (
     <span className="inline-flex items-baseline gap-1.5">
       <span aria-hidden className="inline-block size-1.5 translate-y-[-1px] rounded-full" style={{ background: swatch }} />
       <span className="text-muted-foreground">{label}</span>
-      <span className="font-heading text-sm tabular text-foreground">
+      <span className="text-sm tabular-nums text-muted-foreground">
         {formatMoney(value, currency, { compact: true })}
       </span>
     </span>
   );
 }
 
-// Single SVG with two overlaid lines, shared y-axis so the relative magnitude
-// reads honestly. Sparkline component handles in-view stroke-draw animation;
-// we mimic the same visual contract here with two simple paths.
+// Two overlaid strokes — no gradient halo (per locked widget system: "DON'T
+// add a glow / gradient halo behind the shape"). 1.5px stroke is enough.
 function DualSparkline({ landed, spent }: { landed: number[]; spent: number[] }) {
   const length = Math.max(landed.length, spent.length);
   if (length < 2) return <div className="h-12" />;
   // Pad either array to match length (front-pad with zeros for stability).
   const L = padFront(landed, length);
   const S = padFront(spent, length);
-  const max = Math.max(...L, ...S, 1);
+  let max = 1;
+  for (const v of L) if (v > max) max = v;
+  for (const v of S) if (v > max) max = v;
   const min = 0;
   const width = 600;
   const height = 48;
@@ -307,15 +350,8 @@ function DualSparkline({ landed, spent }: { landed: number[]; spent: number[] })
       aria-hidden
       className="block"
     >
-      <defs>
-        <linearGradient id="dash-landed-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.14} />
-          <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
-        </linearGradient>
-      </defs>
-      <path d={`${landedPath} L${width},${height} L0,${height} Z`} fill="url(#dash-landed-fill)" />
-      <path d={landedPath} fill="none" stroke="var(--chart-1)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-      <path d={spentPath} fill="none" stroke="var(--chart-4)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 2" opacity={0.85} />
+      <path d={landedPath} fill="none" stroke={LIME_TOKEN} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      <path d={spentPath} fill="none" stroke={TERRACOTTA_TOKEN} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 2" opacity={0.85} />
     </svg>
   );
 }
@@ -351,10 +387,13 @@ function Alerts({ rows, currency }: { rows: AlertRow[]; currency: CurrencyCode }
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, delay: 0.08, ease: EASE }}
-      className="overflow-hidden rounded-xl border-l-2 border-l-[var(--overdue)]/70 bg-card ring-1 ring-foreground/10"
+      // Terracotta accent — locked palette's "warm attention" signal.
+      className="overflow-hidden rounded-xl border-l-2 border-l-[oklch(0.7_0.13_45)]/70 bg-card ring-1 ring-foreground/10"
     >
       <div className="flex items-center gap-2 border-b border-foreground/10 px-3 py-2">
-        <AlertCircle className="size-3.5 text-[var(--overdue)]" />
+        {/* The terracotta left border on the section already carries the
+            warm-attention tone; an icon would double the signal and AlertCircle
+            isn't in the locked vocabulary. Header reads as a text label only. */}
         <div className="text-xs font-medium tracking-tight">Needs your attention</div>
         <div className="ml-auto text-[10px] text-muted-foreground tabular">{rows.length}</div>
       </div>
@@ -380,21 +419,26 @@ function Alerts({ rows, currency }: { rows: AlertRow[]; currency: CurrencyCode }
 }
 
 function AlertIcon({ kind }: { kind: AlertRow["kind"] }) {
-  const Icon = kind === "negative-wallet" ? Wallet : kind === "recurring-due" ? Receipt : CircleHelp;
+  // Locked-vocabulary glyphs: Wallet for negative-wallet, Clock for
+  // recurring-due, MessageCircle for ai-questions. Same icons render
+  // elsewhere on the dashboard with the same meaning.
   return (
     <span className="grid size-5 shrink-0 place-items-center rounded-md bg-foreground/[0.06]">
-      <Icon className="size-3 text-muted-foreground" />
+      {alertGlyph(kind)}
     </span>
   );
 }
 
 function AlertLabel({ row, currency }: { row: AlertRow; currency: CurrencyCode }) {
   if (row.kind === "negative-wallet") {
+    // No inline terracotta on the number — the band's left border already
+    // carries the warm-attention tone; two layers crosses "one accent inks
+    // the active part".
     return (
       <span className="min-w-0 truncate">
         <span className="font-medium">{row.name}</span>{" "}
         <span className="text-muted-foreground">is short</span>{" "}
-        <span className="tabular text-[var(--overdue)]">
+        <span className="tabular">
           {formatMoney(row.deficit, currency, { compact: true })}
         </span>
       </span>
@@ -424,11 +468,17 @@ function AlertLabel({ row, currency }: { row: AlertRow; currency: CurrencyCode }
 // ────────────────────────────────────────────────────────────── JUMP TO ──
 
 function JumpTo() {
+  // Locked vocabulary mapping for nav chrome — extends the symbol table
+  // with semantic glyphs we already use elsewhere:
+  //   Spending → ArrowUpRight (outflow / spend glyph, matches Fees S widget)
+  //   Payments → ArrowDownLeft (income glyph, matches Landed S widgets)
+  //   Clients  → Users (person collection; matches the empty-state)
+  //   Projects → Target (plan glyph — projects ship to a target deliverable)
   const items: { label: string; href: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { label: "Spending", href: "/spending", icon: Receipt },
-    { label: "Payments", href: "/payments", icon: Layers },
+    { label: "Spending", href: "/spending", icon: ArrowUpRight },
+    { label: "Payments", href: "/payments", icon: ArrowDownLeft },
     { label: "Clients", href: "/clients", icon: Users },
-    { label: "Projects", href: "/projects", icon: Layers },
+    { label: "Projects", href: "/projects", icon: Target },
   ];
   return (
     <motion.section

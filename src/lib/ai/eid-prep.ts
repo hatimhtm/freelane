@@ -3,6 +3,13 @@ import { phtDateString } from "@/lib/utils";
 import { Type } from "@google/genai";
 import { gemini, hasGemini } from "./gemini";
 import { HEAVY_MODEL } from "./models";
+import {
+  fingerprintFromIds,
+  readBrainCache,
+  withBrainCache,
+  type CachedBrainPayload,
+} from "./cache";
+import { BRAIN_KEYS } from "./cache-keys";
 import { eidPrepWindows, type EidPrepWindow, EID_PREP_WINDOW_DAYS } from "@/lib/islamic-calendar";
 import { formatMoney } from "@/lib/money";
 import type {
@@ -73,7 +80,38 @@ EXAMPLES:
 
 Return JSON.`;
 
-export async function generateEidPrep(args: {
+export async function getEidPrepCached(): Promise<CachedBrainPayload<EidPrepRead> | null> {
+  return readBrainCache<EidPrepRead>(BRAIN_KEYS.EID_PREP);
+}
+
+export async function generateEidPrep(
+  args: {
+    islamic: IslamicCalendarRow[];
+    spends: Spend[];
+    spendCategoryLinks: SpendCategoryLink[];
+    plannedSpends: PlannedSpend[];
+    now?: Date;
+  },
+  opts: { force?: boolean } = {},
+): Promise<EidPrepRead> {
+  // EID_PREP keys off the Hijri calendar row ids — calendar-driven freshness,
+  // not spend-driven. A fingerprint over calendar row ids + days-until window
+  // is enough to bust the cache when a new Eid lands.
+  const fingerprint = await fingerprintFromIds([
+    ...args.islamic.map((r) => r.id),
+    `now:${phtDateString(args.now ?? new Date())}`,
+  ]);
+  const result = await withBrainCache<EidPrepRead>({
+    brainKey: BRAIN_KEYS.EID_PREP,
+    fingerprint,
+    force: opts.force,
+    regen: () => generateEidPrepRegen(args),
+  });
+  if (result) return result.payload;
+  return generateEidPrepRegen(args);
+}
+
+async function generateEidPrepRegen(args: {
   islamic: IslamicCalendarRow[];
   spends: Spend[];
   spendCategoryLinks: SpendCategoryLink[];

@@ -2,6 +2,13 @@ import "server-only";
 import { Type } from "@google/genai";
 import { gemini, hasGemini } from "./gemini";
 import { HEAVY_MODEL } from "./models";
+import {
+  fingerprintFromIds,
+  readBrainCache,
+  withBrainCache,
+  type CachedBrainPayload,
+} from "./cache";
+import { BRAIN_KEYS } from "./cache-keys";
 import type { Payment, Spend } from "@/lib/supabase/types";
 
 // Post-Payday Surge Window (#35) — Hatim has this pattern: "post-landing
@@ -51,7 +58,41 @@ const SCHEMA = {
   required: ["line"],
 };
 
-export async function generatePostPaydaySurge(args: {
+export async function getPostPaydaySurgeCached(): Promise<CachedBrainPayload<PostPaydaySurgeRead> | null> {
+  return readBrainCache<PostPaydaySurgeRead>(BRAIN_KEYS.POST_PAYDAY);
+}
+
+export async function generatePostPaydaySurge(
+  args: {
+    payments: Payment[];
+    spends: Spend[];
+    now?: Date;
+  },
+  opts: { force?: boolean } = {},
+): Promise<PostPaydaySurgeRead> {
+  // Fingerprint = last landing id + last 5 post-landing spend ids. The brain
+  // only moves when a new landing happens or post-landing spends shift.
+  const lastLandingId = [...args.payments]
+    .sort((a, b) => b.paid_at.localeCompare(a.paid_at))[0]?.id ?? null;
+  const recentSpendIds = [...args.spends]
+    .sort((a, b) => b.spent_at.localeCompare(a.spent_at))
+    .slice(0, 5)
+    .map((s) => s.id);
+  const fingerprint = await fingerprintFromIds([
+    lastLandingId,
+    ...recentSpendIds,
+  ]);
+  const result = await withBrainCache<PostPaydaySurgeRead>({
+    brainKey: BRAIN_KEYS.POST_PAYDAY,
+    fingerprint,
+    force: opts.force,
+    regen: () => generatePostPaydaySurgeRegen(args),
+  });
+  if (result) return result.payload;
+  return generatePostPaydaySurgeRegen(args);
+}
+
+async function generatePostPaydaySurgeRegen(args: {
   payments: Payment[];
   spends: Spend[];
   now?: Date;

@@ -1,5 +1,5 @@
 import { getPlansData } from "@/lib/data/queries";
-import { safeToSpend } from "@/lib/safe-to-spend";
+import { computeSafeToSpendFromData } from "@/lib/safe-to-spend";
 import { holdingBalances } from "@/lib/payment-chain";
 import { buildCashflowAtlas } from "@/lib/cashflow-atlas";
 import { bigPlansUpcoming } from "@/lib/planned-spends";
@@ -56,20 +56,23 @@ export default async function PlansPage({
       }).catch(() => null)
     : null;
 
-  // Safe-to-spend baseline with planned spends factored in.
-  const safe = safeToSpend({
-    payments: data.payments,
-    withdrawals: data.withdrawals,
-    spends: data.spends,
-    recurring: data.recurring,
-    recurringSkips: data.recurringSkips,
-    loanInstallments: data.loanInstallments,
-    methods: data.methods,
-    stepsByPayment: data.stepsByPayment,
-    rates: data.rates,
-    plannedSpends: data.plannedSpends,
+  // Safe-to-spend baseline via the shared single-source helper — keeps the
+  // headline identical across Today / Dashboard / Spending / Plans.
+  const safe = computeSafeToSpendFromData(
+    {
+      payments: data.payments,
+      withdrawals: data.withdrawals,
+      spends: data.spends,
+      recurring: data.recurring,
+      recurringSkips: data.recurringSkips,
+      loanInstallments: data.loanInstallments,
+      methods: data.methods,
+      stepsByPayment: data.stepsByPayment,
+      rates: data.rates,
+      plannedSpends: data.plannedSpends,
+    },
     now,
-  });
+  );
 
   // Holdings → wallet picker balances for the planned-spend modal.
   const holdings = holdingBalances(
@@ -79,15 +82,20 @@ export default async function PlansPage({
     data.withdrawals,
     data.spends,
   );
-  const balanceByMethod = new Map(holdings.map((h) => [h.methodId, h.balance]));
+  const holdingByMethod = new Map(holdings.map((h) => [h.methodId, h]));
   const wallets = data.methods
     .filter((m) => !m.archived)
-    .map((m) => ({
-      id: m.id,
-      name: m.name,
-      is_holding: !!m.is_holding,
-      balanceBase: m.is_holding ? balanceByMethod.get(m.id) ?? 0 : undefined,
-    }));
+    .map((m) => {
+      const h = holdingByMethod.get(m.id);
+      return {
+        id: m.id,
+        name: m.name,
+        is_holding: !!m.is_holding,
+        balanceBase: m.is_holding ? h?.balance ?? 0 : undefined,
+        overdraftToleranceBase: h?.overdraftToleranceBase,
+        status: h?.status,
+      };
+    });
 
   const bigPlans: PlannedSpend[] = bigPlansUpcoming(data.plannedSpends, now, 90);
 

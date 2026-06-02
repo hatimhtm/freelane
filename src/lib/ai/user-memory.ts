@@ -24,6 +24,7 @@ import type {
   Payment,
   PaymentMethod,
   PaymentStep,
+  PlannedSpend,
   RecurringSpend,
   RecurringSpendSkip,
   Settings,
@@ -103,6 +104,7 @@ export async function consolidateUserMemory(): Promise<void> {
     loansR,
     installmentsR,
     ratesR,
+    plannedR,
   ] = await Promise.all([
     supabase.from("settings").select("*").eq("user_id", userId).maybeSingle(),
     supabase.from("user_memory").select("*").eq("user_id", userId).maybeSingle(),
@@ -123,6 +125,7 @@ export async function consolidateUserMemory(): Promise<void> {
     supabase.from("loans").select("*").eq("user_id", userId),
     supabase.from("loan_installments").select("*"),
     supabase.from("exchange_rates").select("*").eq("user_id", userId),
+    supabase.from("planned_spends").select("*").eq("user_id", userId),
   ]);
 
   const settings = settingsR.data as Settings | null;
@@ -140,6 +143,7 @@ export async function consolidateUserMemory(): Promise<void> {
   const loans = (loansR.data ?? []) as Loan[];
   const installments = (installmentsR.data ?? []) as LoanInstallment[];
   const rates = (ratesR.data ?? []) as ExchangeRate[];
+  const plannedSpends = (plannedR.data ?? []) as PlannedSpend[];
 
   // No notes AND nothing in the ledger → nothing to learn from yet.
   if (entries.length === 0 && payments.length === 0 && spends.length === 0) return;
@@ -180,6 +184,9 @@ export async function consolidateUserMemory(): Promise<void> {
 
   const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
 
+  // Pass plannedSpends so the AI's baseline matches the headline the user
+  // sees on Today/Dashboard/Spending/Plans. Without it the AI reads a higher
+  // safeTodayBase than the user, and its notes drift over time.
   const sts = safeToSpend({
     payments,
     withdrawals,
@@ -190,6 +197,7 @@ export async function consolidateUserMemory(): Promise<void> {
     methods,
     stepsByPayment,
     rates,
+    plannedSpends,
     now,
   });
 

@@ -3,6 +3,7 @@ import { Type } from "@google/genai";
 import { gemini, hasGemini } from "./gemini";
 import { HEAVY_MODEL } from "./models";
 import { phtDateString } from "@/lib/utils";
+import { isCigaretteCategoryName } from "@/lib/spending/categories";
 import type { Spend, SpendCategory, SpendCategoryLink } from "@/lib/supabase/types";
 
 // Pack Rhythm (#23) — Hatim wants to cut cigarettes. This is MIRROR,
@@ -54,7 +55,10 @@ export async function generatePackRhythm(args: {
   now?: Date;
 }): Promise<PackRhythmRead> {
   const now = args.now ?? new Date();
-  const cigCat = args.spendCategories.find((c) => /cigarettes?/i.test(c.name));
+  // Canonical cigarette-category detector — matches Today / milestones /
+  // late-night so the same data is never split into two empty-state
+  // scoreboards.
+  const cigCat = args.spendCategories.find((c) => isCigaretteCategoryName(c.name));
   if (!cigCat) {
     return {
       weeklyTotals: new Array(WEEKS).fill(0),

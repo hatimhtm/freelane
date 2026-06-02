@@ -25,7 +25,10 @@ export function RamadanModeBanner({ period }: { period: RamadanPeriod | null }) 
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      className="flex items-center gap-3 rounded-[12px] border border-border/60 bg-card/40 px-4 py-3"
+      // Locked widget tokens — rounded-xl + ring-1 ring-foreground/10 + bg-card —
+      // so this stacks visually identical to YearMemoryRecallCard, EidPrepCard,
+      // TightModeCoach.
+      className="flex items-center gap-3 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10"
     >
       <Moon className="h-4 w-4 shrink-0 text-foreground/70" />
       <p className="text-sm leading-snug text-foreground">{line}</p>

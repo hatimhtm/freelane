@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import Link from "next/link";
-import { Lock } from "lucide-react";
+import { Target } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { EidPrepCard as EidPrepCardData } from "@/lib/ai/eid-prep";
@@ -29,7 +29,9 @@ export function EidPrepCard({
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-      className="rounded-[14px] border border-border/60 bg-card/40 p-4"
+      // rounded-xl + ring-1 ring-foreground/10 to match the locked widget
+      // primitives instead of an ad-hoc 14px radius + bespoke border tone.
+      className="rounded-xl bg-card p-4 ring-1 ring-foreground/10"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
@@ -45,7 +47,9 @@ export function EidPrepCard({
             href={lockHref}
             className="inline-flex h-7 items-center gap-1 rounded-md border border-border/70 px-2.5 text-[11px] font-medium hover:bg-muted/40"
           >
-            <Lock className="h-3 w-3" />
+            {/* Plan glyph (Target) — Eid parking is a mini-plan; Lock isn't in the
+              locked symbol vocabulary. */}
+            <Target className="h-3 w-3" />
             Park {formatMoney(remaining, baseCurrency, { compact: true })}
           </Link>
         )}
@@ -90,11 +94,13 @@ export function EidPrepCard({
   );
 }
 
+// Stat boxes are supporting numbers, not hero metrics — kept as muted
+// small-text per the locked rule (AnimatedNumber wraps hero numbers only).
 function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="rounded-md border border-border/40 px-2.5 py-1.5">
+    <div className="rounded-xl bg-card/60 px-2.5 py-1.5 ring-1 ring-foreground/10">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="font-display tabular text-sm text-foreground">{value}</div>
+      <div className="text-sm tabular-nums text-muted-foreground">{value}</div>
       <div className="text-[10px] text-muted-foreground">{sub}</div>
     </div>
   );

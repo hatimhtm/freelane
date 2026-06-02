@@ -18,6 +18,7 @@ import {
   HeartHandshake,
   FileText,
   ShoppingBag,
+  Bell,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -29,8 +30,9 @@ const NAV: { title: string; items: NavItem[] }[] = [
   {
     title: "Now",
     items: [
-      { href: "/today",     label: "Today",     icon: Sun },
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/dashboard",     label: "Dashboard",     icon: LayoutDashboard },
+      { href: "/today",         label: "Today",         icon: Sun },
+      { href: "/notifications", label: "Notifications", icon: Bell },
     ],
   },
   {
@@ -85,7 +87,10 @@ export function SidebarNav() {
               </div>
             )}
             {group.items.map(({ href, label, icon: Icon }) => {
-              const active = pathname === href || pathname.startsWith(href + "/");
+              const active =
+                pathname === href ||
+                pathname.startsWith(href + "/") ||
+                (href === "/dashboard" && pathname === "/");
               return (
                 <Link
                   key={href}

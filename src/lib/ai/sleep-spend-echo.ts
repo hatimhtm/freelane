@@ -2,6 +2,13 @@ import "server-only";
 import { Type } from "@google/genai";
 import { gemini, hasGemini } from "./gemini";
 import { HEAVY_MODEL } from "./models";
+import {
+  fingerprintFromIds,
+  readBrainCache,
+  withBrainCache,
+  type CachedBrainPayload,
+} from "./cache";
+import { BRAIN_KEYS } from "./cache-keys";
 import { formatMoney } from "@/lib/money";
 import { phtToday } from "@/lib/utils";
 import type { MorningLog, Spend, SpendCategory, SpendCategoryLink } from "@/lib/supabase/types";
@@ -44,7 +51,49 @@ export interface SleepSpendEcho {
   fromAi: boolean;
 }
 
-export async function generateSleepSpendEcho(args: {
+export async function getSleepSpendEchoCached(): Promise<CachedBrainPayload<SleepSpendEcho> | null> {
+  return readBrainCache<SleepSpendEcho>(BRAIN_KEYS.SLEEP_ECHO);
+}
+
+export async function generateSleepSpendEcho(
+  args: {
+    morning: MorningLog | null;
+    spends: Spend[];
+    spendCategories: SpendCategory[];
+    spendCategoryLinks: SpendCategoryLink[];
+    now?: Date;
+  },
+  opts: { force?: boolean } = {},
+): Promise<SleepSpendEcho> {
+  // Fingerprint = morning log identity + today's spend ids. If there's no
+  // morning log there's nothing to echo, so we let the cache return an empty
+  // payload rather than re-rendering Gemini on every read.
+  const todaySpendIds = args.morning
+    ? args.spends
+        .filter((s) => s.spent_at === args.morning!.recorded_at)
+        .sort((a, b) => b.id.localeCompare(a.id))
+        .slice(0, 10)
+        .map((s) => s.id)
+    : [];
+  const fingerprint = await fingerprintFromIds([
+    args.morning?.recorded_at ?? null,
+    args.morning?.user_id ?? null,
+    String(args.morning?.slept_hours ?? ""),
+    String(args.morning?.mood_band ?? ""),
+    args.morning?.mind_state ?? "",
+    ...todaySpendIds,
+  ]);
+  const result = await withBrainCache<SleepSpendEcho>({
+    brainKey: BRAIN_KEYS.SLEEP_ECHO,
+    fingerprint,
+    force: opts.force,
+    regen: () => generateSleepSpendEchoRegen(args),
+  });
+  if (result) return result.payload;
+  return generateSleepSpendEchoRegen(args);
+}
+
+async function generateSleepSpendEchoRegen(args: {
   morning: MorningLog | null;
   spends: Spend[];
   spendCategories: SpendCategory[];

@@ -262,6 +262,22 @@ export function PaymentsView({
 }
 
 function HoldingCard({ row, currency }: { row: HoldingRow; currency: CurrencyCode }) {
+  // Surface the canonical walletStatus tri-state (positive / within tolerance
+  // / over overdraft) instead of painting every wallet identically. Matches
+  // NegativeWalletAlarm + the spend modal picker so the same row never reads
+  // two different colors across surfaces.
+  const balanceClass =
+    row.status === "over_overdraft"
+      ? "text-[oklch(0.65_0.22_25)]" // rose — alarm
+      : row.status === "within_tolerance"
+        ? "text-[oklch(0.7_0.13_45)]" // terracotta — soft attention
+        : "";
+  const caption =
+    row.status === "over_overdraft"
+      ? "over overdraft"
+      : row.status === "within_tolerance"
+        ? "within tolerance"
+        : "parked now";
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -270,11 +286,13 @@ function HoldingCard({ row, currency }: { row: HoldingRow; currency: CurrencyCod
     >
       <Card className="p-5">
         <div className="flex items-center gap-2">
-          <Wallet className="size-4 text-[var(--chart-1)]" />
+          <Wallet className="size-4 text-foreground/60" />
           <span className="text-sm font-medium">{row.name}</span>
         </div>
-        <div className="mt-3 text-2xl font-semibold tabular">{formatMoney(row.balance, currency, { compact: true })}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">parked now</div>
+        <div className={cn("mt-3 text-2xl font-semibold tabular", balanceClass)}>
+          {formatMoney(row.balance, currency, { compact: true })}
+        </div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{caption}</div>
         <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2 text-[11px] text-muted-foreground tabular">
           <span>received {formatMoney(row.received, currency, { compact: true })}</span>
           <span>withdrawn {formatMoney(row.withdrawn, currency, { compact: true })}</span>

@@ -66,6 +66,14 @@ export type WalletOpt = {
   name: string;
   is_holding: boolean;
   balanceBase?: number;
+  // T13 — surface the canonical wallet tri-state down into the picker /
+  // balance preview / impact dial so a wallet within tolerance reads
+  // differently from one over its overdraft. The CLAUDE.md note at
+  // payment-chain.ts promised these would propagate everywhere — these two
+  // optional fields keep all five builders honest without breaking existing
+  // callers.
+  overdraftToleranceBase?: number;
+  status?: "positive" | "within_tolerance" | "over_overdraft";
 };
 
 export type SpendModalDefaults = {
@@ -176,6 +184,17 @@ export function SpendModal({
     const m = new Map<string, number>();
     for (const w of wallets) {
       if (typeof w.balanceBase === "number") m.set(w.id, w.balanceBase);
+    }
+    return m;
+  }, [wallets]);
+  // Per-wallet status (positive / within_tolerance / over_overdraft) so the
+  // picker can paint a soft terracotta or rose dot. The page-level wallet-list
+  // builders are responsible for populating WalletOpt.status from the canonical
+  // walletStatus() helper.
+  const walletStatuses = useMemo(() => {
+    const m = new Map<string, "positive" | "within_tolerance" | "over_overdraft">();
+    for (const w of wallets) {
+      if (w.status) m.set(w.id, w.status);
     }
     return m;
   }, [wallets]);
@@ -328,6 +347,7 @@ export function SpendModal({
                 onValueChange={(v) => v && setWalletId(v)}
                 methods={walletOptions}
                 balances={walletBalances}
+                statuses={walletStatuses}
                 baseCurrency={baseCurrency}
                 placeholder="Pick a wallet"
               />

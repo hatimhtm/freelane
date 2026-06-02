@@ -1,5 +1,5 @@
 import { getSpendingData } from "@/lib/data/queries";
-import { safeToSpend } from "@/lib/safe-to-spend";
+import { computeSafeToSpendFromData } from "@/lib/safe-to-spend";
 import { holdingBalances } from "@/lib/payment-chain";
 import { generateSpendingAnomalies } from "@/lib/ai/spending-anomalies";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
@@ -30,6 +30,7 @@ export default async function SpendingPage({
     rates,
     payments,
     stepsByPayment,
+    plannedSpends,
   } = await getSpendingData();
   const baseCurrency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
 
@@ -56,22 +57,31 @@ export default async function SpendingPage({
   }));
 
   // Holding balances feed the SpendModal's wallet picker so the richest holding
-  // wallet leads — the most likely source of an everyday spend.
+  // wallet leads — the most likely source of an everyday spend. We pipe the
+  // full HoldingBalanceRow so the picker can paint the canonical wallet tri-
+  // state (positive / within-tolerance / over-overdraft).
   const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
-  const balanceByMethod = new Map(holdings.map((h) => [h.methodId, h.balance]));
+  const holdingByMethod = new Map(holdings.map((h) => [h.methodId, h]));
 
   const wallets = methods
     .filter((m) => !m.archived)
-    .map((m) => ({
-      id: m.id,
-      name: m.name,
-      is_holding: !!m.is_holding,
-      balanceBase: m.is_holding ? balanceByMethod.get(m.id) ?? 0 : undefined,
-    }));
+    .map((m) => {
+      const h = holdingByMethod.get(m.id);
+      return {
+        id: m.id,
+        name: m.name,
+        is_holding: !!m.is_holding,
+        balanceBase: m.is_holding ? h?.balance ?? 0 : undefined,
+        overdraftToleranceBase: h?.overdraftToleranceBase,
+        status: h?.status,
+      };
+    });
 
   // Baseline for the SpendModal's impact dial — recomputed live as the user
-  // types via SafeToSpendImpactDial(proposedAmountBase, baseline).
-  const safeToSpendBaseline = safeToSpend({
+  // types via SafeToSpendImpactDial(proposedAmountBase, baseline). Single-
+  // source-of-truth helper that includes plannedSpends so the headline number
+  // can never disagree with /today /dashboard /plans.
+  const safeToSpendBaseline = computeSafeToSpendFromData({
     payments,
     withdrawals,
     spends,
@@ -81,6 +91,7 @@ export default async function SpendingPage({
     methods,
     stepsByPayment,
     rates,
+    plannedSpends,
   });
 
   const initialMonth = parseMonthParam(params.m) ?? currentMonth();

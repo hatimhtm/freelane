@@ -1,41 +1,43 @@
-import { getDashboardData, getAiSafeSpendCacheRow } from "@/lib/data/queries";
-import {
-  cashflowMetrics,
-  outstanding,
-  outstandingTotalBase,
-  topClients,
-  dailySeries,
-} from "@/lib/dashboard-calc";
-import { monthlyFeeBase } from "@/lib/payment-chain";
+import { getDashboardData, getAiSafeSpendCacheRow, getDiaryEntry, getLetters, getMilestones, getTodayMorningLog } from "@/lib/data/queries";
+import { outstanding, outstandingTotalBase } from "@/lib/dashboard-calc";
 import { holdingBalances } from "@/lib/payment-chain";
-import { safeToSpend, suggestSadakaForIncome } from "@/lib/safe-to-spend";
+import { computeSafeToSpendFromData, suggestSadakaForIncome } from "@/lib/safe-to-spend";
 import { hasGemini } from "@/lib/ai/gemini";
 import { readFocusCache } from "@/lib/ai/actions";
-import { getCalmWeather } from "@/lib/ai/calm-weather";
-import { computeTightMode, type TightModeRead } from "@/lib/ai/tight-mode-coach";
-import { generateForecastStory, type ForecastStory } from "@/lib/ai/forecast-storyteller";
-import { generateSadakaRhythm, type SadakaRhythmRead } from "@/lib/ai/sadaka-rhythm";
-import { generateEidPrep, type EidPrepRead } from "@/lib/ai/eid-prep";
+import { getCalmWeatherCached, refreshCalmWeather } from "@/lib/ai/calm-weather";
+import { getTightModeCached } from "@/lib/ai/tight-mode-coach";
+import { getSadakaRhythmCached } from "@/lib/ai/sadaka-rhythm";
+import { getEidPrepCached } from "@/lib/ai/eid-prep";
 import { nextRamadanPeriod, type RamadanPeriod } from "@/lib/islamic-calendar";
-import { getLetters, getMilestones, getTodayMorningLog, getCurrentIntentMirror, getCurrentWellbeingCheckin } from "@/lib/data/queries";
-import { promptForWeek, isCheckinDay } from "@/lib/ai/tuesday-checkin";
+import { generateLateNightRead } from "@/lib/ai/late-night-cluster";
+import { getPostPaydaySurgeCached } from "@/lib/ai/post-payday-surge";
+import { getSleepSpendEchoCached } from "@/lib/ai/sleep-spend-echo";
 import { buildYearMemoryRecall, type YearMemoryRecall } from "@/lib/ai/year-memory-recall";
-import { generatePackRhythm, type PackRhythmRead } from "@/lib/ai/pack-rhythm";
-import { generateLateNightRead, type LateNightClusterRead } from "@/lib/ai/late-night-cluster";
-import { generatePostPaydaySurge, type PostPaydaySurgeRead } from "@/lib/ai/post-payday-surge";
-import { generateSleepSpendEcho, type SleepSpendEcho } from "@/lib/ai/sleep-spend-echo";
-import { computeFamilySavings, type FamilySavingsWitness } from "@/lib/family-savings-witness";
+import { promptForWeek, isCheckinDay } from "@/lib/ai/tuesday-checkin";
+import { postNotification } from "@/lib/notifications/dispatcher";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
-import type { CurrencyCode } from "@/lib/supabase/types";
-import type { BlockedRow } from "@/components/app/blocked-money-list";
+import { phtToday, phtMondayOfWeek } from "@/lib/utils";
+import { linksBySpend } from "@/lib/spends";
+import { isCigaretteCategoryName } from "@/lib/spending/categories";
+import type { CurrencyCode, MorningLog } from "@/lib/supabase/types";
 import type { SafeToSpendOverlay } from "@/lib/ai/safe-to-spend-ai";
+import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import { TodayView } from "./_components/today-view";
 
 const DAY_MS = 86_400_000;
-// Income → sadaka window: a payment that landed within this many hours counts
-// as "fresh" enough to surface the suggestion card on Today. Past that, the
-// moment has passed and the card disappears until the next landing.
 const SADAKA_FRESH_HOURS = 36;
+
+// First-paint contract: every brain on Today is now cache-first. The page
+// loads whatever's already in ai_brain_cache (server-side, no Gemini call),
+// hands it to a client widget, and the widget decides at mount whether the
+// payload is PHT-day stale. When stale (or absent), it kicks off a refresh
+// server action that does the heavy work AFTER first paint. Implementation
+// lives in src/components/widgets/today/*-widget.tsx + the per-brain
+// withBrainCache wrappers in src/lib/ai/cache.ts.
+//
+// The previous race-against-a-budget pattern (withFirstPaintBudget) was a
+// holdover from before withBrainCache shipped; with the wrapper live every
+// brain gets the same async-on-stale behavior without a server-side timer.
 
 export const metadata = { title: "Today" };
 
@@ -63,7 +65,6 @@ export default async function TodayPage() {
     recurringSkips,
     loanInstallments,
     stepsByPayment,
-    openAiQuestions,
     plannedSpends,
     calmWeather: cachedCalmWeather,
     islamicCalendar,
@@ -72,79 +73,15 @@ export default async function TodayPage() {
   } = data;
 
   const currency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
-  const recurringFee = methods.reduce((s, m) => s + monthlyFeeBase(m, rates), 0);
+  const now = new Date();
+  const todayStr = phtToday();
 
-  const metrics = cashflowMetrics(payments, new Date(), recurringFee, withdrawals);
+  // Outstanding total + days-since-oldest.
   const rows = outstanding(projects, payments, clients, rates);
   const pendingTotal = outstandingTotalBase(rows);
-  const series = dailySeries(payments, 30);
+  const oldestDays = rows[0]?.daysAged ?? 0;
 
-  const blocked: BlockedRow[] = rows.map((r) => ({
-    projectId: r.project.id,
-    projectTitle: r.project.title,
-    clientName: r.client?.name ?? "—",
-    outstandingNative: r.outstandingNative,
-    currency: r.project.currency as CurrencyCode,
-    outstandingBase: r.outstandingBase,
-    daysAged: r.daysAged,
-    status: r.project.status === "partially_paid" ? "partially_paid" : "unpaid",
-    flagged: r.project.flagged_overdue,
-  }));
-
-  const debtById = new Map<string, { name: string; total: number }>();
-  for (const r of rows) {
-    const name = r.client?.name ?? "Unknown";
-    const e = debtById.get(r.project.client_id) ?? { name, total: 0 };
-    e.total += r.outstandingBase;
-    debtById.set(r.project.client_id, e);
-  }
-  const biggestDebtor = Array.from(debtById.values()).sort((a, b) => b.total - a.total)[0] ?? null;
-
-  const lags = projects
-    .filter((p) => p.quoted_at && p.status === "paid")
-    .map((p) => {
-      const first = payments
-        .filter((pay) => pay.project_id === p.id)
-        .map((pay) => new Date(pay.paid_at).getTime())
-        .sort((a, b) => a - b)[0];
-      if (!first) return null;
-      return Math.max(0, (first - new Date(p.quoted_at!).getTime()) / DAY_MS);
-    })
-    .filter((n): n is number => n !== null);
-  const avgDaysToPayment = lags.length ? lags.reduce((a, b) => a + b, 0) / lags.length : null;
-
-  const recent = payments.slice(0, 5).map((p) => {
-    const project = projects.find((pr) => pr.id === p.project_id);
-    const client = project ? clients.find((c) => c.id === project.client_id) : null;
-    return {
-      id: p.id,
-      net: Number(p.net_amount_base ?? 0),
-      paidAt: p.paid_at,
-      projectTitle: project?.title ?? "—",
-      clientName: client?.name ?? "—",
-    };
-  });
-
-  const oldest = rows[0] ?? null;
-  let situation: string;
-  if (clients.length === 0) {
-    situation = "No clients yet. Add the first one and Freelane starts keeping score.";
-  } else if (oldest) {
-    const who = oldest.client?.name ?? "A client";
-    const others = rows.length - 1;
-    situation =
-      `${who} owes the most right now` +
-      (oldest.daysAged > 0 ? ` — waiting ${oldest.daysAged} ${oldest.daysAged === 1 ? "day" : "days"}` : "") +
-      (others > 0 ? `, with ${others} other ${others === 1 ? "project" : "projects"} still open.` : ".");
-  } else {
-    situation = "Nothing's waiting on you. Every project is settled.";
-  }
-
-  // ── Phase 1.5 surfaces ──
-
-  // Wallet balances (holding wallets only) — feeds NegativeWalletAlarm + Runway.
-  // Defensive: a single malformed row (e.g. an orphan withdrawal with a stale
-  // method_id) shouldn't take the whole Today page down on a revalidate.
+  // Holdings (defensive).
   let holdings: ReturnType<typeof holdingBalances>;
   try {
     holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
@@ -153,25 +90,14 @@ export default async function TodayPage() {
     holdings = [];
   }
 
-  // Trailing 30d spend per wallet → daily burn used by WalletRunwayCard.
-  const now = new Date();
-  const burnStart = now.getTime() - 30 * DAY_MS;
-  const burnSumByWallet = new Map<string, number>();
-  for (const s of spends) {
-    const t = new Date(s.spent_at).getTime();
-    if (t < burnStart || t > now.getTime()) continue;
-    burnSumByWallet.set(
-      s.wallet_id,
-      (burnSumByWallet.get(s.wallet_id) ?? 0) + Number(s.amount_base ?? 0),
-    );
-  }
-  const dailyBurnByWallet: Array<[string, number]> = Array.from(burnSumByWallet.entries()).map(
-    ([k, v]) => [k, v / 30],
-  );
+  // Today-spend totals (PHT day).
+  const dayStart = new Date(todayStr + "T00:00:00+08:00").getTime();
+  const todaySpends = spends.filter((sp) => new Date(sp.spent_at).getTime() >= dayStart);
+  const todaySpendBase = todaySpends.reduce((s, sp) => s + Number(sp.amount_base ?? 0), 0);
+  const sevenDayCutoff = dayStart - 6 * DAY_MS;
+  const last7DaySpendCount = spends.filter((sp) => new Date(sp.spent_at).getTime() >= sevenDayCutoff).length;
 
-  // Income → sadaka pairing. We look for the most recent landed payment inside
-  // the freshness window; if there is one, derive the suggestion locally so the
-  // card works without depending on the AI cache being populated.
+  // Income → sadaka pairing.
   const freshCutoff = now.getTime() - SADAKA_FRESH_HOURS * 60 * 60 * 1000;
   const freshPayment = payments.find((p) => {
     const t = new Date(p.paid_at).getTime();
@@ -208,46 +134,50 @@ export default async function TodayPage() {
     }
   }
 
-  // Sadaka category id — the quick-log button + suggestion both target it.
   const sadakaCategoryId =
     spendCategories.find((c) => /sadaka/i.test(c.name))?.id ?? null;
 
-  // Safe-to-spend AI overlay: read whatever's in the cache. If empty, pass
-  // null and let MorningBriefHero show its calm "still learning" state.
   const overlay: SafeToSpendOverlay | null = cachedOverlayRow?.insight
     ? (cachedOverlayRow.insight as SafeToSpendOverlay)
     : null;
 
-  // SpendSheet props — Today renders its own sheet so the Sadaka quick-log +
-  // suggestion buttons can open it without routing away.
-  const balanceByMethod = new Map(holdings.map((h) => [h.methodId, h.balance]));
+  // Pipe the full HoldingBalanceRow (balance + tolerance + status) through the
+  // spend modal's WalletOpt so the picker / impact dial render the canonical
+  // tri-state. Non-holding methods carry no status — they aren't ledgered.
+  const holdingByMethod = new Map(holdings.map((h) => [h.methodId, h]));
   const sheetWallets = methods
     .filter((m) => !m.archived)
-    .map((m) => ({
-      id: m.id,
-      name: m.name,
-      is_holding: !!m.is_holding,
-      balanceBase: m.is_holding ? balanceByMethod.get(m.id) ?? 0 : undefined,
-    }));
-  // safeToSpend is pure math, but it consumes every ledger collection — a
-  // single bad input row (e.g. NaN amount_base from a half-migrated spend)
-  // would crash the whole Today render on revalidate. Catch and fall back to
-  // a "learning" baseline so the UI can still render. The cached overlay
-  // (above) handles the headline number; this baseline is the spend-sheet's
-  // post-spend projection.
-  let safeToSpendBaseline: ReturnType<typeof safeToSpend>;
-  try {
-    safeToSpendBaseline = safeToSpend({
-      payments,
-      withdrawals,
-      spends,
-      recurring,
-      recurringSkips,
-      loanInstallments,
-      methods,
-      stepsByPayment,
-      rates,
+    .map((m) => {
+      const h = holdingByMethod.get(m.id);
+      return {
+        id: m.id,
+        name: m.name,
+        is_holding: !!m.is_holding,
+        balanceBase: m.is_holding ? h?.balance ?? 0 : undefined,
+        overdraftToleranceBase: h?.overdraftToleranceBase,
+        status: h?.status,
+      };
     });
+
+  let safeToSpendBaseline: SafeToSpendBreakdown;
+  try {
+    // Single-source-of-truth helper — passes plannedSpends so the headline
+    // can never drift between Today / Dashboard / Spending / Plans.
+    safeToSpendBaseline = computeSafeToSpendFromData(
+      {
+        payments,
+        withdrawals,
+        spends,
+        recurring,
+        recurringSkips,
+        loanInstallments,
+        methods,
+        stepsByPayment,
+        rates,
+        plannedSpends,
+      },
+      now,
+    );
   } catch (err) {
     console.error("Today: safeToSpend threw", err);
     safeToSpendBaseline = {
@@ -274,87 +204,82 @@ export default async function TodayPage() {
       safeTodayBase: 0,
       notes: ["safe-to-spend recompute failed — fell back to a calm default."],
       isLearning: true,
+      observationDays: 0,
+      confidenceTag: "rough",
     };
   }
 
-  // ── Tier 1 layer: Calm Weather + Tight Mode + Forecast ──
-  // Calm Weather regenerates on read when stale. Tight Mode + Forecast read
-  // straight off the snapshot. All three are best-effort — a failure on any
-  // doesn't break the page.
-  const calmWeather = await getCalmWeather().catch(() => cachedCalmWeather ?? null);
-
-  let tightMode: TightModeRead | null = null;
-  if (calmWeather && (calmWeather.band === "storm" || calmWeather.band === "gust")) {
-    try {
-      tightMode = await computeTightMode({
-        payments,
-        withdrawals,
-        spends,
-        recurring,
-        recurringSkips,
-        loanInstallments,
-        plannedSpends,
-        methods,
-        stepsByPayment,
-        rates,
-        calmWeather,
-        now,
-      });
-    } catch (err) {
-      console.error("Today: computeTightMode threw", err);
-    }
+  // Calm weather: read the cache only — even if stale — so the page can
+  // render immediately. If the row is missing or stale, fire a background
+  // refresh that the user will see on the next visit (a mutation will also
+  // invalidate it through invalidateAiSafeSpendCache). The cachedCalmWeather
+  // already came down with getDashboardData and is the canonical fallback.
+  const calmWeatherRow = await getCalmWeatherCached().catch(() => null);
+  const calmWeather = calmWeatherRow ?? cachedCalmWeather ?? null;
+  const calmStale = calmWeather === null || new Date(calmWeather.expires_at).getTime() <= now.getTime();
+  if (calmStale) {
+    void refreshCalmWeather({ force: false }).catch(() => {});
   }
-
-  let forecastStory: ForecastStory | null = null;
-  if (aiEnabled) {
-    try {
-      forecastStory = await generateForecastStory({
-        payments,
-        withdrawals,
-        spends,
-        recurring,
-        recurringSkips,
-        loanInstallments,
-        plannedSpends,
-        methods,
-        stepsByPayment,
-        rates,
-        now,
-      });
-    } catch (err) {
-      console.error("Today: generateForecastStory threw", err);
-    }
-  }
-
-  // Tier 2 surfaces — Cultural overlay + Eid Prep + Ramadan + Sadaka Rhythm.
-  // All best-effort; failure on one doesn't break the page.
   const ramadan: RamadanPeriod | null = nextRamadanPeriod(islamicCalendar, now);
-  let eidPrep: EidPrepRead | null = null;
-  let sadaka: SadakaRhythmRead | null = null;
-  try {
-    eidPrep = await generateEidPrep({
-      islamic: islamicCalendar,
-      spends,
-      spendCategoryLinks,
-      plannedSpends,
-      now,
-    });
-  } catch (err) {
-    console.error("Today: generateEidPrep threw", err);
-  }
-  try {
-    sadaka = await generateSadakaRhythm({
-      spends,
-      payments,
-      spendCategories,
-      spendCategoryLinks,
-      now,
-    });
-  } catch (err) {
-    console.error("Today: generateSadakaRhythm threw", err);
-  }
 
-  // Tier 3 fetches — letters + surfaced milestones for the Today cards.
+  // Pull non-AI DB reads first so the AI fan-out below isn't conflated with
+  // a serial morning-log fetch. morningLog feeds sleepEcho's Gemini call —
+  // having it ready in advance is what lets every brain race in parallel.
+  const morningLog: MorningLog | null = await getTodayMorningLog().catch(() => null);
+
+  // 5 blocking brains → cache-only server reads in parallel. Each one
+  // returns a CachedBrainPayload<T> | null (the brain's regen body lives
+  // inside withBrainCache and is now driven from the client widgets).
+  // yearRecall stays serial-ish for now — it's calendar-driven and not on
+  // the hot Gemini path.
+  const [
+    tightModeCached,
+    eidPrepCached,
+    sadakaCached,
+    postPaydayCached,
+    sleepEchoCached,
+    yearRecall,
+  ] = await Promise.all([
+    getTightModeCached().catch(() => null),
+    getEidPrepCached().catch(() => null),
+    getSadakaRhythmCached().catch(() => null),
+    getPostPaydaySurgeCached().catch(() => null),
+    getSleepSpendEchoCached().catch(() => null),
+    buildYearMemoryRecall().catch(() => null as YearMemoryRecall | null),
+  ]);
+
+  // Diary entry for today.
+  const diaryEntry = await getDiaryEntry(todayStr).catch(() => null);
+
+  // Recent sleep nights — past 3 from morning_log.
+  const recentNights: Array<{ slept: number | null }> = [
+    { slept: morningLog?.slept_hours != null ? Number(morningLog.slept_hours) : null },
+    { slept: null },
+    { slept: null },
+  ];
+
+  // Cigarettes today + baseline.
+  const linkIndex = linksBySpend(spendCategoryLinks);
+  // Canonical cigarette-category detector — same helper used by pack-rhythm
+  // so Today and Dashboard never split the same data into different category
+  // sets.
+  const cigCategoryIds = new Set(
+    spendCategories.filter((c) => isCigaretteCategoryName(c.name)).map((c) => c.id),
+  );
+  const isCigSpend = (spendId: string): boolean => {
+    const links = linkIndex.get(spendId) ?? [];
+    return links.some((l) => cigCategoryIds.has(l));
+  };
+  const cigTodayCount = todaySpends.filter((s) => isCigSpend(s.id)).length;
+  const thirtyAgo = now.getTime() - 30 * DAY_MS;
+  const cigTrailing = spends.filter((s) => {
+    if (!isCigSpend(s.id)) return false;
+    const t = new Date(s.spent_at).getTime();
+    return t >= thirtyAgo;
+  });
+  const cigBaselineDaily = cigTrailing.length / 30;
+
+  // Letters + milestones for editorial cluster.
   let lettersList: Awaited<ReturnType<typeof getLetters>> = [];
   let milestonesList: Awaited<ReturnType<typeof getMilestones>> = [];
   try {
@@ -365,97 +290,80 @@ export default async function TodayPage() {
   const latestLetter = lettersList.find((l) => l.pinned) ?? lettersList[0] ?? null;
   const freshMilestones = milestonesList.filter((m) => m.surfaced).slice(0, 4);
 
-  // Tier 4 reads — body + behavior layer. All best-effort.
-  const familySavings: FamilySavingsWitness = computeFamilySavings({
-    payments,
-    withdrawals,
-    spends,
-    methods,
-    stepsByPayment,
-    rates,
-    now,
-  });
-  let packRhythm: PackRhythmRead | null = null;
-  let lateNight: LateNightClusterRead | null = null;
-  let postPayday: PostPaydaySurgeRead | null = null;
-  let sleepEcho: SleepSpendEcho | null = null;
-  let morningLog: Awaited<ReturnType<typeof getTodayMorningLog>> = null;
-  let intentMirror: Awaited<ReturnType<typeof getCurrentIntentMirror>> = null;
-  try {
-    [morningLog, intentMirror] = await Promise.all([getTodayMorningLog(), getCurrentIntentMirror()]);
-  } catch (err) {
-    console.error("Today: morning/intent fetch threw", err);
-  }
-  try {
-    packRhythm = await generatePackRhythm({ spends, spendCategories, spendCategoryLinks, now });
-  } catch (err) {
-    console.error("Today: generatePackRhythm threw", err);
-  }
-  try {
-    lateNight = await generateLateNightRead({ spends, now });
-  } catch (err) {
-    console.error("Today: generateLateNightRead threw", err);
-  }
-  try {
-    postPayday = await generatePostPaydaySurge({ payments, spends, now });
-  } catch (err) {
-    console.error("Today: generatePostPaydaySurge threw", err);
-  }
-  try {
-    sleepEcho = await generateSleepSpendEcho({
-      morning: morningLog,
-      spends,
-      spendCategories,
-      spendCategoryLinks,
-      now,
-    });
-  } catch (err) {
-    console.error("Today: generateSleepSpendEcho threw", err);
+  // T06 — dispatch Tuesday check-in as a notification on Tuesday mornings.
+  // Fire-and-forget: notification dispatch is purely best-effort and must
+  // never delay first paint. The dedupKey makes a duplicate dispatch silent.
+  if (isCheckinDay(now)) {
+    void (async () => {
+      try {
+        // PHT-correct Monday-of-week dedup key (single canonical helper). The
+        // pre-fix `new Date(todayStr)` parses as UTC midnight then getDay()
+        // reads local TZ — coincidentally correct on Vercel UTC, wrong on a
+        // PHT host. Using phtMondayOfWeek makes the boundary deterministic.
+        const weekKey = phtMondayOfWeek(now);
+        const prompt = await promptForWeek();
+        await postNotification({
+          kind: "tuesday_checkin",
+          subject: prompt,
+          body: "A line, two numbers. The echo lands after you save.",
+          linkUrl: "/notifications?open=tuesday",
+          dedupKey: `tuesday_checkin:${weekKey}`,
+          priority: 1,
+        });
+      } catch {
+        // Notification dispatch is best-effort.
+      }
+    })();
   }
 
-  // Tier 5 reads — Tuesday Check-In + Year Memory Recall.
-  let tuesdayPrompt = "What's the smallest thing that landed well this week?";
-  let tuesdayCheckin: Awaited<ReturnType<typeof getCurrentWellbeingCheckin>> = null;
-  let yearRecall: YearMemoryRecall | null = null;
-  try {
-    [tuesdayPrompt, tuesdayCheckin, yearRecall] = await Promise.all([
-      promptForWeek(),
-      getCurrentWellbeingCheckin(),
-      buildYearMemoryRecall(),
-    ]);
-  } catch (err) {
-    console.error("Today: Tier 5 reads threw", err);
-  }
-  const isTuesday = isCheckinDay(now);
+  // Late-night cluster: cache-warming side-effect for the Dashboard remark.
+  // FIRE-AND-FORGET so a 3s Gemini call doesn't stretch Today's TTFB. The
+  // Dashboard reads the cache when it renders; a cold-start render there
+  // will trigger its own regen if the warm hasn't completed yet.
+  void generateLateNightRead({ spends, now }).catch(() => {});
 
   return (
     <TodayView
       firstName={settings?.issuer_name?.split(" ")[0] ?? null}
       currency={currency}
       hasClients={clients.length > 0}
-      metrics={metrics}
-      series={series}
-      pendingTotal={pendingTotal}
-      pendingCount={rows.length}
-      biggestDebtor={biggestDebtor}
-      avgDaysToPayment={avgDaysToPayment}
-      blocked={blocked}
-      topClients={topClients(payments, projects, clients, 5)}
-      recent={recent}
-      situation={situation}
       year={new Date().getFullYear()}
-      aiEnabled={aiEnabled}
+      outstandingTotal={pendingTotal}
+      oldestDays={oldestDays}
+      todaySpendBase={todaySpendBase}
+      last7DaySpendCount={last7DaySpendCount}
+      safeToSpendBaseline={safeToSpendBaseline}
+      overlay={overlay}
+      recentNights={recentNights}
+      cigarettesTodayCount={cigTodayCount}
+      cigarettesBaselineDailyCount={cigBaselineDaily}
+      diaryEntry={diaryEntry}
+      diaryEntryDate={todayStr}
       focusInsights={focus.insights}
       focusGeneratedAt={focus.generatedAt}
-      overlay={overlay}
+      aiEnabled={aiEnabled}
       holdings={holdings}
-      dailyBurnByWalletEntries={dailyBurnByWallet}
+      calmWeather={calmWeather}
+      tightMode={tightModeCached?.payload ?? null}
+      tightModeGeneratedAt={tightModeCached?.generatedAt ?? null}
+      ramadan={ramadan}
+      islamicCalendar={islamicCalendar}
+      phCulturalEvents={phCulturalEvents}
+      eidPrep={eidPrepCached?.payload ?? null}
+      eidPrepGeneratedAt={eidPrepCached?.generatedAt ?? null}
+      sadaka={sadakaCached?.payload ?? null}
+      sadakaGeneratedAt={sadakaCached?.generatedAt ?? null}
+      postPayday={postPaydayCached?.payload ?? null}
+      postPaydayGeneratedAt={postPaydayCached?.generatedAt ?? null}
+      sleepEcho={sleepEchoCached?.payload ?? null}
+      sleepEchoGeneratedAt={sleepEchoCached?.generatedAt ?? null}
+      wifeState={wifeState}
+      yearRecall={yearRecall}
+      latestLetter={latestLetter}
+      freshMilestones={freshMilestones}
       sadakaSuggestion={sadakaSuggestion}
       triggeringPayment={triggeringPayment}
       sadakaCategoryId={sadakaCategoryId}
-      openAiQuestions={openAiQuestions}
-      recurring={recurring}
-      recurringSkips={recurringSkips}
       rates={rates}
       spendCategories={spendCategories}
       spendCategoryLinks={spendCategoryLinks}
@@ -463,28 +371,6 @@ export default async function TodayPage() {
       spends={spends}
       sheetWallets={sheetWallets}
       currencies={currencies.map((c) => c.code)}
-      safeToSpendBaseline={safeToSpendBaseline}
-      calmWeather={calmWeather}
-      tightMode={tightMode}
-      forecastStory={forecastStory}
-      islamicCalendar={islamicCalendar}
-      phCulturalEvents={phCulturalEvents}
-      ramadan={ramadan}
-      eidPrep={eidPrep}
-      sadaka={sadaka}
-      wifeState={wifeState}
-      latestLetter={latestLetter}
-      freshMilestones={freshMilestones}
-      familySavings={familySavings}
-      packRhythm={packRhythm}
-      lateNight={lateNight}
-      postPayday={postPayday}
-      sleepEcho={sleepEcho}
-      intentMirror={intentMirror}
-      tuesdayPrompt={tuesdayPrompt}
-      tuesdayCheckin={tuesdayCheckin}
-      isTuesday={isTuesday}
-      yearRecall={yearRecall}
     />
   );
 }

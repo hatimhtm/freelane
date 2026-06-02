@@ -4,13 +4,17 @@ import {
   outstanding,
   outstandingTotalBase,
   dailySeries,
+  landedInRange,
 } from "@/lib/dashboard-calc";
 import { monthlyFeeBase, holdingBalances } from "@/lib/payment-chain";
-import { safeToSpend } from "@/lib/safe-to-spend";
+import { phtMondayOfWeek } from "@/lib/utils";
+import { computeSafeToSpendFromData } from "@/lib/safe-to-spend";
 import { anchorDate, periodKey, expectedBase } from "@/lib/recurring";
 import { buildCashflowAtlas } from "@/lib/cashflow-atlas";
-import { getCalmWeather } from "@/lib/ai/calm-weather";
+import { getCalmWeatherCached, refreshCalmWeather } from "@/lib/ai/calm-weather";
 import { generateForecastStory, type ForecastStory } from "@/lib/ai/forecast-storyteller";
+import { generatePackRhythm } from "@/lib/ai/pack-rhythm";
+import { generateLateNightRead } from "@/lib/ai/late-night-cluster";
 import { hasGemini } from "@/lib/ai/gemini";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type { CurrencyCode, Spend } from "@/lib/supabase/types";
@@ -33,6 +37,8 @@ export default async function DashboardPage() {
     stepsByPayment,
     withdrawals,
     spends,
+    spendCategories,
+    spendCategoryLinks,
     recurring,
     recurringSkips,
     loanInstallments,
@@ -50,6 +56,12 @@ export default async function DashboardPage() {
 
   // Wallet balances — sum across all holding wallets (negative ones drag the
   // total down honestly so the bird's-eye number doesn't lie).
+  //
+  // NOTE: walletTotal is the RAW (unclamped) sum. The Safe-today hero above it
+  // clamps via Math.max(0, walletBalancesBase) in safe-to-spend.ts:232. The
+  // raw figure is intentional here so the hero subtitle ("of ₱X across wallets")
+  // agrees with WalletRunwayWidget's "Overdrawn ₱X" label and the negative
+  // wallet alarm row — three surfaces, one shared raw total.
   const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
   const walletTotal = Math.round(holdings.reduce((s, h) => s + h.balance, 0));
 
@@ -57,20 +69,23 @@ export default async function DashboardPage() {
   const outstandingRows = outstanding(projects, payments, clients, rates);
   const outstandingTotal = Math.round(outstandingTotalBase(outstandingRows));
 
-  // Safe-to-spend — full breakdown, but only the headline lands here.
-  const sts = safeToSpend({
-    payments,
-    withdrawals,
-    spends,
-    recurring,
-    recurringSkips,
-    loanInstallments,
-    methods,
-    stepsByPayment,
-    rates,
-    plannedSpends,
+  // Safe-to-spend — full breakdown via the shared single-source helper so
+  // the headline can never drift from Today / Spending / Plans.
+  const sts = computeSafeToSpendFromData(
+    {
+      payments,
+      withdrawals,
+      spends,
+      recurring,
+      recurringSkips,
+      loanInstallments,
+      methods,
+      stepsByPayment,
+      rates,
+      plannedSpends,
+    },
     now,
-  });
+  );
 
   // 90-Day Cashflow Atlas — drives the bird's-eye chart on the dashboard.
   const atlas = buildCashflowAtlas({
@@ -90,7 +105,15 @@ export default async function DashboardPage() {
 
   // Calm Weather + Forecast — best-effort. Failures fall back to whatever's
   // cached (calmWeather) or null (forecast).
-  const calmWeather = await getCalmWeather().catch(() => cachedCalmWeather ?? null);
+  //
+  // Cache-only read so the Dashboard never blocks on a synchronous Gemini
+  // regen. Refresh is fire-and-forget; the next page load reads the warmed
+  // row. Matches Today's pattern so the two surfaces can't paint different
+  // calm bands in the gap between visits.
+  const calmWeather = await getCalmWeatherCached().catch(() => cachedCalmWeather ?? null);
+  if (!calmWeather || new Date(calmWeather.expires_at).getTime() <= Date.now()) {
+    void refreshCalmWeather({ force: false }).catch(() => {});
+  }
   const forecastStory: ForecastStory | null = hasGemini()
     ? await generateForecastStory({
         payments,
@@ -111,12 +134,76 @@ export default async function DashboardPage() {
   const landedSeries = dailySeries(payments, 30, now);
   const spentSeries = dailySpendSeries(spends, 30, now);
 
+  // T28 — extra income strip aggregates. Week starts Monday in PHT (single
+  // canonical helper so server (UTC) and Hatim's PHT clock agree).
+  const startOfWeek = new Date(`${phtMondayOfWeek(now)}T00:00:00+08:00`);
+  const weekLanded = landedInRange(payments, startOfWeek, now);
+  // Year starts at PHT midnight Jan 1 so the boundary matches user clock.
+  const startOfYear = new Date(`${now.getFullYear()}-01-01T00:00:00+08:00`);
+  const ytd = landedInRange(payments, startOfYear, now);
+  const trailing30 = landedInRange(payments, new Date(now.getTime() - 30 * DAY_MS), now);
+  const lags = projects
+    .filter((p) => p.quoted_at && p.status === "paid")
+    .map((p) => {
+      const first = payments
+        .filter((pay) => pay.project_id === p.id)
+        .map((pay) => new Date(pay.paid_at).getTime())
+        .sort((a, b) => a - b)[0];
+      if (!first) return null;
+      return Math.max(0, (first - new Date(p.quoted_at!).getTime()) / DAY_MS);
+    })
+    .filter((n): n is number => n !== null);
+  const avgDaysToPayment = lags.length ? lags.reduce((a, b) => a + b, 0) / lags.length : null;
+
+  // Biggest debtor. oldestDays = longest open project age in days; renders in
+  // the S widget sub line ("Name · 12d") since hero is now the money figure.
+  const debtById = new Map<string, { name: string; total: number; oldestDays: number }>();
+  for (const r of outstandingRows) {
+    const name = r.client?.name ?? "Unknown";
+    const e = debtById.get(r.project.client_id) ?? { name, total: 0, oldestDays: 0 };
+    e.total += r.outstandingBase;
+    if (r.daysAged > e.oldestDays) e.oldestDays = r.daysAged;
+    debtById.set(r.project.client_id, e);
+  }
+  const biggestDebtor = Array.from(debtById.values()).sort((a, b) => b.total - a.total)[0] ?? null;
+
+  // T26 + T27 — Pack rhythm + late night cluster on Dashboard. Pack rhythm
+  // needs spendCategories + links to detect cigarette spends — the previous
+  // [] passthrough caused the widget to render the empty-state forever.
+  const [packRhythm, lateNight] = await Promise.all([
+    generatePackRhythm({
+      spends,
+      spendCategories,
+      spendCategoryLinks,
+      now,
+    }).catch(() => null),
+    generateLateNightRead({ spends, now }).catch(() => null),
+  ]);
+
+  // Daily burn per wallet (trailing 30d).
+  const burnSumByWallet = new Map<string, number>();
+  const burnStart = now.getTime() - 30 * DAY_MS;
+  for (const s of spends) {
+    const t = new Date(s.spent_at).getTime();
+    if (t < burnStart || t > now.getTime()) continue;
+    burnSumByWallet.set(
+      s.wallet_id,
+      (burnSumByWallet.get(s.wallet_id) ?? 0) + Number(s.amount_base ?? 0),
+    );
+  }
+  const dailyBurnByWallet: Array<[string, number]> = Array.from(burnSumByWallet.entries()).map(
+    ([k, v]) => [k, v / 30],
+  );
+
   // ─────────────────────────────────────────────────────────── ALERTS ──
   const alerts: AlertRow[] = [];
 
-  // 1) Negative holding wallets — most urgent first (largest deficit).
+  // 1) Holding wallets that have crossed their overdraft tolerance — most
+  // urgent first (largest deficit). Uses the canonical walletStatus tri-state
+  // (set on each HoldingBalanceRow) so this matches NegativeWalletAlarm; a
+  // wallet at -₱200 with ₱500 tolerance no longer gets alerted here.
   const negatives = holdings
-    .filter((h) => h.balance < 0)
+    .filter((h) => h.status === "over_overdraft")
     .sort((a, b) => a.balance - b.balance);
   for (const h of negatives) {
     alerts.push({
@@ -191,6 +278,15 @@ export default async function DashboardPage() {
       calmWeather={calmWeather}
       atlas={atlas}
       forecastStory={forecastStory}
+      holdings={holdings}
+      dailyBurnByWallet={dailyBurnByWallet}
+      weekLanded={Math.round(weekLanded)}
+      avgDaysToPayment={avgDaysToPayment}
+      biggestDebtor={biggestDebtor ? { name: biggestDebtor.name, total: Math.round(biggestDebtor.total) } : null}
+      ytd={Math.round(ytd)}
+      trailing30={Math.round(trailing30)}
+      packRhythm={packRhythm}
+      lateNight={lateNight}
     />
   );
 }

@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/app/page-header";
 import { getSettings } from "@/lib/data/queries";
+import { readNotificationPrefs } from "@/lib/notifications/dispatcher";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import { IssuerForm } from "./_components/issuer-form";
 import { MethodsForm } from "./_components/methods-form";
@@ -7,11 +8,18 @@ import { OpeningBalanceForm } from "./_components/opening-balance-form";
 import { CurrenciesForm } from "./_components/currencies-form";
 import { AppearanceForm } from "./_components/appearance-form";
 import { DataForm } from "./_components/data-form";
+import { NotificationsForm } from "./_components/notifications-form";
 
 export const metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
   const { settings, rates, currencies, methods } = await getSettings();
+  let notificationPrefs = {};
+  try {
+    notificationPrefs = await readNotificationPrefs();
+  } catch {
+    notificationPrefs = {};
+  }
 
   return (
     <div className="mx-auto max-w-4xl p-6 lg:p-10">
@@ -53,6 +61,13 @@ export default async function SettingsPage() {
             rates={rates}
             currencies={currencies}
           />
+        </Section>
+
+        <Section
+          title="Notifications"
+          hint="Pick which kinds reach you. The bell respects these per-kind toggles."
+        >
+          <NotificationsForm initial={notificationPrefs} />
         </Section>
 
         <Section title="Appearance" hint="Switch between dark and light.">

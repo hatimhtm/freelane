@@ -2,17 +2,23 @@
 
 import Link from "next/link";
 import { motion } from "motion/react";
-import { ArrowRight, BookOpen, Clock, Compass, FileText, ReceiptText, Sparkles } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Clock, Leaf, Mail, Moon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { YearMemoryRecall, YearRecallItem } from "@/lib/ai/year-memory-recall";
 
+// Each kind maps onto a glyph already in the locked symbol vocabulary
+// (freelane-widget-system memory): Mail = letter, Moon = period / life
+// shift, Leaf = recovery / milestone-as-growth, ArrowDownLeft = income /
+// landed, ArrowUpRight = spend, Clock = generic time-anchored memory.
+// No Compass / Sparkles / ReceiptText / BookOpen / FileText — those were
+// improvised per-card and break the "fixed icon vocabulary" rule.
 const KIND_META: Record<YearRecallItem["kind"], { label: string; Icon: LucideIcon }> = {
-  letter:     { label: "Letter",    Icon: FileText },
-  milestone:  { label: "Milestone", Icon: Sparkles },
-  life_shift: { label: "Shift",     Icon: Compass },
-  memory:     { label: "Memory",    Icon: BookOpen },
-  payment:    { label: "Landed",    Icon: ArrowRight },
-  spend:      { label: "Spent",     Icon: ReceiptText },
+  letter:     { label: "Letter",    Icon: Mail },
+  milestone:  { label: "Milestone", Icon: Leaf },
+  life_shift: { label: "Shift",     Icon: Moon },
+  memory:     { label: "Memory",    Icon: Clock },
+  payment:    { label: "Landed",    Icon: ArrowDownLeft },
+  spend:      { label: "Spent",     Icon: ArrowUpRight },
 };
 
 function formatRecallDate(iso: string): string {
@@ -29,7 +35,9 @@ export function YearMemoryRecallCard({ recall }: { recall: YearMemoryRecall | nu
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      className="rounded-[12px] border border-border/60 bg-card/30 px-3.5 py-3"
+      // rounded-xl + ring-1 ring-foreground/10 standardises with the
+      // locked widget primitives (was rounded-[12px] + border before).
+      className="rounded-xl bg-card px-3.5 py-3 ring-1 ring-foreground/10"
     >
       <header className="flex items-center gap-1.5">
         <Clock className="h-3 w-3 text-foreground/70" />
@@ -39,7 +47,7 @@ export function YearMemoryRecallCard({ recall }: { recall: YearMemoryRecall | nu
       </header>
       <ul className="mt-2 flex flex-col gap-1.5">
         {recall.items.map((it, i) => {
-          const meta = KIND_META[it.kind] ?? { label: it.kind, Icon: BookOpen };
+          const meta = KIND_META[it.kind] ?? { label: it.kind, Icon: Clock };
           const Icon = meta.Icon;
           return (
             <li key={i} className="grid grid-cols-[14px_1fr] items-start gap-2 text-[12px] leading-snug">

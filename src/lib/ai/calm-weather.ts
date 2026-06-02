@@ -11,6 +11,12 @@ import { buildCashflowAtlas, type CashflowAtlas } from "@/lib/cashflow-atlas";
 import { bigPlansUpcoming } from "@/lib/planned-spends";
 import { formatMoney } from "@/lib/money";
 import { logEvent } from "@/lib/data/events";
+import {
+  fingerprintFromIds,
+  readBrainCache,
+  withBrainCache,
+} from "./cache";
+import { BRAIN_KEYS } from "./cache-keys";
 import type {
   CalmWeatherBand,
   CalmWeatherRecommendation,
@@ -43,7 +49,11 @@ import type {
 // default TTL. Mutations bump expires_at to now() so the next read regenerates.
 // refreshCalmWeather({ force: true }) bypasses both.
 
-const STALENESS_MS = 30 * 60 * 1000;
+// TTL is sourced from BRAIN_TTL_BY_KEY[BRAIN_KEYS.CALM_WEATHER] via the
+// withBrainCache wrapper — the local STALENESS_MS constant was the last
+// place that could silently drift from the catalogue. Explicit invalidation
+// on every financial mutation (invalidateAiSafeSpendCache) covers the
+// fast-refresh need that motivated the old 30-minute window.
 const CALM_AFTER_WINDOW_DAYS = 14;
 const MODEL_VERSION = "1";
 
@@ -91,7 +101,10 @@ function computeSignals(inputs: CalmWeatherInputs): PureSignals {
     inputs.spends,
   );
   const startingBalance = holdings.reduce((s, h) => s + h.balance, 0);
-  const negativeWalletCount = holdings.filter((h) => h.balance < 0).length;
+  // Honour the overdraft tolerance (migration 0054). A wallet at -200 with a
+  // 500 tolerance is intentionally within tolerance and should NOT flip the
+  // user into storm. Only over_overdraft counts as an alarm.
+  const negativeWalletCount = holdings.filter((h) => h.status === "over_overdraft").length;
 
   // Runway: how many days from today until atlas projected balance dips to
   // ≤ (cost-of-living floor × 1 day). Capped at atlas horizon.
@@ -113,8 +126,20 @@ function computeSignals(inputs: CalmWeatherInputs): PureSignals {
   const bigPlans = bigPlansUpcoming(inputs.plannedSpends, now, 90);
   const bigPlansBase = bigPlans.reduce((s, p) => s + Number(p.expected_base ?? 0), 0);
 
-  const observationDays = inputs.spends.length
-    ? Math.floor((now.getTime() - Math.min(...inputs.spends.map((s) => new Date(s.spent_at).getTime()))) / 86_400_000)
+  // Linear scan instead of Math.min(...arr.map(...)) — the spread can blow
+  // the argv limit on long-running freelancers with thousands of spends
+  // (same defensive pattern as safe-to-spend.ts:284-300).
+  let oldestSpendTs = now.getTime();
+  let sawSpend = false;
+  for (const s of inputs.spends) {
+    const t = new Date(s.spent_at).getTime();
+    if (Number.isFinite(t)) {
+      sawSpend = true;
+      if (t < oldestSpendTs) oldestSpendTs = t;
+    }
+  }
+  const observationDays = sawSpend
+    ? Math.floor((now.getTime() - oldestSpendTs) / 86_400_000)
     : 0;
 
   return {
@@ -501,101 +526,170 @@ export async function computeCalmWeatherState(
   const user = await getAuthUser();
   if (!user) throw new Error("Unauthenticated");
 
-  const supabase = await createClient();
-  const priorRow = args.priorState
-    ?? (await supabase.from("calm_weather_state").select("*").eq("user_id", user.id).maybeSingle().then((r) => (r.data ?? null) as CalmWeatherState | null));
+  // Trigger #4 — fingerprint backstop. The last 5 spend ids + last payment +
+  // last withdrawal + wallet anchor versions are the inputs that actually
+  // move the weather signal. A change to any of them busts the cache even
+  // if invalidateAiSafeSpendCache didn't fire (defensive belt + braces).
+  const fingerprint = await calmWeatherFingerprint(args.inputs);
 
-  // Honor cache if not forced and not stale.
-  if (!args.force && priorRow && new Date(priorRow.expires_at).getTime() > Date.now()) {
-    return priorRow;
-  }
+  // Prior row is read from the brain cache so calm_after detection still
+  // works across the new wrapper. priorState passed by the caller wins —
+  // refreshCalmWeather still wires the legacy table row through for now.
+  const priorCached = await readBrainCache<CalmWeatherState>(BRAIN_KEYS.CALM_WEATHER);
+  const priorRow = args.priorState ?? priorCached?.payload ?? null;
 
-  const signals = computeSignals(args.inputs);
+  const result = await withBrainCache<CalmWeatherState>({
+    brainKey: BRAIN_KEYS.CALM_WEATHER,
+    fingerprint,
+    force: args.force,
+    regen: async () => {
+      const signals = computeSignals(args.inputs);
 
-  // Track when the current storm started for calm_after detection.
-  const priorBand = (priorRow?.band ?? null) as CalmWeatherBand | null;
-  const lastStormStartedAt = (priorRow?.input_snapshot as CalmWeatherInputSnapshot | undefined)?.calmAfterStormStartedAt
-    ?? (priorBand === "storm" ? priorRow?.generated_at ?? null : null);
+      // Track when the current storm started for calm_after detection.
+      const priorBand = (priorRow?.band ?? null) as CalmWeatherBand | null;
+      const lastStormStartedAt = (priorRow?.input_snapshot as CalmWeatherInputSnapshot | undefined)?.calmAfterStormStartedAt
+        ?? (priorBand === "storm" ? priorRow?.generated_at ?? null : null);
 
-  const now = args.inputs.now ?? new Date();
-  const band = bandForSignals(signals, priorBand, lastStormStartedAt ?? null, now);
-  const fallback = defaultNarrative(band, signals);
-  const fallbackRecs = defaultRecommendations(band, signals);
+      const now = args.inputs.now ?? new Date();
+      const band = bandForSignals(signals, priorBand, lastStormStartedAt ?? null, now);
+      const fallback = defaultNarrative(band, signals);
+      const fallbackRecs = defaultRecommendations(band, signals);
 
-  let narrative = fallback.narrative;
-  let secondary = fallback.secondary;
-  let recommendations = fallbackRecs;
-  let confidence = signals.isLearning ? 0.45 : 0.7;
+      let narrative = fallback.narrative;
+      let secondary = fallback.secondary;
+      let recommendations = fallbackRecs;
+      let confidence = signals.isLearning ? 0.45 : 0.7;
 
-  const gem = await callGemini(buildSnapshot({ signals, inputs: args.inputs, band, priorBand }));
-  if (gem) {
-    narrative = gem.narrative;
-    secondary = gem.secondary;
-    // Merge AI recs first, then dedupe-append fallback recs by kind so we always
-    // have a "log a spend" or "tight_open" floor in storm.
-    const seenKinds = new Set(gem.recommendations.map((r) => r.kind));
-    const merged = [...gem.recommendations];
-    for (const r of fallbackRecs) {
-      if (!seenKinds.has(r.kind)) {
-        merged.push(r);
-        seenKinds.add(r.kind);
+      const gem = await callGemini(buildSnapshot({ signals, inputs: args.inputs, band, priorBand }));
+      if (gem) {
+        narrative = gem.narrative;
+        secondary = gem.secondary;
+        // Merge AI recs first, then dedupe-append fallback recs by kind so we
+        // always have a "log a spend" or "tight_open" floor in storm.
+        const seenKinds = new Set(gem.recommendations.map((r) => r.kind));
+        const merged = [...gem.recommendations];
+        for (const r of fallbackRecs) {
+          if (!seenKinds.has(r.kind)) {
+            merged.push(r);
+            seenKinds.add(r.kind);
+          }
+        }
+        recommendations = merged.slice(0, 4);
+        confidence = gem.confidence;
       }
-    }
-    recommendations = merged.slice(0, 4);
-    confidence = gem.confidence;
-  }
 
-  const snapshot: CalmWeatherInputSnapshot = {
-    runwayDays: signals.runwayDays,
-    dailyBurn: signals.safe.trailingSpendBase / 30,
-    safeToSpend: signals.safe.safeTodayBase,
-    overdueBaseTotal: signals.atlas.zeroCrossingDate
-      ? Math.max(0, -signals.atlas.minBalance)
-      : 0,
-    bigPlansBase: signals.bigPlansBase,
-    plannedBase30d: signals.atlas.days.slice(0, 30).reduce((s, d) => s + d.plannedSpend, 0),
-    stabilityMultiplier: signals.safe.stabilityMultiplier,
-    patternMultiplier: signals.safe.patternMultiplier,
-    observationDays: signals.observationDays,
-    isLearning: signals.isLearning,
-    recurringDueIn7dBase: signals.recurringDueIn7dBase,
-    negativeWalletCount: signals.negativeWalletCount,
-    calmAfterStormStartedAt:
-      band === "storm" ? new Date().toISOString() : (lastStormStartedAt ?? undefined),
-  };
+      const snapshot: CalmWeatherInputSnapshot = {
+        runwayDays: signals.runwayDays,
+        dailyBurn: signals.safe.trailingSpendBase / 30,
+        safeToSpend: signals.safe.safeTodayBase,
+        overdueBaseTotal: signals.atlas.zeroCrossingDate
+          ? Math.max(0, -signals.atlas.minBalance)
+          : 0,
+        bigPlansBase: signals.bigPlansBase,
+        plannedBase30d: signals.atlas.days.slice(0, 30).reduce((s, d) => s + d.plannedSpend, 0),
+        stabilityMultiplier: signals.safe.stabilityMultiplier,
+        patternMultiplier: signals.safe.patternMultiplier,
+        observationDays: signals.observationDays,
+        isLearning: signals.isLearning,
+        recurringDueIn7dBase: signals.recurringDueIn7dBase,
+        negativeWalletCount: signals.negativeWalletCount,
+        calmAfterStormStartedAt:
+          band === "storm" ? new Date().toISOString() : (lastStormStartedAt ?? undefined),
+      };
 
-  const state: CalmWeatherState = {
-    user_id: user.id,
-    band,
-    narrative,
-    secondary,
-    recommendations,
-    confidence,
-    input_snapshot: snapshot,
-    model_version: MODEL_VERSION,
-    generated_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + STALENESS_MS).toISOString(),
-  };
+      const generatedAt = new Date().toISOString();
+      const state: CalmWeatherState = {
+        user_id: user.id,
+        band,
+        narrative,
+        secondary,
+        recommendations,
+        confidence,
+        input_snapshot: snapshot,
+        model_version: MODEL_VERSION,
+        generated_at: generatedAt,
+        // The wrapper owns freshness — but downstream consumers still read
+        // expires_at off the row directly. Keep it aligned with the wrapper
+        // TTL so the legacy code path doesn't drift.
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      };
 
-  await supabase
-    .from("calm_weather_state")
-    .upsert(state, { onConflict: "user_id" });
+      await logEvent({
+        userId: user.id,
+        kind: "calm_weather.refreshed",
+        title: `Weather · ${band}`,
+        entityType: "calm_weather_state",
+        entityId: user.id,
+        metadata: { band, confidence, used_ai: !!gem },
+      });
 
-  await logEvent({
-    userId: user.id,
-    kind: "calm_weather.refreshed",
-    title: `Weather · ${band}`,
-    entityType: "calm_weather_state",
-    entityId: user.id,
-    metadata: { band, confidence, used_ai: !!gem },
+      return state;
+    },
   });
 
-  return state;
+  if (result) return result.payload;
+  // Pathological fallback — withBrainCache returns null only when both
+  // regen AND a prior cache miss. Compute a quiet default so callers never
+  // see undefined.
+  const signals = computeSignals(args.inputs);
+  const band = bandForSignals(signals, null, null, args.inputs.now ?? new Date());
+  const fallback = defaultNarrative(band, signals);
+  const generatedAt = new Date().toISOString();
+  return {
+    user_id: user.id,
+    band,
+    narrative: fallback.narrative,
+    secondary: fallback.secondary,
+    recommendations: defaultRecommendations(band, signals),
+    confidence: 0.4,
+    input_snapshot: {
+      runwayDays: signals.runwayDays,
+      dailyBurn: signals.safe.trailingSpendBase / 30,
+      safeToSpend: signals.safe.safeTodayBase,
+      overdueBaseTotal: 0,
+      bigPlansBase: signals.bigPlansBase,
+      plannedBase30d: 0,
+      stabilityMultiplier: signals.safe.stabilityMultiplier,
+      patternMultiplier: signals.safe.patternMultiplier,
+      observationDays: signals.observationDays,
+      isLearning: signals.isLearning,
+      recurringDueIn7dBase: signals.recurringDueIn7dBase,
+      negativeWalletCount: signals.negativeWalletCount,
+    },
+    model_version: MODEL_VERSION,
+    generated_at: generatedAt,
+    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+// Fingerprint = last 5 spend ids + last payment id + last withdrawal id +
+// payment_method ids (the wallet anchor surface). Cheap stable hash that
+// catches any mutation a missed invalidation would have masked.
+async function calmWeatherFingerprint(inputs: CalmWeatherInputs): Promise<string> {
+  const sortedSpends = [...inputs.spends]
+    .sort((a, b) => b.spent_at.localeCompare(a.spent_at))
+    .slice(0, 5)
+    .map((s) => s.id);
+  const lastPayment = [...inputs.payments]
+    .sort((a, b) => b.paid_at.localeCompare(a.paid_at))[0]?.id ?? null;
+  const lastWithdrawal = [...inputs.withdrawals]
+    .sort((a, b) => b.withdrawn_at.localeCompare(a.withdrawn_at))[0]?.id ?? null;
+  const methodIds = inputs.methods.map((m) => m.id);
+  const lastPlanned = [...inputs.plannedSpends]
+    .sort((a, b) => (b.updated_at ?? b.created_at ?? "").localeCompare(a.updated_at ?? a.created_at ?? ""))[0]?.id ?? null;
+  return fingerprintFromIds([
+    ...sortedSpends,
+    lastPayment,
+    lastWithdrawal,
+    lastPlanned,
+    ...methodIds,
+  ]);
 }
 
 // Convenience wrapper that fetches all inputs from the DB and computes. Used
 // by the server-action refresh wrapper + the dashboard data path when no cache
-// row exists yet.
+// row exists yet. Now writes through withBrainCache — calm_weather_state is
+// retired as a read surface in favor of ai_brain_cache.
 export async function refreshCalmWeather(
   opts: { force?: boolean } = {},
 ): Promise<CalmWeatherState | null> {
@@ -613,7 +707,6 @@ export async function refreshCalmWeather(
     plannedSpends,
     methods,
     rates,
-    priorRow,
   ] = await Promise.all([
     supabase.from("payments").select("*").eq("user_id", user.id),
     supabase.from("withdrawals").select("*").eq("user_id", user.id),
@@ -624,7 +717,6 @@ export async function refreshCalmWeather(
     supabase.from("planned_spends").select("*").eq("user_id", user.id),
     supabase.from("payment_methods").select("*").eq("user_id", user.id),
     supabase.from("exchange_rates").select("*").eq("user_id", user.id),
-    supabase.from("calm_weather_state").select("*").eq("user_id", user.id).maybeSingle(),
   ]);
 
   const paymentRows = (payments.data ?? []) as Payment[];
@@ -637,6 +729,10 @@ export async function refreshCalmWeather(
     arr.push(s);
     stepsByPayment.set(s.payment_id, arr);
   }
+
+  // Read the prior row from the canonical brain cache so calm_after detection
+  // survives the migration off calm_weather_state.
+  const priorCached = await readBrainCache<CalmWeatherState>(BRAIN_KEYS.CALM_WEATHER);
 
   return computeCalmWeatherState({
     inputs: {
@@ -651,26 +747,37 @@ export async function refreshCalmWeather(
       stepsByPayment,
       rates: (rates.data ?? []) as ExchangeRate[],
     },
-    priorState: (priorRow.data ?? null) as CalmWeatherState | null,
+    priorState: priorCached?.payload ?? null,
     force: opts.force,
   });
 }
 
 // Get the current row, regenerating if stale. Read-side entry point for any
-// surface that wants the weather line.
+// surface that wants the weather line. Today's page-load path should prefer
+// getCalmWeatherCached() below — this fan-out + Gemini call is too heavy to
+// block first paint when the cache is cold.
 export async function getCalmWeather(): Promise<CalmWeatherState | null> {
-  const user = await getAuthUser();
-  if (!user) return null;
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("calm_weather_state")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  const row = (data ?? null) as CalmWeatherState | null;
-  if (row && new Date(row.expires_at).getTime() > Date.now()) {
-    return row;
+  const cached = await readBrainCache<CalmWeatherState>(BRAIN_KEYS.CALM_WEATHER);
+  if (cached) {
+    // Trigger #1 — PHT-day rollover. Without this a row generated late on
+    // yesterday-PHT silently served today through the TTL window.
+    const todayPht = phtDateString(new Date());
+    const cachedPht = phtDateString(new Date(cached.generatedAt));
+    const ttlFresh = cached.staleAt
+      ? new Date(cached.staleAt).getTime() > Date.now()
+      : true;
+    if (cachedPht === todayPht && ttlFresh) return cached.payload;
   }
   // Stale or missing — regenerate.
   return await refreshCalmWeather({ force: true });
+}
+
+// Cache-only read: returns whatever's in the brain cache (even if expired).
+// Callers on the hot first-paint path should use this + kick off
+// refreshCalmWeather() asynchronously (or rely on the next mutation-driven
+// invalidation). The returned row carries its own expires_at so the UI can
+// decide whether to render a "refreshing" hint.
+export async function getCalmWeatherCached(): Promise<CalmWeatherState | null> {
+  const cached = await readBrainCache<CalmWeatherState>(BRAIN_KEYS.CALM_WEATHER);
+  return cached?.payload ?? null;
 }

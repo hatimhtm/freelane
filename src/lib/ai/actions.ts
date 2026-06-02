@@ -35,6 +35,7 @@ import type {
   Payment,
   PaymentMethod,
   PaymentStep,
+  PlannedSpend,
   Project,
   RecurringSpend,
   RecurringSpendSkip,
@@ -76,6 +77,7 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
     loansR,
     loanInstallmentsR,
     userMemoryR,
+    plannedSpendsR,
   ] = await Promise.all([
     supabase.from("settings").select("*").eq("user_id", userId).maybeSingle(),
     supabase.from("payments").select("*").eq("user_id", userId).order("paid_at", { ascending: false }),
@@ -92,6 +94,7 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
     supabase.from("loans").select("*").eq("user_id", userId).order("borrowed_at", { ascending: false }),
     supabase.from("loan_installments").select("*").order("due_date"),
     supabase.from("user_memory").select("*").eq("user_id", userId).maybeSingle(),
+    supabase.from("planned_spends").select("*").eq("user_id", userId),
   ]);
   const settings = settingsR.data as Settings | null;
   const currency = (settings?.base_currency ?? "PHP") as CurrencyCode;
@@ -106,6 +109,7 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
   const spendCategoryLinks = (spendLinksR.data ?? []) as SpendCategoryLink[];
   const recurring = (recurringR.data ?? []) as RecurringSpend[];
   const recurringSkips = (recurringSkipsR.data ?? []) as RecurringSpendSkip[];
+  const plannedSpends = (plannedSpendsR.data ?? []) as PlannedSpend[];
   const loans = (loansR.data ?? []) as Loan[];
   const loanInstallments = (loanInstallmentsR.data ?? []) as LoanInstallment[];
   const userMemoryRow = userMemoryR.data as { memory_consolidated?: UserMemoryConsolidated } | null;
@@ -214,6 +218,9 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
     });
 
   // ── Safe-to-spend baseline (rule-based — the AI layer's overlay tunes it) ──
+  // Pass plannedSpends so the AI's baseline matches the headline the user
+  // sees on Today / Dashboard / Spending / Plans. Without it the AI quoted a
+  // higher safeTodayBase than the user saw.
   const sts = safeToSpend({
     payments,
     withdrawals,
@@ -224,6 +231,7 @@ async function buildLedgerSnapshot(userId: string, supabase: DbClient): Promise<
     methods,
     stepsByPayment,
     rates,
+    plannedSpends,
     now,
   });
 

@@ -2,6 +2,13 @@ import "server-only";
 import { Type } from "@google/genai";
 import { gemini, hasGemini } from "./gemini";
 import { HEAVY_MODEL } from "./models";
+import {
+  fingerprintFromIds,
+  readBrainCache,
+  withBrainCache,
+  type CachedBrainPayload,
+} from "./cache";
+import { BRAIN_KEYS } from "./cache-keys";
 import { safeToSpend } from "@/lib/safe-to-spend";
 import { holdingBalances } from "@/lib/payment-chain";
 import { buildCashflowAtlas } from "@/lib/cashflow-atlas";
@@ -167,7 +174,31 @@ function plannedSummary(inputs: TightModeInputs): string {
     .join("\n") || "- (none)";
 }
 
-export async function computeTightMode(inputs: TightModeInputs): Promise<TightModeRead> {
+// Cache-only read for the hot first-paint path. Returns whatever's in the
+// brain cache (possibly stale, possibly null). The client widget reads this
+// + decides whether to fire refreshTightMode().
+export async function getTightModeCached(): Promise<CachedBrainPayload<TightModeRead> | null> {
+  return readBrainCache<TightModeRead>(BRAIN_KEYS.TIGHT_MODE);
+}
+
+export async function computeTightMode(
+  inputs: TightModeInputs,
+  opts: { force?: boolean } = {},
+): Promise<TightModeRead> {
+  const result = await withBrainCache<TightModeRead>({
+    brainKey: BRAIN_KEYS.TIGHT_MODE,
+    fingerprint: await tightModeFingerprint(inputs),
+    force: opts.force,
+    regen: () => computeTightModeRegen(inputs),
+  });
+  if (result) return result.payload;
+  // Pathological fallback — withBrainCache returns null only when the regen
+  // path itself errored AND no prior cache exists. Run once without the
+  // wrapper so callers never see undefined.
+  return computeTightModeRegen(inputs);
+}
+
+async function computeTightModeRegen(inputs: TightModeInputs): Promise<TightModeRead> {
   const now = inputs.now ?? new Date();
   const active = shouldShowTightMode(inputs.calmWeather);
 
@@ -291,4 +322,31 @@ function fallbackOneMove(args: {
     return `Log any missed spends or payments first — locked ${m(args.locked14dBase)} already exceeds the ${m(args.walletTotalBase)} on hand, so reality is probably less tight than this reads.`;
   }
   return `Slow discretionary to ${m(args.flexPerDayBase)}/day for the next 7 days — that gives the runway room to breathe without touching essentials.`;
+}
+
+// Fingerprint = same financial-input surface as safe-to-spend +
+// calm_weather band, since tight-mode reads both. A change to any of these
+// busts the cache via trigger #4 even if invalidateAiSafeSpendCache missed.
+async function tightModeFingerprint(inputs: TightModeInputs): Promise<string> {
+  const sortedSpends = [...inputs.spends]
+    .sort((a, b) => b.spent_at.localeCompare(a.spent_at))
+    .slice(0, 5)
+    .map((s) => s.id);
+  const lastPayment = [...inputs.payments]
+    .sort((a, b) => b.paid_at.localeCompare(a.paid_at))[0]?.id ?? null;
+  const lastWithdrawal = [...inputs.withdrawals]
+    .sort((a, b) => b.withdrawn_at.localeCompare(a.withdrawn_at))[0]?.id ?? null;
+  const lastPlanned = [...inputs.plannedSpends]
+    .sort((a, b) =>
+      (b.updated_at ?? b.created_at ?? "").localeCompare(a.updated_at ?? a.created_at ?? ""),
+    )[0]?.id ?? null;
+  const band = inputs.calmWeather?.band ?? "(none)";
+  return fingerprintFromIds([
+    ...sortedSpends,
+    lastPayment,
+    lastWithdrawal,
+    lastPlanned,
+    `band:${band}`,
+    ...inputs.methods.map((m) => m.id),
+  ]);
 }

@@ -35,6 +35,19 @@ export function phtTimeHHMM(d: Date = new Date()): string {
   return `${h}:${m}`;
 }
 
+// PHT-correct Monday-of-week key for dedup/cache keys (e.g. weekly check-ins,
+// weekly cache buckets). Returns "YYYY-MM-DD" in PHT. Parses the supplied
+// date's PHT date first so the rollover doesn't move when the server is UTC.
+export function phtMondayOfWeek(d: Date = new Date()): string {
+  // Build a PHT-anchored Date at PHT-midnight for the given moment.
+  const todayStr = phtDateString(d);
+  const pht = new Date(`${todayStr}T00:00:00+08:00`);
+  // getUTCDay() on a +08 anchor returns the same weekday as PHT clock.
+  const dow = (pht.getUTCDay() || 7) - 1; // 0 = Monday, 6 = Sunday
+  const monday = new Date(pht.getTime() - dow * 86_400_000);
+  return phtDateString(monday);
+}
+
 // Accept BOTH "." and "," as the decimal separator on amount inputs — the
 // numpad comma key is right there on most keyboards (esp. EU layouts) and
 // the user shouldn't have to retrain their muscle memory. Use this on the

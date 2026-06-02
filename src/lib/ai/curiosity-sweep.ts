@@ -34,6 +34,7 @@ import type {
   Payment,
   PaymentMethod,
   PaymentStep,
+  PlannedSpend,
   Project,
   RecurringSpend,
   RecurringSpendSkip,
@@ -207,6 +208,7 @@ async function buildCuriositySnapshot(
     userMemoryR,
     memoryEntriesR,
     recentQuestionsR,
+    plannedR,
   ] = await Promise.all([
     supabase.from("settings").select("*").eq("user_id", userId).maybeSingle(),
     supabase.from("payments").select("*").eq("user_id", userId).order("paid_at", { ascending: false }),
@@ -236,6 +238,7 @@ async function buildCuriositySnapshot(
       .or("answered_at.not.is.null,dismissed_at.not.is.null")
       .order("created_at", { ascending: false })
       .limit(RECENT_ANSWERED_LIMIT),
+    supabase.from("planned_spends").select("*").eq("user_id", userId),
   ]);
 
   const settings = settingsR.data as Settings | null;
@@ -258,6 +261,7 @@ async function buildCuriositySnapshot(
   const recentQuestions = (recentQuestionsR.data ?? []) as Array<
     Pick<AiQuestion, "id" | "question" | "kind" | "answer" | "answered_at" | "dismissed_at">
   >;
+  const plannedSpends = (plannedR.data ?? []) as PlannedSpend[];
 
   const stepsRes = await supabase
     .from("payment_steps")
@@ -379,9 +383,12 @@ async function buildCuriositySnapshot(
     })
     .filter((v): v is string => v !== null);
 
-  // ── Wallets with negative balance ──
+  // ── Wallets past their overdraft tolerance ──
+  // Mirrors calm-weather: a wallet at -200 with a 500 tolerance is
+  // intentionally within tolerance and not an alarm. Only over_overdraft
+  // raises a sweep question.
   const holdings = holdingBalances(methods, payments, stepsByPayment, withdrawals, spends);
-  const negativeWallets = holdings.filter((h) => h.balance < 0);
+  const negativeWallets = holdings.filter((h) => h.status === "over_overdraft");
 
   // ── Category co-occurrence (might warrant merge) ──
   const coCount = new Map<string, number>();
@@ -437,6 +444,9 @@ async function buildCuriositySnapshot(
   const recurringForward = recurringExpectedInRange(recurring, recurringSkips, rates, now, horizonEnd);
 
   // ── Safe-to-spend (read for recovery state) ──
+  // Pass plannedSpends so the sweep's recovery flag and any cited
+  // safeTodayBase line up with what the user sees on Today / Dashboard /
+  // Spending / Plans. Without it the sweep ran on a higher baseline.
   const sts = safeToSpend({
     payments,
     withdrawals,
@@ -447,6 +457,7 @@ async function buildCuriositySnapshot(
     methods,
     stepsByPayment,
     rates,
+    plannedSpends,
     now,
   });
 
