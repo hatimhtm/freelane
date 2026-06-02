@@ -652,6 +652,30 @@ export async function getUserMemory() {
 // ai_brain_cache as of 2026-06-02 — the legacy ai_safe_spend_cache table is
 // retired. The legacy { user_id, insight, generated_at } shape is preserved
 // at the call-site boundary so /today/page.tsx keeps reading the same fields.
+// Spendings workflow (migration 0085) — PHT-anchored daily safe snapshot.
+// Returns null when no snapshot has been written for today's PHT date yet;
+// the upsert lives in src/lib/data/actions.ts (upsertDailySafeSnapshot).
+export async function getDailySafeSnapshotForToday(): Promise<{
+  initial_safe_base: number;
+  currency: string;
+  computed_at: string;
+} | null> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const phtToday = phtDateString(new Date());
+  const { data } = await supabase
+    .from("daily_safe_snapshots")
+    .select("initial_safe_base,currency,computed_at")
+    .eq("user_id", user.id)
+    .eq("pht_date", phtToday)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    initial_safe_base: Number(data.initial_safe_base ?? 0),
+    currency: String(data.currency ?? "PHP"),
+    computed_at: String(data.computed_at ?? ""),
+  };
+}
+
 export async function getAiSafeSpendCacheRow() {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
   const { data } = await supabase

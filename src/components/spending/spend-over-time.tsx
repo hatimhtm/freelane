@@ -13,6 +13,11 @@ import {
 } from "recharts";
 import { formatMoney } from "@/lib/money";
 import type { CurrencyCode, Spend } from "@/lib/supabase/types";
+import {
+  CHART_MARGIN,
+  CHART_XAXIS_MIN_TICK_GAP,
+  CHART_YAXIS_WIDTH,
+} from "@/lib/charts/chart-defaults";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -102,9 +107,9 @@ export function SpendOverTime({
   const data = useMemo(() => buildSeries(spends, now), [spends, now]);
 
   return (
-    <div ref={wrapRef} style={{ height }}>
+    <div ref={wrapRef} style={{ height }} className="overflow-visible">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
+        <AreaChart data={data} margin={CHART_MARGIN}>
           <defs>
             <linearGradient id="spend-over-time-fill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.22} />
@@ -117,12 +122,13 @@ export function SpendOverTime({
             tickLine={false}
             axisLine={false}
             tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+            minTickGap={CHART_XAXIS_MIN_TICK_GAP}
             dy={4}
           />
           <YAxis
             tickLine={false}
             axisLine={false}
-            width={44}
+            width={CHART_YAXIS_WIDTH}
             domain={[0, "auto"]}
             allowDataOverflow={false}
             tick={<YTick baseCurrency={baseCurrency} />}

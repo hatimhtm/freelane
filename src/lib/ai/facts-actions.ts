@@ -15,10 +15,12 @@ import {
   type FactSubjectKind,
 } from "./facts";
 
-// Next.js 16 enforces "use server" files export ONLY async functions. Every
-// reader, type, and constant lives in the sibling facts.ts (server-only,
-// not "use server"). Hold the line — Chatbot/Sadaka workflows had to be
-// patched for this exact violation.
+// Next.js 16's "use server" rule rejects non-async RUNTIME exports
+// (constants, pure helpers). TS types are erased at compile time and
+// may be colocated here for caller convenience, but every RUNTIME
+// reader / constant lives in the sibling facts.ts (server-only, not
+// "use server"). Hold the line — mixing non-async runtime values into
+// a "use server" file is what trips the build, not the type aliases.
 
 export async function getFactsForSubjectAction(
   subjectKind: FactSubjectKind,

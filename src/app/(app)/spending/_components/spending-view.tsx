@@ -1,22 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion } from "motion/react";
-import { ArrowDownRight, ArrowUpRight, Plus, Search } from "lucide-react";
-import NumberFlow from "@number-flow/react";
+import { motion, AnimatePresence } from "motion/react";
+import { ChevronDown, Plus, Search, Settings2 } from "lucide-react";
+import { toast } from "sonner";
 import { PageMonthNav, MonthNavStat, type MonthValue } from "@/components/app/page-month-nav";
 import { EmptyState } from "@/components/app/empty-state";
-import { SpendHeatmap } from "@/components/spending/spend-heatmap";
+import { SpendHeatmap, SpendHeatmapYear } from "@/components/spending/spend-heatmap";
 import { SpendOverTime } from "@/components/spending/spend-over-time";
-import { CategoryTrendSmallMultiples } from "@/components/spending/category-trend-small-multiples";
+import {
+  CategoryTrendSmallMultiples,
+  TopCategoriesEyebrowInfo,
+} from "@/components/spending/category-trend-small-multiples";
 import { VendorIntelligence } from "@/components/spending/vendor-intelligence";
 import { SpendAnomaliesPanel } from "@/components/spending/spend-anomalies-panel";
 import { InvestmentVsConsumption } from "@/components/spending/investment-vs-consumption";
+import { SpentWidget } from "@/components/widgets/spending/spent-widget";
+import { LiveDailySafeWidget } from "@/components/widgets/spending/live-daily-safe-widget";
+import { ThisMonthWidget } from "@/components/widgets/spending/this-month-widget";
 import { extractVendorToken, vendorSlug } from "@/lib/spending/vendor-extract";
 import { formatMoney } from "@/lib/money";
-import { cn } from "@/lib/utils";
+import { cn, msUntilNextPhtMidnight, phtDateString } from "@/lib/utils";
+import { createCustomTagAction } from "../_actions/tag-actions";
 import {
   resolveVendorIcon,
   normalizeVendorName,
@@ -29,6 +36,7 @@ import type {
   SpendCategory,
   SpendCategoryLink,
   SpendItem,
+  TagKind,
   VendorIconCacheRow,
 } from "@/lib/supabase/types";
 import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
@@ -48,9 +56,18 @@ export type SpendRow = {
   walletName: string;
   categoryIds: string[];
   businessRelevant: boolean;
+  // Legacy boolean shortcut for the "For us" audience pill. Pre-0083
+  // spends carry this from Tier 2 F (migration 0034) without an audience
+  // tag attached — the audience filter accepts EITHER for_us===true OR
+  // the audience tag id, mirroring the business/personal fallback.
+  forUs: boolean;
 };
 
-type BusinessFilter = "all" | "business" | "personal";
+// Audience pill ids. Maps to one of the four pinned (seeded by 0083)
+// audience rows in spend_categories. Resolved at first render against
+// the user's seed rows (so we read by NAME not by id). "all" is a
+// no-filter sentinel — not a row.
+type AudienceKey = "all" | "business" | "personal" | "for_us";
 type SpendingTab = "spends" | "trends" | "vendors";
 
 export function SpendingView({
@@ -72,6 +89,9 @@ export function SpendingView({
   defaultCategoryId,
   tab = "spends",
   vendorIconCache,
+  initialSafeForToday,
+  liveSafeRemaining,
+  liveSafeOvershoot,
 }: {
   rows: SpendRow[];
   categories: SpendCategory[];
@@ -91,6 +111,14 @@ export function SpendingView({
   defaultCategoryId?: string;
   tab?: SpendingTab;
   vendorIconCache?: VendorIconCacheRow[];
+  // BUG FIX #2 (LIVE DAILY SAFE) — server-loaded numbers. The page
+  // upserts daily_safe_snapshots on first read of the day.
+  initialSafeForToday?: number;
+  liveSafeRemaining?: number;
+  // Magnitude of today's overshoot (todaySpends - initialForToday) when
+  // positive. The Live Daily Safe widget swaps subtitle to "₱X past
+  // safe" terracotta when > 0 so the user keeps the magnitude signal.
+  liveSafeOvershoot?: number;
 }) {
   const showSpends = tab === "spends";
   const showTrends = tab === "trends";
@@ -103,10 +131,20 @@ export function SpendingView({
     defaultCategoryId ? { categoryId: defaultCategoryId } : undefined,
   );
   const [month, setMonth] = useState<MonthValue>(initialMonth);
-  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [audience, setAudience] = useState<AudienceKey>("all");
+  const [categoryFilters, setCategoryFilters] = useState<Set<string>>(
+    new Set(defaultCategoryId ? [defaultCategoryId] : []),
+  );
+  const [customFilters, setCustomFilters] = useState<Set<string>>(new Set());
   const [walletFilter, setWalletFilter] = useState<string>("");
-  const [bizFilter, setBizFilter] = useState<BusinessFilter>("all");
   const [search, setSearch] = useState<string>("");
+  const [moreOpen, setMoreOpen] = useState(false);
+  // Heatmap click-drill — filter the Spends list to a single PHT day
+  // when the user picks a cell. Clearing happens on the same-cell
+  // re-click or when month nav moves off the active month.
+  const [selectedHeatmapDay, setSelectedHeatmapDay] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     const m = searchParams.get("m");
@@ -117,6 +155,25 @@ export function SpendingView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // PHT midnight rollover — schedule a router.refresh() at the next
+  // PHT-midnight so the snapshot/initialForToday transition reaches the
+  // open tab without waiting for a manual reload. Re-schedule after each
+  // fire; clear on unmount so navigation cancels the pending timer.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    function schedule() {
+      const delay = msUntilNextPhtMidnight();
+      timer = setTimeout(() => {
+        router.refresh();
+        schedule();
+      }, delay);
+    }
+    schedule();
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [router]);
 
   const setMonthValue = useCallback(
     (next: MonthValue) => {
@@ -145,14 +202,50 @@ export function SpendingView({
     setSheetOpen(true);
   }
 
-  const activeCategories = useMemo(
-    () => categories.filter((c) => !c.archived).sort((a, b) => a.sort_order - b.sort_order),
-    [categories],
-  );
-  const categoryNameById = useMemo(
-    () => new Map(categories.map((c) => [c.id, c.name])),
-    [categories],
-  );
+  // One pass over `categories` that builds every per-kind index the page
+  // needs: audience-id-to-key map (radio resolution), audience-id set
+  // (per-row tag-display exclusion + the audience filter precedence
+  // check), category/custom kind buckets for the filter dropdown, and
+  // id→name for chip labels. types.ts:670 already declares `tag_kind` as
+  // a non-optional TagKind so the legacy `(c as SpendCategory & {...})`
+  // casts are gone.
+  const { audienceTagIds, audienceIdSet, categoryTagsOnly, customTagsOnly, categoryNameById } =
+    useMemo(() => {
+      const tagIds = new Map<AudienceKey, string | null>([
+        ["all", null],
+        ["business", null],
+        ["personal", null],
+        ["for_us", null],
+      ]);
+      const idSet = new Set<string>();
+      const cats: SpendCategory[] = [];
+      const customs: SpendCategory[] = [];
+      const nameById = new Map<string, string>();
+      for (const c of categories) {
+        nameById.set(c.id, c.name);
+        const tk: TagKind = c.tag_kind ?? "category";
+        if (tk === "audience") {
+          idSet.add(c.id);
+          const lower = c.name.toLowerCase();
+          if (lower === "business") tagIds.set("business", c.id);
+          else if (lower === "personal") tagIds.set("personal", c.id);
+          else if (lower === "for us") tagIds.set("for_us", c.id);
+          continue;
+        }
+        if (c.archived) continue;
+        if (tk === "category") cats.push(c);
+        else if (tk === "custom") customs.push(c);
+      }
+      cats.sort((a, b) => a.sort_order - b.sort_order);
+      customs.sort((a, b) => a.sort_order - b.sort_order);
+      return {
+        audienceTagIds: tagIds,
+        audienceIdSet: idSet,
+        categoryTagsOnly: cats,
+        customTagsOnly: customs,
+        categoryNameById: nameById,
+      };
+    }, [categories]);
 
   const monthRange = useMemo(() => monthBoundsOf(month), [month]);
   const prevRange = useMemo(() => monthBoundsOf(stepMonth(month, -1)), [month]);
@@ -193,51 +286,99 @@ export function SpendingView({
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const audienceId =
+      audience === "all" ? null : audienceTagIds.get(audience) ?? null;
     return monthRows.filter((r) => {
-      if (categoryFilter && !r.categoryIds.includes(categoryFilter)) return false;
+      // Audience filter — radio. Post-0083 the source of truth is the
+      // explicit audience-kind tag: if the row carries ANY audience-kind
+      // tag, use those ids and ignore the legacy business_relevant / for_us
+      // booleans. Only when the row has NO audience-kind tag attached do
+      // we fall back to the legacy flags (covers spends saved before the
+      // user had audience seeds). Inverting precedence this way stops the
+      // case where a row tagged 'Personal' but flagged business_relevant=true
+      // would silently pass the Business filter.
+      if (audience !== "all") {
+        const rowAudienceIds: string[] = [];
+        for (const cid of r.categoryIds) {
+          if (audienceIdSet.has(cid)) rowAudienceIds.push(cid);
+        }
+        if (rowAudienceIds.length > 0) {
+          if (!audienceId || !rowAudienceIds.includes(audienceId)) return false;
+        } else {
+          // Legacy fallback — only spends without any audience tag.
+          if (audience === "business" && !r.businessRelevant) return false;
+          if (audience === "personal" && r.businessRelevant) return false;
+          if (audience === "for_us" && !r.forUs) return false;
+        }
+      }
+      // Category + custom — checkbox multi-select. Row must include
+      // AT LEAST ONE of the active ids (OR semantics; same as Github's
+      // label filter).
+      if (categoryFilters.size > 0) {
+        let matched = false;
+        for (const cid of categoryFilters) {
+          if (r.categoryIds.includes(cid)) {
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) return false;
+      }
+      if (customFilters.size > 0) {
+        let matched = false;
+        for (const cid of customFilters) {
+          if (r.categoryIds.includes(cid)) {
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) return false;
+      }
       if (walletFilter && r.walletId !== walletFilter) return false;
-      if (bizFilter === "business" && !r.businessRelevant) return false;
-      if (bizFilter === "personal" && r.businessRelevant) return false;
+      // Heatmap click-drill — filter to a single PHT day when selected.
+      if (selectedHeatmapDay) {
+        const rowPhtDate = phtDateString(new Date(r.spentAt));
+        if (rowPhtDate !== selectedHeatmapDay) return false;
+      }
       if (q) {
         const haystack = `${r.description ?? ""} ${r.walletName}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
     });
-  }, [monthRows, categoryFilter, walletFilter, bizFilter, search]);
+  }, [
+    monthRows,
+    audience,
+    audienceTagIds,
+    audienceIdSet,
+    categoryFilters,
+    customFilters,
+    walletFilter,
+    selectedHeatmapDay,
+    search,
+  ]);
 
   const monthTotal = monthRows.reduce((s, r) => s + r.amountBase, 0);
   const prevTotal = prevRows.reduce((s, r) => s + r.amountBase, 0);
   const deltaPct = prevTotal > 0 ? ((monthTotal - prevTotal) / prevTotal) * 100 : null;
   const visibleTotal = visible.reduce((s, r) => s + r.amountBase, 0);
   const isFiltered =
-    !!categoryFilter || !!walletFilter || bizFilter !== "all" || search.trim().length > 0;
-
-  // Avg daily uses elapsed days in the active month — for a past month, full
-  // month length; for the current month, days-so-far. Past zero noise out.
-  const daysElapsed = elapsedDaysOf(month);
-  const avgDaily = daysElapsed > 0 ? monthTotal / daysElapsed : 0;
-
-  // Biggest day — peak daily total within the month, for the stat strip.
-  const biggestDay = useMemo(() => {
-    const byDay = new Map<string, number>();
-    for (const r of monthRows) {
-      const key = r.spentAt.slice(0, 10);
-      byDay.set(key, (byDay.get(key) ?? 0) + r.amountBase);
-    }
-    let max = 0;
-    for (const v of byDay.values()) if (v > max) max = v;
-    return max;
-  }, [monthRows]);
-
-  // Business share — drives the 5th stat in the strip.
-  const businessTotal = monthRows
-    .filter((r) => r.businessRelevant)
-    .reduce((s, r) => s + r.amountBase, 0);
-  const businessSharePct = monthTotal > 0 ? (businessTotal / monthTotal) * 100 : 0;
+    audience !== "all" ||
+    categoryFilters.size > 0 ||
+    customFilters.size > 0 ||
+    !!walletFilter ||
+    search.trim().length > 0;
 
   const showRecoveryCaption =
     isCurrentMonth(month) && safeToSpendBaseline.inRecovery;
+
+  // BUG FIX #2 — live numbers default to the breakdown's safeTodayBase
+  // when the loader hasn't threaded the snapshot through (cold start +
+  // graceful degradation).
+  const liveRemaining =
+    liveSafeRemaining != null ? liveSafeRemaining : safeToSpendBaseline.safeTodayBase;
+  const initialForToday =
+    initialSafeForToday != null ? initialSafeForToday : safeToSpendBaseline.safeTodayBase;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -247,38 +388,10 @@ export function SpendingView({
           onChange={setMonthValue}
           maxMonth={currentMonthValue()}
           summary={
-            <>
-              <MonthNavStat
-                label="Spent"
-                value={
-                  <NumberFlow
-                    value={Math.round(monthTotal)}
-                    format={{
-                      style: "currency",
-                      currency: baseCurrency,
-                      maximumFractionDigits: 0,
-                    }}
-                    className="font-fraunces tabular text-base leading-none"
-                  />
-                }
-              />
-              {deltaPct !== null && (
-                <MonthNavStat
-                  label="vs prev"
-                  tone={deltaPct > 0 ? "warning" : "positive"}
-                  value={
-                    <span className="inline-flex items-center gap-0.5">
-                      {deltaPct > 0 ? (
-                        <ArrowUpRight className="h-3 w-3" />
-                      ) : (
-                        <ArrowDownRight className="h-3 w-3" />
-                      )}
-                      {Math.abs(deltaPct).toFixed(0)}%
-                    </span>
-                  }
-                />
-              )}
-            </>
+            <MonthNavStat
+              label="Spent"
+              value={formatMoney(monthTotal, baseCurrency, { compact: true })}
+            />
           }
         />
       )}
@@ -291,110 +404,116 @@ export function SpendingView({
         </div>
       )}
 
-      {/* Stat strip — compact horizontal row of mini stats. Rides with the
-          Spends and Trends tabs (it summarizes the navigated month). */}
+      {/* Top hero row — TOP SECTION RESTYLE.
+          Spent (M)  ·  Live Daily Safe (S)  ·  This Month (S).
+          Replaces the legacy 5-cell StatStrip. */}
       {(showSpends || showTrends) && (
-        <StatStrip
-          items={[
-            { label: "Total", value: formatMoney(monthTotal, baseCurrency, { compact: true }) },
-            deltaPct === null
-              ? { label: "vs prev", value: "—" }
-              : {
-                  label: "vs prev",
-                  value: `${deltaPct > 0 ? "+" : ""}${deltaPct.toFixed(0)}%`,
-                  tone: deltaPct > 0 ? "warning" : "positive",
-                },
-            { label: "Avg/day", value: formatMoney(avgDaily, baseCurrency, { compact: true }) },
-            {
-              label: "Biggest day",
-              value: formatMoney(biggestDay, baseCurrency, { compact: true }),
-            },
-            { label: "Business", value: `${businessSharePct.toFixed(0)}%` },
-          ]}
-        />
+        <section className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="lg:col-span-2">
+            <SpentWidget
+              monthSpends={monthSpends}
+              recentSpends={recentSpends}
+              prevTotalBase={prevTotal}
+              baseCurrency={baseCurrency}
+            />
+          </div>
+          <LiveDailySafeWidget
+            liveRemaining={liveRemaining}
+            initialForToday={initialForToday}
+            overshootBase={liveSafeOvershoot}
+            currency={baseCurrency}
+          />
+          <ThisMonthWidget
+            recentSpends={recentSpends}
+            baseCurrency={baseCurrency}
+          />
+        </section>
       )}
 
-      {/* Daily rhythm — Spends subtab keeps the heatmap above the filters so
-          the calendar-shape of the month reads before you start drilling. */}
+      {/* GitHub-style trailing-1y heatmap. Replaces the per-month grid on
+          the Spends subtab so the calendar-shape reads at the full year. */}
       {showSpends && (
         <section className="mt-5">
           <Panel
-            eyebrow={monthHeatmapLabel(month)}
-            subtitle="Daily rhythm — darker means more spent."
+            eyebrow="Last 12 months"
+            subtitle="Each cell is a day — darker means more spent."
           >
-            <SpendHeatmap
-              spends={monthSpends}
-              year={month.year}
-              month={month.month - 1}
+            <SpendHeatmapYear
+              spends={recentSpends}
               baseCurrency={baseCurrency}
+              selectedDay={selectedHeatmapDay}
+              // Click-drill: filter the dense spends list below to the
+              // selected ISO date. Click again on the same day to clear.
+              onSelectDay={(iso) => {
+                setSelectedHeatmapDay((prev) => (prev === iso ? null : iso));
+              }}
             />
           </Panel>
         </section>
       )}
 
-      {/* Two-column rhythm: charts on the left, intelligence on the right.
-          Trends subtab only — full-width analytical surface. */}
+      {/* Trends subtab — full-width analytical surface. Keeps the
+          monthly heatmap for navigation context. */}
       {showTrends && (
-      <section className="mt-5 grid gap-4 lg:grid-cols-5">
-        {/* LEFT (~60%): trend + heatmap */}
-        <div className="space-y-4 lg:col-span-3">
-          <Panel eyebrow="Last 6 months" subtitle="Spend over time, base currency.">
-            <SpendOverTime
-              spends={spendsTrailing6mo}
-              now={new Date()}
-              baseCurrency={baseCurrency}
-              height={160}
-            />
-          </Panel>
-          <Panel
-            eyebrow={monthHeatmapLabel(month)}
-            subtitle="Daily rhythm — darker means more spent."
-          >
-            <SpendHeatmap
-              spends={monthSpends}
-              year={month.year}
-              month={month.month - 1}
-              baseCurrency={baseCurrency}
-            />
-          </Panel>
-        </div>
-
-        {/* RIGHT (~40%): categories small-multiples, vendors, anomalies */}
-        <div className="space-y-4 lg:col-span-2">
-          {anomalies.length > 0 && (
-            <Panel eyebrow="What's drifting" subtitle="Numbers that broke their rhythm.">
-              <div className="px-3 pb-3">
-                <SpendAnomaliesPanel anomalies={anomalies} />
-              </div>
+        <section className="mt-5 grid gap-4 lg:grid-cols-5">
+          <div className="space-y-4 lg:col-span-3">
+            <Panel eyebrow="Last 6 months" subtitle="Spend over time, base currency.">
+              <SpendOverTime
+                spends={spendsTrailing6mo}
+                now={new Date()}
+                baseCurrency={baseCurrency}
+                height={180}
+              />
             </Panel>
-          )}
-          <Panel eyebrow="Categories" subtitle="Trailing 6 months, top by spend.">
-            <CategoryTrendSmallMultiples
-              spends={spendsTrailing6mo}
-              categoryLinks={spendCategoryLinks}
+            <Panel
+              eyebrow={monthHeatmapLabel(month)}
+              subtitle="Daily rhythm — darker means more spent."
+            >
+              <SpendHeatmap
+                spends={monthSpends}
+                year={month.year}
+                month={month.month - 1}
+                baseCurrency={baseCurrency}
+              />
+            </Panel>
+          </div>
+
+          <div className="space-y-4 lg:col-span-2">
+            {anomalies.length > 0 && (
+              <Panel eyebrow="What's drifting" subtitle="Numbers that broke their rhythm.">
+                <div className="px-3 pb-3">
+                  <SpendAnomaliesPanel anomalies={anomalies} />
+                </div>
+              </Panel>
+            )}
+            <Panel
+              eyebrow="Top categories"
+              subtitle="Trailing 6 months, by amount."
+              eyebrowSuffix={<TopCategoriesEyebrowInfo />}
+            >
+              <CategoryTrendSmallMultiples
+                spends={spendsTrailing6mo}
+                categoryLinks={spendCategoryLinks}
+                categories={categories}
+                baseCurrency={baseCurrency}
+                now={new Date()}
+                topN={6}
+              />
+            </Panel>
+            <InvestmentVsConsumption
+              spends={monthSpends}
+              links={spendCategoryLinks}
               categories={categories}
               baseCurrency={baseCurrency}
-              now={new Date()}
-              topN={6}
+              windowLabel={monthHeatmapLabel(month)}
             />
-          </Panel>
-          <InvestmentVsConsumption
-            spends={monthSpends}
-            links={spendCategoryLinks}
-            categories={categories}
-            baseCurrency={baseCurrency}
-            windowLabel={monthHeatmapLabel(month)}
-          />
-          <Panel eyebrow="Top vendors" subtitle="Lifetime pattern, click for detail.">
-            <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} vendorIconCache={vendorIconCache} />
-          </Panel>
-        </div>
-      </section>
+            <Panel eyebrow="Top vendors" subtitle="Lifetime pattern, click for detail.">
+              <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} vendorIconCache={vendorIconCache} />
+            </Panel>
+          </div>
+        </section>
       )}
 
-      {/* Vendors subtab placeholder — surface ships with the Vendors
-          workflow. Holds the structural shell so the route resolves and
-          SubtabBar stays consistent across the three tabs. */}
       {showVendors && (
         <section className="mt-5 space-y-4">
           <div className="rounded-[14px] border border-foreground/10 bg-card/40 p-5">
@@ -413,130 +532,144 @@ export function SpendingView({
         </section>
       )}
 
-      {/* Filters — compact chip rows + search. Spends subtab. */}
+      {/* Filter row — Spends subtab. Two-zone layout per the design:
+          PROMINENT  : [All][Business][Personal][For us] (audience radio)
+          DROPDOWN   : ⚙ More filters → Category checkboxes + Custom
+                       checkboxes + "+ New tag" + Wallet + search. */}
       {showSpends && (
-      <section className="mt-6">
-        <div className="flex flex-col gap-2">
-          <ChipRow>
-            <Chip active={bizFilter === "all"} onClick={() => setBizFilter("all")}>
+        <section className="mt-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <AudiencePill active={audience === "all"} onClick={() => setAudience("all")}>
               All
-            </Chip>
-            <Chip
-              active={bizFilter === "business"}
-              onClick={() => setBizFilter("business")}
+            </AudiencePill>
+            <AudiencePill
+              active={audience === "business"}
+              onClick={() => setAudience("business")}
             >
               Business
-            </Chip>
-            <Chip
-              active={bizFilter === "personal"}
-              onClick={() => setBizFilter("personal")}
+            </AudiencePill>
+            <AudiencePill
+              active={audience === "personal"}
+              onClick={() => setAudience("personal")}
             >
               Personal
-            </Chip>
+            </AudiencePill>
+            <AudiencePill
+              active={audience === "for_us"}
+              onClick={() => setAudience("for_us")}
+            >
+              For us
+            </AudiencePill>
             <span className="mx-1 h-5 w-px self-center bg-foreground/10" />
+            <button
+              type="button"
+              onClick={() => setMoreOpen((v) => !v)}
+              className={cn(
+                "inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-[12px] font-medium",
+                "transition-colors duration-200 ease-out",
+                moreOpen
+                  ? "border-foreground/35 bg-foreground/[0.06] text-foreground"
+                  : "border-foreground/15 text-foreground/70 hover:bg-foreground/[0.05] hover:text-foreground",
+              )}
+            >
+              <Settings2 className="h-3 w-3" />
+              More filters
+              <ChevronDown
+                className={cn(
+                  "h-3 w-3 transition-transform duration-200",
+                  moreOpen && "rotate-180",
+                )}
+              />
+            </button>
             <SearchInput value={search} onChange={setSearch} />
-          </ChipRow>
-
-          {activeCategories.length > 0 && (
-            <ChipRow>
-              <Chip active={categoryFilter === ""} onClick={() => setCategoryFilter("")}>
-                All categories
-              </Chip>
-              {activeCategories.map((c) => (
-                <Chip
-                  key={c.id}
-                  active={categoryFilter === c.id}
-                  onClick={() =>
-                    setCategoryFilter(categoryFilter === c.id ? "" : c.id)
-                  }
-                >
-                  {c.name}
-                </Chip>
-              ))}
-            </ChipRow>
-          )}
-
-          {walletChips.length > 1 && (
-            <ChipRow>
-              <Chip active={walletFilter === ""} onClick={() => setWalletFilter("")}>
-                All wallets
-              </Chip>
-              {walletChips.map((w) => (
-                <Chip
-                  key={w.id}
-                  active={walletFilter === w.id}
-                  onClick={() => setWalletFilter(walletFilter === w.id ? "" : w.id)}
-                >
-                  {w.name}
-                </Chip>
-              ))}
-            </ChipRow>
-          )}
-        </div>
-
-        {isFiltered && visible.length > 0 && (
-          <div className="mt-3 flex items-baseline justify-between text-[12px] text-muted-foreground">
-            <span>
-              {visible.length} {visible.length === 1 ? "spend" : "spends"} shown
-            </span>
-            <span className="tabular text-foreground">
-              {formatMoney(visibleTotal, baseCurrency, { compact: true })}
-            </span>
           </div>
-        )}
-      </section>
+
+          <AnimatePresence initial={false}>
+            {moreOpen && (
+              <motion.div
+                key="more-filters"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.22, ease: EASE }}
+                className="overflow-hidden"
+              >
+                <MoreFiltersPanel
+                  categoryTags={categoryTagsOnly}
+                  customTags={customTagsOnly}
+                  categoryFilters={categoryFilters}
+                  setCategoryFilters={setCategoryFilters}
+                  customFilters={customFilters}
+                  setCustomFilters={setCustomFilters}
+                  walletFilter={walletFilter}
+                  setWalletFilter={setWalletFilter}
+                  walletChips={walletChips}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {isFiltered && visible.length > 0 && (
+            <div className="mt-3 flex items-baseline justify-between text-[12px] text-muted-foreground">
+              <span>
+                {visible.length} {visible.length === 1 ? "spend" : "spends"} shown
+              </span>
+              <span className="tabular text-foreground">
+                {formatMoney(visibleTotal, baseCurrency, { compact: true })}
+              </span>
+            </div>
+          )}
+        </section>
       )}
 
       {/* Dense list — Spends subtab only. */}
       {showSpends && (
-      <section className="mt-4">
-        {rows.length === 0 ? (
-          <EmptyState
-            title="Nothing logged yet."
-            description="The first spend you log starts a calmer rhythm — the rest follows."
-            action={
-              <button
-                type="button"
-                onClick={openFresh}
-                className={cn(
-                  "inline-flex h-9 items-center gap-1.5 rounded-md px-3.5 text-[13px] font-medium tracking-tight",
-                  "bg-[var(--brand)] text-[var(--brand-foreground)]",
-                  "transition-[transform,filter] duration-300 ease-out",
-                  "hover:brightness-[0.97] active:translate-y-px",
-                )}
-              >
-                <Plus className="h-3.5 w-3.5" /> Log a spend
-              </button>
-            }
-          />
-        ) : monthRows.length === 0 ? (
-          <p className="py-8 text-center text-[12px] text-muted-foreground">
-            Nothing spent this month.
-          </p>
-        ) : visible.length === 0 ? (
-          <p className="py-8 text-center text-[12px] text-muted-foreground">
-            Nothing matches these filters.
-          </p>
-        ) : (
-          <ul className="border-t border-foreground/10">
-            {visible.map((row, i) => (
-              <SpendItemRow
-                key={row.id}
-                row={row}
-                baseCurrency={baseCurrency}
-                categoryNameById={categoryNameById}
-                vendorIconCacheByName={vendorIconCacheByName}
-                index={i}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
+        <section className="mt-4">
+          {rows.length === 0 ? (
+            <EmptyState
+              title="Nothing logged yet."
+              description="The first spend you log starts a calmer rhythm — the rest follows."
+              action={
+                <button
+                  type="button"
+                  onClick={openFresh}
+                  className={cn(
+                    "inline-flex h-9 items-center gap-1.5 rounded-md px-3.5 text-[13px] font-medium tracking-tight",
+                    "bg-[var(--brand)] text-[var(--brand-foreground)]",
+                    "transition-[transform,filter] duration-300 ease-out",
+                    "hover:brightness-[0.97] active:translate-y-px",
+                  )}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Log a spend
+                </button>
+              }
+            />
+          ) : monthRows.length === 0 ? (
+            <p className="py-8 text-center text-[12px] text-muted-foreground">
+              Nothing spent this month.
+            </p>
+          ) : visible.length === 0 ? (
+            <p className="py-8 text-center text-[12px] text-muted-foreground">
+              Nothing matches these filters.
+            </p>
+          ) : (
+            <ul className="border-t border-foreground/10">
+              {visible.map((row, i) => (
+                <SpendItemRow
+                  key={row.id}
+                  row={row}
+                  baseCurrency={baseCurrency}
+                  categoryNameById={categoryNameById}
+                  audienceIdSet={audienceIdSet}
+                  vendorIconCacheByName={vendorIconCacheByName}
+                  index={i}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
-      {/* Floating CTA + modal — the spend log surface. Keep mounted on the
-          Spends subtab only so the modal doesn't compete with the Trends
-          analytical reading mode. */}
       {showSpends && <FloatingLogButton onClick={openFresh} />}
 
       <SpendModal
@@ -552,25 +685,223 @@ export function SpendingView({
         spendItems={spendItems}
         priceIntelCache={priceIntelCache}
         safeToSpendBaseline={safeToSpendBaseline}
+        initialSafeForToday={initialForToday}
+        liveSafeRemaining={liveRemaining}
         defaults={sheetDefaults}
       />
     </div>
   );
 }
 
+// ─────────────────────────── More filters dropdown ──
+// Lives inside the AnimatePresence so the slide-down is smooth. Columns:
+//   left:   Category checkboxes (predefined "what kind of spend" labels,
+//           read-only — user can archive seeds in Settings but cannot
+//           add new category-kind tags from this affordance)
+//   middle: Custom checkboxes + "+ New tag" affordance (kind=custom)
+//   right:  Wallet chip row
+//
+// Design intent (locked 2026-06-02 in freelane-spendings-design.md):
+// every user-added tag is `kind=custom`. The category-kind list is the
+// seeded taxonomy from migration 0083 — that's why only the Custom
+// column carries the "+ New tag" input. The affordance dispatches
+// createCustomTagAction (which routes through createSpendCategory with
+// tagKind='custom' + createdByUser=true) and immediately checks the
+// new tag id once the router refresh completes.
+function MoreFiltersPanel({
+  categoryTags,
+  customTags,
+  categoryFilters,
+  setCategoryFilters,
+  customFilters,
+  setCustomFilters,
+  walletFilter,
+  setWalletFilter,
+  walletChips,
+}: {
+  categoryTags: SpendCategory[];
+  customTags: SpendCategory[];
+  categoryFilters: Set<string>;
+  setCategoryFilters: (next: Set<string>) => void;
+  customFilters: Set<string>;
+  setCustomFilters: (next: Set<string>) => void;
+  walletFilter: string;
+  setWalletFilter: (v: string) => void;
+  walletChips: WalletOpt[];
+}) {
+  const router = useRouter();
+  const [pendingTag, startCreate] = useTransition();
+  const [draftCustomName, setDraftCustomName] = useState("");
+
+  function toggle(set: Set<string>, id: string, setter: (s: Set<string>) => void) {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setter(next);
+  }
+
+  function submitCustomTag(e: React.FormEvent) {
+    e.preventDefault();
+    const name = draftCustomName.trim();
+    if (!name) return;
+    startCreate(async () => {
+      const res = await createCustomTagAction(name);
+      if (!res.ok) {
+        toast.error(res.error || "Couldn't add the tag.");
+        return;
+      }
+      toast.success(`Tag added: ${name}`);
+      setDraftCustomName("");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="mt-3 rounded-[10px] border border-foreground/10 bg-card/40 p-3.5">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <FilterColumn label="Categories">
+          {categoryTags.length === 0 ? (
+            <p className="text-[11.5px] text-muted-foreground">
+              No category tags yet.
+            </p>
+          ) : (
+            <CheckboxList
+              ids={categoryTags.map((c) => ({ id: c.id, name: c.name }))}
+              selected={categoryFilters}
+              onToggle={(id) =>
+                toggle(categoryFilters, id, setCategoryFilters)
+              }
+            />
+          )}
+        </FilterColumn>
+        <FilterColumn label="Custom">
+          {customTags.length === 0 ? (
+            <p className="text-[11.5px] text-muted-foreground">
+              No custom tags yet.
+            </p>
+          ) : (
+            <CheckboxList
+              ids={customTags.map((c) => ({ id: c.id, name: c.name }))}
+              selected={customFilters}
+              onToggle={(id) => toggle(customFilters, id, setCustomFilters)}
+            />
+          )}
+          <form onSubmit={submitCustomTag} className="mt-2 flex items-center gap-1.5">
+            <input
+              type="text"
+              value={draftCustomName}
+              onChange={(e) => setDraftCustomName(e.target.value)}
+              placeholder="+ New tag"
+              className="h-7 flex-1 rounded-md border border-foreground/15 bg-card/60 px-2 text-[12px] outline-none placeholder:text-muted-foreground/60 focus:border-foreground/35"
+            />
+            <button
+              type="submit"
+              disabled={pendingTag || !draftCustomName.trim()}
+              className="h-7 rounded-md bg-foreground px-2 text-[11px] font-medium text-background transition-opacity disabled:opacity-40"
+            >
+              Add
+            </button>
+          </form>
+        </FilterColumn>
+        <FilterColumn label="Wallet">
+          {walletChips.length === 0 ? (
+            <p className="text-[11.5px] text-muted-foreground">
+              No wallets used this month.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              <Chip
+                active={walletFilter === ""}
+                onClick={() => setWalletFilter("")}
+              >
+                Any
+              </Chip>
+              {walletChips.map((w) => (
+                <Chip
+                  key={w.id}
+                  active={walletFilter === w.id}
+                  onClick={() =>
+                    setWalletFilter(walletFilter === w.id ? "" : w.id)
+                  }
+                >
+                  {w.name}
+                </Chip>
+              ))}
+            </div>
+          )}
+        </FilterColumn>
+      </div>
+    </div>
+  );
+}
+
+function FilterColumn({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+        {label}
+      </span>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function CheckboxList({
+  ids,
+  selected,
+  onToggle,
+}: {
+  ids: Array<{ id: string; name: string }>;
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {ids.map((t) => (
+        <li key={t.id}>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-[12px] text-foreground/85">
+            <input
+              type="checkbox"
+              checked={selected.has(t.id)}
+              onChange={() => onToggle(t.id)}
+              className="accent-foreground"
+            />
+            {t.name}
+          </label>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Panel({
   eyebrow,
   subtitle,
+  eyebrowSuffix,
   children,
 }: {
   eyebrow: string;
   subtitle?: string;
+  // Optional inline annotation rendered next to the eyebrow (e.g. an
+  // info tooltip explaining overlap on "Top categories"). Keeps the
+  // explanation at the header rather than duplicating it inside the
+  // panel body.
+  eyebrowSuffix?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-[14px] border border-foreground/10 bg-card/40">
       <div className="flex items-baseline justify-between gap-3 border-b border-foreground/10 px-4 py-3">
-        <span className="display-eyebrow text-muted-foreground">{eyebrow}</span>
+        <span className="display-eyebrow flex items-center gap-1.5 text-muted-foreground">
+          {eyebrow}
+          {eyebrowSuffix}
+        </span>
         {subtitle && (
           <span className="text-[12px] text-muted-foreground/80 truncate">
             {subtitle}
@@ -578,44 +909,6 @@ function Panel({
         )}
       </div>
       <div>{children}</div>
-    </div>
-  );
-}
-
-interface StatItem {
-  label: string;
-  value: string;
-  tone?: "neutral" | "positive" | "warning";
-}
-
-function StatStrip({ items }: { items: StatItem[] }) {
-  return (
-    <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-[14px] border border-foreground/10 bg-foreground/8 sm:grid-cols-3 lg:grid-cols-5">
-      {items.map((item, i) => (
-        <motion.div
-          key={`${item.label}-${i}`}
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.32, delay: i * 0.04, ease: EASE }}
-          className="flex flex-col gap-1.5 bg-card/60 px-4 py-4"
-        >
-          <span className="text-[12px] uppercase tracking-[0.16em] text-muted-foreground/80">
-            {item.label}
-          </span>
-          <span
-            className={cn(
-              "font-fraunces tabular text-[28px] leading-none",
-              item.tone === "positive" &&
-                "text-[var(--color-positive,theme(colors.lime.400))]",
-              item.tone === "warning" &&
-                "text-[var(--color-warning,theme(colors.orange.400))]",
-              !item.tone && "text-foreground",
-            )}
-          >
-            {item.value}
-          </span>
-        </motion.div>
-      ))}
     </div>
   );
 }
@@ -641,8 +934,33 @@ function SearchInput({
   );
 }
 
-function ChipRow({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap items-center gap-1.5">{children}</div>;
+// Audience pills — radio-style. Stronger visual weight than category
+// chips so the audience filter reads as the primary axis.
+function AudiencePill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex h-8 items-center rounded-full border px-3 text-[12.5px] font-medium",
+        "transition-colors duration-200 ease-out",
+        active
+          ? "border-foreground bg-foreground text-background"
+          : "border-foreground/20 text-foreground/75 hover:bg-foreground/[0.05] hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 function Chip({
@@ -675,16 +993,22 @@ function SpendItemRow({
   row,
   baseCurrency,
   categoryNameById,
+  audienceIdSet,
   vendorIconCacheByName,
   index,
 }: {
   row: SpendRow;
   baseCurrency: CurrencyCode;
   categoryNameById: Map<string, string>;
+  // Audience-kind tag ids — filtered out of the per-row label list so
+  // the audience axis only renders in the prominent radio at the top
+  // of the page, not as a duplicate chip on every row.
+  audienceIdSet: Set<string>;
   vendorIconCacheByName: Map<string, VendorIconCacheRow>;
   index: number;
 }) {
   const tags = row.categoryIds
+    .filter((id) => !audienceIdSet.has(id))
     .map((id) => ({ id, name: categoryNameById.get(id) }))
     .filter((t): t is { id: string; name: string } => !!t.name);
 
@@ -696,10 +1020,6 @@ function SpendItemRow({
     ? `/spending/vendor/${vendorSlug(vendorMatch.vendor)}`
     : null;
 
-  // Brand-aware vendor glyph (Brand Identity workflow). Resolver checks
-  // curated registry → AI cache → generic fallback. We feed it the
-  // detected vendor token when available, otherwise the raw description
-  // so unknown rows still get a paper-tile-with-initial.
   const vendorTokenForIcon = vendorMatch.vendor ?? row.description ?? "";
   const vendorIconCacheRow =
     vendorTokenForIcon
@@ -846,17 +1166,6 @@ function currentMonthValue(): MonthValue {
 function isCurrentMonth(m: MonthValue): boolean {
   const cur = currentMonthValue();
   return cur.year === m.year && cur.month === m.month;
-}
-
-function elapsedDaysOf(m: MonthValue): number {
-  const now = new Date();
-  const monthStart = new Date(m.year, m.month - 1, 1);
-  const nextMonth = new Date(m.year, m.month, 1);
-  if (now < monthStart) return 0;
-  if (now >= nextMonth) {
-    return Math.round((nextMonth.getTime() - monthStart.getTime()) / 86_400_000);
-  }
-  return now.getDate();
 }
 
 function monthHeatmapLabel(m: MonthValue): string {

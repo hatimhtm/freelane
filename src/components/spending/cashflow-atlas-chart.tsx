@@ -15,6 +15,11 @@ import {
 import { formatMoney } from "@/lib/money";
 import type { CurrencyCode } from "@/lib/supabase/types";
 import type { AtlasDay, CashflowAtlas } from "@/lib/cashflow-atlas";
+import {
+  CHART_MARGIN,
+  CHART_XAXIS_MIN_TICK_GAP,
+  CHART_YAXIS_WIDTH,
+} from "@/lib/charts/chart-defaults";
 
 type Series = {
   date: string;
@@ -91,7 +96,7 @@ export function CashflowAtlasChart({
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={series}
-            margin={{ top: 8, right: 8, left: -8, bottom: 0 }}
+            margin={CHART_MARGIN}
           >
             <defs>
               <linearGradient id="atlas-balance" x1="0" y1="0" x2="0" y2="1">
@@ -108,6 +113,7 @@ export function CashflowAtlasChart({
               dataKey="shortLabel"
               tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
               interval={Math.floor(series.length / 6)}
+              minTickGap={CHART_XAXIS_MIN_TICK_GAP}
               tickLine={false}
               axisLine={false}
             />
@@ -117,7 +123,7 @@ export function CashflowAtlasChart({
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => formatMoney(v, baseCurrency, { compact: true })}
-              width={56}
+              width={CHART_YAXIS_WIDTH}
             />
             <Tooltip
               cursor={{ stroke: "var(--foreground)", strokeOpacity: 0.16 }}

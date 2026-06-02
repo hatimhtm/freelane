@@ -31,6 +31,33 @@ export type ChatbotActiveCardArg = {
   data?: Record<string, unknown>;
 };
 
+// Known chatbot intents. When activeCard.data.intent matches one of
+// these, postChatMessage routes the user's reply to the corresponding
+// server action instead of forwarding it to the chat-answer brain.
+// Keep this list in sync with the dispatcher in chat-actions.ts.
+export const CHATBOT_INTENT = {
+  IDENTIFY_VENDOR: "identify_vendor",
+} as const;
+export type ChatbotIntent =
+  (typeof CHATBOT_INTENT)[keyof typeof CHATBOT_INTENT];
+
+// Narrow type guard for the activeCard payload. Intent-carrying cards
+// share a stable shape: { intent, ...intent-specific fields }. The
+// fields are validated at the action boundary.
+export function isIdentifyVendorIntent(
+  card: ChatbotActiveCardArg | undefined,
+): card is ChatbotActiveCardArg & {
+  data: { intent: "identify_vendor"; vendor_id: string; vendor_name: string };
+} {
+  if (!card?.data) return false;
+  const d = card.data as Record<string, unknown>;
+  return (
+    d.intent === CHATBOT_INTENT.IDENTIFY_VENDOR &&
+    typeof d.vendor_id === "string" &&
+    typeof d.vendor_name === "string"
+  );
+}
+
 type RegistryEntry = {
   match: (path: string) => boolean;
   fetch: (userId: string) => Promise<PageContext>;

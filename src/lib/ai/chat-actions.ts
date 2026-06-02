@@ -5,12 +5,17 @@ import { getAuthUser } from "@/lib/auth";
 import { safeRunLabeled, type ActionResult } from "@/lib/data/actions";
 import {
   getChatbotContextForPath,
+  isIdentifyVendorIntent,
   type ChatbotActiveCardArg,
   type PageContext,
 } from "@/lib/data/chat-context-registry";
 import { getFreelaneStateSnapshot } from "./freelane-state-snapshot";
 import { answerChat, type ChatHistoryMessage } from "./brains/chat-answer";
 import { summarizeSession } from "./brains/session-summarizer";
+import {
+  completeVendorIdentificationAction,
+  skipVendorIdentificationAction,
+} from "@/app/(app)/spending/_actions/vendor-identify-actions";
 
 // Server-actions module for the per-page persistent chatbot. Every entry
 // point is wrapped in safeRunLabeled so the client toast surfaces real
@@ -130,6 +135,76 @@ export async function postChatMessage(args: {
       user.id,
       args.activeCard,
     );
+
+    // Intent dispatch — when the chatbot was opened from a notification
+    // with a specific intent payload (e.g. vendor_identify_request), the
+    // user's reply is a structured signal, not free-form chat. Route to
+    // the matching action and short-circuit with a canned acknowledgement
+    // so the brain doesn't double-handle the reply.
+    //
+    // identify_vendor: any non-empty reply other than "skip" triggers
+    // completeVendorIdentificationAction(userDescription = content);
+    // exact "skip" (case-insensitive, trimmed) triggers
+    // skipVendorIdentificationAction.
+    if (isIdentifyVendorIntent(args.activeCard)) {
+      const { vendor_id: vendorId, vendor_name: vendorName } =
+        args.activeCard.data;
+      const trimmedLower = content.trim().toLowerCase();
+      const isSkip = trimmedLower === "skip";
+
+      // Persist the user message first so the session shows the reply
+      // even when the action runs out-of-band.
+      const { data: userRow } = await supabase
+        .from("chat_messages")
+        .insert({
+          user_id: user.id,
+          session_id: args.sessionId,
+          page_key: args.pageKey,
+          role: "user",
+          content,
+          page_context: pageContext as unknown as Record<string, unknown>,
+        })
+        .select("id")
+        .single();
+      if (!userRow) throw new Error("Couldn't save your message.");
+
+      let assistantContent: string;
+      if (isSkip) {
+        const result = await skipVendorIdentificationAction(vendorId);
+        assistantContent = result.ok
+          ? `Got it — skipping ${vendorName}. I'll stop asking about this one.`
+          : `Couldn't skip ${vendorName}: ${result.error ?? "unknown error"}`;
+      } else {
+        const result = await completeVendorIdentificationAction({
+          vendorId,
+          vendorName,
+          userDescription: content,
+        });
+        assistantContent = result.ok
+          ? `Thanks — saved that for ${vendorName}. I'll use it next time.`
+          : `Couldn't save that for ${vendorName}: ${result.error ?? "unknown error"}`;
+      }
+
+      const { data: assistantRow } = await supabase
+        .from("chat_messages")
+        .insert({
+          user_id: user.id,
+          session_id: args.sessionId,
+          page_key: args.pageKey,
+          role: "assistant",
+          content: assistantContent,
+          page_context: pageContext as unknown as Record<string, unknown>,
+        })
+        .select("id")
+        .single();
+
+      return {
+        assistantContent,
+        suggestedFollowups: [],
+        userMessageId: userRow.id as string,
+        assistantMessageId: (assistantRow?.id as string) ?? "",
+      };
+    }
 
     // Session-scoped snapshot capture: first turn fetches, every later turn
     // reuses the same bytes so chat-answer's systemInstruction is byte-stable

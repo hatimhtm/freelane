@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+import { msUntilNextPhtMidnight } from "@/lib/utils";
 
 import { CalmWeatherBanner } from "@/components/app/calm-weather-banner";
 import { CulturalOverlay } from "@/components/app/cultural-overlay";
@@ -71,6 +74,11 @@ type TodayViewProps = {
 
   // Widget data.
   safeToSpendBaseline: SafeToSpendBreakdown;
+  // BUG FIX #2 (LIVE DAILY SAFE) — PHT-anchored snapshot + live
+  // remaining piped from the page loader. Optional so legacy props
+  // shape still type-checks if the page hasn't migrated yet.
+  initialSafeForToday?: number;
+  liveSafeRemaining?: number;
   overlay: SafeToSpendOverlay | null;
   recentNights: Array<{ slept: number | null }>;
   cigarettesTodayCount: number;
@@ -136,6 +144,8 @@ export function TodayView(props: TodayViewProps) {
     todaySpendBase,
     last7DaySpendCount,
     safeToSpendBaseline,
+    initialSafeForToday,
+    liveSafeRemaining,
     overlay,
     recentNights,
     sleepEcho,
@@ -179,6 +189,8 @@ export function TodayView(props: TodayViewProps) {
     currencies,
   } = props;
 
+  const router = useRouter();
+
   // Spend modal — opened via ⌘K Quick Action or any chip dispatching the event.
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetDefaults, setSheetDefaults] = useState<SpendModalDefaults | undefined>(undefined);
@@ -204,6 +216,27 @@ export function TodayView(props: TodayViewProps) {
     };
   }, []);
 
+  // PHT midnight rollover — when the user keeps /today open across PHT
+  // midnight, the snapshot/initialForToday transition would otherwise wait
+  // until they manually navigate. Schedule a router.refresh() at exactly
+  // the next PHT-midnight so yesterday's hero number doesn't linger.
+  // After the refresh, re-schedule for the following day. Cleared on
+  // unmount so navigation away cancels the pending timer.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    function schedule() {
+      const delay = msUntilNextPhtMidnight();
+      timer = setTimeout(() => {
+        router.refresh();
+        schedule();
+      }, delay);
+    }
+    schedule();
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [router]);
+
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-6">
       {/* Escalated alerts only — Calm Weather banner self-hides on calm. */}
@@ -224,6 +257,8 @@ export function TodayView(props: TodayViewProps) {
             baseline={safeToSpendBaseline}
             overlay={overlay}
             currency={currency}
+            liveRemaining={liveSafeRemaining}
+            initialForToday={initialSafeForToday}
           />
         </div>
         <OutstandingWidget

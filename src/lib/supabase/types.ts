@@ -640,6 +640,18 @@ export interface Withdrawal {
 
 // ─────────────────────────── Spending (migration 0020) ──
 
+// Tag taxonomy (migration 0083). Discriminates the spend_categories row
+// so the same storage layer carries audience / category / custom tags.
+// Two discriminators coexist on the row:
+//   `kind` (SpendCategoryKind enum) = Investment vs Consumption ledger
+//     (consumption/investment/neutral). Added by migration 0030.
+//   `tag_kind` (TagKind here, TEXT column) = audience/category/custom.
+//     Added by migration 0083. Drives the Spending UI tag taxonomy.
+// The SQL column name and the TS field name are both `tag_kind` — no
+// projection happens at the reader boundary. Both columns live on the
+// same row; readers select * and consume both.
+export type TagKind = "audience" | "category" | "custom";
+
 export interface SpendCategory {
   id: string;
   user_id: string;
@@ -652,6 +664,16 @@ export interface SpendCategory {
   // Drives the 30-day split panel on /spending and roll-up logic in
   // src/lib/spends.ts (`spendsByKind`).
   kind: SpendCategoryKind;
+  // Tag taxonomy (migration 0083). SQL column is `tag_kind` (text), kept
+  // distinct from the enum `kind` column above so both discriminators
+  // can coexist on the row. No projection — column name matches field.
+  tag_kind: TagKind;
+  // Migration 0083 — pinned audience seeds are immutable (no rename, no
+  // delete). The action layer rejects updates to pinned rows.
+  pinned: boolean;
+  // Migration 0083 — true only for user-created custom tags via the
+  // "+ New tag" affordance. Default seeds stay false.
+  created_by_user: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -962,8 +984,24 @@ export interface Vendor {
   notes: string | null;
   last_seen_at: string | null;
   archived: boolean;
+  // Migration 0084 — vendor identification state. Drives the
+  // vendor_identify_request notification dispatch + 30m debounce + 5/hr
+  // cap.
+  needs_identification: boolean;
+  identification_skipped: boolean;
+  last_identify_notif_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Migration 0085 — PHT-anchored snapshot of the day's starting safe-to-
+// spend. Stable across the PHT day; never moves with intraday spends.
+export interface DailySafeSnapshot {
+  user_id: string;
+  pht_date: string;
+  initial_safe_base: number;
+  currency: string;
+  computed_at: string;
 }
 
 export interface VendorAlias {
@@ -1302,6 +1340,8 @@ export type Database = {
       vendor_icon_cache:           Table<VendorIconCacheRow>;
       // Migration 0080 — wallet platform reference data (Payments workflow).
       wallet_platform_metadata:    Table<WalletPlatformMetadataRow>;
+      // Migration 0085 — daily safe-to-spend snapshot (LIVE DAILY SAFE).
+      daily_safe_snapshots:        Table<DailySafeSnapshot>;
     };
     Views: {
       project_totals: View<{

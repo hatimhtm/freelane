@@ -46,19 +46,52 @@ function blendColor(ratio: number): string {
   return `oklch(${l.toFixed(3)} ${c.toFixed(3)} ${h.toFixed(1)})`;
 }
 
+// BUG FIX #2 (LIVE DAILY SAFE) — post-0085 props.
+//
+// Display rule everywhere (Spend modal, Today widget, Spending top hero):
+//   Hero (at rest)    = liveRemaining
+//   Hero (typing)     = "After this <liveRemaining - proposed>"
+//   Subtitle (greyed) = "started today at ₱{initialForToday}"
+//
+// The baseline is kept for the dial-color allowance ratio + recovery
+// notes; the new liveRemaining/initialForToday props are the headline
+// numbers the user actually reads.
 export function SafeToSpendImpactDial({
   proposedAmountBase,
   baseline,
+  liveRemaining,
+  initialForToday,
 }: {
   proposedAmountBase: number;
   baseline: SafeToSpendBreakdown;
+  // Optional — when omitted the dial falls back to the baseline-driven
+  // model (Today widget rebuilds). Kept optional so any caller that
+  // hasn't been migrated to the live model still renders.
+  liveRemaining?: number;
+  initialForToday?: number;
 }) {
   const proposed = Math.max(0, proposedAmountBase);
   const allowance = Math.max(baseline.colFloorBase, baseline.dailyAllowanceBase);
-  const safeBefore = Math.max(0, Math.round(baseline.safeTodayBase));
+  // Pre-0085 fallback: when caller didn't pass the live numbers, treat
+  // the breakdown's safeTodayBase as both initial AND live (the legacy
+  // behaviour the dial shipped with).
+  const initial =
+    initialForToday != null
+      ? Math.max(0, Math.round(initialForToday))
+      : Math.max(0, Math.round(baseline.safeTodayBase));
+  const live =
+    liveRemaining != null
+      ? Math.max(0, Math.round(liveRemaining))
+      : initial;
 
   const ratio = allowance > 0 ? proposed / allowance : 0;
   const atRest = proposed === 0;
+  // Overshoot of the LIVE remaining (not the allowance) — used to paint a
+  // "past safe by ₱X" line under the hero during typing so the user feels
+  // the threshold the same way the LiveDailySafeWidget on /spending does.
+  // Clamped at 0 so the line only renders when the proposed amount truly
+  // exceeds what's left for today.
+  const overshootDuringTyping = Math.max(0, proposed - live);
 
   const { strokeColor, dashOffset, safeAfter } = useMemo(() => {
     // At rest: dial sits as a calm ink ring with no fill arc.
@@ -66,7 +99,7 @@ export function SafeToSpendImpactDial({
       return {
         strokeColor: "oklch(from var(--ink) l c h / 0.35)",
         dashOffset: CIRCUMFERENCE,
-        safeAfter: safeBefore,
+        safeAfter: live,
       };
     }
     const clamped = Math.min(1.5, ratio);
@@ -75,9 +108,9 @@ export function SafeToSpendImpactDial({
     return {
       strokeColor: blendColor(ratio),
       dashOffset: CIRCUMFERENCE - filled,
-      safeAfter: Math.max(0, Math.round(baseline.safeTodayBase - proposed)),
+      safeAfter: Math.max(0, live - proposed),
     };
-  }, [atRest, ratio, safeBefore, baseline.safeTodayBase, proposed]);
+  }, [atRest, ratio, live, proposed]);
 
   return (
     <div className="flex flex-col items-start gap-1.5">
@@ -115,35 +148,57 @@ export function SafeToSpendImpactDial({
           />
         </svg>
 
-        <div className="text-[12px] leading-tight tabular text-foreground/70">
-          {atRest ? (
-            <span>
-              Safe today{" "}
-              <NumberFlow
-                value={safeBefore}
-                format={{ style: "currency", currency: "PHP", maximumFractionDigits: 0 }}
-                transformTiming={{ duration: 400, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}
-                className="font-medium text-foreground"
-              />
-            </span>
-          ) : (
-            <span>
-              After this{" "}
-              <NumberFlow
-                value={safeAfter}
-                format={{ style: "currency", currency: "PHP", maximumFractionDigits: 0 }}
-                transformTiming={{ duration: 400, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}
-                className="font-medium text-foreground"
-              />{" "}
-              <span className="text-foreground/45">
-                (was{" "}
+        <div className="flex flex-col leading-tight">
+          <div className="text-[12px] leading-tight tabular text-foreground/70">
+            {atRest ? (
+              <span>
+                Safe today{" "}
                 <NumberFlow
-                  value={safeBefore}
+                  value={live}
                   format={{ style: "currency", currency: "PHP", maximumFractionDigits: 0 }}
                   transformTiming={{ duration: 400, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}
+                  className="font-medium text-foreground"
                 />
-                )
               </span>
+            ) : (
+              <span>
+                After this{" "}
+                <NumberFlow
+                  value={safeAfter}
+                  format={{ style: "currency", currency: "PHP", maximumFractionDigits: 0 }}
+                  transformTiming={{ duration: 400, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}
+                  className="font-medium text-foreground"
+                />
+              </span>
+            )}
+          </div>
+          {/* Greyed-small subtitle: "started today at ₱X". Only renders
+              when liveRemaining was explicitly threaded through — legacy
+              callers (no initialForToday prop passed) skip the line so
+              the dial looks identical to the pre-0085 shape. */}
+          {initialForToday != null && (
+            <span className="text-[10.5px] leading-tight tabular text-muted-foreground/70">
+              started today at{" "}
+              <NumberFlow
+                value={initial}
+                format={{ style: "currency", currency: "PHP", maximumFractionDigits: 0 }}
+                transformTiming={{ duration: 400, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}
+              />
+            </span>
+          )}
+          {/* Overshoot stamp during typing — mirrors the
+              LiveDailySafeWidget's terracotta "past safe by ₱X" so the
+              user gets the threshold signal here too instead of seeing
+              the dial plateau at ₱0 with no extra context. Only when the
+              proposed amount truly exceeds live remaining. */}
+          {!atRest && overshootDuringTyping > 0 && (
+            <span className="text-[10.5px] leading-tight tabular text-[var(--overdue)]/85">
+              past safe by{" "}
+              <NumberFlow
+                value={Math.round(overshootDuringTyping)}
+                format={{ style: "currency", currency: "PHP", maximumFractionDigits: 0 }}
+                transformTiming={{ duration: 400, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}
+              />
             </span>
           )}
         </div>

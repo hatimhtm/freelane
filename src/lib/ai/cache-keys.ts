@@ -88,6 +88,18 @@ export const BRAIN_TTL = {
   //     cache row IS the source of truth for the resolver and survives
   //     even after this in-memory TTL expires.
   VENDOR_ICON_IDENTIFY: 30 * 24 * 60 * 60 * 1000,
+  // Spendings workflow — LIVE DAILY SAFE.
+  //   DAILY_SAFE_INITIAL: PHT-anchored snapshot of today's starting safe-
+  //     to-spend. 24h TTL but the practical freshness lever is the PHT-
+  //     day rollover in withBrainCache (phtDayAnchored=true): a snapshot
+  //     generated yesterday-PHT is always stale even if the clock TTL
+  //     hasn't expired.
+  //   VENDOR_IDENTIFY_FROM_CHAT: Flash Lite chat-driven vendor
+  //     identification. Write-once per vendor (the cache row in
+  //     vendor_icon_cache is the durable truth; this brain key is the
+  //     in-memory marker).
+  DAILY_SAFE_INITIAL: 24 * 60 * 60 * 1000,
+  VENDOR_IDENTIFY_FROM_CHAT: 30 * 24 * 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -116,6 +128,8 @@ export const BRAIN_KEYS = {
   EXTRACT_FACTS_FROM_NOTES: "extract_facts_from_notes",
   CLIENT_PATTERN_CHANGE: "client_pattern_change",
   VENDOR_ICON_IDENTIFY: "vendor_icon_identify",
+  DAILY_SAFE_INITIAL: "daily_safe_initial",
+  VENDOR_IDENTIFY_FROM_CHAT: "vendor_identify_from_chat",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -150,6 +164,8 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.EXTRACT_FACTS_FROM_NOTES]: BRAIN_TTL.EXTRACT_FACTS_FROM_NOTES,
   [BRAIN_KEYS.CLIENT_PATTERN_CHANGE]: BRAIN_TTL.CLIENT_PATTERN_CHANGE,
   [BRAIN_KEYS.VENDOR_ICON_IDENTIFY]: BRAIN_TTL.VENDOR_ICON_IDENTIFY,
+  [BRAIN_KEYS.DAILY_SAFE_INITIAL]: BRAIN_TTL.DAILY_SAFE_INITIAL,
+  [BRAIN_KEYS.VENDOR_IDENTIFY_FROM_CHAT]: BRAIN_TTL.VENDOR_IDENTIFY_FROM_CHAT,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache
@@ -175,6 +191,9 @@ export const FINANCIAL_INVALIDATION_EXEMPT: readonly BrainKey[] = [
   // normalized vendor name, never the user's money state. Spend / payment
   // mutations don't change a vendor's brand identity.
   BRAIN_KEYS.VENDOR_ICON_IDENTIFY,
+  // Same reasoning: chat-driven vendor identification keys off the
+  // vendor row, not the user's money state.
+  BRAIN_KEYS.VENDOR_IDENTIFY_FROM_CHAT,
 ] as const;
 
 // Below-this threshold spends do NOT bust the AI brain cache. A ₱5 cigarette

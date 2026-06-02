@@ -2,14 +2,23 @@ import "server-only";
 
 // Freelane Sadaka — auto-rules type surface.
 //
-// Why this sibling exists: Next.js 16 enforces "use server" files export
-// ONLY async functions. Types (and any constants) live HERE; the matching
-// `auto-rules-actions.ts` keeps the client-callable server actions and
-// imports the type exports from this file.
+// Why this sibling exists: Next.js 16's "use server" rule rejects
+// non-async RUNTIME exports (constants, objects, plain functions) from
+// a "use server" module. TypeScript types are erased at compile time
+// and don't trip the rule — but mixing types into a "use server" file
+// makes the import-side contract muddier and forces the action module
+// to do double duty.
 //
-// The Chatbot + Sadaka workflows had to be patched for this exact rule
-// (the old auto-rules.ts had both "use server" and type exports, which the
-// Next 16 build rejected) — don't re-introduce the regression.
+// The convention here: every shared TYPE + CONSTANT lives in a sibling
+// pure module guarded by `import "server-only"`; the matching
+// `*-actions.ts` file carries "use server" and exports ONLY async
+// functions plus re-imports types from its sibling.
+//
+// The Chatbot + Sadaka workflows had to be patched when the old
+// auto-rules.ts mixed "use server" with RUNTIME constants (not types)
+// — the Next 16 build rejected those non-async values. Types alone
+// would have been fine to colocate, but the sibling split keeps the
+// rule legible and uniform across the codebase.
 
 export type AutoRuleMatchKind =
   | "vendor_pattern"

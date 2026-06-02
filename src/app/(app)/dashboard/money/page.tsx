@@ -6,6 +6,7 @@ import { EditorialHeader } from "@/components/app/editorial-header";
 import { DashboardStatsChips } from "@/components/app/dashboard-stats-chips";
 import { TotalWalletsWidget } from "@/components/widgets/dashboard/total-wallets-widget";
 import { ThirtyDayNetWidget } from "@/components/widgets/dashboard/thirty-day-net-widget";
+import { LiveDailySafeWidget } from "@/components/widgets/spending/live-daily-safe-widget";
 import { ForecastWidget } from "@/components/widgets/dashboard/forecast-widget";
 import { SpendTrendWidget } from "@/components/widgets/dashboard/spend-trend-widget";
 import { WalletStack } from "@/components/widgets/dashboard/wallet-stack";
@@ -54,6 +55,16 @@ export default async function DashboardMoneyPage() {
         <ThirtyDayNetWidget
           netBase={props.thirtyDayNet ?? 0}
           unaccountedBase={props.unaccountedOutflow30dBase ?? 0}
+          currency={props.currency}
+        />
+        {/* Live Daily Safe — same display rule the Spend modal + Today
+            widget enforce. Brief locks this trio so the headline stays
+            consistent across surfaces; the snapshot the dashboard reads
+            is the SAME PHT-anchored row Today/Spending share. */}
+        <LiveDailySafeWidget
+          liveRemaining={props.liveSafeRemaining ?? 0}
+          initialForToday={props.initialSafeForToday ?? 0}
+          overshootBase={props.liveSafeOvershoot ?? 0}
           currency={props.currency}
         />
       </div>

@@ -70,7 +70,6 @@ type DashboardViewProps = {
   feesMtd?: number;
   outstandingTotal?: number;
   walletTotal?: number;
-  safeToday?: number;
   landedSeries?: number[];
   spentSeries?: number[];
   atlas?: unknown;
@@ -171,9 +170,9 @@ export function DashboardView({
               The legacy MWidget hero + CashflowAtlas + PulseStrip + Forecast
               Storyteller + IncomeStrip + WalletRunway were all removed
               from this view to stop the duplicate-forecast / duplicate-net
-              chrome the brief flagged. The hero MWidget is referenced here
-              only via the variables that survived: safeToday + landedMtd
-              etc. are no longer wired on Money. */}
+              chrome the brief flagged. The hero MWidget is gone; the live
+              safe-to-spend snapshot lives on Today and /spending and is
+              no longer threaded as `safeToday` through this view. */}
           {showMoney && (
             <>
               {alerts.length > 0 && <Alerts rows={alerts} currency={currency} />}

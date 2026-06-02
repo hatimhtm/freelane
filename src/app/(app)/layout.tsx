@@ -37,7 +37,12 @@ export default async function AppLayout({
           <SidebarNav />
           <div className="flex min-w-0 flex-1 flex-col">
             <TopBar />
-            <main className="min-w-0 flex-1 scroll-muted overflow-auto">
+            {/* pb-32 (128px) baseline clearance for the ChatbotPill +
+                per-page floating CTAs (bottom-6 / right-6 ≈ 24px from
+                edge, 48-56px button height). Every page inherits the
+                floor — numbers and charts at the bottom of any surface
+                clear the floating UI without per-page padding. */}
+            <main className="min-w-0 flex-1 scroll-muted overflow-auto pb-32">
               <MetricSheetProvider>
                 <PageTransition>{children}</PageTransition>
               </MetricSheetProvider>

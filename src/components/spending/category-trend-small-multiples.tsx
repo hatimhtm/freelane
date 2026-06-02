@@ -1,9 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo } from "react";
-import { Sparkline } from "@/components/stats/sparkline";
-import { formatMoney } from "@/lib/money";
+import { Info } from "lucide-react";
+import { CategoryCard } from "@/components/widgets/spending/category-card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { totalsByCategoryBase, SPENT_BY_TAG_TOOLTIP } from "@/lib/spends";
 import type {
   CurrencyCode,
   Spend,
@@ -11,58 +17,22 @@ import type {
   SpendCategoryLink,
 } from "@/lib/supabase/types";
 
-interface CellData {
-  category: SpendCategory;
-  // 6 entries, oldest → current month.
-  series: number[];
-  // Current month total (last element of series).
-  current: number;
-}
-
-// Trailing N months including `now`, bucketed by spent_at month-of-year.
-// Returns the bucket keys + a Map<categoryId → number[]> aligned to those keys.
-function buildCategorySeries(
-  spends: Spend[],
-  links: SpendCategoryLink[],
-  now: Date,
-  monthsBack: number,
-): { totalsByCat: Map<string, number[]>; bucketKeys: string[] } {
-  const bucketKeys: string[] = [];
-  const start = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1), 1);
-  for (let i = 0; i < monthsBack; i++) {
-    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
-    bucketKeys.push(`${d.getFullYear()}-${d.getMonth()}`);
-  }
-  const idx = new Map(bucketKeys.map((k, i) => [k, i] as const));
-
-  // spend_id → category_ids (so we can fan one spend out to all its tags).
-  const linksBySpend = new Map<string, string[]>();
-  for (const l of links) {
-    const arr = linksBySpend.get(l.spend_id) ?? [];
-    arr.push(l.category_id);
-    linksBySpend.set(l.spend_id, arr);
-  }
-
-  const totalsByCat = new Map<string, number[]>();
-  for (const sp of spends) {
-    const d = new Date(sp.spent_at);
-    const key = `${d.getFullYear()}-${d.getMonth()}`;
-    const bucket = idx.get(key);
-    if (bucket === undefined) continue;
-    const catIds = linksBySpend.get(sp.id);
-    if (!catIds || catIds.length === 0) continue;
-    const amount = Number(sp.amount_base ?? 0);
-    for (const cid of catIds) {
-      let arr = totalsByCat.get(cid);
-      if (!arr) {
-        arr = new Array<number>(monthsBack).fill(0);
-        totalsByCat.set(cid, arr);
-      }
-      arr[bucket]! += amount;
-    }
-  }
-  return { totalsByCat, bucketKeys };
-}
+// Spending workflow — CATEGORY CARDS SIMPLIFIED.
+//
+// Originally this file rendered a 6-up small-multiples grid with a
+// per-category Sparkline (post-CLAUDE.md note: "boxes too small, text
+// bleeding, charts not necessary"). Replaced with a flat S widget grid
+// of CategoryCard tiles per the locked design: name, ₱ total, stack-bar
+// % of total, "% of spends" subtitle. No per-category chart.
+//
+// Header carries the info tooltip explaining the per-tag aggregation
+// rule so users don't read overlapping totals as a bug.
+//
+// Click any card → /spending/category/<id> (filters spends by that tag).
+//
+// Component name kept as CategoryTrendSmallMultiples so the consuming
+// surface ("spending-view.tsx") doesn't need to swap imports yet — the
+// surface itself is being rebuilt in this same workflow.
 
 export function CategoryTrendSmallMultiples({
   spends,
@@ -70,40 +40,48 @@ export function CategoryTrendSmallMultiples({
   categories,
   topN = 6,
   baseCurrency,
-  now,
 }: {
   spends: Spend[];
   categoryLinks: SpendCategoryLink[];
   categories: SpendCategory[];
   topN?: number;
   baseCurrency: CurrencyCode;
+  // Kept on the type for backward-compat; not used post-restyle (the
+  // sparkline is gone).
   now?: Date;
 }) {
-  const cells = useMemo<CellData[]>(() => {
-    const refNow = now ?? new Date();
-    const { totalsByCat } = buildCategorySeries(spends, categoryLinks, refNow, 6);
+  const cells = useMemo(() => {
+    // Push the audience-kind filter INTO totalsByCategoryBase so the
+    // returned map already excludes the radio-filter tags. Any future
+    // consumer that doesn't filter audience downstream still gets a
+    // clean per-category map by default.
+    const totalsByCat = totalsByCategoryBase(spends, categoryLinks, {
+      categories,
+      excludeTagKinds: ["audience"],
+    });
     const byId = new Map(categories.map((c) => [c.id, c] as const));
-
-    const ranked: CellData[] = [];
-    for (const [cid, series] of totalsByCat) {
+    // Total Spent = SUM(distinct spend.amount_base) — share denominator.
+    const totalSpent = spends.reduce(
+      (s, sp) => s + Number(sp.amount_base ?? 0),
+      0,
+    );
+    const ranked: Array<{
+      category: SpendCategory;
+      totalBase: number;
+      shareOfTotal: number;
+    }> = [];
+    for (const [cid, totalBase] of totalsByCat) {
       const cat = byId.get(cid);
       if (!cat || cat.archived) continue;
-      // Headline number is the trailing 6-month TOTAL, matching the panel
-      // subtitle "Trailing 6 months, top by spend." — previously this showed
-      // only the current month, which read as "₱0" the moment the calendar
-      // ticked over even when the 6-month trend behind it was non-trivial.
-      const current = series.reduce((s, v) => s + v, 0);
-      ranked.push({ category: cat, series, current });
+      ranked.push({
+        category: cat,
+        totalBase,
+        shareOfTotal: totalSpent > 0 ? totalBase / totalSpent : 0,
+      });
     }
-    // Rank by trailing 6-month total — small-multiples want the most-spent
-    // categories overall, not just whichever happened to spike this month.
-    ranked.sort((a, b) => {
-      const at = a.series.reduce((s, v) => s + v, 0);
-      const bt = b.series.reduce((s, v) => s + v, 0);
-      return bt - at;
-    });
+    ranked.sort((a, b) => b.totalBase - a.totalBase);
     return ranked.slice(0, topN);
-  }, [spends, categoryLinks, categories, topN, now]);
+  }, [spends, categoryLinks, categories, topN]);
 
   if (cells.length === 0) {
     return (
@@ -114,38 +92,49 @@ export function CategoryTrendSmallMultiples({
   }
 
   return (
-    <div className="grid grid-cols-2 gap-px bg-ink/8 sm:grid-cols-3">
-      {cells.map((cell) => (
-        <CategoryCell key={cell.category.id} cell={cell} baseCurrency={baseCurrency} />
-      ))}
+    <div className="space-y-3 p-3">
+      {/* Header-level overlap explanation now lives on the panel eyebrow
+          via <TopCategoriesEyebrowInfo />. Keeping the duplicate row
+          here would push the grid down by an extra line and re-state
+          the same tooltip body. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {cells.map((cell) => (
+          <CategoryCard
+            key={cell.category.id}
+            category={cell.category}
+            totalBase={cell.totalBase}
+            shareOfTotal={cell.shareOfTotal}
+            baseCurrency={baseCurrency}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
-function CategoryCell({
-  cell,
-  baseCurrency,
-}: {
-  cell: CellData;
-  baseCurrency: CurrencyCode;
-}) {
-  const color = cell.category.color ?? "var(--chart-1)";
+// Info tooltip rendered next to the "Top categories" panel eyebrow.
+// Explains the per-tag aggregation rule so users don't read overlapping
+// totals as a bug. Lifted out of the grid body so the panel header
+// carries the annotation and the body stays focused on the cards.
+export function TopCategoriesEyebrowInfo() {
   return (
-    <Link
-      href={`/spending/category/${cell.category.id}`}
-      className="group block bg-paper px-4 py-3.5 transition-colors duration-300 hover:bg-ink/[0.025]"
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-[12px] uppercase tracking-[0.14em] text-ink/60">
-          {cell.category.name}
-        </span>
-      </div>
-      <div className="mt-1.5 font-fraunces text-[22px] leading-tight tabular text-ink/90">
-        {formatMoney(cell.current, baseCurrency, { compact: true })}
-      </div>
-      <div className="mt-2 -mx-0.5">
-        <Sparkline data={cell.series} height={32} color={color} strokeWidth={1.5} filled />
-      </div>
-    </Link>
+    <TooltipProvider delay={150}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="How per-tag totals work"
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground"
+            >
+              <Info className="h-3 w-3" />
+            </button>
+          }
+        />
+        <TooltipContent className="max-w-[260px] text-[11.5px] leading-snug">
+          {SPENT_BY_TAG_TOOLTIP}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

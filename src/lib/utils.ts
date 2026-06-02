@@ -25,6 +25,23 @@ export function phtDateString(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// Single source of truth for "is this spend_at value today in PHT?".
+// The Live Daily Safe pipeline computes todaySpendsBase by summing over
+// spends whose spent_at PHT-date equals today's PHT-date. Today's page,
+// the Spending loader, and the SpendModal optimistic gate must all
+// answer this the same way — drift between them silently re-introduces
+// bug-class #2 (live numbers disagreeing across surfaces).
+//
+// Accepts the spend's `spent_at` (ISO string or Date) and an optional
+// reference moment (defaults to now). The reference is used for tests.
+export function isPhtToday(
+  spentAt: string | Date,
+  reference: Date = new Date(),
+): boolean {
+  const d = typeof spentAt === "string" ? new Date(spentAt) : spentAt;
+  return phtDateString(d) === phtDateString(reference);
+}
+
 // Returns the PHT clock-time as "HH:mm" for any Date moment. Used by the
 // spend modal's "now" default + log timestamps that should read in local
 // time even on UTC servers.
@@ -33,6 +50,26 @@ export function phtTimeHHMM(d: Date = new Date()): string {
   const h = String(shifted.getUTCHours()).padStart(2, "0");
   const m = String(shifted.getUTCMinutes()).padStart(2, "0");
   return `${h}:${m}`;
+}
+
+// Milliseconds until the next PHT-midnight (rollover into the next PHT
+// day). Used by the Today + Spending client views to schedule a
+// router.refresh() at exactly the boundary so the live-daily snapshot
+// transitions to the new day without a stale hero number lingering for
+// users who keep the tab open across midnight.
+//
+// Returns a number in [1, 24*60*60*1000]. The +1ms minimum protects
+// against scheduling a setTimeout with delay 0 when the function is
+// called at exactly PHT midnight (which would re-fire immediately and
+// thrash router.refresh()).
+export function msUntilNextPhtMidnight(reference: Date = new Date()): number {
+  const todayStr = phtDateString(reference);
+  // The PHT timezone offset is +08:00 year-round, so the next PHT
+  // midnight is parseable as an ISO string with the explicit offset.
+  const todayPhtStart = new Date(`${todayStr}T00:00:00+08:00`).getTime();
+  const nextMidnight = todayPhtStart + 86_400_000;
+  const delta = nextMidnight - reference.getTime();
+  return delta > 0 ? delta : 1;
 }
 
 // PHT-correct Monday-of-week key for dedup/cache keys (e.g. weekly check-ins,

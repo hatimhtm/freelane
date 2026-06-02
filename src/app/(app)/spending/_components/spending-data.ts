@@ -5,8 +5,17 @@
 // searchParams so server-rendered month state matches the URL on first
 // paint (matters for trends/spends which share the navigated month).
 
-import { getSpendingData, getVendorIconCache } from "@/lib/data/queries";
-import { computeSafeToSpendFromData } from "@/lib/safe-to-spend";
+import {
+  getSpendingData,
+  getVendorIconCache,
+  getDailySafeSnapshotForToday,
+} from "@/lib/data/queries";
+import {
+  computeSafeToSpendFromData,
+  computeSafeToSpend,
+} from "@/lib/safe-to-spend";
+import { upsertDailySafeSnapshot } from "@/lib/data/actions";
+import { isPhtToday, phtDateString } from "@/lib/utils";
 import { holdingBalances } from "@/lib/payment-chain";
 import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
 import { logLedgerReadFailure } from "@/lib/data/money-ledger";
@@ -64,6 +73,7 @@ export async function loadSpendingProps(params: {
     walletName: walletNameById.get(s.wallet_id) ?? "Untagged",
     categoryIds: tagsBySpend.get(s.id) ?? [],
     businessRelevant: !!s.business_relevant,
+    forUs: !!s.for_us,
   }));
 
   // Phase 1.5: ledger reader first; falls back to source-table math for
@@ -109,6 +119,66 @@ export async function loadSpendingProps(params: {
     ledgerBalances: ledgerBalanceForChain,
   });
 
+  // BUG FIX #2 (LIVE DAILY SAFE) — read today's PHT-anchored snapshot.
+  // If none exists (first read of the day), upsert one with the current
+  // baseline.safeTodayBase. Subsequent reads of the day pick up the
+  // stable value. liveRemaining = initialForToday - sum(today's spend
+  // amount_base in PHT).
+  //
+  // Snapshot-write integrity rules:
+  //   1. Refuse to snapshot a 0 when wallets/payments exist — that
+  //      would lock the user at ₱0 Safe-to-Spend for the day if a
+  //      transient compute failure ever produces a zeroed baseline.
+  //      Let the next render retry against a fresh recompute.
+  //   2. Refuse to snapshot when the upstream baseline tagged itself
+  //      as the catch-block default (notes contains the sentinel
+  //      "fell back to a calm default").
+  //   3. On upsert failure, return null instead of fabricating a fake
+  //      "stable" snapshot — fabrication silently violates the intraday
+  //      stability invariant the snapshot exists to provide.
+  const todayPht = phtDateString(new Date());
+  const baselineFellBack = safeToSpendBaseline.notes.some((n) =>
+    n.includes("fell back to a calm default"),
+  );
+  const hasWalletsOrPayments = methods.length > 0 || payments.length > 0;
+  const baselineSnapshotOk =
+    !baselineFellBack &&
+    (safeToSpendBaseline.safeTodayBase > 0 || !hasWalletsOrPayments);
+  let snapshot = await getDailySafeSnapshotForToday().catch(() => null);
+  if (!snapshot && baselineSnapshotOk) {
+    const writeResult = await upsertDailySafeSnapshot({
+      initialSafeBase: Math.max(0, safeToSpendBaseline.safeTodayBase),
+      currency: baseCurrency,
+    }).catch(() => null);
+    if (writeResult?.ok) {
+      // Only adopt an in-memory snapshot when the write actually
+      // succeeded — otherwise let the live compute fall back to the
+      // current baseline so the next render can retry.
+      snapshot = {
+        initial_safe_base: Math.max(0, Math.round(safeToSpendBaseline.safeTodayBase)),
+        currency: baseCurrency,
+        computed_at: new Date().toISOString(),
+      };
+    } else if (writeResult && !writeResult.ok) {
+      console.error("spending-data: upsertDailySafeSnapshot failed", writeResult.error);
+    }
+  }
+  // Shared PHT-today helper keeps Today + Spending in lockstep — neither
+  // surface can regress in isolation. todayPht remains in scope above
+  // for cache-key construction and snapshot freshness checks.
+  void todayPht;
+  const todaySpendsBase = spends.reduce((s, sp) => {
+    return isPhtToday(sp.spent_at)
+      ? s + Number(sp.amount_base ?? 0)
+      : s;
+  }, 0);
+  const live = computeSafeToSpend({
+    baseline: safeToSpendBaseline,
+    snapshotBase: snapshot ? snapshot.initial_safe_base : null,
+    todaySpendsBase,
+    currency: baseCurrency,
+  });
+
   const initialMonth = parseMonthParam(params.m) ?? currentMonth();
 
   const now = new Date();
@@ -151,6 +221,9 @@ export async function loadSpendingProps(params: {
     openNew: params.new === "1",
     defaultCategoryId: params.category,
     vendorIconCache,
+    initialSafeForToday: live.initialForToday,
+    liveSafeRemaining: live.liveRemaining,
+    liveSafeOvershoot: live.overshootBase,
   };
 }
 

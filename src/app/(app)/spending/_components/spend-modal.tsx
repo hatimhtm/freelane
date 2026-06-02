@@ -38,6 +38,7 @@ import { PriceIntelLine } from "@/components/app/price-intel-line";
 import { CigaretteCostTranslatorStrip } from "@/components/app/cigarette-cost-translator-strip";
 
 import { createSpend } from "@/lib/data/actions";
+import { createCustomTagAction } from "../_actions/tag-actions";
 import { formatMoney } from "@/lib/money";
 import { cn, phtToday, phtTimeHHMM } from "@/lib/utils";
 import { priceSanity, type PriceSanityResult } from "@/lib/ai/price-sanity";
@@ -100,6 +101,8 @@ export function SpendModal({
   spendItems,
   priceIntelCache,
   safeToSpendBaseline,
+  initialSafeForToday,
+  liveSafeRemaining,
   defaults,
 }: {
   open: boolean;
@@ -114,6 +117,12 @@ export function SpendModal({
   spendItems: SpendItem[];
   priceIntelCache?: PriceIntelligenceRow[];
   safeToSpendBaseline: SafeToSpendBreakdown;
+  // BUG FIX #2 (LIVE DAILY SAFE) — explicit live numbers from the loader.
+  // initialSafeForToday is the PHT-anchored snapshot (stable across the
+  // day); liveSafeRemaining is initialSafeForToday minus sum of today's
+  // spend.amount_base. Optional so legacy callers still work.
+  initialSafeForToday?: number;
+  liveSafeRemaining?: number;
   defaults?: SpendModalDefaults;
 }) {
   const router = useRouter();
@@ -121,6 +130,13 @@ export function SpendModal({
   const [error, setError] = useState<string | null>(null);
 
   const [walletId, setWalletId] = useState("");
+  // BUG FIX #2 (revised) — the optimistic-decrement plumbing was removed:
+  // on the happy path the modal unmounts before any paint, so the user
+  // never saw the optimistic value. The rollback branch (intended for
+  // save failures) was the OPPOSITE of the original UX intent. The
+  // server-side router.refresh() re-renders within one paint of the
+  // close transition, so the dial picks up the truthful live number
+  // without intermediate state.
   const [spentAt, setSpentAt] = useState(() => phtToday());
   // Time-of-day on the spend (Tier 1, migration 0028). Optional; defaults to
   // "now" when the user is logging live, blank when backdating from home.
@@ -248,11 +264,66 @@ export function SpendModal({
     [categories],
   );
 
+  // Audience-kind index. Built off `categories` (NOT activeCategories) so
+  // pinned seed rows are always indexed even if a stray archive slipped
+  // through. Drives:
+  //   - the audience radio behaviour (toggling one clears the other two)
+  //   - the "hide legacy switches when audience seeds exist" gate
+  //   - the on-save write that mirrors the chosen audience chip into the
+  //     legacy business_relevant / for_us booleans
+  const audienceIndex = useMemo(() => {
+    const ids = new Set<string>();
+    let business: string | null = null;
+    let personal: string | null = null;
+    let forUs: string | null = null;
+    let allId: string | null = null;
+    for (const c of categories) {
+      if (c.tag_kind !== "audience") continue;
+      ids.add(c.id);
+      const lower = c.name.toLowerCase();
+      if (lower === "business") business = c.id;
+      else if (lower === "personal") personal = c.id;
+      else if (lower === "for us") forUs = c.id;
+      else if (lower === "all") allId = c.id;
+    }
+    return { ids, business, personal, forUs, allId };
+  }, [categories]);
+
+  const hasAudienceSeeds =
+    audienceIndex.business != null ||
+    audienceIndex.personal != null ||
+    audienceIndex.forUs != null;
+
   function toggleCategory(id: string) {
+    // Audience chips behave as a mutually-exclusive radio. Toggling one
+    // clears the other two audience ids from the selection; click again
+    // to unselect (back to the implicit "All").
+    if (audienceIndex.ids.has(id)) {
+      setSelectedCategoryIds((prev) => {
+        const has = prev.includes(id);
+        const stripped = prev.filter((x) => !audienceIndex.ids.has(x));
+        return has ? stripped : [...stripped, id];
+      });
+      return;
+    }
     setSelectedCategoryIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   }
+
+  // Mirror the chosen audience chip into the legacy booleans on every
+  // selection change. Keeps a single source of truth — the chip — so the
+  // ghost-row case (audience=Personal + business_relevant=true) can't
+  // happen anymore. Skipped when the user account has no audience seeds
+  // (e.g. brand-new user before 0086's trigger runs).
+  useEffect(() => {
+    if (!hasAudienceSeeds) return;
+    const sel = selectedCategoryIds;
+    const isBiz = audienceIndex.business != null && sel.includes(audienceIndex.business);
+    const isForUs = audienceIndex.forUs != null && sel.includes(audienceIndex.forUs);
+    setBusinessRelevant(isBiz);
+    setForUs(isForUs);
+  }, [selectedCategoryIds, audienceIndex, hasAudienceSeeds]);
 
   function addItem() {
     setItems((prev) => [...prev, { name: "", quantity: "1", amount: "", notes: "" }]);
@@ -411,6 +482,8 @@ export function SpendModal({
               <SafeToSpendImpactDial
                 proposedAmountBase={amountBase}
                 baseline={safeToSpendBaseline}
+                liveRemaining={liveSafeRemaining}
+                initialForToday={initialSafeForToday}
               />
             </div>
           </div>
@@ -447,6 +520,11 @@ export function SpendModal({
               categories={activeCategories}
               selected={selectedCategoryIds}
               onToggle={toggleCategory}
+              onTagCreated={(id) =>
+                setSelectedCategoryIds((prev) =>
+                  prev.includes(id) ? prev : [...prev, id],
+                )
+              }
             />
           </Row>
 
@@ -469,26 +547,35 @@ export function SpendModal({
 
           <Hairline />
 
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs font-medium text-foreground">
-              Business-relevant
-            </span>
-            <Switch
-              checked={businessRelevant}
-              onCheckedChange={setBusinessRelevant}
-            />
-          </div>
+          {/* Legacy Business-relevant / For us switches — only rendered
+              for accounts that don't yet have audience seeds (pre-0086
+              users). Once the audience chips exist, the chip is the
+              single source of truth and these toggles would just create
+              ghost rows where the boolean and the tag disagree. */}
+          {!hasAudienceSeeds && (
+            <>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-medium text-foreground">
+                  Business-relevant
+                </span>
+                <Switch
+                  checked={businessRelevant}
+                  onCheckedChange={setBusinessRelevant}
+                />
+              </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-foreground">It&apos;s for us</span>
-              <span className="text-[10px] text-muted-foreground">Household — different from the Wife tag.</span>
-            </div>
-            <Switch
-              checked={forUs}
-              onCheckedChange={setForUs}
-            />
-          </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium text-foreground">It&apos;s for us</span>
+                  <span className="text-[10px] text-muted-foreground">Household — different from the Wife tag.</span>
+                </div>
+                <Switch
+                  checked={forUs}
+                  onCheckedChange={setForUs}
+                />
+              </div>
+            </>
+          )}
 
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col">
@@ -725,14 +812,25 @@ function Hairline() {
   return <div className="h-px w-full bg-border/60" />;
 }
 
+// Spendings workflow — TAG SYSTEM (3 kinds, post-0083).
+//
+// Renders three zones inside the modal Tags row:
+//   1. Audience radio (Business / Personal / For us) — mutually
+//      exclusive. "All" is the unselected default.
+//   2. Category multi-select wrap (predefined tags).
+//   3. Custom multi-select wrap + inline "+ New tag" form.
 function CategoryChips({
   categories,
   selected,
   onToggle,
+  onTagCreated,
 }: {
   categories: SpendCategory[];
   selected: string[];
   onToggle: (id: string) => void;
+  // Notify parent when a new custom tag was created so it can
+  // optimistically select it / trigger a refresh.
+  onTagCreated?: (id: string) => void;
 }) {
   if (categories.length === 0) {
     return (
@@ -741,9 +839,110 @@ function CategoryChips({
       </p>
     );
   }
+  const tagKindOf = (c: SpendCategory): "audience" | "category" | "custom" => {
+    const tk = c.tag_kind;
+    return tk === "audience" || tk === "custom" ? tk : "category";
+  };
+  // Exclude the "All" seed — it's a filter-row sentinel ("no audience
+  // restriction"), NOT a tag the user can attach to a spend. Letting the
+  // chip render here would leave a clickable dead-end that writes a
+  // meaningless tag id.
+  const audience = categories.filter(
+    (c) => tagKindOf(c) === "audience" && c.name.toLowerCase() !== "all",
+  );
+  const cats = categories.filter((c) => tagKindOf(c) === "category");
+  const customs = categories.filter((c) => tagKindOf(c) === "custom");
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {categories.map((c) => {
+    <div className="flex flex-col gap-2.5">
+      {audience.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {audience.map((c) => {
+            const on = selected.includes(c.id);
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onToggle(c.id)}
+                aria-pressed={on}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-300 ease-out",
+                  on
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-foreground/20 text-foreground/85 hover:bg-foreground/[0.05]",
+                )}
+              >
+                {c.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {cats.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {cats.map((c) => {
+            const on = selected.includes(c.id);
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onToggle(c.id)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-300 ease-out",
+                  on
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border/70 text-foreground/80 hover:bg-muted hover:text-foreground",
+                )}
+              >
+                {c.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <CustomTagsRow
+        tags={customs}
+        selected={selected}
+        onToggle={onToggle}
+        onTagCreated={onTagCreated}
+      />
+    </div>
+  );
+}
+
+function CustomTagsRow({
+  tags,
+  selected,
+  onToggle,
+  onTagCreated,
+}: {
+  tags: SpendCategory[];
+  selected: string[];
+  onToggle: (id: string) => void;
+  onTagCreated?: (id: string) => void;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [draft, setDraft] = useState("");
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const name = draft.trim();
+    if (!name) return;
+    start(async () => {
+      const res = await createCustomTagAction(name);
+      if (!res.ok) {
+        toast.error(res.error || "Couldn't add the tag.");
+        return;
+      }
+      onTagCreated?.(res.data.id);
+      setDraft("");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {tags.map((c) => {
         const on = selected.includes(c.id);
         return (
           <button
@@ -754,13 +953,31 @@ function CategoryChips({
               "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-300 ease-out",
               on
                 ? "border-foreground bg-foreground text-background"
-                : "border-border/70 text-foreground/80 hover:bg-muted hover:text-foreground",
+                : "border-border/60 text-foreground/75 hover:bg-muted hover:text-foreground",
             )}
           >
             {c.name}
           </button>
         );
       })}
+      <form onSubmit={submit} className="inline-flex items-center gap-1">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="+ New tag"
+          className="h-7 w-24 rounded-full border border-foreground/15 bg-card/40 px-2.5 text-[11.5px] outline-none placeholder:text-muted-foreground/60 focus:border-foreground/35"
+        />
+        {draft.trim().length > 0 && (
+          <button
+            type="submit"
+            disabled={pending}
+            className="h-7 rounded-full bg-foreground px-2 text-[10.5px] font-medium text-background transition-opacity disabled:opacity-40"
+          >
+            Add
+          </button>
+        )}
+      </form>
     </div>
   );
 }

@@ -140,6 +140,40 @@ async function invalidateAiSafeSpendCache(
   }
 }
 
+// Spendings workflow (migration 0085) — upsert today's PHT-anchored
+// initial safe-to-spend snapshot. Best-effort: a failure here just
+// means the next read recomputes (the LIVE DAILY SAFE display
+// fallback in computeSafeToSpend handles a null snapshot gracefully).
+export async function upsertDailySafeSnapshot(input: {
+  initialSafeBase: number;
+  currency: string;
+}): Promise<ActionResult<{ pht_date: string }>> {
+  return safeRun("upsertDailySafeSnapshot", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const phtDate = phtToday();
+    // Destructure { error } so RLS denials / constraint violations /
+    // transport failures surface up through safeRun as ok:false. Without
+    // this, the upsert silently no-ops and the calling page fabricates
+    // an in-memory snapshot that the next render's DB read can't see —
+    // violating the "stable across the PHT day" invariant the snapshot
+    // exists to provide.
+    const { error } = await supabase
+      .from("daily_safe_snapshots")
+      .upsert(
+        {
+          user_id: userId,
+          pht_date: phtDate,
+          initial_safe_base: Math.max(0, Math.round(input.initialSafeBase)),
+          currency: input.currency,
+          computed_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,pht_date", ignoreDuplicates: false },
+      );
+    if (error) throw error;
+    return { pht_date: phtDate };
+  });
+}
+
 // Fire-and-forget hook for mutations that don't otherwise touch the AI
 // brain cache (vendor / entity / client creation) but still represent a
 // "significant event" worth letting the chatbot brain consider asking
@@ -2337,64 +2371,164 @@ export type SpendCategoryInput = {
   sort_order?: number;
   // Tier 1, migration 0030. Investment vs Consumption Ledger classification.
   kind?: "consumption" | "investment" | "neutral";
+  // Migration 0083 — tag taxonomy: audience / category / custom.
+  // SQL column is `tag_kind`/text; TS exposes as `tagKind` for clarity.
+  // Default = "category" if omitted. The createCustomTag wrapper (see
+  // src/app/(app)/spending/_actions/tag-actions.ts) always passes
+  // "custom" + created_by_user=true.
+  tagKind?: "audience" | "category" | "custom";
+  createdByUser?: boolean;
 };
 
-export async function createSpendCategory(input: SpendCategoryInput) {
-  const { supabase, userId } = await userOrThrow();
-  const name = input.name.trim();
-  if (!name) throw new Error("Category needs a name.");
-  const { data, error } = await supabase
-    .from("spend_categories")
-    .insert({
-      user_id: userId,
-      name,
-      icon: input.icon ?? null,
-      color: input.color ?? null,
-      sort_order: input.sort_order ?? 0,
-      kind: input.kind ?? "consumption",
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "spend_category.created",
-    title: `Added category · ${name}`,
-    entityType: "spend_category",
-    entityId: data.id as string,
+export async function createSpendCategory(
+  input: SpendCategoryInput,
+): Promise<ActionResult<{ id: string }>> {
+  return safeRun("createSpendCategory", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const name = input.name.trim();
+    if (!name) throw new Error("Category needs a name.");
+    // Audience tag kind is reserved for the four pinned seeds — UI must
+    // never create new audience tags after migration 0083.
+    if (input.tagKind === "audience") {
+      throw new Error("Audience tags are immutable seeds; can't create new ones.");
+    }
+    // Pre-check: the spend_categories unique(user_id, name) constraint
+    // (migration 0020) is case-SENSITIVE and DOES include archived
+    // rows. Two failure modes the raw insert exposes:
+    //   1. User types 'Travel' when a custom tag 'travel' already
+    //      exists — raw Postgres conflict error bubbles up via safeRun.
+    //   2. User archived 'Pets' from settings, then tries to add 'Pets'
+    //      again — same conflict, no UI path to recover the row.
+    // Case-insensitive lookup handles both: existing active row →
+    // friendly "already exists" error; existing archived row →
+    // un-archive in place + return its id (caller treats it as a
+    // creation; the toast surfaces the restore in the UI layer).
+    const { data: dup } = await supabase
+      .from("spend_categories")
+      .select("id, archived")
+      .eq("user_id", userId)
+      .ilike("name", name)
+      .maybeSingle();
+    if (dup) {
+      if ((dup as { archived?: boolean }).archived) {
+        const { error: unarchiveError } = await supabase
+          .from("spend_categories")
+          .update({ archived: false })
+          .eq("id", (dup as { id: string }).id)
+          .eq("user_id", userId);
+        if (unarchiveError) throw unarchiveError;
+        await logEvent({
+          userId,
+          kind: "spend_category.updated",
+          title: `Restored tag · ${name}`,
+          entityType: "spend_category",
+          entityId: (dup as { id: string }).id,
+          metadata: { archived: false, restored: true },
+        });
+        revalidatePath("/settings");
+        revalidatePath("/spending");
+        return { id: (dup as { id: string }).id };
+      }
+      throw new Error(`Tag "${name}" already exists.`);
+    }
+    // Investment vs Consumption ledger default depends on tag_kind.
+    // Custom user-created tags default to 'neutral' so they don't
+    // silently skew the Investment vs Consumption split panel — user
+    // tags like "vacation" or "gift" don't have a single right answer.
+    // Predefined category-kind tags keep the legacy 'consumption'
+    // default. Caller can always override.
+    const defaultLedgerKind =
+      input.tagKind === "custom" ? "neutral" : "consumption";
+    const { data, error } = await supabase
+      .from("spend_categories")
+      .insert({
+        user_id: userId,
+        name,
+        icon: input.icon ?? null,
+        color: input.color ?? null,
+        sort_order: input.sort_order ?? 0,
+        kind: input.kind ?? defaultLedgerKind,
+        tag_kind: input.tagKind ?? "category",
+        created_by_user: input.createdByUser ?? false,
+        pinned: false,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    await logEvent({
+      userId,
+      kind: "spend_category.created",
+      title: `Added category · ${name}`,
+      entityType: "spend_category",
+      entityId: data.id as string,
+    });
+    revalidatePath("/settings");
+    revalidatePath("/spending");
+    return { id: data.id as string };
   });
-  revalidatePath("/settings");
-  revalidatePath("/spending");
-  return data;
 }
 
-export async function updateSpendCategory(id: string, input: Partial<SpendCategoryInput>) {
-  const { supabase, userId } = await userOrThrow();
-  const patch: Record<string, unknown> = {};
-  if ("name" in input) patch.name = input.name?.trim();
-  if ("icon" in input) patch.icon = input.icon ?? null;
-  if ("color" in input) patch.color = input.color ?? null;
-  if ("sort_order" in input) patch.sort_order = input.sort_order ?? 0;
-  if ("kind" in input) patch.kind = input.kind ?? "consumption";
-  const { error } = await supabase
-    .from("spend_categories")
-    .update(patch)
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "spend_category.updated",
-    title: `Updated category${input.name ? ` · ${input.name}` : ""}`,
-    entityType: "spend_category",
-    entityId: id,
+export async function updateSpendCategory(
+  id: string,
+  input: Partial<SpendCategoryInput>,
+): Promise<ActionResult<void>> {
+  return safeRun("updateSpendCategory", async () => {
+    const { supabase, userId } = await userOrThrow();
+    // Pinned (audience seed) rows are a CLOSED taxonomy per migration
+    // 0083: name change blocked, kind change blocked, archive blocked,
+    // delete blocked. Carving out archive (the previous behaviour) let
+    // a user silently remove "Business" from both the audience radio
+    // and the chip row with no UI affordance to restore — breaking the
+    // axis. Reject every patch on pinned rows.
+    const { data: existing } = await supabase
+      .from("spend_categories")
+      .select("pinned, tag_kind")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (existing && (existing as { pinned?: boolean }).pinned) {
+      throw new Error("Pinned audience tags can't be edited.");
+    }
+    const patch: Record<string, unknown> = {};
+    if ("name" in input) patch.name = input.name?.trim();
+    if ("icon" in input) patch.icon = input.icon ?? null;
+    if ("color" in input) patch.color = input.color ?? null;
+    if ("sort_order" in input) patch.sort_order = input.sort_order ?? 0;
+    if ("kind" in input) patch.kind = input.kind ?? "consumption";
+    if ("tagKind" in input) patch.tag_kind = input.tagKind ?? "category";
+    const { error } = await supabase
+      .from("spend_categories")
+      .update(patch)
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) throw error;
+    await logEvent({
+      userId,
+      kind: "spend_category.updated",
+      title: `Updated category${input.name ? ` · ${input.name}` : ""}`,
+      entityType: "spend_category",
+      entityId: id,
+    });
+    revalidatePath("/settings");
+    revalidatePath("/spending");
   });
-  revalidatePath("/settings");
-  revalidatePath("/spending");
 }
 
 export async function archiveSpendCategory(id: string, archived = true) {
   const { supabase, userId } = await userOrThrow();
+  // Mirror updateSpendCategory / deleteSpendCategory: pinned audience
+  // seeds are immutable, archive included. Without this guard a user
+  // could archive "Business" or "For us" from settings and silently
+  // break the audience axis with no in-UI path to restore.
+  const { data: existing } = await supabase
+    .from("spend_categories")
+    .select("pinned")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existing && (existing as { pinned?: boolean }).pinned) {
+    throw new Error("Pinned audience tags can't be archived.");
+  }
   const { error } = await supabase
     .from("spend_categories")
     .update({ archived })
@@ -2413,25 +2547,39 @@ export async function archiveSpendCategory(id: string, archived = true) {
   revalidatePath("/spending");
 }
 
-export async function deleteSpendCategory(id: string) {
-  const { supabase, userId } = await userOrThrow();
-  // spend_category_links cascade-delete via FK; existing spends keep their
-  // remaining tags (and lose this one) and stay in the ledger.
-  const { error } = await supabase
-    .from("spend_categories")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "spend_category.deleted",
-    title: "Deleted category",
-    entityType: "spend_category",
-    entityId: id,
+export async function deleteSpendCategory(
+  id: string,
+): Promise<ActionResult<void>> {
+  return safeRun("deleteSpendCategory", async () => {
+    const { supabase, userId } = await userOrThrow();
+    // Pinned audience tags can NEVER be deleted (migration 0083 contract).
+    const { data: existing } = await supabase
+      .from("spend_categories")
+      .select("pinned")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (existing && (existing as { pinned?: boolean }).pinned) {
+      throw new Error("Pinned audience tags can't be deleted.");
+    }
+    // spend_category_links cascade-delete via FK; existing spends keep their
+    // remaining tags (and lose this one) and stay in the ledger.
+    const { error } = await supabase
+      .from("spend_categories")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) throw error;
+    await logEvent({
+      userId,
+      kind: "spend_category.deleted",
+      title: "Deleted category",
+      entityType: "spend_category",
+      entityId: id,
+    });
+    revalidatePath("/settings");
+    revalidatePath("/spending");
   });
-  revalidatePath("/settings");
-  revalidatePath("/spending");
 }
 
 // ───────────────────────────────────────── Recurring spends ──
@@ -3747,19 +3895,165 @@ export async function createVendor(input: VendorInput) {
   // New vendor = structural event — chatbot brain may want to ask
   // about this place. Fire-and-forget.
   await maybeSurfaceClarifyingQuestion();
-  // Brand Identity workflow — fire the vendor icon brain in the
-  // background. Failures are swallowed by safeRun and never block the
-  // create. Cache row lands in finance.vendor_icon_cache; resolver picks
-  // it up on the next render.
+  // Brand Identity workflow — fire the vendor icon brain. We AWAIT it
+  // (with a try/catch so failures never block the create) so the
+  // vendor_icon_cache row lands BEFORE maybeDispatchVendorIdentifyRequest
+  // runs. Without awaiting, the dispatcher always sees an empty cache on
+  // first create and asks the user about every vendor — even ones the
+  // auto-brain would have identified with high confidence.
   try {
     const { identifyVendorIconAction } = await import("@/lib/ai/vendor-icon-actions");
-    void identifyVendorIconAction(name);
+    await identifyVendorIconAction(name);
   } catch {
-    /* best-effort — module load failure cannot block vendor create */
+    /* best-effort — brain failure cannot block vendor create */
+  }
+  // Spendings workflow — fire a vendor_identify_request notification
+  // when the vendor is genuinely unknown (no curated brand match, no
+  // user_overridden cache row, no high-confidence auto-identified row).
+  // Best-effort: failure NEVER blocks the create. Debounce + 5/hr cap
+  // is enforced via the helper below.
+  try {
+    await maybeDispatchVendorIdentifyRequest({
+      vendorId: data.id as string,
+      vendorName: name,
+    });
+  } catch {
+    /* best-effort */
   }
   revalidatePath("/vendors");
   revalidatePath("/spending");
   return data;
+}
+
+// Dispatcher helper for the vendor_identify_request kind. Gates (run in
+// this order — the cheapest checks first):
+//   1. Vendor row's needs_identification=false OR identification_skipped
+//      → skip silently.
+//   2. Curated PH brand registry hit → flip needs_identification=false
+//      and skip silently. Without this, every Jollibee/SM/7-Eleven
+//      vendor would prompt the user to describe a place the app
+//      already knows.
+//   3. vendor_icon_cache row with user_overridden=true OR a high-
+//      confidence (>= 0.7) non-overridden glyph_kind != 'none' row
+//      → flip needs_identification=false and skip silently. The
+//      auto-identify brain ran before we got here (createVendor awaits
+//      it), so this branch catches the brain's wins too.
+//   4. 30-minute debounce against last_identify_notif_at on the vendor.
+//   5. 5/hour cap across all vendor_identify_request rows for this
+//      user (counts dispatched rows regardless of read/dismissed
+//      state — intentional, prevents apology spam during heavy
+//      vendor-creation sessions).
+//
+// On dispatch: writes last_identify_notif_at = now to throttle the next
+// dispatch for THIS vendor for 30 minutes regardless of cap state.
+async function maybeDispatchVendorIdentifyRequest(args: {
+  vendorId: string;
+  vendorName: string;
+}): Promise<void> {
+  const THIRTY_MIN_MS = 30 * 60 * 1000;
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const CAP_PER_HOUR = 5;
+  const HIGH_CONFIDENCE_THRESHOLD = 0.7;
+  const { supabase, userId } = await userOrThrow();
+  // Pull current vendor flags (we just inserted the row but RLS makes a
+  // re-read trivially cheap and confirms the row is visible).
+  const { data: row } = await supabase
+    .from("vendors")
+    .select("needs_identification, identification_skipped, last_identify_notif_at")
+    .eq("id", args.vendorId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!row) return;
+  const r = row as {
+    needs_identification?: boolean;
+    identification_skipped?: boolean;
+    last_identify_notif_at?: string | null;
+  };
+  if (!r.needs_identification || r.identification_skipped) return;
+
+  // Curated PH brand registry — if the vendor matches a curated chain
+  // (Jollibee, SM, 7-Eleven, GCash, etc.) the resolver already has an
+  // icon and the user shouldn't be asked to describe it. Flip the flag
+  // and skip the notification.
+  try {
+    const { lookupCuratedVendorBrand, normalizeVendorName } = await import(
+      "@/lib/brand/vendors"
+    );
+    const curatedHit = lookupCuratedVendorBrand(args.vendorName);
+    if (curatedHit) {
+      await supabase
+        .from("vendors")
+        .update({ needs_identification: false })
+        .eq("id", args.vendorId)
+        .eq("user_id", userId);
+      return;
+    }
+    // High-confidence cache row (user-overridden or auto-identified)
+    // → already identified; flip and skip. Catches the auto-brain's
+    // wins from the awaited identifyVendorIconAction call upstream.
+    const norm = normalizeVendorName(args.vendorName);
+    if (norm) {
+      const { data: cacheRow } = await supabase
+        .from("vendor_icon_cache")
+        .select("user_overridden, glyph_kind, confidence")
+        .eq("user_id", userId)
+        .eq("vendor_name_normalized", norm)
+        .maybeSingle();
+      const cr = cacheRow as
+        | { user_overridden?: boolean; glyph_kind?: string; confidence?: number }
+        | null;
+      const isIdentified =
+        !!cr &&
+        (cr.user_overridden === true ||
+          (cr.glyph_kind !== undefined &&
+            cr.glyph_kind !== "none" &&
+            (cr.confidence ?? 0) >= HIGH_CONFIDENCE_THRESHOLD));
+      if (isIdentified) {
+        await supabase
+          .from("vendors")
+          .update({ needs_identification: false })
+          .eq("id", args.vendorId)
+          .eq("user_id", userId);
+        return;
+      }
+    }
+  } catch {
+    /* best-effort — module load failure cannot block dispatch */
+  }
+
+  // 30m per-vendor debounce.
+  if (r.last_identify_notif_at) {
+    const last = new Date(r.last_identify_notif_at).getTime();
+    if (Number.isFinite(last) && Date.now() - last < THIRTY_MIN_MS) return;
+  }
+  // 5/hour cap.
+  const { countNotificationsInWindow, postNotification } = await import(
+    "@/lib/notifications/dispatcher"
+  );
+  const recentCount = await countNotificationsInWindow(
+    "vendor_identify_request",
+    ONE_HOUR_MS,
+  );
+  if (recentCount >= CAP_PER_HOUR) return;
+  // Dispatch.
+  await postNotification({
+    kind: "vendor_identify_request",
+    subject: `Tell me about: ${args.vendorName}`,
+    body: "What is this? I'll get an icon for it.",
+    dedupKey: `vendor_identify:${args.vendorId}`,
+    priority: 0,
+    payload: {
+      kind_specific: {
+        vendor_id: args.vendorId,
+        vendor_name: args.vendorName,
+      },
+    },
+  });
+  await supabase
+    .from("vendors")
+    .update({ last_identify_notif_at: new Date().toISOString() })
+    .eq("id", args.vendorId)
+    .eq("user_id", userId);
 }
 
 export async function updateVendor(id: string, input: Partial<VendorInput>) {

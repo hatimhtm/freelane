@@ -3,7 +3,15 @@ import { outstanding, outstandingTotalBase } from "@/lib/dashboard-calc";
 import { holdingBalances } from "@/lib/payment-chain";
 import { computeWalletBalancesFromLedger } from "@/lib/data/wallet-balance";
 import { logLedgerReadFailure } from "@/lib/data/money-ledger";
-import { computeSafeToSpendFromData, suggestSadakaForIncome } from "@/lib/safe-to-spend";
+import {
+  computeSafeToSpendFromData,
+  computeSafeToSpend,
+  suggestSadakaForIncome,
+} from "@/lib/safe-to-spend";
+import {
+  getDailySafeSnapshotForToday,
+} from "@/lib/data/queries";
+import { upsertDailySafeSnapshot } from "@/lib/data/actions";
 import { hasGemini } from "@/lib/ai/gemini";
 import { readFocusCache } from "@/lib/ai/actions";
 import { getCalmWeatherCached, refreshCalmWeather } from "@/lib/ai/calm-weather";
@@ -20,7 +28,7 @@ import { buildYearMemoryRecall, type YearMemoryRecall } from "@/lib/ai/year-memo
 import { promptForWeek, isCheckinDay } from "@/lib/ai/tuesday-checkin";
 import { postNotification } from "@/lib/notifications/dispatcher";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
-import { phtToday, phtMondayOfWeek } from "@/lib/utils";
+import { isPhtToday, phtToday, phtMondayOfWeek } from "@/lib/utils";
 import { linksBySpend } from "@/lib/spends";
 import { isCigaretteCategoryName } from "@/lib/spending/categories";
 import type { CurrencyCode, MorningLog } from "@/lib/supabase/types";
@@ -109,9 +117,12 @@ export default async function TodayPage() {
     holdings = [];
   }
 
-  // Today-spend totals (PHT day).
+  // Today-spend totals (PHT day). Use the shared isPhtToday helper so
+  // Today + Spending agree on which rows count as "today's spend" — the
+  // dayStart timestamp comparison drifted from spending-data's PHT-date
+  // string comparison and could regress in isolation.
   const dayStart = new Date(todayStr + "T00:00:00+08:00").getTime();
-  const todaySpends = spends.filter((sp) => new Date(sp.spent_at).getTime() >= dayStart);
+  const todaySpends = spends.filter((sp) => isPhtToday(sp.spent_at, now));
   const todaySpendBase = todaySpends.reduce((s, sp) => s + Number(sp.amount_base ?? 0), 0);
   const sevenDayCutoff = dayStart - 6 * DAY_MS;
   const last7DaySpendCount = spends.filter((sp) => new Date(sp.spent_at).getTime() >= sevenDayCutoff).length;
@@ -228,6 +239,56 @@ export default async function TodayPage() {
       observationDays: 0,
       confidenceTag: "rough",
     };
+  }
+
+  // BUG FIX #2 (LIVE DAILY SAFE) — read today's PHT-anchored snapshot.
+  // Upsert on first read of the day so the next render uses the stable
+  // value. liveRemaining decrements as today's spends accumulate.
+  //
+  // Snapshot-write integrity rules (mirror spending-data.ts):
+  //   1. Refuse to snapshot a 0 when wallets/payments exist — that
+  //      would lock the user at ₱0 Safe-to-Spend for the day if the
+  //      catch-block default above fired transiently.
+  //   2. Refuse to snapshot when the baseline tagged itself as the
+  //      catch-block default (notes sentinel).
+  //   3. On upsert failure, leave snapshot null so the live compute
+  //      falls back to the current baseline and the next render retries.
+  let todaySafeInitial = Math.max(0, safeToSpendBaseline.safeTodayBase);
+  let todaySafeLive = Math.max(0, safeToSpendBaseline.safeTodayBase);
+  try {
+    const baselineFellBack = safeToSpendBaseline.notes.some((n) =>
+      n.includes("fell back to a calm default"),
+    );
+    const hasWalletsOrPayments = methods.length > 0 || payments.length > 0;
+    const baselineSnapshotOk =
+      !baselineFellBack &&
+      (safeToSpendBaseline.safeTodayBase > 0 || !hasWalletsOrPayments);
+    let snapshot = await getDailySafeSnapshotForToday();
+    if (!snapshot && baselineSnapshotOk) {
+      const writeResult = await upsertDailySafeSnapshot({
+        initialSafeBase: Math.max(0, safeToSpendBaseline.safeTodayBase),
+        currency,
+      });
+      if (writeResult?.ok) {
+        snapshot = {
+          initial_safe_base: Math.max(0, Math.round(safeToSpendBaseline.safeTodayBase)),
+          currency,
+          computed_at: new Date().toISOString(),
+        };
+      } else if (writeResult && !writeResult.ok) {
+        console.error("Today: upsertDailySafeSnapshot failed", writeResult.error);
+      }
+    }
+    const live = computeSafeToSpend({
+      baseline: safeToSpendBaseline,
+      snapshotBase: snapshot ? snapshot.initial_safe_base : null,
+      todaySpendsBase: todaySpendBase,
+      currency,
+    });
+    todaySafeInitial = live.initialForToday;
+    todaySafeLive = live.liveRemaining;
+  } catch (err) {
+    console.error("Today: live daily safe snapshot threw", err);
   }
 
   // Calm weather: read the cache only — even if stale — so the page can
@@ -369,6 +430,8 @@ export default async function TodayPage() {
       todaySpendBase={todaySpendBase}
       last7DaySpendCount={last7DaySpendCount}
       safeToSpendBaseline={safeToSpendBaseline}
+      initialSafeForToday={todaySafeInitial}
+      liveSafeRemaining={todaySafeLive}
       overlay={overlay}
       recentNights={recentNights}
       cigarettesTodayCount={cigTodayCount}

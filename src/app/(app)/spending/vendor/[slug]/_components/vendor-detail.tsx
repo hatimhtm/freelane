@@ -86,7 +86,7 @@ export function VendorDetail({
           delay={0.02}
         />
         <StatTile
-          eyebrow="Total spent"
+          eyebrow="Spent"
           value={formatMoney(total, baseCurrency, { compact: true })}
           delay={0.05}
         />

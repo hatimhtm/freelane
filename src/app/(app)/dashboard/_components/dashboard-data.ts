@@ -8,7 +8,12 @@
 // expensive enough that we'd rather warm the cache once per dashboard
 // visit than scatter four sub-fetches.
 
-import { getDashboardData, getDashboardActiveYears } from "@/lib/data/queries";
+import {
+  getDashboardData,
+  getDashboardActiveYears,
+  getDailySafeSnapshotForToday,
+} from "@/lib/data/queries";
+import { upsertDailySafeSnapshot } from "@/lib/data/actions";
 import {
   cashflowMetrics,
   outstanding,
@@ -17,8 +22,11 @@ import {
   landedInRange,
 } from "@/lib/dashboard-calc";
 import { monthlyFeeBase, holdingBalances } from "@/lib/payment-chain";
-import { phtMondayOfWeek } from "@/lib/utils";
-import { computeSafeToSpendFromData } from "@/lib/safe-to-spend";
+import { phtMondayOfWeek, isPhtToday } from "@/lib/utils";
+import {
+  computeSafeToSpendFromData,
+  computeSafeToSpend,
+} from "@/lib/safe-to-spend";
 import { anchorDate, periodKey, expectedBase } from "@/lib/recurring";
 import { buildCashflowAtlas } from "@/lib/cashflow-atlas";
 import { getCalmWeatherCached, refreshCalmWeather } from "@/lib/ai/calm-weather";
@@ -54,7 +62,6 @@ export type DashboardProps = {
   feesMtd: number;
   outstandingTotal: number;
   walletTotal: number;
-  safeToday: number;
   landedSeries: number[];
   spentSeries: number[];
   alerts: AlertRow[];
@@ -78,6 +85,14 @@ export type DashboardProps = {
   thirtyDayNet?: number;
   unaccountedOutflow30dBase?: number;
   walletDelta7dBase?: number;
+  // Live Daily Safe — display rule everywhere (Spend modal + Today widget
+  // + Dashboard money tab). Computed off the same snapshot/baseline rig
+  // Today + Spending use so the three surfaces stay in lockstep across a
+  // single PHT day. liveRemaining clamps at 0; overshootBase carries the
+  // magnitude of any "past safe" overrun for the calm-by-default subtitle.
+  initialSafeForToday?: number;
+  liveSafeRemaining?: number;
+  liveSafeOvershoot?: number;
   forecastSummary?: ForecastSummary | null;
   walletAnchorStaleSet?: Set<string>;
   // Per-wallet WarningResult map — carries the message + detailHref the
@@ -183,22 +198,68 @@ export async function loadDashboardProps(): Promise<DashboardProps> {
   const outstandingRows = outstanding(projects, payments, clients, rates);
   const outstandingTotal = Math.round(outstandingTotalBase(outstandingRows));
 
-  const sts = computeSafeToSpendFromData(
-    {
-      payments,
-      withdrawals,
-      spends,
-      recurring,
-      recurringSkips,
-      loanInstallments,
-      methods,
-      stepsByPayment,
-      rates,
-      plannedSpends,
-      ledgerBalances: ledgerBalanceForChain,
-    },
-    now,
-  );
+  // Live Daily Safe — the brief locks the same display rule on Spend
+  // modal + Today widget + Dashboard money tab. We re-read the SAME PHT
+  // snapshot Today/Spending wrote (or write it on first read of the day
+  // if neither surface has visited yet) so all three render the same
+  // initialForToday / liveRemaining pair. Snapshot-write integrity rules
+  // mirror Today/Spending: skip the upsert when the baseline degraded
+  // to a calm fallback or when the baseline is 0 while wallets/payments
+  // exist (so a transient compute miss can't lock the user at ₱0 all day).
+  const safeBaselineForLive = computeSafeToSpendFromData({
+    payments,
+    withdrawals,
+    spends,
+    recurring,
+    recurringSkips,
+    loanInstallments,
+    methods,
+    stepsByPayment,
+    rates,
+    plannedSpends,
+    ledgerBalances: ledgerBalanceForChain,
+  });
+  let initialSafeForToday = 0;
+  let liveSafeRemaining = 0;
+  let liveSafeOvershoot = 0;
+  try {
+    const baselineFellBack = safeBaselineForLive.notes.some((n) =>
+      n.includes("fell back to a calm default"),
+    );
+    const hasWalletsOrPayments = methods.length > 0 || payments.length > 0;
+    const baselineSnapshotOk =
+      !baselineFellBack &&
+      (safeBaselineForLive.safeTodayBase > 0 || !hasWalletsOrPayments);
+    let snapshot = await getDailySafeSnapshotForToday().catch(() => null);
+    if (!snapshot && baselineSnapshotOk) {
+      const writeResult = await upsertDailySafeSnapshot({
+        initialSafeBase: Math.max(0, safeBaselineForLive.safeTodayBase),
+        currency,
+      }).catch(() => null);
+      if (writeResult?.ok) {
+        snapshot = {
+          initial_safe_base: Math.max(0, Math.round(safeBaselineForLive.safeTodayBase)),
+          currency,
+          computed_at: new Date().toISOString(),
+        };
+      }
+    }
+    const todaySpendsBase = spends.reduce(
+      (s, sp) => (isPhtToday(sp.spent_at) ? s + Number(sp.amount_base ?? 0) : s),
+      0,
+    );
+    const live = computeSafeToSpend({
+      baseline: safeBaselineForLive,
+      snapshotBase: snapshot ? snapshot.initial_safe_base : null,
+      todaySpendsBase,
+      currency,
+    });
+    initialSafeForToday = live.initialForToday;
+    liveSafeRemaining = live.liveRemaining;
+    liveSafeOvershoot = live.overshootBase;
+  } catch (err) {
+    console.error("Dashboard: live daily safe snapshot threw", err);
+  }
 
   const atlas = buildCashflowAtlas({
     payments,
@@ -636,7 +697,6 @@ export async function loadDashboardProps(): Promise<DashboardProps> {
     feesMtd: Math.round(metrics.feesMtd),
     outstandingTotal,
     walletTotal,
-    safeToday: Math.round(sts.safeTodayBase),
     landedSeries,
     spentSeries,
     alerts: alerts.slice(0, ALERT_LIMIT),
@@ -658,6 +718,9 @@ export async function loadDashboardProps(): Promise<DashboardProps> {
     thirtyDayNet: Math.round(thirtyDayNet),
     unaccountedOutflow30dBase: Math.round(unaccountedOutflow30dBase),
     walletDelta7dBase: Math.round(walletDelta7dBase),
+    initialSafeForToday,
+    liveSafeRemaining,
+    liveSafeOvershoot,
     forecastSummary,
     walletAnchorStaleSet,
     walletAnchorStaleMap,
@@ -740,7 +803,6 @@ export async function loadDashboardChatbotContext(
       feesMtd: props.feesMtd,
       outstandingTotal: props.outstandingTotal,
       walletTotal: props.walletTotal,
-      safeToday: props.safeToday,
       weekLanded: props.weekLanded,
       trailing30: props.trailing30,
       ytd: props.ytd,

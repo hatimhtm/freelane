@@ -12,6 +12,10 @@ import {
 } from "recharts";
 import { formatMoney } from "@/lib/money";
 import type { CurrencyCode } from "@/lib/supabase/types";
+import {
+  CHART_MARGIN,
+  CHART_XAXIS_MIN_TICK_GAP,
+} from "@/lib/charts/chart-defaults";
 
 export function RevenueChart({
   data,
@@ -45,7 +49,7 @@ export function RevenueChart({
   return (
     <div ref={wrapRef} style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ left: 12, right: 12, top: 8, bottom: 0 }}>
+        <AreaChart data={data} margin={CHART_MARGIN}>
           <defs>
             <linearGradient id="rev-fill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.22} />
@@ -58,6 +62,7 @@ export function RevenueChart({
             tickLine={false}
             axisLine={false}
             tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+            minTickGap={CHART_XAXIS_MIN_TICK_GAP}
             dy={6}
           />
           <Tooltip

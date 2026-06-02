@@ -260,3 +260,24 @@ export async function readNotificationPrefs(): Promise<NotificationPrefs> {
   const supabase = await createClient();
   return readLegacyPrefs(supabase, user.id);
 }
+
+// Count notifications of a given kind in a trailing-window. Used by the
+// vendor_identify_request 5/hour cap (Spendings workflow). The supporting
+// index notifications_inbox_user_kind_created_idx ships in migration 0083
+// so this read is index-only.
+export async function countNotificationsInWindow(
+  kind: string,
+  windowMs: number,
+): Promise<number> {
+  const user = await getAuthUser();
+  if (!user) return 0;
+  const supabase = await createClient();
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { count } = await supabase
+    .from("notifications_inbox")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("kind", kind)
+    .gte("created_at", since);
+  return count ?? 0;
+}

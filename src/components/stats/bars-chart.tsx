@@ -13,6 +13,10 @@ import {
 } from "recharts";
 import { formatMoney } from "@/lib/money";
 import type { CurrencyCode } from "@/lib/supabase/types";
+import {
+  CHART_MARGIN,
+  CHART_XAXIS_MIN_TICK_GAP,
+} from "@/lib/charts/chart-defaults";
 
 export type BarSeries = { key: string; label: string; color: string };
 export type BarDatum = { month: string } & Record<string, number | string>;
@@ -55,13 +59,14 @@ export function BarsChart({
   return (
     <div ref={wrapRef} style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ left: 12, right: 12, top: 8, bottom: 0 }} barGap={2} barCategoryGap="22%">
+        <BarChart data={data} margin={CHART_MARGIN} barGap={2} barCategoryGap="22%">
           <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
           <XAxis
             dataKey="month"
             tickLine={false}
             axisLine={false}
             tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+            minTickGap={CHART_XAXIS_MIN_TICK_GAP}
             dy={6}
           />
           <Tooltip

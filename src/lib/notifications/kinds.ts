@@ -17,6 +17,7 @@ import {
   MessageCircle,
   RefreshCw,
   Sparkles,
+  Store,
   UserCog,
   Wallet,
   type LucideIcon,
@@ -84,6 +85,11 @@ export const KNOWN_KINDS: KindMeta[] = [
     label: "Client pattern changed",
     description: "A client's payment method or project size shifted significantly.",
   },
+  {
+    key: "vendor_identify_request",
+    label: "Tell me about a vendor",
+    description: "The brain spotted an unknown vendor and wants a quick description to find a brand glyph.",
+  },
 ];
 
 export const KNOWN_KIND_KEYS = new Set(KNOWN_KINDS.map((k) => k.key));
@@ -103,6 +109,7 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   storm_active: AlertTriangle,
   sadaka_nudge: HandHeart,
   client_pattern_change: UserCog,
+  vendor_identify_request: Store,
 };
 
 export function iconForKind(kind: string): LucideIcon {

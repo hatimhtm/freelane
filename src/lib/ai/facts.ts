@@ -5,13 +5,16 @@ import { getAuthUser } from "@/lib/auth";
 
 // Server-only readers + canonical types for the AI fact store.
 //
-// Why a sibling module: Next.js 16 enforces "use server" files export ONLY
-// async functions. Types, constants, and pure helpers live HERE; the
-// matching `facts-actions.ts` keeps the write surface (server actions) and
-// imports the type/helper exports from this file.
+// Why a sibling module: Next.js 16's "use server" rule rejects
+// non-async RUNTIME exports (constants, pure helpers, objects). TS
+// types are erased and don't actually trip the rule, but mixing them
+// into a "use server" file muddies the import contract — readers can't
+// tell at a glance whether a symbol crosses the network boundary.
 //
-// The Chatbot + Sadaka workflows had to be patched for this exact rule —
-// don't re-introduce the regression.
+// Convention: types + constants + pure helpers live HERE behind
+// `import "server-only"`. The matching `facts-actions.ts` carries
+// "use server" and exports ONLY async functions plus type re-imports
+// from this file.
 
 export type FactSubjectKind =
   | "user"

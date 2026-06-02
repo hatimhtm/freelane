@@ -141,6 +141,74 @@ export function computeSafeToSpendFromData(
   });
 }
 
+// ─────────────────────────── LIVE DAILY SAFE (Spendings workflow) ──
+// computeSafeToSpend exposes the two-number contract the Spend modal,
+// Today widget, and Spending top hero all use post-0085. See migration
+// 0085_daily_safe_snapshots.sql for the model.
+//
+//   initialForToday — PHT-day-anchored snapshot of the day's starting
+//                     safe-to-spend. STABLE across the PHT day. Stored
+//                     in finance.daily_safe_snapshots, written on first
+//                     read of the day.
+//   liveRemaining   — initialForToday MINUS the sum of today's spends
+//                     (PHT-bounded base amounts). RECOMPUTED on every
+//                     render and every spend-log mutation.
+//   isRough         — mirrors the existing baseline.confidenceTag ===
+//                     'rough' flag so the dial / widget can render a
+//                     small stamp.
+//   currency        — base currency, threaded through for NumberFlow.
+//
+// This is a PURE function — it does not touch supabase. The caller
+// passes in:
+//   baseline       — full SafeToSpendBreakdown from computeSafeToSpendFromData
+//   snapshotBase   — the persisted initial_safe_base for today's PHT date
+//                    (or null on first read; the caller upserts when null)
+//   todaySpendsBase— sum of today's PHT-bounded spend.amount_base values
+//   currency       — base currency
+
+export interface SafeToSpendLive {
+  initialForToday: number;
+  liveRemaining: number;
+  // Magnitude of today's overshoot (todaySpendsBase - initialForToday)
+  // when positive, else 0. `liveRemaining` stays clamped at 0 for the
+  // calm-by-default headline; UI surfaces that want to show "₱X past
+  // safe" read overshootBase instead. Keeps the recovery-mode framing
+  // (which preserves overshoot signal elsewhere in this file) honest.
+  overshootBase: number;
+  isRough: boolean;
+  currency: string;
+}
+
+export function computeSafeToSpend(args: {
+  baseline: SafeToSpendBreakdown;
+  snapshotBase: number | null;
+  todaySpendsBase: number;
+  currency: string;
+}): SafeToSpendLive {
+  // If we already have a persisted snapshot for today, use it. Otherwise
+  // fall back to the breakdown's safeTodayBase — the caller is expected
+  // to upsert the snapshot on the same render so the next read becomes
+  // stable. Both branches round identically so the SafeToSpendLive
+  // contract is dimensionally consistent and downstream subtraction
+  // can't show e.g. live=412 initial=413 because of float dust.
+  const rawInitial =
+    args.snapshotBase != null
+      ? Math.max(0, args.snapshotBase)
+      : Math.max(0, args.baseline.safeTodayBase);
+  const initialForToday = Math.round(rawInitial);
+  const spentToday = Math.max(0, Math.round(args.todaySpendsBase));
+  const signedRemaining = initialForToday - spentToday;
+  const liveRemaining = Math.max(0, signedRemaining);
+  const overshootBase = signedRemaining < 0 ? -signedRemaining : 0;
+  return {
+    initialForToday,
+    liveRemaining,
+    overshootBase,
+    isRough: args.baseline.confidenceTag === "rough",
+    currency: args.currency,
+  };
+}
+
 export function safeToSpend(inputs: SafeToSpendInputs): SafeToSpendBreakdown {
   const now = inputs.now ?? new Date();
   const horizonDays = inputs.horizonDays ?? DEFAULT_HORIZON_DAYS;

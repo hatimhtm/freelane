@@ -125,6 +125,62 @@ const KIND_HANDLERS: Record<string, ClickHandler> = {
       { title: n.subject, description: undefined },
     );
   },
+  // vendor_identify_request — opens the chatbot scoped to vendor
+  // identification. The chatbot listens for this event and seeds its
+  // session context with { vendor_id, vendor_name } from the payload so
+  // the intent classifier routes user replies through the
+  // completeVendorIdentificationAction. "skip" branches to
+  // skipVendorIdentificationAction. Both actions live in
+  // src/app/(app)/spending/_actions/vendor-identify-actions.ts.
+  vendor_identify_request: (n, _openModal, navigate) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: { vendor_id?: string; vendor_name?: string };
+    };
+    const vendorId = payload.kind_specific?.vendor_id;
+    const vendorName = payload.kind_specific?.vendor_name;
+    if (!vendorId || !vendorName) {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[notifications] vendor_identify_request missing vendor_id or vendor_name",
+          n,
+        );
+      }
+      // Fallback to the spending page; the user can still open the
+      // chatbot manually there.
+      navigate("/spending");
+      return;
+    }
+    // Dispatch the canonical freelane:open-chatbot event. The chatbot
+    // context provider listens for question + activeCard; we pass an
+    // activeCard with kind="vendor_identify" so the chatbot's intent
+    // classifier routes the user's free-text reply through the
+    // completeVendorIdentificationAction. The prefilled question seeds
+    // the conversation with what the brain needs.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("freelane:open-chatbot", {
+          detail: {
+            question: `Tell me about ${vendorName}. What is this? (Reply "skip" to skip.)`,
+            activeCard: {
+              key: `vendor_identify:${vendorId}`,
+              label: vendorName,
+              data: {
+                // Keep in sync with CHATBOT_INTENT.IDENTIFY_VENDOR in
+                // src/lib/data/chat-context-registry.ts — the
+                // postChatMessage dispatcher matches on this exact
+                // string + presence of vendor_id/vendor_name (see
+                // isIdentifyVendorIntent type guard).
+                intent: "identify_vendor",
+                vendor_id: vendorId,
+                vendor_name: vendorName,
+              },
+            },
+          },
+        }),
+      );
+    }
+  },
   ai_clarifying_question: (n, openModal) => {
     const payload = (n.payload ?? {}) as {
       choices?: string[];

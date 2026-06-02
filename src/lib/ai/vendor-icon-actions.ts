@@ -4,13 +4,19 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
 import { safeRunLabeled, type ActionResult } from "@/lib/data/actions";
 import { identifyVendor, type VendorIdentification } from "./identify-vendor";
-import { normalizeVendorName } from "@/lib/brand/vendors";
+import {
+  VENDOR_REGISTRY,
+  lookupCuratedVendorBrand,
+  normalizeVendorName,
+} from "@/lib/brand/vendors";
 import type { VendorIconCacheRow } from "@/lib/supabase/types";
 
 // Server-action wrappers around the vendor-icon brain + cache row
 // upserts. Lives in a dedicated *-actions.ts file so Next.js 16's
-// use-server rule is satisfied (only async exports). Anything that needs
-// to invalidate / mutate the cache row also goes here.
+// use-server rule is satisfied (only async RUNTIME exports). TS types
+// are erased at compile time and may be colocated; runtime constants
+// or pure helpers must stay in a sibling pure module. Anything that
+// needs to invalidate / mutate the cache row also goes here.
 //
 // identifyVendorIconAction is fire-and-forget from createVendor /
 // updateVendor. It:
@@ -177,4 +183,61 @@ export async function setVendorIconOverride(
       );
     return { vendor_name_normalized: normalized };
   });
+}
+
+// One-shot backfill that flips needs_identification=false on any vendor
+// row whose canonical_name normalizes to a curated registry slug (exact
+// or via FUZZY_ALIASES via lookupCuratedVendorBrand). Migration 0084
+// backfilled only from vendor_icon_cache rows; pre-existing curated-
+// chain vendors that never had a cache row (because the resolver
+// short-circuits to curated) were left with needs_identification=true
+// and would trigger a vendor_identify_request next time anything
+// touched them. Run once after deploying the dispatcher fix.
+//
+// Idempotent: only updates rows that currently have
+// needs_identification=true. Safe to re-run.
+export async function backfillCuratedVendorIdentification(): Promise<
+  ActionResult<{ touched: number }>
+> {
+  return safeRunLabeled(
+    "freelane-brand",
+    "backfill-curated-vendor-identification",
+    async () => {
+      const user = await getAuthUser();
+      if (!user) throw new Error("Unauthenticated");
+      const supabase = await createClient();
+      const { data, error } = await supabase
+        .from("vendors")
+        .select("id, canonical_name, needs_identification")
+        .eq("user_id", user.id)
+        .eq("needs_identification", true);
+      if (error) throw error;
+      const rows = (data ?? []) as Array<{
+        id: string;
+        canonical_name: string;
+      }>;
+      // Build the curated slug set once for an O(rows + registry) scan.
+      const curatedSlugs = new Set(Object.keys(VENDOR_REGISTRY));
+      const ids: string[] = [];
+      for (const r of rows) {
+        const slug = normalizeVendorName(r.canonical_name);
+        if (slug && curatedSlugs.has(slug)) {
+          ids.push(r.id);
+          continue;
+        }
+        // Honor FUZZY_ALIASES too — lookupCuratedVendorBrand covers both.
+        if (lookupCuratedVendorBrand(r.canonical_name)) {
+          ids.push(r.id);
+        }
+      }
+      if (ids.length === 0) return { touched: 0 };
+      const { error: updateError } = await supabase
+        .from("vendors")
+        .update({ needs_identification: false })
+        .in("id", ids)
+        .eq("user_id", user.id);
+      if (updateError) throw updateError;
+      return { touched: ids.length };
+    },
+  );
 }

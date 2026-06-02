@@ -24,6 +24,12 @@ type Props = {
   baseline: SafeToSpendBreakdown;
   overlay: SafeToSpendOverlay | null;
   currency: CurrencyCode;
+  // BUG FIX #2 (LIVE DAILY SAFE) — when provided, the widget renders
+  // liveRemaining as the hero with a greyed "started today at ₱X"
+  // subtitle. Falls back to the baseline-driven shape when omitted so
+  // any legacy caller still works.
+  liveRemaining?: number;
+  initialForToday?: number;
   // yesterdaySafe was previously declared optional but never wired by any
   // caller — a dormant prop hides the missing-feature signal. Re-add when
   // a getAiSafeSpendCacheRow read returns the prior payload's safeTodayBase
@@ -47,9 +53,24 @@ function tagLabel(
   return "STEADY";
 }
 
-export function SafeToSpendWidget({ baseline, overlay, currency }: Props) {
+export function SafeToSpendWidget({
+  baseline,
+  overlay,
+  currency,
+  liveRemaining,
+  initialForToday,
+}: Props) {
   const router = useRouter();
-  const safeToday = Math.max(0, baseline.safeTodayBase);
+  // BUG FIX #2 — hero is liveRemaining when provided; legacy callers
+  // fall back to the breakdown's safeTodayBase.
+  const hasLive = liveRemaining != null;
+  const heroValue = hasLive
+    ? Math.max(0, Math.round(liveRemaining))
+    : Math.max(0, baseline.safeTodayBase);
+  const initialValue =
+    initialForToday != null
+      ? Math.max(0, Math.round(initialForToday))
+      : Math.max(0, Math.round(baseline.safeTodayBase));
   const horizonDays = baseline.horizonDays;
   const walletsTotal = Math.max(0, Math.round(baseline.walletBalancesBase ?? 0));
   // T32 fallback — older cached payloads predate confidenceTag.
@@ -57,17 +78,26 @@ export function SafeToSpendWidget({ baseline, overlay, currency }: Props) {
 
   const headline = (
     <span>
-      <MoneyFlow value={safeToday} currency={currency} />
+      <MoneyFlow value={heroValue} currency={currency} />
     </span>
   );
 
+  // div (not span) — flex-column on a span around block-content spans
+  // is technically valid HTML but fragile if MWidget ever restyles its
+  // sub slot. MWidget already wraps `sub` in a div, so this fits cleanly.
   const sub = (
-    <span className="flex flex-col gap-0.5">
-      <span>for the next {horizonDays} days</span>
+    <div className="flex flex-col gap-0.5">
+      {hasLive ? (
+        <span className="text-[11px] text-muted-foreground/70">
+          started today at {formatMoney(initialValue, currency, { compact: true })}
+        </span>
+      ) : (
+        <span>for the next {horizonDays} days</span>
+      )}
       <span className="text-[11px] text-muted-foreground/80">
         of {formatMoney(walletsTotal, currency, { compact: true })} across wallets
       </span>
-    </span>
+    </div>
   );
 
   // Reasoning rendered as a supporting line only when it carries useful
