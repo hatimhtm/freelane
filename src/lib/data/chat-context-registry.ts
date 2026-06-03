@@ -227,7 +227,10 @@ export function pageKeyFromPath(pathname: string): string {
     // lean on wallet_platform_metadata for the specific surface.
     return segments[1] ? `payments.${segments[1]}` : "payments";
   }
-  if (segments[0] === "should-i-buy") return "should_i_buy";
+  // /should-i-buy route was deleted (freelane-shouldibuy-design 2026-06-02);
+  // next.config.ts redirects it to /. Any stale dispatcher that still passes
+  // the path falls through to the default `segments.join(".")` below — but
+  // the redirect kicks in first at the HTTP layer.
   if (segments[0] === "settings") {
     return segments[1] ? `settings.${segments[1]}` : "settings";
   }

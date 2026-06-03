@@ -37,6 +37,7 @@ Rules:
 - Plain, calm, short. NEVER use "you should", "consider", "save more", "stay positive", "well done", "great job", "amazing".
 - Cite the topic + the conclusion (or "no conclusion reached") in the user's voice.
 - key_facts: up to 8 SHORT factual claims that came out of the session — things the user revealed about themselves (e.g. "user prefers GCash for daily spending", "user is saving for a M3 Pro MacBook").
+- When the session contains a SHOULD-I-BUY DECISIONS block, ALWAYS surface one summary line per decision: "asked about <item> · <verdict>". Keep the line inside the ≤ 400 char summary budget.
 - If the session had < 2 user messages, return summary "(too short to summarize)" and empty key_facts.
 
 Return ONLY the JSON.`;
@@ -51,7 +52,7 @@ export async function summarizeSession(
 
     const { data: messages } = await supabase
       .from("chat_messages")
-      .select("id,role,content,page_key,created_at")
+      .select("id,role,content,page_key,page_context,created_at")
       .eq("user_id", user.id)
       .eq("session_id", sessionId)
       .is("archived_at", null)
@@ -64,18 +65,47 @@ export async function summarizeSession(
     const startedAt = (rows[0] as { created_at: string }).created_at;
     const endedAt = (rows[rows.length - 1] as { created_at: string }).created_at;
 
+    // Detect should_i_buy decisions made during this session.
+    // postChatMessage tags routed should_i_buy turns with
+    // page_context.routed_intent='should_i_buy' and a
+    // page_context.decision_result={item,verdict} on the assistant row.
+    // We surface one bullet line per decision so the digest carries the
+    // decision summary into the user's per-page history (freelane-
+    // shouldibuy-design 2026-06-02).
+    type RowShape = {
+      role: string;
+      content: string;
+      page_context: Record<string, unknown> | null;
+      created_at: string;
+    };
+    const decisionLines = (rows as RowShape[])
+      .filter((m) => m.role === "assistant" && !!m.page_context)
+      .map((m) => {
+        const ctx = m.page_context as Record<string, unknown>;
+        if (ctx.routed_intent !== "should_i_buy") return null;
+        const decision = ctx.decision_result as
+          | { item?: string; verdict?: string | null }
+          | undefined;
+        if (!decision || !decision.item) return null;
+        const verdict =
+          (decision.verdict as string | null | undefined) ?? "(no verdict)";
+        return `asked about ${decision.item} · ${verdict}`;
+      })
+      .filter((line): line is string => !!line)
+      .slice(0, 6);
+
     let summary = "(no summary)";
     if (hasGemini()) {
       try {
-        const transcript = rows
-          .map(
-            (m) =>
-              `${(m as { role: string }).role.toUpperCase()}: ${(m as { content: string }).content}`,
-          )
+        const transcript = (rows as RowShape[])
+          .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
           .join("\n\n");
+        const decisionsBlock = decisionLines.length
+          ? `\n\nSHOULD-I-BUY DECISIONS (surface one line per item in the summary):\n${decisionLines.map((d) => `- ${d}`).join("\n")}`
+          : "";
         const res = await gemini().models.generateContent({
           model: pickModel("fast"),
-          contents: `Transcript:\n\n${transcript}\n\nReturn the JSON now.`,
+          contents: `Transcript:\n\n${transcript}${decisionsBlock}\n\nReturn the JSON now.`,
           config: {
             systemInstruction: SYSTEM_PROMPT,
             temperature: 0.3,

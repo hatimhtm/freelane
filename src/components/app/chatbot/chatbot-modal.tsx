@@ -23,6 +23,11 @@ type LocalMessage = {
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
+  // Follow-up suggestion chips parsed out of the chat-answer brain's
+  // FOLLOWUPS: tail. Only present on the LATEST assistant message — older
+  // assistant bubbles drop their chips when a newer reply lands so the
+  // chip row never accumulates stale choices below the scroll.
+  followups?: string[];
 };
 
 type LocalDigest = {
@@ -133,9 +138,14 @@ export function ChatbotModal() {
           return;
         }
         setMessages((prev) => [
-          ...prev.map((m) =>
-            m.id === tempId ? { ...m, id: res.data.userMessageId } : m,
-          ),
+          // Clear followups on any prior assistant bubble so chips only
+          // live on the freshest assistant reply.
+          ...prev.map((m) => {
+            if (m.id === tempId) return { ...m, id: res.data.userMessageId };
+            if (m.role === "assistant" && m.followups)
+              return { ...m, followups: undefined };
+            return m;
+          }),
           {
             id:
               res.data.assistantMessageId ||
@@ -143,6 +153,7 @@ export function ChatbotModal() {
             role: "assistant" as const,
             content: res.data.assistantContent,
             createdAt: new Date().toISOString(),
+            followups: res.data.suggestedFollowups,
           },
         ]);
       });
@@ -212,6 +223,8 @@ export function ChatbotModal() {
                 role={m.role}
                 content={m.content}
                 createdAt={m.createdAt}
+                followups={m.followups}
+                onPickFollowup={send}
               />
             ))}
             {sending && (

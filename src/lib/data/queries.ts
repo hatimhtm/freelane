@@ -54,7 +54,6 @@ import type {
   WellbeingCheckin,
   QuietChannel,
   RateInsight,
-  ShouldIBuySession,
   VendorIconCacheRow,
   WalletPlatformMetadataRow,
 } from "@/lib/supabase/types";
@@ -2020,16 +2019,19 @@ export async function getOpenClientPatternChangeMap(): Promise<Map<string, strin
   return map;
 }
 
-export async function getShouldIBuySessions(limit = 30) {
-  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
-  const { data } = await supabase
-    .from("should_i_buy_sessions")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  return (data ?? []) as ShouldIBuySession[];
-}
+// getShouldIBuySessions removed in the Should-I-Buy collapse
+// (freelane-shouldibuy-design 2026-06-02). The /should-i-buy route now
+// redirects to / via next.config.ts, and historical decisions are
+// backfilled by migration 0103 into BOTH:
+//   - finance.chat_messages (one user + one assistant row per decision,
+//     tagged with page_key='today' so they live under a real page)
+//   - finance.chat_session_summaries (one digest row per decision so
+//     the per-page chatbot modal's digest list surfaces "asked about
+//     <item> · <verdict>" lines; the active-session reader would never
+//     find these rows because their session is months old).
+// Going forward, the chatbot intent-classifier routes "should I buy X?"
+// to the Pro purchase-decision brain on whatever page the user is on,
+// and chat-answer narrates the verdict conversationally.
 
 // ─── Dashboard stats chips (Phase 1.5) ───────────────────────────────────
 //

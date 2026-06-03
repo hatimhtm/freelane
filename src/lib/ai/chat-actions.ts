@@ -12,7 +12,15 @@ import {
 } from "@/lib/data/chat-context-registry";
 import { clarifyVendorAction } from "@/lib/ai/chatbot/intent-handlers/clarify-vendor";
 import { getFreelaneStateSnapshot } from "./freelane-state-snapshot";
-import { answerChat, type ChatHistoryMessage } from "./brains/chat-answer";
+import {
+  answerChat,
+  type ChatHistoryMessage,
+  type ShouldIBuyDecisionResult,
+} from "./brains/chat-answer";
+import {
+  classifyIntent,
+  INTENT_CONFIDENCE_FLOOR,
+} from "./brains/intent-classifier";
 import { summarizeSession } from "./brains/session-summarizer";
 import {
   completeVendorIdentificationAction,
@@ -293,6 +301,111 @@ export async function postChatMessage(args: {
       .single();
     if (!userRow) throw new Error("Couldn't save your message.");
 
+    // Intent classification (freelane-shouldibuy-design 2026-06-02).
+    //
+    // Flash Lite routes the user's message into one of:
+    //   should_i_buy | plan_inquiry | status_query | general_chat
+    // For should_i_buy with confidence ≥ INTENT_CONFIDENCE_FLOOR we run the
+    // Pro purchase-decision brain (askShouldIBuy) here and pass the verdict
+    // into chat-answer so the model narrates the decision conversationally
+    // instead of answering from scratch. Other intents pass through with
+    // just the routed-intent hint; general_chat is the default path.
+    let routedIntent: "should_i_buy" | "plan_inquiry" | "status_query" | "general_chat" =
+      "general_chat";
+    let decisionResult: ShouldIBuyDecisionResult | null = null;
+    try {
+      // Recent history for intent context — last 6 turns of THIS session.
+      // Filter by row id (NOT content) so a verbatim repeat of an earlier
+      // turn doesn't drop the older message as well — content-match would
+      // strip both rows and starve the classifier of the conversational
+      // pivot ("yeah but the AirPods").
+      const { data: histForIntent } = await supabase
+        .from("chat_messages")
+        .select("id,role,content,created_at")
+        .eq("user_id", user.id)
+        .eq("session_id", args.sessionId)
+        .is("archived_at", null)
+        .order("created_at", { ascending: false })
+        .limit(7);
+      const justInsertedId = userRow.id as string;
+      const recentHistory = (histForIntent ?? [])
+        .filter((m) => m.id !== justInsertedId)
+        .reverse()
+        .map((m) => ({
+          role: (m.role as "user" | "assistant" | "system"),
+          content: m.content as string,
+        }))
+        .slice(-6);
+
+      const intent = await classifyIntent({
+        user_message: content,
+        page_key: args.pageKey,
+        recent_chat_history: recentHistory,
+        // Trim the heavy snapshot for the classifier — it only needs a
+        // headline to disambiguate ambiguous status_query vs general_chat.
+        wallet_snapshot: snapshotText.slice(0, 600),
+        active_card_context: (args.activeCard ?? null) as
+          | Record<string, unknown>
+          | null,
+      });
+
+      if (intent.confidence >= INTENT_CONFIDENCE_FLOOR) {
+        routedIntent = intent.intent;
+      }
+
+      if (
+        intent.intent === "should_i_buy" &&
+        intent.confidence >= INTENT_CONFIDENCE_FLOOR &&
+        intent.extracted_payload.kind === "should_i_buy"
+      ) {
+        const payload = intent.extracted_payload.data;
+        // Only run the Pro purchase-decision brain when the user named a
+        // real price. Passing ₱1 as a token amount would lock the verdict
+        // to "easy_yes" and seed the narrative tone falsely for a real
+        // ₱30k purchase. When the price is missing we still route the
+        // intent (so chat-answer's narrative-less should_i_buy branch
+        // fires) but leave decisionResult null — the brain will ask the
+        // user for the price as a clarifying question.
+        if (payload.estimated_price && payload.estimated_price > 0) {
+          const { askShouldIBuy } = await import("@/lib/ai/should-i-buy");
+          const currency = (payload.estimated_currency ?? "PHP") || "PHP";
+          const session = await askShouldIBuy({
+            item: payload.item_name || content.slice(0, 60),
+            amount: payload.estimated_price,
+            currency,
+            note: payload.raw_query,
+          });
+          if (session) {
+            decisionResult = {
+              item: session.item,
+              verdict: session.verdict ?? null,
+              narrative: session.narrative ?? null,
+              amountBase: Number(session.amount_base ?? 0) || null,
+              currency: session.currency ?? null,
+            };
+          }
+        } else {
+          // Surface the item to chat-answer even without a price so the
+          // narrative-less branch can name what's being weighed.
+          decisionResult = {
+            item: payload.item_name || content.slice(0, 60),
+            verdict: null,
+            narrative: null,
+            amountBase: null,
+            currency: payload.estimated_currency ?? "PHP",
+          };
+        }
+      }
+    } catch (err) {
+      // Intent classification is best-effort — any failure falls through
+      // to default chat-answer with routedIntent = general_chat. We still
+      // surface the error as a server-side warn so the brain stack stays
+      // observable: a thrown classifier looks identical to a real
+      // 'general_chat' verdict in the chat_messages table otherwise, and
+      // hit-rate / failure-mode analysis becomes impossible.
+      console.warn("[chat-actions] intent classifier failed", err);
+    }
+
     // Live history + past digests (per page, ordered oldest -> newest).
     const [{ data: history }, { data: digests }] = await Promise.all([
       supabase
@@ -339,8 +452,26 @@ export async function postChatMessage(args: {
       pastDigests,
       historyMessages: liveHistory,
       newUserMessage: content,
+      routedIntent,
+      decisionResult,
     });
 
+    // Tag the assistant row's page_context with the routed intent (and
+    // decision metadata when present) so the session-summarizer can detect
+    // should_i_buy turns inside the digest pass without re-running the
+    // classifier.
+    const assistantPageContext: Record<string, unknown> = {
+      ...(pageContext as unknown as Record<string, unknown>),
+    };
+    if (routedIntent !== "general_chat") {
+      assistantPageContext.routed_intent = routedIntent;
+    }
+    if (decisionResult) {
+      assistantPageContext.decision_result = {
+        item: decisionResult.item,
+        verdict: decisionResult.verdict,
+      };
+    }
     const { data: assistantRow } = await supabase
       .from("chat_messages")
       .insert({
@@ -349,7 +480,7 @@ export async function postChatMessage(args: {
         page_key: args.pageKey,
         role: "assistant",
         content: result.answer,
-        page_context: pageContext as unknown as Record<string, unknown>,
+        page_context: assistantPageContext,
       })
       .select("id")
       .single();

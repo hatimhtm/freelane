@@ -158,6 +158,17 @@ export const BRAIN_TTL = {
   //     the gate's decision is anchored to the trigger payload + recent
   //     letter shelf, not to the user's running spend state.
   LETTER_WORTH_SAYING: 24 * 60 * 60 * 1000,
+  // Should-I-Buy collapse workflow (freelane-shouldibuy-design 2026-06-02).
+  //   INTENT_CLASSIFIER: Flash Lite. Routes every chatbot user message into
+  //     one of { should_i_buy, plan_inquiry, status_query, general_chat }.
+  //     Cache slot is scoped per (page_key, truncated message hash, PHT day)
+  //     via scopedBrainKey(INTENT_CLASSIFIER, 'msg', `${page}:${hash}:${day}`),
+  //     so re-typing the same question on the same page on the same day hits
+  //     the cache instead of paying for another classification. 24h TTL is
+  //     a shelf marker — the per-day suffix is the practical freshness lever.
+  //     EXEMPT from financial-mutation invalidation: classification keys off
+  //     the message text + page + day, not the user's running money state.
+  INTENT_CLASSIFIER: 24 * 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -202,6 +213,8 @@ export const BRAIN_KEYS = {
   ENTITY_PATTERN_CHANGE: "entity_pattern_change",
   // Letters workflow.
   LETTER_WORTH_SAYING: "letter_worth_saying",
+  // Should-I-Buy collapse workflow.
+  INTENT_CLASSIFIER: "intent_classifier",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -248,6 +261,7 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.CANONICALIZE_ENTITY]: BRAIN_TTL.CANONICALIZE_ENTITY,
   [BRAIN_KEYS.ENTITY_PATTERN_CHANGE]: BRAIN_TTL.ENTITY_PATTERN_CHANGE,
   [BRAIN_KEYS.LETTER_WORTH_SAYING]: BRAIN_TTL.LETTER_WORTH_SAYING,
+  [BRAIN_KEYS.INTENT_CLASSIFIER]: BRAIN_TTL.INTENT_CLASSIFIER,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache
@@ -304,6 +318,12 @@ export const FINANCIAL_INVALIDATION_EXEMPT: readonly BrainKey[] = [
   // letter should fire today, so spend-driven invalidation would just
   // burn Gemini cost.
   BRAIN_KEYS.LETTER_WORTH_SAYING,
+  // Should-I-Buy collapse workflow — intent classification keys off the
+  // message text + page + day, not the user's money state. A ₱200 spend
+  // doesn't change whether "should I buy these AirPods?" is a
+  // should_i_buy intent, so spend-driven invalidation would just burn
+  // Gemini cost.
+  BRAIN_KEYS.INTENT_CLASSIFIER,
 ] as const;
 
 // Below-this threshold spends do NOT bust the AI brain cache. A ₱5 cigarette

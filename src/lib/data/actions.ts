@@ -5470,35 +5470,14 @@ export async function deleteRateInsightAction(id: string): Promise<void> {
   revalidatePath("/clients");
 }
 
-export async function askShouldIBuyAction(input: {
-  item: string;
-  amount: number;
-  currency: string;
-  note?: string;
-}): Promise<{ id: string; verdict: string | null; narrative: string | null } | null> {
-  const { askShouldIBuy } = await import("@/lib/ai/should-i-buy");
-  const row = await askShouldIBuy(input);
-  if (!row) return null;
-  revalidatePath("/should-i-buy");
-  return { id: row.id, verdict: row.verdict ?? null, narrative: row.narrative ?? null };
-}
-
-export async function recordShouldIBuyDecisionAction(input: { sessionId: string; bought: boolean }): Promise<void> {
-  const { recordShouldIBuyDecision } = await import("@/lib/ai/should-i-buy");
-  await recordShouldIBuyDecision(input);
-  revalidatePath("/should-i-buy");
-}
-
-export async function deleteShouldIBuySessionAction(id: string): Promise<void> {
-  const { supabase, userId } = await userOrThrow();
-  const { error } = await supabase
-    .from("should_i_buy_sessions")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) throw error;
-  revalidatePath("/should-i-buy");
-}
+// askShouldIBuyAction / recordShouldIBuyDecisionAction /
+// deleteShouldIBuySessionAction were removed in the Should-I-Buy collapse
+// (freelane-shouldibuy-design 2026-06-02). The /should-i-buy route now
+// redirects to /, the dedicated client view is deleted, and the purchase-
+// decision brain is reached through the chatbot's intent-classifier — the
+// chatbot calls askShouldIBuy() directly from src/lib/ai/should-i-buy.ts
+// in src/lib/ai/chat-actions.ts. Migration 0103 backfills historical
+// should_i_buy_sessions rows into chat_messages as a read-only archive.
 
 // ─────────────────────────────────────── Diary (T11) ──
 // Daily diary entry — replaces the weekly intent_mirror surface. One row per

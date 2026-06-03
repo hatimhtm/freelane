@@ -110,10 +110,27 @@ export async function askShouldIBuy(args: AskShouldIBuyArgs): Promise<ShouldIBuy
   ]);
   const calmBand = (calm?.band as string | undefined) ?? undefined;
   const overlay = (cachedOverlay?.insight as Record<string, unknown> | undefined) ?? undefined;
-  const baseline = (overlay?.baseline ?? null) as { safeTodayBase?: number; dailyAllowanceBase?: number; horizonDays?: number } | null;
+  const baseline = (overlay?.baseline ?? null) as {
+    safeTodayBase?: number;
+    dailyAllowanceBase?: number;
+    horizonDays?: number;
+    walletBalancesBase?: number;
+    discretionaryPoolBase?: number;
+  } | null;
   const safeTodayBase = Number(baseline?.safeTodayBase ?? 0);
   const dailyAllowance = Number(baseline?.dailyAllowanceBase ?? 0);
-  const runwayDays = dailyAllowance > 0 ? Math.round((Number(baseline?.horizonDays ?? 30) * dailyAllowance) / Math.max(1, dailyAllowance)) : 30;
+  // Runway = how many days the current discretionary pool carries at the
+  // current daily-allowance burn rate. Falls back to the baseline horizon
+  // (30d default) when either input is missing — that's the safe-spend
+  // planner's own assumed window. The prior implementation collapsed to
+  // horizonDays because it multiplied then divided by dailyAllowance; this
+  // is the actual derived figure that drives the verdict + narrative.
+  const discretionaryPoolBase = Number(baseline?.discretionaryPoolBase ?? 0);
+  const horizonDaysDefault = Number(baseline?.horizonDays ?? 30);
+  const runwayDays =
+    dailyAllowance > 0 && discretionaryPoolBase > 0
+      ? Math.max(0, Math.round(discretionaryPoolBase / dailyAllowance))
+      : horizonDaysDefault;
   const plannedNearTerm = ((plannedRows ?? []) as Array<{ expected_base: number; planned_for: string; label: string }>)
     .map((p) => `${p.label} (${p.planned_for}, ₱${Math.round(Number(p.expected_base ?? 0))})`)
     .slice(0, 4);

@@ -55,7 +55,9 @@ function clientPageKey(pathname: string): string {
   if (segments[0] === "letters") return segments[1] ? "letters.detail" : "letters";
   if (segments[0] === "plans") return "plans";
   if (segments[0] === "payments") return "payments";
-  if (segments[0] === "should-i-buy") return "should_i_buy";
+  // /should-i-buy route was deleted (freelane-shouldibuy-design 2026-06-02);
+  // next.config.ts redirects it to /. Kept here as a no-op so client + server
+  // stay in lockstep — the redirect fires before this derivation matters.
   if (segments[0] === "settings")
     return segments[1] ? `settings.${segments[1]}` : "settings";
   if (segments[0] === "stats") {

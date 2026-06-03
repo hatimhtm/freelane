@@ -14,8 +14,8 @@ import type { WellbeingCheckin } from "@/lib/supabase/types";
 
 // Tuesday Check-In card on Today. Surfaces only on Tuesday OR when a check-in
 // already exists for the current week. Otherwise the card is silent — the
-// /should-i-buy quicklink in the header replaces this affordance the rest of
-// the week.
+// rest of the week the chatbot pill carries any quick "ask your money"
+// affordance the user might reach for.
 
 export function TuesdayCheckinCard({
   prompt,

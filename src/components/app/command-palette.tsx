@@ -16,7 +16,6 @@ import {
   Receipt,
   RefreshCw,
   Settings,
-  ShoppingBag,
   Sparkles,
   Store,
   Sun,
@@ -130,10 +129,13 @@ export function CommandPaletteHost() {
                 notification → letter-reader center modal, the Recent
                 Letters card on Stats, or direct deep links to
                 /letters/[id]. The /letters archive page is still routable
-                directly if the user types it. */}
-            <CommandItem onSelect={() => go("/should-i-buy")}>
-              <ShoppingBag className="mr-2 h-4 w-4" /> Should I buy?
-            </CommandItem>
+                directly if the user types it.
+
+                Should-I-Buy collapsed into the chatbot (freelane-shouldibuy-
+                design 2026-06-02). Open the chatbot pill and type
+                "should I buy ...?" — the intent-classifier routes the
+                question into the purchase-decision brain. The /should-i-buy
+                route redirects to / for legacy bookmarks. */}
             <CommandItem onSelect={() => go(`/year/${new Date().getFullYear()}`)}>
               <CalendarRange className="mr-2 h-4 w-4" /> {new Date().getFullYear()} in review
             </CommandItem>

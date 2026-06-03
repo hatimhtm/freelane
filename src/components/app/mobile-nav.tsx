@@ -13,7 +13,6 @@ import {
   Menu,
   Receipt,
   Settings,
-  ShoppingBag,
   Sparkles,
   Sun,
   Users,
@@ -60,17 +59,10 @@ const NAV: { title: string; items: NavItem[] }[] = [
       { href: "/clients",   label: "Clients",   icon: Users },
     ],
   },
-  {
-    title: "Stories",
-    items: [
-      // Letters removed from top nav (freelane-letters-design 2026-06-02).
-      // Access paths: new_letter notification → letter-reader modal,
-      // Stats → Recent Letters card → /letters archive, deep links to
-      // /letters/[id]. The /letters route remains and is restyled as the
-      // paginated archive.
-      { href: "/should-i-buy", label: "Should I buy?", icon: ShoppingBag },
-    ],
-  },
+  // Stories group removed (freelane-shouldibuy-design 2026-06-02). Letters
+  // surface via notifications + Stats; Should-I-Buy collapsed into the
+  // chatbot's intent-classifier routing. The /should-i-buy route redirects
+  // to / for legacy links.
   {
     title: "Log",
     items: [

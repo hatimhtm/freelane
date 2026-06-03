@@ -15,7 +15,6 @@ import {
   Calendar,
   Sparkles,
   HandHeart,
-  ShoppingBag,
   Bell,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -58,18 +57,15 @@ const NAV: { title: string; items: NavItem[] }[] = [
       { href: "/clients",   label: "Clients",   icon: Users },
     ],
   },
-  {
-    title: "Stories",
-    items: [
-      // Letters removed from top nav (freelane-letters-design 2026-06-02).
-      // Letters now reach the user via:
-      //   (a) new_letter notification → letter-reader modal (center modal,
-      //       Fraunces editorial typography)
-      //   (b) Stats view → Recent Letters card → "see all →" /letters archive
-      //   (c) Direct deep links to /letters/[id]
-      { href: "/should-i-buy", label: "Should I buy?", icon: ShoppingBag },
-    ],
-  },
+  // Stories group removed (freelane-shouldibuy-design 2026-06-02).
+  //   - Letters left the top nav earlier (freelane-letters-design 2026-06-02);
+  //     they now reach the user via the new_letter notification → letter-
+  //     reader modal, the Recent Letters card on Stats, and direct deep
+  //     links to /letters/[id].
+  //   - Should-I-Buy collapsed into the chatbot — the intent-classifier
+  //     brain routes "should I buy X?" messages to the purchase-decision
+  //     brain. The /should-i-buy route now redirects to / for legacy
+  //     bookmarks.
   {
     title: "Log",
     items: [
