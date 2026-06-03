@@ -15,6 +15,7 @@ import {
   HandHeart,
   HelpCircle,
   Info,
+  Mail,
   MessageCircle,
   RefreshCw,
   Sparkles,
@@ -148,6 +149,16 @@ export const KNOWN_KINDS: KindMeta[] = [
     description:
       "Someone's cadence, amount, interaction kind, or money-flow direction shifted significantly.",
   },
+  // Letters workflow (freelane-letters-design 2026-06-02) — the editorial
+  // letter writer fires this kind after the worth-saying gate greenlights
+  // an auto-generated letter. Click opens a center modal with the full
+  // editorial typography (Fraunces, max-w-680px).
+  {
+    key: "new_letter",
+    label: "New letter",
+    description:
+      "A new editorial letter is ready — Sunday, end-of-month, anniversary, or quiet receipt response.",
+  },
 ];
 
 export const KNOWN_KIND_KEYS = new Set(KNOWN_KINDS.map((k) => k.key));
@@ -177,6 +188,7 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   entity_clarify: HelpCircle,
   entity_introduction: MessageCircle,
   entity_pattern_change: UserCog,
+  new_letter: Mail,
 };
 
 export function iconForKind(kind: string): LucideIcon {

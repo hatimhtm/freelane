@@ -1294,16 +1294,119 @@ export async function getWifeState() {
 
 // ─────────────────────────── Tier 3 fetchers ──
 
-export async function getLetters(limit = 60) {
+// Scope discriminator for the Stats Letters surface. The dynamic [scope]
+// segment under /stats/[scope]/... resolves to one of:
+//   - "me"            → user-wide letter set (no narrowing)
+//   - "year-YYYY"     → letters generated in a single PHT year
+//   - "client-<id>"   → letters tagged to this client (blocks/period_key)
+//
+// The Tier 3 schema doesn't carry a first-class subject_id, so the
+// client-scope filter inspects the letter's `blocks` JSON for any of the
+// known shapes (top_vendors[].entity_id / reference_event.entity_id /
+// spotlight.client_id / spotlight.entity_id) and falls through to a
+// period_key match for the year scope.
+export type LettersScope =
+  | { kind: "me" }
+  | { kind: "year"; year: number }
+  | { kind: "client"; clientId: string };
+
+export function parseLettersScope(scope: string | null | undefined): LettersScope {
+  if (!scope || scope === "me") return { kind: "me" };
+  const yearMatch = scope.match(/^year-(\d{4})$/);
+  if (yearMatch) return { kind: "year", year: Number(yearMatch[1]) };
+  const clientMatch = scope.match(/^client-(.+)$/);
+  if (clientMatch) return { kind: "client", clientId: clientMatch[1] };
+  return { kind: "me" };
+}
+
+export async function getLetters(
+  limit = 60,
+  scope: LettersScope = { kind: "me" },
+) {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
-  const { data } = await supabase
+  let query = supabase
     .from("letters")
     .select("*")
     .eq("user_id", user.id)
     .order("pinned", { ascending: false })
-    .order("generated_at", { ascending: false })
-    .limit(limit);
-  return (data ?? []) as EditorialLetter[];
+    .order("generated_at", { ascending: false });
+  if (scope.kind === "year") {
+    // period_key for end_of_month / spotlight / regret_mark is "YYYY-MM",
+    // for year letters it's "YYYY", for sunday it's "YYYY-Www". A simple
+    // prefix match on `${year}` covers all four. Anniversary letters
+    // (period_key = full PHT date "YYYY-MM-DD") match the same prefix.
+    query = query.like("period_key", `${scope.year}%`);
+  }
+  query = query.limit(limit);
+  const { data } = await query;
+  let rows = (data ?? []) as EditorialLetter[];
+  if (scope.kind === "client") {
+    // Tier 3 schema-preserved client filter: inspect the letter's blocks
+    // JSON for any of the known client/entity id shapes the editorial
+    // brain emits. Letters with no client reference fall out.
+    const clientId = scope.clientId;
+    rows = rows.filter((l) => letterReferencesClient(l, clientId));
+  }
+  return rows;
+}
+
+function letterReferencesClient(letter: EditorialLetter, clientId: string): boolean {
+  const blocks = (letter.blocks ?? null) as Record<string, unknown> | null;
+  if (!blocks) return false;
+  // Scan a small, known set of paths the brain might place an id at.
+  const candidates: unknown[] = [
+    (blocks as { client_id?: unknown }).client_id,
+    (blocks as { entity_id?: unknown }).entity_id,
+    (blocks as { spotlight?: { client_id?: unknown; entity_id?: unknown } }).spotlight?.client_id,
+    (blocks as { spotlight?: { client_id?: unknown; entity_id?: unknown } }).spotlight?.entity_id,
+    (blocks as { reference_event?: { client_id?: unknown; entity_id?: unknown } }).reference_event?.client_id,
+    (blocks as { reference_event?: { client_id?: unknown; entity_id?: unknown } }).reference_event?.entity_id,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c === clientId) return true;
+  }
+  // top_vendors / themes arrays may carry client/entity ids too.
+  const topVendors = (blocks as { top_vendors?: Array<Record<string, unknown>> }).top_vendors;
+  if (Array.isArray(topVendors)) {
+    for (const v of topVendors) {
+      if (
+        typeof v.client_id === "string" && v.client_id === clientId
+      ) return true;
+      if (
+        typeof v.entity_id === "string" && v.entity_id === clientId
+      ) return true;
+    }
+  }
+  return false;
+}
+
+// Used by the Stats Letters subtab to decide whether to render the
+// section at all. Cheap COUNT-style probe — fetch up to 1 row in scope
+// and report presence.
+export async function hasLettersInScope(scope: LettersScope): Promise<boolean> {
+  const rows = await getLetters(1, scope);
+  return rows.length > 0;
+}
+
+// Distinct PHT-year set across the user's full letter archive. Used by
+// the /letters page to seed the year-filter chip list server-side so
+// the chips reflect the archive, not just the first page. Pulls only
+// the generated_at column and folds into PHT-bucketed years on the
+// server to match the load-more's PHT-aware gte/lt bounds.
+export async function getDistinctLetterYears(): Promise<number[]> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("letters")
+    .select("generated_at")
+    .eq("user_id", user.id);
+  const rows = (data ?? []) as Array<{ generated_at: string }>;
+  const { phtDateString } = await import("@/lib/utils");
+  const years = new Set<number>();
+  for (const r of rows) {
+    const y = Number(phtDateString(new Date(r.generated_at)).slice(0, 4));
+    if (!Number.isNaN(y)) years.add(y);
+  }
+  return Array.from(years).sort((a, b) => b - a);
 }
 
 export async function getLetterById(id: string) {
@@ -1315,6 +1418,139 @@ export async function getLetterById(id: string) {
     .eq("id", id)
     .maybeSingle();
   return (data ?? null) as EditorialLetter | null;
+}
+
+// Recent letters in a 30-day window — input for the worth-saying gate.
+// Returns the slimmed projection the brain actually reads (kind +
+// period_key + generated_at + headline) so we don't ship the full body
+// to Flash Lite on every trigger.
+export async function recentLettersWithin30Days(): Promise<
+  Array<Pick<EditorialLetter, "id" | "kind" | "period_key" | "headline" | "generated_at">>
+> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const { data } = await supabase
+    .from("letters")
+    .select("id,kind,period_key,headline,generated_at")
+    .eq("user_id", user.id)
+    .gte("generated_at", cutoff)
+    .order("generated_at", { ascending: false })
+    .limit(40);
+  return (data ?? []) as Array<
+    Pick<EditorialLetter, "id" | "kind" | "period_key" | "headline" | "generated_at">
+  >;
+}
+
+// Engagement stats for the worth-saying gate. Migrations 0036-0039 sealed
+// the letters schema without an opened_at column, so the source of truth
+// for "did the user read the last letter?" is the read_at column on the
+// new_letter notification row (one row per generated letter; payload
+// carries letter_id). The Letters table itself remains read-only here.
+//
+//   last_letter_opened_at:    most recent read_at across all new_letter rows
+//   letters_opened_count_30d: count of read_at within the trailing 30 days
+//   last_3_opened:            for the 3 most recent letters with a paired
+//                             new_letter notification, whether read_at is set.
+//                             Letters without a paired notification (legacy
+//                             rows from before the new_letter wiring, or
+//                             manual generations through paths that skip the
+//                             dispatcher) are EXCLUDED — they don't carry an
+//                             open signal so they'd poison the disengagement
+//                             check by reading as "unopened" forever.
+//
+// Read-duration (avg_read_time_seconds) was an earlier spec field but
+// notifications_inbox tracks only open (read_at) — no close timestamp —
+// so the duration was always null when handed to the model. Field dropped
+// so the brain's input matches reality; if we ever add an open→close
+// ping it can be restored here.
+export type LetterEngagementStats = {
+  last_letter_opened_at: string | null;
+  letters_opened_count_30d: number;
+  last_3_opened: boolean[];
+};
+
+export async function getLetterEngagementStats(): Promise<LetterEngagementStats> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+
+  // Source the last_3_opened from the LETTERS table (the canonical record)
+  // and LEFT JOIN notifications_inbox on payload.kind_specific.letter_id.
+  // That preserves the "last 3 letters" invariant even when the
+  // notifications retention sweep deletes old new_letter rows. Previously
+  // the sweep could drop a letter from last_3_opened entirely, biasing the
+  // disengagement check toward whichever notifications survived.
+  //
+  // 30-day open count still derives from notifications (the only place
+  // read_at lives); letters generated more than 30 days ago can't be
+  // "opened recently" anyway, so the sweep window doesn't bias it.
+  const [{ data: letterRowsData }, { data: notifRowsData }] = await Promise.all([
+    supabase
+      .from("letters")
+      .select("id,generated_at")
+      .eq("user_id", user.id)
+      .order("generated_at", { ascending: false })
+      .limit(3),
+    supabase
+      .from("notifications_inbox")
+      .select("id,read_at,created_at,payload")
+      .eq("user_id", user.id)
+      .eq("kind", "new_letter")
+      .order("created_at", { ascending: false })
+      .limit(40),
+  ]);
+
+  const letterRows = (letterRowsData ?? []) as Array<{
+    id: string;
+    generated_at: string;
+  }>;
+  const notifRows = (notifRowsData ?? []) as Array<{
+    id: string;
+    read_at: string | null;
+    created_at: string;
+    payload: { kind_specific?: { letter_id?: string } } | null;
+  }>;
+
+  // Build the notif→letter map for the LEFT JOIN. Multiple notifications
+  // could point at the same letter (re-fires); keep the most recent one
+  // (notifRows is already DESC by created_at).
+  const readByLetterId = new Map<string, string | null>();
+  for (const n of notifRows) {
+    const lid = n.payload?.kind_specific?.letter_id;
+    if (typeof lid !== "string") continue;
+    if (!readByLetterId.has(lid)) {
+      readByLetterId.set(lid, n.read_at);
+    }
+  }
+
+  // last_3_opened: derived from the 3 most recent LETTERS. A letter
+  // without a paired notification reads as "unopened" (no read signal
+  // available) — same conservative default the previous implementation
+  // applied, but now anchored to the canonical letter set.
+  const last_3_opened = letterRows.map((l) => {
+    const readAt = readByLetterId.get(l.id) ?? null;
+    return readAt !== null;
+  });
+
+  // last_letter_opened_at: most recent read_at across ALL paired letters.
+  const allReads: string[] = [];
+  for (const readAt of readByLetterId.values()) {
+    if (readAt !== null) allReads.push(readAt);
+  }
+  allReads.sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  const last_letter_opened_at = allReads.length ? allReads[0] : null;
+
+  // 30-day count — letters opened in the last 30 days (read_at within
+  // window). Anchored against the notifications data because that's the
+  // only carrier of read_at.
+  const letters_opened_count_30d = notifRows.filter(
+    (r) => r.read_at !== null && r.read_at >= since,
+  ).length;
+
+  return {
+    last_letter_opened_at,
+    letters_opened_count_30d,
+    last_3_opened,
+  };
 }
 
 export async function getMilestones(limit = 80) {

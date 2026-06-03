@@ -3122,6 +3122,17 @@ export async function updateRecurringSpend(id: string, input: Partial<RecurringS
             context: { label: priorLabel, amount: priorAmount, currency: priorCurrency },
           }),
         ]);
+        // Tier 3 letter auto-trigger — worth-saying gate runs first.
+        try {
+          const { tryAutoGenerateLetter } = await import("@/lib/ai/letters-auto-trigger");
+          await tryAutoGenerateLetter({
+            triggerKind: "recurring_paused",
+            letterKind: "spotlight",
+            triggerPayload: { label: priorLabel, amount: priorAmount, currency: priorCurrency },
+          });
+        } catch {
+          // Best-effort.
+        }
       } else if (
         priorActive &&
         nextActive &&
@@ -3137,6 +3148,18 @@ export async function updateRecurringSpend(id: string, input: Partial<RecurringS
           sourceEntityId: id,
           context: { label: priorLabel, before: priorAmount, after: nextAmount },
         });
+        // Tier 3 letter auto-trigger — life-shift path. Worth-saying
+        // gate decides if the shift is heavy enough for a letter.
+        try {
+          const { tryAutoGenerateLetter } = await import("@/lib/ai/letters-auto-trigger");
+          await tryAutoGenerateLetter({
+            triggerKind: "recurring_changed",
+            letterKind: "spotlight",
+            triggerPayload: { label: priorLabel, before: priorAmount, after: nextAmount },
+          });
+        } catch {
+          // Best-effort.
+        }
         if (nextAmount < priorAmount) {
           await recordQuietReceipt({
             kind: "recurring_lowered",
@@ -3144,6 +3167,19 @@ export async function updateRecurringSpend(id: string, input: Partial<RecurringS
             sourceEntityId: id,
             context: { label: priorLabel, before: priorAmount, after: nextAmount },
           });
+          // Tier 3 letter auto-trigger — the "you spent less" quiet
+          // receipt. Worth-saying gate decides if the lowering is real
+          // substance or noise.
+          try {
+            const { tryAutoGenerateLetter } = await import("@/lib/ai/letters-auto-trigger");
+            await tryAutoGenerateLetter({
+              triggerKind: "recurring_lowered",
+              letterKind: "spotlight",
+              triggerPayload: { label: priorLabel, before: priorAmount, after: nextAmount },
+            });
+          } catch {
+            // Best-effort.
+          }
         }
       }
     } catch {
@@ -3416,6 +3452,23 @@ export async function closeLoan(id: string) {
         sourceEntityType: "loan",
         sourceEntityId: id,
         context: {
+          counterparty: (loanRow as { counterparty: string }).counterparty,
+          principal_base: Number((loanRow as { principal_base: number }).principal_base ?? 0),
+          direction: (loanRow as { direction: string }).direction,
+        },
+      });
+    } catch {
+      // Best-effort.
+    }
+    // Tier 3 letter auto-trigger — loan close worth holding up. The
+    // worth-saying gate weighs principal + days-open + recent shelf
+    // before greenlighting the letter.
+    try {
+      const { tryAutoGenerateLetter } = await import("@/lib/ai/letters-auto-trigger");
+      await tryAutoGenerateLetter({
+        triggerKind: "loan_repaid",
+        letterKind: "spotlight",
+        triggerPayload: {
           counterparty: (loanRow as { counterparty: string }).counterparty,
           principal_base: Number((loanRow as { principal_base: number }).principal_base ?? 0),
           direction: (loanRow as { direction: string }).direction,
@@ -4064,6 +4117,23 @@ export async function markPlanBought(
         context: {
           label: plan.label,
           spend_id: spendId,
+        },
+      });
+    } catch {
+      // Best-effort.
+    }
+    // Tier 3 letter auto-trigger — plan landed. Worth-saying gate
+    // weighs the plan's actual price + recent letter shelf + user
+    // engagement before greenlighting.
+    try {
+      const { tryAutoGenerateLetter } = await import("@/lib/ai/letters-auto-trigger");
+      await tryAutoGenerateLetter({
+        triggerKind: "plan_done",
+        letterKind: "spotlight",
+        triggerPayload: {
+          label: plan.label,
+          spend_id: spendId,
+          actual_base: actualBase,
         },
       });
     } catch {
@@ -5007,7 +5077,44 @@ export async function refreshLetterAction(input: {
   kind: "end_of_month" | "spotlight" | "sunday" | "year" | "anniversary" | "regret_mark";
   periodKey?: string;
   force?: boolean;
+  // When true the call is treated as a scheduled auto-fire (cron/Sunday
+  // landing / end-of-month) and goes through the worth-saying gate. The
+  // /letters Generate-modal UI passes false (default) — the user
+  // explicitly asked for the letter, so the gate is bypassed (matches
+  // the comment in letters-auto-trigger.ts about manual generation).
+  autoTriggered?: boolean;
 }): Promise<{ id: string } | null> {
+  // Scheduled / auto-fire path: route Sunday + end_of_month through the
+  // worth-saying gate so the time-keyed letters share the same quality
+  // bar as the receipt-driven triggers. The gate returns proceeded=false
+  // when the trigger is too thin; we don't synthesize an id then.
+  if (input.autoTriggered) {
+    const { tryAutoGenerateLetter } = await import("@/lib/ai/letters-auto-trigger");
+    const triggerKind: string = input.kind === "sunday" ? "sunday" : input.kind;
+    await tryAutoGenerateLetter({
+      triggerKind,
+      letterKind: input.kind,
+      triggerPayload: { auto: true, period_key: input.periodKey },
+      periodKey: input.periodKey,
+    });
+    revalidatePath("/letters");
+    revalidatePath("/today");
+    // The gate may have skipped (proceeded=false) or generated. Look up
+    // the row keyed by (user, kind, period_key) so the caller still gets
+    // an id when the letter exists.
+    const { supabase, userId } = await userOrThrow();
+    const { periodKeyFor } = await import("@/lib/ai/editorial-letter");
+    const periodKey = input.periodKey ?? periodKeyFor(input.kind);
+    const { data } = await supabase
+      .from("letters")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("kind", input.kind)
+      .eq("period_key", periodKey)
+      .maybeSingle();
+    return data ? { id: (data as { id: string }).id } : null;
+  }
+
   const [{ generateLetter }, { getDashboardData, getUserMemory, getMilestones, getQuietReceipts, getLifeShifts }] = await Promise.all([
     import("@/lib/ai/editorial-letter"),
     import("@/lib/data/queries"),

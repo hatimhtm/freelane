@@ -148,6 +148,12 @@ export interface LetterInputs {
   quietReceipts: QuietReceipt[];
   lifeShifts: LifeShift[];
   userMemory: UserMemoryConsolidated | null;
+  // Optional hint from the worth-saying gate (Flash Lite). When the gate
+  // produced a theme_hint string we forward it into the editorial prompt
+  // so the HEAVY model can anchor on the same observation — keeps the
+  // two brains in agreement instead of letting the editorial writer
+  // invent a competing theme.
+  themeHint?: string | null;
 }
 
 function dateInRange(s: string, start: Date, end: Date): boolean {
@@ -433,7 +439,14 @@ export async function generateLetter(args: GenerateLetterArgs): Promise<Editoria
     }
   }
 
-  const snapshot = SNAPSHOT_BUILDERS[args.kind]({ inputs: args.inputs, periodKey });
+  const baseSnapshot = SNAPSHOT_BUILDERS[args.kind]({ inputs: args.inputs, periodKey });
+  // Prepend the worth-saying gate's theme_hint (if any) so the editorial
+  // writer anchors on the same observation the gate paid tokens to
+  // produce. The hint is short (≤ 60 chars per the gate's schema) so it
+  // never overwhelms the snapshot body.
+  const snapshot = args.inputs.themeHint
+    ? `THEME HINT (from quality gate): ${args.inputs.themeHint}\n\n${baseSnapshot}`
+    : baseSnapshot;
   const fallback = fallbackLetter(args.kind, periodKey);
   let headline = fallback.headline;
   let body = fallback.body;
@@ -509,5 +522,46 @@ export async function generateLetter(args: GenerateLetterArgs): Promise<Editoria
     entityId: (data as EditorialLetter).id,
     metadata: { kind: args.kind, period_key: periodKey, confidence },
   });
+
+  // Fire new_letter notification ONLY on the FIRST generation for this
+  // (kind, period_key). A regenerate keeps the original notification +
+  // its read_at intact — re-emitting would re-bell the same letter and
+  // poison the engagement-stat signal the worth-saying gate reads from.
+  // The dedupKey collapses repeat regenerations onto the same row.
+  const isFirstGeneration = !prior;
+  if (isFirstGeneration) {
+    try {
+      const letter = data as EditorialLetter;
+      const { postNotification } = await import(
+        "@/lib/notifications/dispatcher"
+      );
+      // Preview = first 2-3 lines of the body (≤ 220 chars). The push
+      // surface is the snippet, the click reveals the full editorial
+      // typography in the letter-reader modal.
+      const preview = letter.body
+        .split(/\n+/)
+        .slice(0, 3)
+        .join(" ")
+        .slice(0, 220);
+      await postNotification({
+        kind: "new_letter",
+        subject: letter.headline,
+        body: preview,
+        dedupKey: `new_letter:${args.kind}:${periodKey}`,
+        linkUrl: `/letters/${letter.id}`,
+        payload: {
+          kind_specific: {
+            letter_id: letter.id,
+            kind: args.kind,
+            period_key: periodKey,
+          },
+        },
+      });
+    } catch {
+      // Notification dispatch is best-effort — the letter row is the
+      // canonical state; a failed bell never blocks generation.
+    }
+  }
+
   return data as EditorialLetter;
 }

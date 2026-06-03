@@ -231,6 +231,15 @@ export function pageKeyFromPath(pathname: string): string {
   if (segments[0] === "settings") {
     return segments[1] ? `settings.${segments[1]}` : "settings";
   }
+  if (segments[0] === "stats") {
+    // /stats/[scope]/[subtab] — mirrors clientPageKey in
+    // chatbot-context-provider.tsx. The Letters subtab in particular
+    // surfaces letter-reader modals whose "Respond in chat" handoff
+    // depends on the page_key landing as stats.{scope}.letters.
+    if (!segments[1]) return "stats";
+    if (!segments[2]) return `stats.${segments[1]}`;
+    return `stats.${segments[1]}.${segments[2]}`;
+  }
   return segments.join(".");
 }
 

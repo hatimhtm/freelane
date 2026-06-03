@@ -147,6 +147,17 @@ export const BRAIN_TTL = {
   PROPOSE_ENTITY_FROM_SIGNAL: 30 * 24 * 60 * 60 * 1000,
   CANONICALIZE_ENTITY: 30 * 24 * 60 * 60 * 1000,
   ENTITY_PATTERN_CHANGE: 60 * 60 * 1000,
+  // Letters workflow (freelane-letters-design 2026-06-02).
+  //   LETTER_WORTH_SAYING: Flash Lite quality gate. Runs BEFORE every Tier 3
+  //     auto-trigger that would otherwise spawn a letter. Cache slot is
+  //     scoped per (trigger_kind, PHT day) via
+  //     scopedBrainKey(LETTER_WORTH_SAYING, 'trigger_day', `${kind}:${pht}`),
+  //     so the brain is effectively write-once per trigger_kind per day.
+  //     24h TTL is a shelf marker; the PHT-day suffix is the practical
+  //     freshness lever. EXEMPT from financial-mutation invalidation because
+  //     the gate's decision is anchored to the trigger payload + recent
+  //     letter shelf, not to the user's running spend state.
+  LETTER_WORTH_SAYING: 24 * 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -189,6 +200,8 @@ export const BRAIN_KEYS = {
   PROPOSE_ENTITY_FROM_SIGNAL: "propose_entity_from_signal",
   CANONICALIZE_ENTITY: "canonicalize_entity",
   ENTITY_PATTERN_CHANGE: "entity_pattern_change",
+  // Letters workflow.
+  LETTER_WORTH_SAYING: "letter_worth_saying",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -234,6 +247,7 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.PROPOSE_ENTITY_FROM_SIGNAL]: BRAIN_TTL.PROPOSE_ENTITY_FROM_SIGNAL,
   [BRAIN_KEYS.CANONICALIZE_ENTITY]: BRAIN_TTL.CANONICALIZE_ENTITY,
   [BRAIN_KEYS.ENTITY_PATTERN_CHANGE]: BRAIN_TTL.ENTITY_PATTERN_CHANGE,
+  [BRAIN_KEYS.LETTER_WORTH_SAYING]: BRAIN_TTL.LETTER_WORTH_SAYING,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache
@@ -284,6 +298,12 @@ export const FINANCIAL_INVALIDATION_EXEMPT: readonly BrainKey[] = [
   BRAIN_KEYS.PROPOSE_ENTITY_FROM_SIGNAL,
   BRAIN_KEYS.CANONICALIZE_ENTITY,
   BRAIN_KEYS.ENTITY_PATTERN_CHANGE,
+  // Letters workflow — the worth-saying gate keys off the trigger payload
+  // + recent letter shelf + user engagement signals, not the running
+  // spend state. A ₱200 spend doesn't change whether last week's Sunday
+  // letter should fire today, so spend-driven invalidation would just
+  // burn Gemini cost.
+  BRAIN_KEYS.LETTER_WORTH_SAYING,
 ] as const;
 
 // Below-this threshold spends do NOT bust the AI brain cache. A ₱5 cigarette

@@ -16,14 +16,16 @@ export default async function LetterDetailPage({
   if (!letter) notFound();
 
   return (
-    <div className="mx-auto flex max-w-[720px] flex-col gap-5 p-4 sm:p-6">
-      <Link
-        href="/letters"
-        className="inline-flex items-baseline gap-1 self-start text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        Letters
-      </Link>
+    <div className="flex flex-col">
+      <div className="mx-auto w-full max-w-[680px] px-4 pt-6">
+        <Link
+          href="/letters"
+          className="inline-flex items-baseline gap-1 self-start text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-3 w-3" />
+          Letters
+        </Link>
+      </div>
       <LetterDetail letter={letter} />
     </div>
   );

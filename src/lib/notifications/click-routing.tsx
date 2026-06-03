@@ -18,6 +18,7 @@ import {
   rejectEntityDiscovery,
   acceptEntityPatternAnswer,
 } from "@/lib/entities/discovery-actions";
+import { LetterReader } from "@/components/letters/letter-reader";
 
 // Generalized click-routing for notification bell + /notifications + the
 // ?notification=<id> deep-link interceptor.
@@ -36,7 +37,15 @@ import {
 
 export type ClickHandler = (
   n: Notification,
-  openModal: (el: ReactNode, opts?: { title?: string; description?: string }) => void,
+  openModal: (
+    el: ReactNode,
+    opts?: {
+      title?: string;
+      description?: string;
+      size?: "default" | "reader";
+      chromeless?: boolean;
+    },
+  ) => void,
   navigate: (href: string) => void,
 ) => void;
 
@@ -472,6 +481,41 @@ const KIND_HANDLERS: Record<string, ClickHandler> = {
       <WeeklyPriceCheckModalBody changes={changes} />,
       { title: n.subject, description: n.body ?? undefined },
     );
+  },
+  // Letters workflow (freelane-letters-design 2026-06-02) — opens the
+  // letter-reader center modal with full editorial typography. Payload
+  // carries letter_id; malformed payload falls back to /letters archive.
+  //
+  // The letter reader OWNS its typography (Fraunces display-headline +
+  // display-eyebrow + max-w-[680px] reading column). We open the modal
+  // CHROMELESS so the host doesn't double-render a sans DialogTitle
+  // above the Fraunces headline, and at `size: 'reader'` so the 680px
+  // inner column fits the modal's 720px max-width without clipping.
+  new_letter: (n, openModal, navigate) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: {
+        letter_id?: string;
+        kind?: string;
+        period_key?: string;
+      };
+    };
+    const letterId = payload.kind_specific?.letter_id;
+    if (!letterId) {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[notifications] new_letter missing letter_id in payload.kind_specific",
+          n,
+        );
+      }
+      navigate("/letters");
+      return;
+    }
+    openModal(<LetterReader letterId={letterId} />, {
+      title: n.subject,
+      size: "reader",
+      chromeless: true,
+    });
   },
   ai_clarifying_question: (n, openModal) => {
     const payload = (n.payload ?? {}) as {

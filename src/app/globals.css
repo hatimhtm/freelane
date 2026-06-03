@@ -490,6 +490,32 @@
     letter-spacing: 0.18em;
     line-height: 1;
   }
+  /* Letter body — editorial reading column inside the LetterReader
+     modal + the /letters/[id] deep-link surface. The @tailwindcss/typography
+     plugin is intentionally NOT installed (locked-down design language).
+     Paragraph spacing, link colour, and emphasis live here so the letter
+     reader can drop the dead .prose / .prose-paper class names. */
+  .letter-body p {
+    margin-bottom: 1rem;
+  }
+  .letter-body p:last-child {
+    margin-bottom: 0;
+  }
+  .letter-body a {
+    color: var(--brand);
+    text-underline-offset: 3px;
+  }
+  .letter-body a:hover {
+    color: var(--foreground);
+  }
+  .letter-body em {
+    font-style: italic;
+    color: oklch(from var(--foreground) l c h / 0.95);
+  }
+  .letter-body strong {
+    font-weight: 500;
+    color: var(--foreground);
+  }
 }
 
 @layer utilities {

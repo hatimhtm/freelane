@@ -393,7 +393,7 @@ export type EventKind =
   | "entity.created" | "entity.updated" | "entity.archived" | "entity.deleted"
   | "entity.linked" | "entity.unlinked"
   | "wife_state.updated" | "wife_preferences.consolidated"
-  | "letter.generated" | "letter.pinned" | "letter.replied" | "letter.deleted"
+  | "letter.generated" | "letter.pinned" | "letter.replied" | "letter.deleted" | "letter.skipped_by_gate"
   | "milestone.recorded" | "milestone.replied" | "milestone.deleted"
   | "quiet_receipt.recorded" | "quiet_receipt.replied" | "quiet_receipt.deleted"
   | "life_shift.recorded" | "life_shift.replied" | "life_shift.deleted"

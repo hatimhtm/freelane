@@ -16,14 +16,35 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 // Center modal host — one Dialog rendered at the (app)/layout level. Any
 // client component can call `openModal(node)` via the hook to surface a
 // notification-driven modal without prop-drilling. The host also owns the
 // open state; closing the dialog clears the content.
+//
+// Size hint:
+//   - 'default' (sm:max-w-md, ~448px) — short forms, info, multi-choice
+//   - 'reader'  (sm:max-w-[720px])   — editorial reading surfaces (letters)
+//     so the inner article's mx-auto max-w-[680px] reaches the locked
+//     680px reading column.
+//
+// Chromeless:
+//   - When true the DialogHeader (DialogTitle + DialogDescription) is
+//     skipped — the modal body owns its own typography. The sr-only
+//     fallback Title is still rendered for screen-reader semantics.
+
+export type ModalSize = "default" | "reader";
+
+export type ModalOptions = {
+  title?: string;
+  description?: string;
+  size?: ModalSize;
+  chromeless?: boolean;
+};
 
 type ModalContextValue = {
-  openModal: (node: ReactNode, options?: { title?: string; description?: string }) => void;
+  openModal: (node: ReactNode, options?: ModalOptions) => void;
   closeModal: () => void;
 };
 
@@ -41,11 +62,11 @@ export function useNotificationModal(): ModalContextValue {
 
 export function NotificationModalHost({ children }: { children: ReactNode }) {
   const [content, setContent] = useState<ReactNode>(null);
-  const [meta, setMeta] = useState<{ title?: string; description?: string }>({});
+  const [meta, setMeta] = useState<ModalOptions>({});
   const [open, setOpen] = useState(false);
 
   const openModal = useCallback(
-    (node: ReactNode, options?: { title?: string; description?: string }) => {
+    (node: ReactNode, options?: ModalOptions) => {
       setContent(node);
       setMeta(options ?? {});
       setOpen(true);
@@ -62,6 +83,11 @@ export function NotificationModalHost({ children }: { children: ReactNode }) {
     [openModal, closeModal],
   );
 
+  const sizeClass =
+    meta.size === "reader" ? "sm:max-w-[720px]" : "sm:max-w-md";
+  const showHeader =
+    !meta.chromeless && (Boolean(meta.title) || Boolean(meta.description));
+
   return (
     <ModalContext.Provider value={value}>
       {children}
@@ -72,8 +98,8 @@ export function NotificationModalHost({ children }: { children: ReactNode }) {
           if (!o) setContent(null);
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          {(meta.title || meta.description) && (
+        <DialogContent className={cn(sizeClass)}>
+          {showHeader && (
             <DialogHeader>
               {meta.title && <DialogTitle>{meta.title}</DialogTitle>}
               {meta.description && (
@@ -82,9 +108,13 @@ export function NotificationModalHost({ children }: { children: ReactNode }) {
             </DialogHeader>
           )}
           {content}
-          {!meta.title && (
+          {/* a11y fallback — every Dialog needs an accessible name. When
+              the host renders chromeless (or with no title) we still emit
+              a sr-only Title so screen-readers don't read 'unlabelled
+              dialog'. */}
+          {(!showHeader || !meta.title) && (
             <DialogPrimitive.Title className="sr-only">
-              Notification
+              {meta.title ?? "Notification"}
             </DialogPrimitive.Title>
           )}
         </DialogContent>

@@ -23,6 +23,8 @@ export default async function StatsMoneyPage({
   const { scope } = await params;
   const user = await getAuthUser();
   const supabase = await createClient();
+  // Recent Letters lives in the dedicated Letters subtab (single home,
+  // per spec). The Money landing no longer duplicates the card.
 
   // Verifier fix: the dynamic [scope] segment was being shown in the
   // header while the underlying query was user-wide. Until per-scope

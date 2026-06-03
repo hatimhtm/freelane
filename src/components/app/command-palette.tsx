@@ -7,7 +7,6 @@ import {
   Bell,
   Calendar,
   CalendarRange,
-  FileText,
   FolderKanban,
   HandHeart,
   LayoutDashboard,
@@ -126,9 +125,12 @@ export function CommandPaletteHost() {
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading="Stories">
-            <CommandItem onSelect={() => go("/letters")}>
-              <FileText className="mr-2 h-4 w-4" /> Letters
-            </CommandItem>
+            {/* Letters removed from command palette (freelane-letters-design
+                2026-06-02). Letters reach the user via the new_letter
+                notification → letter-reader center modal, the Recent
+                Letters card on Stats, or direct deep links to
+                /letters/[id]. The /letters archive page is still routable
+                directly if the user types it. */}
             <CommandItem onSelect={() => go("/should-i-buy")}>
               <ShoppingBag className="mr-2 h-4 w-4" /> Should I buy?
             </CommandItem>

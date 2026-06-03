@@ -100,5 +100,34 @@ export async function recordQuietReceipt(args: RecordQuietReceiptArgs): Promise<
     metadata: { kind: args.kind },
   });
 
+  // Tier 3 auto-trigger — every quiet receipt write is a candidate for a
+  // spotlight letter. The worth-saying gate (Flash Lite) decides whether
+  // the receipt has enough substance; the editorial brain (Pro) writes
+  // the letter only when the gate proceeds. Best-effort: a model failure
+  // here never blocks the quiet-receipt write itself.
+  //
+  // This is the 6th distinct trigger path the brief specified:
+  //   1-3. recurring_paused / recurring_changed / recurring_lowered
+  //   4.   loan_repaid
+  //   5.   plan_done
+  //   6.   generic_quiet_receipt (this site — covers everything else
+  //        that flows through recordQuietReceipt without a more specific
+  //        trigger kind already assigned at the call site)
+  try {
+    const { tryAutoGenerateLetter } = await import("./letters-auto-trigger");
+    await tryAutoGenerateLetter({
+      triggerKind: "generic_quiet_receipt",
+      letterKind: "spotlight",
+      triggerPayload: {
+        quiet_receipt_id: (data as { id: string }).id,
+        quiet_receipt_kind: args.kind,
+        source_entity_type: args.sourceEntityType ?? null,
+        source_entity_id: args.sourceEntityId ?? null,
+      },
+    });
+  } catch {
+    // Best-effort. Receipt is canonical; letter generation never blocks.
+  }
+
   return { id: (data as { id: string }).id };
 }

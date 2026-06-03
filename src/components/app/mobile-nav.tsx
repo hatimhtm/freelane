@@ -7,7 +7,6 @@ import {
   Activity,
   Bell,
   Calendar,
-  FileText,
   FolderKanban,
   HandHeart,
   LayoutDashboard,
@@ -64,7 +63,11 @@ const NAV: { title: string; items: NavItem[] }[] = [
   {
     title: "Stories",
     items: [
-      { href: "/letters",      label: "Letters",       icon: FileText },
+      // Letters removed from top nav (freelane-letters-design 2026-06-02).
+      // Access paths: new_letter notification → letter-reader modal,
+      // Stats → Recent Letters card → /letters archive, deep links to
+      // /letters/[id]. The /letters route remains and is restyled as the
+      // paginated archive.
       { href: "/should-i-buy", label: "Should I buy?", icon: ShoppingBag },
     ],
   },

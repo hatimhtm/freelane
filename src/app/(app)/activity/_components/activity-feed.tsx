@@ -130,10 +130,11 @@ const META: Record<EventKind, KindMeta> = {
   "wife_state.updated":         { icon: Brain, tone: "neutral" },
   "wife_preferences.consolidated": { icon: Brain, tone: "success" },
 
-  "letter.generated": { icon: FileText, tone: "brand"   },
-  "letter.pinned":    { icon: Bookmark, tone: "amber"   },
-  "letter.replied":   { icon: Pencil,   tone: "success" },
-  "letter.deleted":   { icon: Trash2,   tone: "rose"    },
+  "letter.generated":      { icon: FileText, tone: "brand"   },
+  "letter.pinned":         { icon: Bookmark, tone: "amber"   },
+  "letter.replied":        { icon: Pencil,   tone: "success" },
+  "letter.deleted":        { icon: Trash2,   tone: "rose"    },
+  "letter.skipped_by_gate":{ icon: FileText, tone: "neutral" },
 
   "milestone.recorded": { icon: Check,  tone: "success" },
   "milestone.replied":  { icon: Pencil, tone: "neutral" },

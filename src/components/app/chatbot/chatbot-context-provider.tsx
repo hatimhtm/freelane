@@ -58,6 +58,17 @@ function clientPageKey(pathname: string): string {
   if (segments[0] === "should-i-buy") return "should_i_buy";
   if (segments[0] === "settings")
     return segments[1] ? `settings.${segments[1]}` : "settings";
+  if (segments[0] === "stats") {
+    // /stats/[scope]/[subtab] — pageKey shapes:
+    //   /stats/me                  → stats.me
+    //   /stats/me/letters          → stats.me.letters
+    //   /stats/year-2026/behavior  → stats.year-2026.behavior
+    // Lets the chatbot scope properly when the user clicks "Respond in
+    // chat" from a letter-reader modal opened on a stats subtab.
+    if (!segments[1]) return "stats";
+    if (!segments[2]) return `stats.${segments[1]}`;
+    return `stats.${segments[1]}.${segments[2]}`;
+  }
   return segments.join(".");
 }
 

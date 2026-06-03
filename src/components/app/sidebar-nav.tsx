@@ -15,7 +15,6 @@ import {
   Calendar,
   Sparkles,
   HandHeart,
-  FileText,
   ShoppingBag,
   Bell,
 } from "lucide-react";
@@ -62,7 +61,12 @@ const NAV: { title: string; items: NavItem[] }[] = [
   {
     title: "Stories",
     items: [
-      { href: "/letters",     label: "Letters",      icon: FileText },
+      // Letters removed from top nav (freelane-letters-design 2026-06-02).
+      // Letters now reach the user via:
+      //   (a) new_letter notification → letter-reader modal (center modal,
+      //       Fraunces editorial typography)
+      //   (b) Stats view → Recent Letters card → "see all →" /letters archive
+      //   (c) Direct deep links to /letters/[id]
       { href: "/should-i-buy", label: "Should I buy?", icon: ShoppingBag },
     ],
   },
