@@ -34,7 +34,19 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // auth.getUser() is a network call to Supabase that runs on EVERY request.
+  // If it throws (a transient blip — common right when the PWA reloads after
+  // the OS suspended its network on app-switch), don't let it 500 the whole
+  // request. Proceed instead: the (app) layout re-checks auth server-side and
+  // redirects to /login if the user genuinely isn't signed in, so a momentary
+  // pass-through is safe.
+  let user = null;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch {
+    return response;
+  }
 
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
