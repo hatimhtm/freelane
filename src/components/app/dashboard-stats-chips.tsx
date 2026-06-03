@@ -27,8 +27,12 @@ function chipClass(active: boolean) {
 
 function isActiveFor(pathname: string | null, scope: string): boolean {
   if (!pathname) return false;
-  // Match /stats/<scope> with optional trailing slash or query.
-  return new RegExp(`^/stats/${scope}(/|$|\\?)`).test(pathname);
+  // Verifier fix (low): compare on split path segments instead of a
+  // regex that interpolates scope literally — a future scope token
+  // containing regex specials would behave unpredictably. Segment
+  // compare is semantically clearer and immune to that footgun.
+  const parts = pathname.split("/").filter(Boolean);
+  return parts[0] === "stats" && parts[1] === scope;
 }
 
 export function DashboardStatsChips({ activeYears }: DashboardStatsChipsProps) {
@@ -39,6 +43,7 @@ export function DashboardStatsChips({ activeYears }: DashboardStatsChipsProps) {
         href="/stats/lifetime"
         aria-label="View lifetime stats"
         className={chipClass(isActiveFor(pathname, "lifetime"))}
+        prefetch={false}
       >
         Lifetime
       </Link>
@@ -48,6 +53,7 @@ export function DashboardStatsChips({ activeYears }: DashboardStatsChipsProps) {
           href={`/stats/${y}`}
           aria-label={`View ${y} stats`}
           className={chipClass(isActiveFor(pathname, String(y)))}
+          prefetch={false}
         >
           {y}
         </Link>

@@ -2,23 +2,33 @@
 
 import { usePathname } from "next/navigation";
 import { SubtabBar, type Subtab } from "@/components/app/subtab-bar";
+import { useStatsLettersVisibility } from "@/components/app/stats-letters-visibility";
 
 // ─────────────────────────────────────────────────── TopBarSubtabSlot ──
 // Reads the current pathname and renders the SubtabBar for the page that
 // owns this URL. Returns null on pages without subtabs (Today, Sadaka,
 // Plans, Projects, Activity, Notifications, Letters, Settings) so the
 // topbar center stays empty.
+//
+// Verifier fix (high): on /stats/[scope]/* we drop the Letters chip
+// when the scope has zero letters. The visibility flag is computed
+// server-side in the stats layout and pushed into a context the slot
+// reads here (see stats-letters-visibility.tsx).
 
 export function TopBarSubtabSlot() {
   const pathname = usePathname() ?? "";
+  const statsHasLetters = useStatsLettersVisibility();
 
-  const subtabs = subtabsForPath(pathname);
+  const subtabs = subtabsForPath(pathname, { statsHasLetters });
   if (!subtabs) return null;
 
   return <SubtabBar subtabs={subtabs} activePath={pathname} />;
 }
 
-function subtabsForPath(pathname: string): Subtab[] | null {
+function subtabsForPath(
+  pathname: string,
+  ctx: { statsHasLetters: boolean | null },
+): Subtab[] | null {
   // Dashboard — Money / Commitments / State / Body
   if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
     return [
@@ -64,13 +74,26 @@ function subtabsForPath(pathname: string): Subtab[] | null {
     const parts = pathname.split("/").filter(Boolean); // ["stats", "{scope}", maybe-subtab]
     const scope = parts[1];
     if (!scope) return null;
-    const base = `/stats/${encodeURIComponent(scope)}`;
-    return [
+    // Verifier fix (low): no encodeURIComponent — DashboardStatsChips
+    // builds chip URLs un-encoded, and every documented scope token
+    // (lifetime / 4-digit year / client-<id> / 30d|90d|6m|1y) is
+    // URI-safe by construction. Keeping both surfaces in lockstep
+    // avoids latent inconsistency the next time the grammar grows.
+    const base = `/stats/${scope}`;
+    const tabs: Subtab[] = [
       { href: `${base}/money`, label: "Money" },
       { href: `${base}/behavior`, label: "Behavior" },
       { href: `${base}/journey`, label: "Journey" },
-      { href: `${base}/letters`, label: "Letters" },
     ];
+    // Letters chip is conditional on the scope having letters. The flag
+    // arrives from the stats layout via context. While the flag is null
+    // (first render before the layout's Writer mounts) we hide the chip
+    // by default — otherwise it would flicker on every navigation. The
+    // /letters page redirects to /money on empty as a second safety net.
+    if (ctx.statsHasLetters === true) {
+      tabs.push({ href: `${base}/letters`, label: "Letters" });
+    }
+    return tabs;
   }
 
   // Clients — Clients / People

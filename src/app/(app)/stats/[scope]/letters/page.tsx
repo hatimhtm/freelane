@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/app/page-header";
 import { getLetters, parseLettersScope } from "@/lib/data/queries";
+import { resolveScopeRange } from "@/lib/stats/queries";
 import { RecentLettersWidget } from "@/components/widgets/stats/recent-letters-widget";
 
 export const metadata = { title: "Stats · Letters" };
@@ -9,15 +11,24 @@ export const metadata = { title: "Stats · Letters" };
 // "see all →" handoff lives inside the widget pointing at /letters
 // (carrying the scope as a query param so the archive narrows).
 //
-// Scope narrowing — getLetters now accepts a LettersScope. The dynamic
-// [scope] segment is parsed into one of { me, year-YYYY, client-<id> }
-// and the query filters period_key + blocks JSON accordingly. /me hits
-// the full archive; /year-2026 narrows by period_key prefix; /client-id
-// narrows by client/entity id references inside the letter blocks.
+// Scope narrowing — getLetters accepts a LettersScope. The dynamic
+// [scope] segment is parsed into one of { me, year-YYYY, year (bare),
+// client-<id>, window (30d/90d/6m/1y) } matching resolveScopeRange's
+// grammar, and the query filters period_key / generated_at / blocks JSON
+// accordingly. /me hits the full archive.
 //
-// Empty state — when the scope has zero letters we render a minimal
-// editorial empty card so the surface is never a blank canvas. The
-// Letters subtab stays clickable; users always land somewhere coherent.
+// Verifier fix (high): the design memo says the whole Letters section
+// in Stats HIDES on zero letters in scope. The previous empty-state
+// card violated that contract. We redirect to /stats/{scope}/money
+// so users never land on a dead surface; the Letters subtab itself is
+// omitted from the SubtabBar (see top-bar-subtab-slot.tsx) so the chip
+// doesn't beckon either.
+//
+// Verifier fix (medium): header reads range.label (e.g. "Last 30 days",
+// "2026") instead of the raw scope token — matches Money/Behavior/Journey
+// and surfaces resolveScopeRange's "Lifetime (unknown scope: ...)"
+// honesty fallback so an unknown URL no longer pretends to be a real
+// scope. Container width normalized to max-w-6xl.
 
 export default async function StatsLettersPage({
   params,
@@ -25,32 +36,24 @@ export default async function StatsLettersPage({
   params: Promise<{ scope: string }>;
 }) {
   const { scope } = await params;
+  const range = resolveScopeRange(scope);
   const parsedScope = parseLettersScope(scope);
   // Fetch only 3 — the "see all" link routes to /letters which does its
   // own paginated fetch, so any over-fetch here is dead weight.
   const visible = await getLetters(3, parsedScope);
 
+  if (visible.length === 0) {
+    redirect(`/stats/${scope}/money`);
+  }
+
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 lg:px-10 lg:py-12">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 lg:px-10 lg:py-12">
       <PageHeader
         title="Letters for this scope"
-        description={`Scope: ${scope}`}
+        description={range.label}
       />
       <div className="mt-8">
-        {visible.length === 0 ? (
-          <div className="rounded-[14px] border border-dashed border-foreground/15 bg-card/40 px-5 py-10 text-center">
-            <div className="display-eyebrow text-muted-foreground">
-              No letters here yet
-            </div>
-            <p className="mx-auto mt-3 max-w-[420px] text-[13px] leading-relaxed text-foreground/75">
-              Letters land in this scope when the editorial brain writes about
-              this slice — a year, a client, or you. Nothing yet for{" "}
-              <span className="font-medium text-foreground/90">{scope}</span>.
-            </p>
-          </div>
-        ) : (
-          <RecentLettersWidget letters={visible} scope={scope} />
-        )}
+        <RecentLettersWidget letters={visible} scope={scope} />
       </div>
     </div>
   );
