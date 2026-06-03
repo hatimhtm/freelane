@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,10 +10,13 @@ import { resolveEntityAccent } from "@/lib/brand/entity-accent";
 import { formatMoney } from "@/lib/money";
 import { updateEntity } from "@/lib/data/actions";
 import { extractEntityFactsAction } from "@/lib/ai/entity-facts-actions";
+import { loanStatusLabel } from "@/lib/loans/direction";
 import { AiDot } from "@/components/widgets/ai-dot";
 import type {
   CurrencyCode,
   Entity,
+  Loan,
+  LoanReturn,
   Spend,
   SpendEntityLink,
 } from "@/lib/supabase/types";
@@ -39,6 +43,15 @@ interface EntityDetailSheetProps {
   facts: Fact[];
   patternHistory: ClientPatternHistoryRow[];
   baseCurrency: CurrencyCode;
+  // Loans workflow — per-entity history + outstanding totals.
+  loans?: Loan[];
+  loanReturns?: LoanReturn[];
+  loanTotals?: {
+    givenOutstandingBase: number;
+    receivedOutstandingBase: number;
+    givenOpenCount: number;
+    receivedOpenCount: number;
+  };
 }
 
 export function EntityDetailSheet({
@@ -48,6 +61,9 @@ export function EntityDetailSheet({
   facts,
   patternHistory,
   baseCurrency,
+  loans = [],
+  loanReturns = [],
+  loanTotals,
 }: EntityDetailSheetProps) {
   const accent = resolveEntityAccent(entity.id);
   const router = useRouter();
@@ -181,6 +197,23 @@ export function EntityDetailSheet({
         )}
       </section>
 
+      {/* Loans section — per-entity loan history + outstanding totals.
+          Hidden when the entity has zero loans. Each loan row is a Link
+          to /spending?loans=1&loan_id=<id> so the central spending
+          list's loan detail sheet opens on landing. That's the single
+          owner of the record-return / forgive / write-off state machine
+          (loan-detail-sheet.tsx); routing through it instead of
+          duplicating the actions here keeps mutations honest. */}
+      {loans.length > 0 && (
+        <LoansSection
+          loans={loans}
+          loanReturns={loanReturns}
+          totals={loanTotals}
+          baseCurrency={baseCurrency}
+          entityName={entity.canonical_name}
+        />
+      )}
+
       {/* Pattern-change timeline — mirrors the Clients surface. Each
           row shows what the brain noticed + (if answered) what the user
           chose. Hidden when empty so a fresh entity isn't cluttered. */}
@@ -228,6 +261,151 @@ export function EntityDetailSheet({
         </section>
       )}
     </div>
+  );
+}
+
+// Loans workflow — per-entity history block. Outstanding totals up top,
+// loan rows below. Each row shows principal, status pill, due_date, and
+// outstanding balance. Read-only here; mutating actions live in the
+// spending-list loan detail sheet so there's a single owner for the
+// state machine.
+function LoansSection({
+  loans,
+  loanReturns,
+  totals,
+  baseCurrency,
+  entityName,
+}: {
+  loans: Loan[];
+  loanReturns: LoanReturn[];
+  totals?: {
+    givenOutstandingBase: number;
+    receivedOutstandingBase: number;
+    givenOpenCount: number;
+    receivedOpenCount: number;
+  };
+  baseCurrency: CurrencyCode;
+  entityName: string;
+}) {
+  const returnsByLoan = new Map<string, LoanReturn[]>();
+  for (const r of loanReturns) {
+    const arr = returnsByLoan.get(r.loan_id) ?? [];
+    arr.push(r);
+    returnsByLoan.set(r.loan_id, arr);
+  }
+  // Explicit allowlist with a "—" fallback so a future direction value
+  // can't silently mislabel as the other side. Tighter than the prior
+  // collapse-to-received default.
+  const directionLabel = (d: string): "given" | "received" | "—" => {
+    if (d === "given" || d === "lent") return "given";
+    if (d === "received" || d === "borrowed") return "received";
+    return "—";
+  };
+  const allSettled =
+    totals !== undefined &&
+    totals.givenOpenCount === 0 &&
+    totals.receivedOpenCount === 0;
+  const totalEntries = loans.length;
+  const visibleLoans = loans.slice(0, 20);
+  return (
+    <section>
+      <h2 className="mb-2 flex items-baseline justify-between gap-2 text-sm font-medium">
+        <span>Loans</span>
+        <span className="text-[11px] text-muted-foreground">
+          {totalEntries} {totalEntries === 1 ? "entry" : "entries"}
+        </span>
+      </h2>
+      {totals &&
+        (totals.givenOpenCount > 0 || totals.receivedOpenCount > 0) && (
+          <div className="mb-2 flex flex-wrap gap-3 rounded-xl border border-border/60 bg-card px-3 py-2 text-[12px]">
+            {totals.givenOpenCount > 0 && (
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  You lent · open
+                </span>
+                <span className="tabular text-foreground/85">
+                  {formatMoney(totals.givenOutstandingBase, baseCurrency)}
+                </span>
+              </div>
+            )}
+            {totals.receivedOpenCount > 0 && (
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  You owe · open
+                </span>
+                <span className="tabular text-foreground/85">
+                  {formatMoney(totals.receivedOpenCount > 0 ? totals.receivedOutstandingBase : 0, baseCurrency)}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      {allSettled && (
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          All loans with {entityName} are settled.
+        </p>
+      )}
+      <ul className="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/60 bg-card">
+        {visibleLoans.map((loan) => {
+          const dir = directionLabel(loan.direction);
+          const returns = returnsByLoan.get(loan.id) ?? [];
+          const returned = returns.reduce(
+            (s, r) => s + Number(r.amount_base ?? 0),
+            0,
+          );
+          const outstanding = Math.max(
+            0,
+            Number(loan.principal_base ?? 0) - returned,
+          );
+          // Each row deep-links into the spending list with the loan
+          // detail sheet pre-opened; the spending page reads loans=1 +
+          // loan_id=<id> from the URL. This keeps a single owner of the
+          // record-return / forgive / write-off state machine instead of
+          // duplicating the modal here.
+          return (
+            <li key={loan.id}>
+              <Link
+                href={`/spending?loans=1&loan_id=${loan.id}`}
+                className="flex flex-col gap-1 px-3 py-2 text-sm transition-colors hover:bg-foreground/[0.03]"
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[10.5px] uppercase tracking-wider text-muted-foreground">
+                    {dir} · {loanStatusLabel(loan.status)}
+                  </span>
+                  <span className="text-[10.5px] tabular text-muted-foreground">
+                    {(loan.borrowed_at ?? "").slice(0, 10)}
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="tabular text-foreground/85">
+                    {formatMoney(
+                      Number(loan.principal_base ?? 0),
+                      baseCurrency,
+                    )}
+                  </span>
+                  <span className="text-[11px] tabular text-muted-foreground">
+                    {outstanding > 0
+                      ? `${formatMoney(outstanding, baseCurrency)} open`
+                      : "settled"}
+                  </span>
+                </div>
+                {loan.due_date && (
+                  <span className="text-[11px] text-muted-foreground">
+                    Due {loan.due_date}
+                  </span>
+                )}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      {totalEntries > visibleLoans.length && (
+        <p className="mt-1 text-[10.5px] text-muted-foreground">
+          {totalEntries - visibleLoans.length} more — open the spending
+          list to see the full history.
+        </p>
+      )}
+    </section>
   );
 }
 

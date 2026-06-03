@@ -21,7 +21,8 @@ import { PrimaryAction } from "@/components/app/primary-action";
 import { MWidget } from "@/components/widgets/m-widget";
 import { resolveEntityAccent } from "@/lib/brand/entity-accent";
 import { createEntity } from "@/lib/data/actions";
-import type { Entity } from "@/lib/supabase/types";
+import { formatMoney } from "@/lib/money";
+import type { CurrencyCode, Entity } from "@/lib/supabase/types";
 
 // People sub-tab — entities surface restyled into widget cards.
 //
@@ -47,6 +48,7 @@ interface PeopleViewProps {
   needsIntroduction: DecoratedEntity[];
   active: DecoratedEntity[];
   archived: DecoratedEntity[];
+  baseCurrency: CurrencyCode;
 }
 
 const ENTITY_KINDS = [
@@ -63,6 +65,7 @@ export function PeopleView({
   needsIntroduction,
   active,
   archived,
+  baseCurrency,
 }: PeopleViewProps) {
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
@@ -118,6 +121,7 @@ export function PeopleView({
               <PersonCard
                 key={e.id}
                 entity={e}
+                baseCurrency={baseCurrency}
                 onOpen={() => router.push(`/clients/people/${e.id}`)}
               />
             ))}
@@ -252,9 +256,11 @@ function NeedsIntroRow({
 
 function PersonCard({
   entity,
+  baseCurrency,
   onOpen,
 }: {
   entity: DecoratedEntity;
+  baseCurrency: CurrencyCode;
   onOpen: () => void;
 }) {
   const accent = resolveEntityAccent(entity.id);
@@ -320,6 +326,29 @@ function PersonCard({
           <span className="truncate">
             {entity.short_description ?? "No description"}
           </span>
+          {entity.outstanding_loan_count_cached > 0 && (
+            <span
+              className="shrink-0 rounded-full border border-foreground/15 bg-foreground/[0.04] px-1.5 py-px text-[10px] font-medium uppercase tracking-wider text-foreground/75"
+              title={`${entity.outstanding_loan_count_cached} open ${
+                entity.outstanding_loan_count_cached === 1 ? "loan" : "loans"
+              }`}
+            >
+              {/* Migration 0111 added outstanding_loan_base_cached so the
+                  badge surfaces the pesos owed (the actually-useful number),
+                  not just the count. Falls back to the count when the
+                  base cache is 0 — legacy rows seeded before 0111 only
+                  carry the count column. */}
+              {entity.outstanding_loan_base_cached > 0
+                ? `Loan: ${formatMoney(
+                    entity.outstanding_loan_base_cached,
+                    baseCurrency,
+                    { compact: true },
+                  )} open`
+                : entity.outstanding_loan_count_cached === 1
+                  ? "1 loan open"
+                  : `${entity.outstanding_loan_count_cached} loans open`}
+            </span>
+          )}
         </div>
       }
       aiDot={{

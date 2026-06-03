@@ -1602,6 +1602,12 @@ export type PaymentMethodInput = {
   // as the user's escape hatch when fuzzy-match misses an idiosyncratic
   // wallet name. Pass null to clear and fall back to fuzzy matching.
   brand_key?: string | null;
+  // Custom brand fallback (migration 0110). Only populated when brand_key
+  // is the literal "custom"; resolver reads them verbatim into a generic
+  // tile. Both nullable — the picker flushes them when a curated brand
+  // is selected so a stale value never leaks into a non-custom wallet.
+  custom_brand_glyph?: string | null;
+  custom_brand_color?: string | null;
 };
 
 export async function createPaymentMethod(input: PaymentMethodInput) {
@@ -1620,6 +1626,8 @@ export async function createPaymentMethod(input: PaymentMethodInput) {
       overdraft_tolerance_base: input.overdraft_tolerance_base ?? 0,
       notes: input.notes ?? null,
       brand_key: input.brand_key ?? null,
+      custom_brand_glyph: input.custom_brand_glyph ?? null,
+      custom_brand_color: input.custom_brand_color ?? null,
     })
     .select("id")
     .single();
@@ -1900,6 +1908,13 @@ export type SpendInput = {
   is_for_someone_else?: boolean;
   beneficiary_entity_id?: string | null;
   beneficiary_typed_name?: string | null;
+  // Loans workflow (migration 0106): the explicit "Was this a loan?"
+  // toggle in the spend modal. When true AND beneficiary_entity_id is
+  // present, createSpend follows the spend insert with a loans row
+  // (direction=given, origin_spend_id=spend.id). The spend's own
+  // outflow ledger row covers the wallet movement — the loan row does
+  // NOT double-debit.
+  is_loan?: boolean;
 };
 
 export async function createSpend(input: SpendInput): Promise<ActionResult<{ id: string }>> {
@@ -2229,6 +2244,134 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
       is_sadaka: false,
       spent_at: new Date(spentAt).toISOString(),
     }).catch(() => {});
+  }
+
+  // Loans workflow (migration 0106). Two paths fork off a beneficiary
+  // spend after the row + outflow ledger have committed:
+  //
+  //   (a) Explicit is_loan toggle → create a finance.loans row pointing
+  //       at the spend (origin_spend_id). Mutually exclusive with
+  //       is_sadaka — both at once would mis-label the contribution.
+  //       The spend's outflow already debited the wallet, so the loan
+  //       row carries source_spend_id and createPersonalLoan skips the
+  //       ledger write.
+  //
+  //   (b) No explicit flag → fire-and-forget the loan-proposal brain so
+  //       a confirm-or-reject notification can prompt the user later.
+  //       Guarded by amount floor + keyword pre-check so we don't pay
+  //       Gemini on every chatty ₱100 spend.
+  if (
+    input.is_loan &&
+    !input.is_sadaka &&
+    input.is_for_someone_else &&
+    input.beneficiary_entity_id
+  ) {
+    try {
+      // Dynamic import is REQUIRED here — `@/lib/loans/actions` imports
+      // `safeRunLabeled` + `ActionResult` from this same module, so a
+      // top-level import would create a circular dependency that resolves
+      // to `undefined` at runtime under SWC/Turbopack. Lazy-loading at
+      // call time gives the loader the resolved binding it needs.
+      const { createPersonalLoan } = await import("@/lib/loans/actions");
+      await createPersonalLoan({
+        direction: "given",
+        counterparty_entity_id: input.beneficiary_entity_id,
+        origin_wallet_id: input.wallet_id,
+        principal_base: amountBase,
+        currency: input.currency,
+        notes: input.notes ?? input.description ?? null,
+        is_for_someone_else: true,
+        source_spend_id: spendId,
+      });
+    } catch {
+      // Loan creation is best-effort here — the spend itself committed,
+      // and the user can always re-trigger via the loan-proposal flow.
+    }
+  } else if (
+    !input.is_loan &&
+    !input.is_sadaka &&
+    input.is_for_someone_else &&
+    input.beneficiary_entity_id &&
+    amountBase >= 500
+  ) {
+    // Fire-and-forget. The brain owns its own keyword check + caching,
+    // so it's cheap when there's no real signal.
+    //
+    // Dispatcher gate (AND): beneficiary_entity_id present + amountBase
+    // >= 500 + hasLoanishKeyword(description+notes). The brain header in
+    // src/lib/ai/brains/loan-proposal.ts now reflects this AND gate
+    // explicitly. non_loan check below honours an earlier reject in case
+    // a future updateSpend hook re-fires the brain after the notification
+    // was retention-pruned from the inbox (dedupKey alone can't carry
+    // that signal past the 3-day window).
+    void (async () => {
+      try {
+        // Skip if the user already said "no, not a loan" on this spend.
+        const { data: spendRow } = await supabase
+          .from("spends")
+          .select("non_loan")
+          .eq("id", spendId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (spendRow && (spendRow as { non_loan?: boolean }).non_loan) return;
+        const { hasLoanishKeyword, proposeLoanFromSpend } = await import(
+          "@/lib/ai/brains/loan-proposal"
+        );
+        const text = `${input.description ?? ""} ${input.notes ?? ""}`;
+        if (!hasLoanishKeyword(text)) return;
+        // Pull the beneficiary's display name + relationship for the
+        // brain prompt. Best-effort — empty values fall through.
+        let beneficiaryName = "";
+        let relationship: string | null = null;
+        try {
+          const { data: ent } = await supabase
+            .from("entities")
+            .select("canonical_name, relationship")
+            .eq("id", input.beneficiary_entity_id!)
+            .eq("user_id", userId)
+            .maybeSingle();
+          beneficiaryName = (ent as { canonical_name?: string } | null)?.canonical_name ?? "";
+          relationship = (ent as { relationship?: string | null } | null)?.relationship ?? null;
+        } catch {
+          /* shrug */
+        }
+        const result = await proposeLoanFromSpend({
+          spendId,
+          spendDescription: input.description ?? null,
+          spendNotes: input.notes ?? null,
+          amountBase,
+          beneficiaryEntityId: input.beneficiary_entity_id!,
+          beneficiaryName: beneficiaryName || "Someone",
+          beneficiaryRelationship: relationship,
+        });
+        if (result.is_loan_likely && result.confidence > 0.6) {
+          const { postNotification } = await import(
+            "@/lib/notifications/dispatcher"
+          );
+          await postNotification({
+            kind: "loan_proposal",
+            subject: `Was this a loan?`,
+            body: result.reasoning || undefined,
+            dedupKey: `loan_proposal:${spendId}`,
+            priority: 0,
+            payload: {
+              kind_specific: {
+                proposed_loan: {
+                  direction: result.suggested_direction,
+                  counterparty_entity_id: input.beneficiary_entity_id!,
+                  origin_wallet_id: input.wallet_id,
+                  principal_base: amountBase,
+                  source_kind: "spend",
+                  source_id: spendId,
+                },
+              },
+            },
+          });
+        }
+      } catch {
+        /* dynamic-import safety net */
+      }
+    })();
   }
 
   await logEvent({

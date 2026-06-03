@@ -43,6 +43,8 @@ import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import type { SpendingAnomaly } from "@/lib/ai/spending-anomalies";
 import { SpendModal, type WalletOpt, type SpendModalDefaults } from "./spend-modal";
 import { VendorsSubview } from "./vendors-subview";
+import { LoanDetailSheet } from "./loan-detail-sheet";
+import { loanStatusLabel } from "@/lib/loans/direction";
 import type { VendorsSubviewRow, KnownVendorOption } from "@/lib/data/queries";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -63,6 +65,14 @@ export type SpendRow = {
   // tag attached — the audience filter accepts EITHER for_us===true OR
   // the audience tag id, mirroring the business/personal fallback.
   forUs: boolean;
+  // Loans workflow — given-loan rows in the spending list project the
+  // loan id + direction + status here so the chip filter + inline badge
+  // can render without a per-row re-fetch. Received loans have no
+  // origin spend and surface only in entity detail.
+  isLoan: boolean;
+  loanId: string | null;
+  loanDirection: "given" | "received" | null;
+  loanStatus: string | null;
 };
 
 // Audience pill ids. Maps to one of the four pinned (seeded by 0083)
@@ -97,6 +107,8 @@ export function SpendingView({
   liveSafeRemaining,
   liveSafeOvershoot,
   vendorsSubview,
+  initialLoansOnly = false,
+  initialOpenLoanId = null,
 }: {
   rows: SpendRow[];
   categories: SpendCategory[];
@@ -147,6 +159,13 @@ export function SpendingView({
     active: VendorsSubviewRow[];
     archived: VendorsSubviewRow[];
   };
+  // Loans deep-link seeds from /spending?loans=1&loan_id=<id>. When the
+  // user taps a loan notification we want to land them in the filtered
+  // Loans-only view AND surface the loan detail sheet on first paint —
+  // otherwise the deep link drops them on an unfiltered list with no
+  // sheet open, which reads as a dead link.
+  initialLoansOnly?: boolean;
+  initialOpenLoanId?: string | null;
 }) {
   const showSpends = tab === "spends";
   const showTrends = tab === "trends";
@@ -167,6 +186,18 @@ export function SpendingView({
   const [walletFilter, setWalletFilter] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   const [moreOpen, setMoreOpen] = useState(false);
+  // Loans workflow — Loans filter chip in the spends-tab row above the
+  // list. Toggling on narrows visible rows to spends with isLoan=true.
+  // Seeded from `initialLoansOnly` so a loan notification deep link
+  // (`/spending?loans=1&loan_id=<id>`) lands on the filtered view.
+  const [loansOnly, setLoansOnly] = useState<boolean>(initialLoansOnly);
+  // Loans workflow — loan detail sheet state. Opens when a loan row is
+  // tapped; the sheet pulls loan + returns via getLoanWithReturns server
+  // action proxy. Seeded from `initialOpenLoanId` so the deep link
+  // surfaces the sheet without a second tap.
+  const [openLoanId, setOpenLoanId] = useState<string | null>(
+    initialOpenLoanId,
+  );
   // Heatmap click-drill — filter the Spends list to a single PHT day
   // when the user picks a cell. Clearing happens on the same-cell
   // re-click or when month nav moves off the active month.
@@ -312,6 +343,13 @@ export function SpendingView({
     return wallets.filter((w) => used.has(w.id));
   }, [wallets, monthRows]);
 
+  // Loan-chip count — surfaced on the filter pill so the user sees how
+  // many loans this month before clicking.
+  const monthLoanCount = useMemo(
+    () => monthRows.filter((r) => r.isLoan).length,
+    [monthRows],
+  );
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     const audienceId =
@@ -363,6 +401,8 @@ export function SpendingView({
         if (!matched) return false;
       }
       if (walletFilter && r.walletId !== walletFilter) return false;
+      // Loans chip — show only loan-tagged spends when active.
+      if (loansOnly && !r.isLoan) return false;
       // Heatmap click-drill — filter to a single PHT day when selected.
       if (selectedHeatmapDay) {
         const rowPhtDate = phtDateString(new Date(r.spentAt));
@@ -382,6 +422,7 @@ export function SpendingView({
     categoryFilters,
     customFilters,
     walletFilter,
+    loansOnly,
     selectedHeatmapDay,
     search,
   ]);
@@ -395,6 +436,7 @@ export function SpendingView({
     categoryFilters.size > 0 ||
     customFilters.size > 0 ||
     !!walletFilter ||
+    loansOnly ||
     search.trim().length > 0;
 
   const showRecoveryCaption =
@@ -594,6 +636,13 @@ export function SpendingView({
               For us
             </AudiencePill>
             <span className="mx-1 h-5 w-px self-center bg-foreground/10" />
+            <AudiencePill
+              active={loansOnly}
+              onClick={() => setLoansOnly((v) => !v)}
+            >
+              {monthLoanCount > 0 ? `Loans · ${monthLoanCount}` : "Loans"}
+            </AudiencePill>
+            <span className="mx-1 h-5 w-px self-center bg-foreground/10" />
             <button
               type="button"
               onClick={() => setMoreOpen((v) => !v)}
@@ -696,6 +745,11 @@ export function SpendingView({
                   audienceIdSet={audienceIdSet}
                   vendorIconCacheByName={vendorIconCacheByName}
                   index={i}
+                  onOpenLoan={
+                    row.isLoan && row.loanId
+                      ? () => setOpenLoanId(row.loanId)
+                      : undefined
+                  }
                 />
               ))}
             </ul>
@@ -704,6 +758,18 @@ export function SpendingView({
       )}
 
       {showSpends && <FloatingLogButton onClick={openFresh} />}
+
+      {openLoanId && (
+        <LoanDetailSheet
+          loanId={openLoanId}
+          wallets={wallets}
+          baseCurrency={baseCurrency}
+          onClose={() => {
+            setOpenLoanId(null);
+            router.refresh();
+          }}
+        />
+      )}
 
       <SpendModal
         open={sheetOpen}
@@ -1031,6 +1097,7 @@ function SpendItemRow({
   audienceIdSet,
   vendorIconCacheByName,
   index,
+  onOpenLoan,
 }: {
   row: SpendRow;
   baseCurrency: CurrencyCode;
@@ -1041,6 +1108,9 @@ function SpendItemRow({
   audienceIdSet: Set<string>;
   vendorIconCacheByName: Map<string, VendorIconCacheRow>;
   index: number;
+  // Loans workflow — present only on loan rows. Clicking anywhere on
+  // the row opens the loan detail sheet.
+  onOpenLoan?: () => void;
 }) {
   const tags = row.categoryIds
     .filter((id) => !audienceIdSet.has(id))
@@ -1067,12 +1137,31 @@ function SpendItemRow({
       })
     : null;
 
+  // Loans workflow — when this row represents a loan, the WHOLE row is a
+  // tap target that opens the loan detail sheet. The vendor link inside
+  // keeps its own onClick stopPropagation so tapping the description still
+  // navigates to the vendor page; the badge keeps its own click for back-
+  // compat / accessibility (visible affordance). Without the row click the
+  // badge alone is a tiny mobile target.
+  const onRowClick = row.isLoan && onOpenLoan
+    ? (e: React.MouseEvent<HTMLLIElement>) => {
+        // Don't hijack clicks on actual links / buttons inside the row.
+        const target = e.target as HTMLElement;
+        if (target.closest("a,button")) return;
+        onOpenLoan();
+      }
+    : undefined;
+
   return (
     <motion.li
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.28, delay: Math.min(index, 8) * 0.02, ease: EASE }}
-      className="flex items-center gap-3 border-b border-foreground/10 py-2.5"
+      onClick={onRowClick}
+      className={cn(
+        "flex items-center gap-3 border-b border-foreground/10 py-2.5",
+        row.isLoan && onOpenLoan && "cursor-pointer hover:bg-foreground/[0.02]",
+      )}
     >
       <div className="w-12 shrink-0 text-[11px] tabular text-muted-foreground">
         {formatDate(row.spentAt)}
@@ -1086,6 +1175,7 @@ function SpendItemRow({
             vendorHref ? (
               <Link
                 href={vendorHref}
+                onClick={(e) => e.stopPropagation()}
                 className="truncate text-[13px] text-foreground transition-colors hover:text-[var(--brand)]"
               >
                 {row.description}
@@ -1105,6 +1195,27 @@ function SpendItemRow({
               className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--brand)]"
             />
           )}
+          {row.isLoan && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenLoan?.();
+              }}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-foreground/15 bg-foreground/[0.04] px-1.5 py-px text-[10px] font-medium uppercase tracking-wider text-foreground/75 transition-colors hover:border-foreground/30 hover:text-foreground"
+              title={`Loan — ${row.loanStatus ?? "open"}`}
+            >
+              <span>Loan</span>
+              <span className="text-foreground/45">·</span>
+              <span>{row.loanDirection ?? "given"}</span>
+              {row.loanStatus && row.loanStatus !== "open" && (
+                <>
+                  <span className="text-foreground/45">·</span>
+                  <span>{loanStatusLabel(row.loanStatus)}</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
           <span className="rounded-sm bg-foreground/[0.05] px-1.5 py-px text-foreground/80">
@@ -1118,6 +1229,7 @@ function SpendItemRow({
                   <span key={t.id}>
                     <Link
                       href={`/spending/category/${t.id}`}
+                      onClick={(e) => e.stopPropagation()}
                       className="text-muted-foreground/85 transition-colors hover:text-foreground"
                     >
                       {t.name}

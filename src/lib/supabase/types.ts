@@ -28,9 +28,25 @@ export type RecurringScheduleKind =
 
 export type RecurringSkipSource = "user_skip" | "covered_by_prepay";
 
-export type LoanDirection = "borrowed" | "lent";
+// Migration 0106 widened the legacy enum to TEXT and added the new
+// workflow's semantic values alongside the legacy ones. lent ⇄ given
+// and borrowed ⇄ received are kept side-by-side so legacy readers
+// (AI memory, curiosity sweep, safe-to-spend AI) keep working while
+// new-workflow writers use the given/received vocabulary.
+export type LoanDirection = "borrowed" | "lent" | "given" | "received";
 
-export type LoanStatus = "open" | "partial" | "closed";
+// Migration 0106 supersets the legacy ('open' | 'partial' | 'closed')
+// with the new states. partially_returned/returned replace partial/closed
+// in new-workflow rows; forgiven/written_off model the Sadaka conversion
+// and uncollectible buckets.
+export type LoanStatus =
+  | "open"
+  | "partial"
+  | "closed"
+  | "partially_returned"
+  | "returned"
+  | "forgiven"
+  | "written_off";
 
 export type LoanInstallmentStatus = "pending" | "paid" | "skipped";
 
@@ -595,6 +611,11 @@ export interface PaymentMethod {
   // registry in src/lib/brand/wallets.ts. NULL falls back to fuzzy
   // name-slug matching at render time.
   brand_key: string | null;
+  // Custom brand fallback (migration 0110). When brand_key has no entry in
+  // the curated registry AND the fuzzy slug match misses, the resolver
+  // renders these verbatim — a single-char glyph and a hex colour.
+  custom_brand_glyph: string | null;
+  custom_brand_color: string | null;
   notes: string | null;
   archived: boolean;
   created_at: string;
@@ -794,11 +815,15 @@ export interface RecurringSpendSkip {
 export interface Loan {
   id: string;
   user_id: string;
-  counterparty: string;
+  // Legacy text name — relaxed to nullable in 0106 because new-workflow
+  // rows carry counterparty_entity_id instead.
+  counterparty: string | null;
   direction: LoanDirection;
-  principal_amount: number;
-  principal_currency: CurrencyCode;
-  // PHP equiv locked at borrow time.
+  // Legacy fields (relaxed to nullable in 0106 — present on legacy rows,
+  // missing on new-workflow rows that write principal_base + currency).
+  principal_amount: number | null;
+  principal_currency: CurrencyCode | null;
+  // PHP equiv locked at borrow time. Always populated.
   principal_base: number;
   borrowed_at: string;
   expected_return_by: string | null;
@@ -806,6 +831,41 @@ export interface Loan {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  // Migration 0106 — new workflow columns.
+  counterparty_entity_id: string | null;
+  origin_wallet_id: string | null;
+  origin_spend_id: string | null;
+  due_date: string | null;
+  is_for_someone_else: boolean;
+  currency: CurrencyCode;
+}
+
+// Migration 0106 — partial returns on given/received loans. amount_base is
+// always positive; the actions layer routes the sign onto the wallet
+// (return on a given-loan credits return_wallet; return on a received-loan
+// debits it).
+export interface LoanReturn {
+  id: string;
+  user_id: string;
+  loan_id: string;
+  amount_base: number;
+  return_wallet_id: string | null;
+  returned_at: string;
+  notes: string | null;
+  created_at: string;
+}
+
+// Migration 0106 — audit trail when a given-loan is forgiven. Reuses the
+// canonical sadaka_ledger payment row instead of duplicating the pool
+// math; sadaka_payment_id points at the ledger row id.
+export interface LoanForgival {
+  id: string;
+  user_id: string;
+  loan_id: string;
+  sadaka_payment_id: string | null;
+  forgiven_at: string;
+  reason: string | null;
+  created_at: string;
 }
 
 export interface LoanInstallment {
@@ -1140,6 +1200,15 @@ export interface Entity {
   confidence: number | null;
   discovered_from: string | null;
   introduction_status: EntityIntroductionStatus;
+  // ── Loans workflow — migration 0107 (locked 2026-06-04)
+  // Denormalized counter of open + partial + partially_returned loans
+  // tied to this entity. Trigger-maintained; never written by hand.
+  outstanding_loan_count_cached: number;
+  // ── Loans workflow — migration 0111
+  // Denormalized sum of (principal − returns) for OPEN loans on this
+  // entity. Trigger-maintained from finance.loans AND finance.loan_returns
+  // so partial returns shift the cache without flipping loan status.
+  outstanding_loan_base_cached: number;
 }
 
 export interface SpendEntityLink {
@@ -1297,6 +1366,44 @@ export interface LineItem {
   amount: number;
 }
 
+// Migration 0108 — Faith subtab per-user config (Settings → Faith).
+// One row per user, calculation_method is the aladhan numeric method
+// (2 = ISNA is the default), madhab affects the asr shadow rule.
+export type FaithMadhab = "shafi" | "hanafi";
+
+export interface FaithSettings {
+  user_id: string;
+  latitude: number | null;
+  longitude: number | null;
+  calculation_method: number;
+  madhab: FaithMadhab;
+  ramadan_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Migration 0109 — Habits + per-day check-off entries.
+export type HabitCadence = "daily" | "weekly" | "custom";
+
+export interface Habit {
+  id: string;
+  user_id: string;
+  name: string;
+  cadence: HabitCadence;
+  target: number;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HabitEntry {
+  id: string;
+  habit_id: string;
+  user_id: string;
+  completed_on: string;
+  created_at: string;
+}
+
 export interface Invoice {
   id: string;
   user_id: string;
@@ -1444,6 +1551,11 @@ export type Database = {
       wallet_platform_metadata:    Table<WalletPlatformMetadataRow>;
       // Migration 0085 — daily safe-to-spend snapshot (LIVE DAILY SAFE).
       daily_safe_snapshots:        Table<DailySafeSnapshot>;
+      // Migration 0108 — Faith subtab: per-user prayer-times + qibla config.
+      faith_settings:              Table<FaithSettings>;
+      // Migration 0109 — Habits + per-day check-off entries.
+      habits:                      Table<Habit>;
+      habit_entries:               Table<HabitEntry>;
     };
     Views: {
       project_totals: View<{

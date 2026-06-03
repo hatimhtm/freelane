@@ -183,6 +183,11 @@ export function SpendModal({
     null,
   );
   const [beneficiaryTyped, setBeneficiaryTyped] = useState("");
+  // Loans workflow — "Was this a loan?" toggle. Mutually exclusive with
+  // sadaka (a loan implies an expected return; sadaka implies giving
+  // freely). Auto-enables is_for_someone_else because a loan always
+  // needs a counterparty.
+  const [isLoan, setIsLoan] = useState(false);
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [businessRelevant, setBusinessRelevant] = useState(false);
@@ -209,6 +214,7 @@ export function SpendModal({
     setIsForSomeoneElse(false);
     setBeneficiaryEntityId(null);
     setBeneficiaryTyped("");
+    setIsLoan(false);
     setDescription(defaults?.description ?? "");
     setNotes(defaults?.note ?? "");
     setBusinessRelevant(false);
@@ -429,6 +435,10 @@ export function SpendModal({
       setError("Enter an amount.");
       return;
     }
+    if (isLoan && (!isForSomeoneElse || !beneficiaryEntityId)) {
+      setError("Pick a beneficiary so the loan has someone to return it.");
+      return;
+    }
     const cleanItems = items
       .map((it) => ({
         name: it.name.trim(),
@@ -471,6 +481,10 @@ export function SpendModal({
         beneficiary_typed_name: isForSomeoneElse && !beneficiaryEntityId
           ? beneficiaryTyped.trim() || null
           : null,
+        // Loans workflow — explicit "Was this a loan?" toggle. Server
+        // only acts on this when both is_for_someone_else and a
+        // beneficiary entity are present (validated upstream on submit).
+        is_loan: isLoan && isForSomeoneElse && !!beneficiaryEntityId,
         items: cleanItems.length
           ? cleanItems.map((it) => ({ name: it.name, quantity: it.quantity, amount: it.amount, notes: it.notes }))
           : undefined,
@@ -661,6 +675,42 @@ export function SpendModal({
             </Row>
           )}
 
+          {/* Loans workflow — "Was this a loan?" toggle. Sits inside the
+              beneficiary block because a loan needs a counterparty. When
+              the user flips it on, isForSomeoneElse is auto-enabled so
+              the beneficiary picker reveals itself. Mutually exclusive
+              with the sadaka toggle below. */}
+          <Row label="Was this a loan?" optional>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-muted-foreground">
+                They&apos;ll return it later. Tracks per person.
+              </span>
+              <Switch
+                checked={isLoan}
+                onCheckedChange={(v) => {
+                  setIsLoan(v);
+                  if (v) {
+                    if (!isForSomeoneElse) setIsForSomeoneElse(true);
+                    if (sadaka) setSadaka(false);
+                  }
+                }}
+              />
+            </div>
+          </Row>
+
+          {/* When the loan switch is on but no beneficiary entity has been
+              picked yet, surface an inline nudge — without it the user can
+              hit Save and only learn from the submit error that a person
+              is required. The hint disappears as soon as a person is
+              selected or typed-in. */}
+          {isLoan &&
+            !beneficiaryEntityId &&
+            !beneficiaryTyped.trim() && (
+              <p className="-mt-1 text-[11px] leading-snug text-[var(--overdue)]">
+                A loan needs a person — pick one in &ldquo;Who?&rdquo; above.
+              </p>
+            )}
+
           <Row label="Description">
             <Textarea
               value={description}
@@ -750,7 +800,12 @@ export function SpendModal({
             </div>
             <Switch
               checked={sadaka}
-              onCheckedChange={setSadaka}
+              onCheckedChange={(v) => {
+                setSadaka(v);
+                // Loans workflow — sadaka and loan are mutually exclusive
+                // intents (one is given freely, the other is expected back).
+                if (v && isLoan) setIsLoan(false);
+              }}
             />
           </div>
 
