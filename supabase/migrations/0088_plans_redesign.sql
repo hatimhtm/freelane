@@ -27,32 +27,49 @@
 -- certainty / is_big_plan columns stay for backward compatibility but
 -- the new UI does not surface them. Existing seeded rows
 -- (MacBook + Apple Dev from 0027) are preserved as status='active'.
+--
+-- ─── ORDER MATTERS ──────────────────────────────────────────────────
+-- The partial indexes from 0027 (planned_spends_open_idx,
+-- planned_spends_big_idx) reference the literal 'committed' in their
+-- WHERE clauses. Once the type is renamed to _old and the new type
+-- created, the ALTER COLUMN TYPE step tries to validate those indexes
+-- against the new enum and fails with
+--   "operator does not exist: planned_spend_status = planned_spend_status_old"
+-- because 'committed' doesn't exist in the new vocabulary. Fix: drop
+-- those indexes BEFORE renaming the type, then recreate after the swap.
 
--- ─── Step 0: stage existing 'committed' rows back to 'active' before
--- enum swap. Same logical state as 'planned' under the new model.
+-- ─── Step 0: stage existing 'committed' rows back to active ────────
+-- Same logical state as 'planned' under the new model. Null out the
+-- now-defunct columns before they're dropped in step 5.
 update finance.planned_spends
    set committed_base = null,
        committed_at = null
  where status::text = 'committed';
 
--- Step 1: rename old enum so the new one can take its name.
+-- ─── Step 0.5: drop the enum-literal-referencing indexes ────────────
+-- Must happen BEFORE the type rename / column-type swap so the
+-- ALTER COLUMN doesn't try to validate them.
+drop index if exists finance.planned_spends_open_idx;
+drop index if exists finance.planned_spends_big_idx;
+
+-- ─── Step 1: rename old enum so the new one can take its name ──────
 alter type finance.planned_spend_status rename to planned_spend_status_old;
 
--- Step 2: create the new enum without 'committed'. 'planned' renames to
--- 'active' in the UI but we keep the wire value for backward compat —
--- the spendings-side filters key off this enum and a rename would
--- ripple through every reader. Add 'bought' (replaces 'done' semantics
--- for the new flow), keep 'done' for any historical row.
+-- ─── Step 2: create the new enum without 'committed' ───────────────
+-- 'planned' renames to 'active' in the UI but we keep the wire value
+-- for backward compat — the spendings-side filters key off this enum
+-- and a rename would ripple through every reader. Add 'bought' (new
+-- materialized state), keep 'done' for any historical row, add
+-- 'abandoned' (distinct from user-cancelled).
 create type finance.planned_spend_status as enum (
   'active', 'planned', 'bought', 'done', 'cancelled', 'abandoned'
 );
 
--- Step 3: alter the column to the new type. Cast via text for every
--- existing row. Rows previously 'committed' (already nulled above) get
--- mapped to 'active' since the new world has no lock; 'planned' stays
--- 'planned' (still meaningful — "intent, not yet purchased"). 'done'
--- stays for historical materialized rows; the markPlanBought action
--- writes 'bought' going forward.
+-- ─── Step 3: alter the column to the new type ──────────────────────
+-- Drop the default first so the type swap doesn't try to recast it.
+-- Map rows previously 'committed' (already nulled above) to 'active'
+-- since the new world has no lock; everything else passes through
+-- text → new enum.
 alter table finance.planned_spends
   alter column status drop default;
 
@@ -68,15 +85,11 @@ alter table finance.planned_spends
 alter table finance.planned_spends
   alter column status set default 'planned'::finance.planned_spend_status;
 
--- Step 4: drop the old enum. Indexes referencing 'committed' need to be
--- recreated first — the partial indexes from 0027 reference the literal
--- value 'committed' in their WHERE clause, which is now stale.
-drop index if exists finance.planned_spends_open_idx;
-drop index if exists finance.planned_spends_big_idx;
-
+-- ─── Step 4: drop the old enum type ────────────────────────────────
+-- All columns and indexes that referenced it are off it now.
 drop type finance.planned_spend_status_old;
 
--- Recreate the open + big indexes against the new vocabulary.
+-- ─── Step 5: recreate the indexes with the new vocabulary ──────────
 create index if not exists planned_spends_open_idx
   on finance.planned_spends (user_id, planned_for)
   where status in ('planned', 'active');
@@ -85,12 +98,12 @@ create index if not exists planned_spends_big_idx
   on finance.planned_spends (user_id, planned_for)
   where is_big_plan = true and status in ('planned', 'active');
 
--- ─── Step 5: drop the lock-mechanism columns ──
+-- ─── Step 6: drop the lock-mechanism columns ───────────────────────
 alter table finance.planned_spends
   drop column if exists committed_base,
   drop column if exists committed_at;
 
--- ─── Step 6: add new columns for the redesign ──
+-- ─── Step 7: add new columns for the redesign ──────────────────────
 
 -- price_source — where the current expected_base came from. Default
 -- 'user' for existing rows (the seeded MacBook + Apple Dev rows are
