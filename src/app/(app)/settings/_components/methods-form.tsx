@@ -25,8 +25,28 @@ import {
   deletePaymentMethod,
   updatePaymentMethod,
 } from "@/lib/data/actions";
-import { WALLET_BRANDS } from "@/lib/brand/wallets";
 import type { Currency, CurrencyCode, PaymentMethod, PaymentMethodKind } from "@/lib/supabase/types";
+import type { WalletBrandKey } from "@/lib/brand/wallets";
+import { BrandPicker } from "./brand-picker";
+
+// Source-of-truth narrowing set for the brand_key column. Legacy rows
+// might hold a string outside the WalletBrandKey union (the DB column is
+// plain text); narrowing at the form boundary turns those into the same
+// "unknown → null" fallback the picker treats as Auto instead of trusting
+// an unsafe cast.
+const KNOWN_BRAND_KEYS: ReadonlySet<WalletBrandKey> = new Set<WalletBrandKey>([
+  "coin_ph",
+  "gcash",
+  "cash",
+  "wise",
+  "coinmama",
+  "cfg_bank",
+  "custom",
+]);
+
+// Same regex the DB CHECK enforces. Centralised so the picker preview, the
+// form guard, and the action-layer fallback all read the same source.
+const HEX_COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 const KINDS: { value: PaymentMethodKind; label: string }[] = [
   { value: "bank", label: "Bank" },
@@ -149,63 +169,25 @@ function IconBtn({ children, onClick, label, danger }: { children: React.ReactNo
   );
 }
 
-// Brand picker tiles. The 6 canonical wallets seeded in
-// wallet_platform_metadata + an "Auto" tile that clears brand_key so the
-// resolver falls back to fuzzy name matching. Selection writes the tile's
-// brand_key to the form state; submit pipes that into createPaymentMethod
-// / updatePaymentMethod (which both accept brand_key now).
-function BrandPicker({
-  selected,
-  onSelect,
-}: {
-  selected: string | null;
-  onSelect: (key: string | null) => void;
-}) {
-  const tiles = Object.values(WALLET_BRANDS);
-  const autoActive = !selected;
-  return (
-    <div className="mt-1.5 grid grid-cols-3 gap-1.5 sm:grid-cols-4">
-      <button
-        type="button"
-        onClick={() => onSelect(null)}
-        aria-pressed={autoActive}
-        className={cn(
-          "flex flex-col items-center justify-center gap-1 rounded-lg border px-2 py-2.5 text-[11px] transition-colors",
-          autoActive
-            ? "border-foreground bg-foreground/5 text-foreground"
-            : "border-border/60 text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <span aria-hidden className="grid size-7 place-items-center rounded-md border border-dashed border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">A</span>
-        <span>Auto</span>
-      </button>
-      {tiles.map((brand) => {
-        const active = selected === brand.brandKey;
-        const Glyph = brand.Glyph;
-        return (
-          <button
-            key={brand.brandKey}
-            type="button"
-            onClick={() => onSelect(brand.brandKey)}
-            aria-pressed={active}
-            className={cn(
-              "flex flex-col items-center justify-center gap-1 rounded-lg border px-2 py-2.5 text-[11px] transition-colors",
-              active
-                ? "border-foreground bg-foreground/5 text-foreground"
-                : "border-border/60 text-muted-foreground hover:text-foreground",
-            )}
-            style={brand.color ? { borderColor: active ? brand.color : undefined } : undefined}
-          >
-            <Glyph className="size-7" />
-            <span className="truncate">{brand.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+// BrandPicker (with Custom-fallback support) lives in
+// ./brand-picker.tsx so the same picker can be reused outside the methods
+// dialog. See migration 0110 for the custom_brand_glyph + custom_brand_color
+// columns it writes.
 
-type MethodValues = { name: string; kind: string; currency_in: string | null; currency_out: string | null; monthly_fee_php: number; monthly_fee_currency: string | null; is_holding: boolean; overdraft_tolerance_base: number; notes: string | null; brand_key: string | null };
+type MethodValues = {
+  name: string;
+  kind: string;
+  currency_in: string | null;
+  currency_out: string | null;
+  monthly_fee_php: number;
+  monthly_fee_currency: string | null;
+  is_holding: boolean;
+  overdraft_tolerance_base: number;
+  notes: string | null;
+  brand_key: WalletBrandKey | null;
+  custom_brand_glyph: string | null;
+  custom_brand_color: string | null;
+};
 
 function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial?: PaymentMethod; currencies: Currency[]; baseCurrency: string; onSubmit: (v: MethodValues) => Promise<void> }) {
   const [v, setV] = useState({
@@ -218,13 +200,45 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
     is_holding: initial?.is_holding ?? false,
     overdraft_tolerance_base: Number(initial?.overdraft_tolerance_base ?? 0),
     notes: initial?.notes ?? "",
-    brand_key: initial?.brand_key ?? null,
+    // Narrow at the boundary instead of trusting the raw text column.
+    // Legacy rows could hold a brand_key string outside WalletBrandKey;
+    // those collapse to null here so the picker shows them as Auto and
+    // the resolver falls through to fuzzy match — a clean degrade
+    // instead of a silent typo-driven cast.
+    brand_key:
+      initial?.brand_key && KNOWN_BRAND_KEYS.has(initial.brand_key as WalletBrandKey)
+        ? (initial.brand_key as WalletBrandKey)
+        : null,
+    custom_brand_glyph: initial?.custom_brand_glyph ?? null,
+    custom_brand_color: initial?.custom_brand_color ?? null,
   });
   const [pending, start] = useTransition();
   const ANY = "__any__";
 
   function submit() {
     if (!v.name.trim()) { toast.error("Name is required"); return; }
+    // Empty-glyph guard. The DB constraint is char_length 1..4 on
+    // custom_brand_glyph, so an empty-string here would raise a raw
+    // Postgres error in the toast. Coerce empty to null at the boundary
+    // — the resolver falls back to deriveInitial(name) when the column
+    // is null, which is exactly the friendly default we want.
+    const trimmedGlyph = v.custom_brand_glyph?.trim() || null;
+    if (v.brand_key === "custom" && !trimmedGlyph) {
+      toast.error("Custom brand needs a one- to four-character glyph.");
+      return;
+    }
+    // Same regex the DB CHECK enforces — surface a friendly inline
+    // message rather than letting the Postgres constraint kick a raw
+    // payment_methods_custom_brand_color_format error to the toast.
+    const trimmedColor = v.custom_brand_color?.trim() || null;
+    if (
+      v.brand_key === "custom" &&
+      trimmedColor &&
+      !HEX_COLOR_RE.test(trimmedColor)
+    ) {
+      toast.error("Colour must be a hex like #ff6600.");
+      return;
+    }
     start(async () => {
       await onSubmit({
         name: v.name.trim(),
@@ -237,6 +251,12 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
         overdraft_tolerance_base: Math.max(0, Number(v.overdraft_tolerance_base) || 0),
         notes: v.notes.trim() || null,
         brand_key: v.brand_key,
+        // Only persist custom values when the Custom tile is selected — flushing
+        // them on every save prevents stale glyphs from haunting an Auto-resolved
+        // wallet later. Trim trailing whitespace on the glyph so visually-empty
+        // strings don't sneak past the DB length check.
+        custom_brand_glyph: v.brand_key === "custom" ? trimmedGlyph : null,
+        custom_brand_color: v.brand_key === "custom" ? trimmedColor : null,
       });
     });
   }
@@ -328,8 +348,19 @@ function MethodDialog({ initial, currencies, baseCurrency, onSubmit }: { initial
             Pick the brand so the right glyph + colour show up everywhere. Leave it on Auto for a fuzzy match against the wallet name.
           </p>
           <BrandPicker
-            selected={v.brand_key}
-            onSelect={(key) => setV({ ...v, brand_key: key })}
+            value={{
+              brandKey: v.brand_key,
+              customGlyph: v.custom_brand_glyph,
+              customColor: v.custom_brand_color,
+            }}
+            onChange={(next) =>
+              setV({
+                ...v,
+                brand_key: next.brandKey,
+                custom_brand_glyph: next.customGlyph,
+                custom_brand_color: next.customColor,
+              })
+            }
           />
         </div>
         <div>

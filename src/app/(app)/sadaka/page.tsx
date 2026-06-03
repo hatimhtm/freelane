@@ -1,6 +1,7 @@
 import { readPoolBalance, listLedgerEvents } from "@/lib/sadaka/ledger";
 import { getSuggestedToday } from "@/lib/sadaka/suggestion";
 import { listAutoRules } from "@/lib/sadaka/auto-rules-actions";
+import { getSadakaConfig } from "@/lib/sadaka/config";
 import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import { getDashboardData } from "@/lib/data/queries";
 import type { CurrencyCode } from "@/lib/supabase/types";
@@ -9,17 +10,19 @@ import { SadakaPoolHero } from "./_components/sadaka-pool-hero";
 import { SadakaActivity } from "./_components/sadaka-activity";
 import { SadakaRhythm } from "./_components/sadaka-rhythm";
 import { SadakaAutoRules } from "./_components/sadaka-auto-rules";
+import { SadakaConfigCard } from "./_components/sadaka-config-card";
 
 export const metadata = { title: "Sadaka" };
 
 export default async function SadakaPage() {
   // Fan-out is intentionally serial-tolerant — every reader is best-effort
   // and falls back to a calm default if the table is missing.
-  const [pool, events, suggestion, rules, dash] = await Promise.all([
+  const [pool, events, suggestion, rules, config, dash] = await Promise.all([
     readPoolBalance(),
     listLedgerEvents(20),
     getSuggestedToday(),
     listAutoRules(),
+    getSadakaConfig(),
     getDashboardData(),
   ]);
 
@@ -48,10 +51,11 @@ export default async function SadakaPage() {
         wallets={wallets}
       />
 
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <SadakaActivity events={events} currency={currency} />
         <SadakaRhythm events={events} currency={currency} />
         <SadakaAutoRules initialRules={rules} />
+        <SadakaConfigCard initial={config} />
       </section>
     </div>
   );

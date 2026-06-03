@@ -7,17 +7,26 @@ import {
   Bell,
   Calendar,
   CalendarRange,
+  Database,
   FolderKanban,
   HandHeart,
+  Heart,
+  Info,
   LayoutDashboard,
   LogOut,
   MessagesSquare,
   Plus,
   Receipt,
   RefreshCw,
+  Repeat,
   Settings,
+  ShieldCheck,
+  Sparkles,
+  Stars,
   Store,
   Sun,
+  Tags,
+  User,
   Users,
   Wallet,
 } from "lucide-react";
@@ -144,17 +153,61 @@ export function CommandPaletteHost() {
             <CommandItem onSelect={() => go("/activity")}>
               <Activity className="mr-2 h-4 w-4" /> Activity
             </CommandItem>
-            {/* What's New moved to Settings → Updates (freelane-whatsnew-
-                design 2026-06-02). Legacy /changelog bookmarks are
-                redirected via next.config.ts's redirects() entry. */}
-            <CommandItem onSelect={() => go("/settings/updates")}>
-              <RefreshCw className="mr-2 h-4 w-4" /> Updates
-            </CommandItem>
+            {/* What's New (Settings → Updates) is the single canonical
+                entry — it lives in the Settings group below with the
+                changelog/version keywords, so duplicating it here would
+                fire two cmdk rows on the same query. */}
             <CommandItem onSelect={() => go("/settings")}>
               <Settings className="mr-2 h-4 w-4" /> Settings
             </CommandItem>
             <CommandItem onSelect={lockFreelane}>
               <LogOut className="mr-2 h-4 w-4" /> Lock Freelane
+            </CommandItem>
+          </CommandGroup>
+          <CommandSeparator />
+          {/* Settings — the 12-subtab hub. Sorted below the primary
+              navigation groups so cmdk fuzzy-match still surfaces a
+              top-level page (e.g. /payments) above its sibling settings
+              entry (e.g. /settings/wallets) when the user types a
+              partial. The keywords prop steers the match for entries
+              whose tab name differs from common shorthand (e.g. typing
+              "subscription" finds Cycles). */}
+          <CommandGroup heading="Settings">
+            <CommandItem keywords={["profile", "name", "timezone", "currency"]} onSelect={() => go("/settings/profile")}>
+              <User className="mr-2 h-4 w-4" /> Profile
+            </CommandItem>
+            <CommandItem keywords={["wallets", "methods", "rates", "fx", "opening"]} onSelect={() => go("/settings/wallets")}>
+              <Wallet className="mr-2 h-4 w-4" /> Wallets
+            </CommandItem>
+            <CommandItem keywords={["cycles", "recurring", "subscription", "bills"]} onSelect={() => go("/settings/cycles")}>
+              <Repeat className="mr-2 h-4 w-4" /> Cycles
+            </CommandItem>
+            <CommandItem keywords={["body", "wellbeing", "sleep", "habits", "smoking"]} onSelect={() => go("/settings/body")}>
+              <Heart className="mr-2 h-4 w-4" /> Body & Wellbeing
+            </CommandItem>
+            <CommandItem keywords={["faith", "prayer", "qibla", "hijri", "ramadan", "islam", "adhan", "masjid"]} onSelect={() => go("/settings/faith")}>
+              <Stars className="mr-2 h-4 w-4" /> Faith
+            </CommandItem>
+            <CommandItem keywords={["tags", "categories", "labels"]} onSelect={() => go("/settings/tags")}>
+              <Tags className="mr-2 h-4 w-4" /> Tags
+            </CommandItem>
+            <CommandItem keywords={["ai", "memory", "facts"]} onSelect={() => go("/settings/ai")}>
+              <Sparkles className="mr-2 h-4 w-4" /> AI
+            </CommandItem>
+            <CommandItem keywords={["notifications", "push", "alerts"]} onSelect={() => go("/settings/notifications")}>
+              <Bell className="mr-2 h-4 w-4" /> Notifications
+            </CommandItem>
+            <CommandItem keywords={["privacy", "data", "export", "delete", "gdpr", "export data", "delete account"]} onSelect={() => go("/settings/privacy")}>
+              <ShieldCheck className="mr-2 h-4 w-4" /> Privacy & Data
+            </CommandItem>
+            <CommandItem keywords={["updates", "changelog", "version"]} onSelect={() => go("/settings/updates")}>
+              <RefreshCw className="mr-2 h-4 w-4" /> Updates
+            </CommandItem>
+            <CommandItem keywords={["advanced", "flags", "dev", "experimental", "beta"]} onSelect={() => go("/settings/advanced")}>
+              <Database className="mr-2 h-4 w-4" /> Advanced
+            </CommandItem>
+            <CommandItem keywords={["about", "version", "build", "contact", "support", "feedback"]} onSelect={() => go("/settings/about")}>
+              <Info className="mr-2 h-4 w-4" /> About
             </CommandItem>
           </CommandGroup>
           <CommandSeparator />
@@ -192,7 +245,7 @@ export function CommandPaletteHost() {
             <CommandItem onSelect={() => go("/payments?new=1")}>
               <Plus className="mr-2 h-4 w-4" /> Log a payment
             </CommandItem>
-            <CommandItem onSelect={() => go("/settings#rates")}>
+            <CommandItem onSelect={() => go("/settings/wallets#rates")}>
               <RefreshCw className="mr-2 h-4 w-4" /> Update exchange rates
             </CommandItem>
           </CommandGroup>

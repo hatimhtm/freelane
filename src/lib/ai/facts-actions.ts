@@ -79,9 +79,10 @@ export async function upsertFact(
       )
       .select("id")
       .maybeSingle();
-    if (input.subjectId) {
-      revalidatePath(`/clients/${input.subjectId}`);
-    }
+    // Funnel every fact-writer through revalidateFactSurfaces so vendor /
+    // entity / project / plan / user upserts also invalidate /settings/ai
+    // (the per-subject viewer) instead of only /clients/{id}.
+    revalidateFactSurfaces(input.subjectKind, input.subjectId);
     return { id: (data?.id as string) ?? null };
   });
 }
@@ -91,6 +92,45 @@ export type EditFactPatch = {
   confidence?: number;
   evidence?: string | null;
 };
+
+// Fact lives across several detail routes — clients/{id}, vendors/{id},
+// entities/{id}, projects/{id}, plans/{id} — and on /settings/ai itself.
+// A single revalidate helper keeps every fact mutator in sync so Settings
+// → AI edits don't leave stale data on the per-subject pages.
+//
+// Sync by design — every body is a synchronous revalidatePath call. Marking
+// this async would force unnecessary awaits at the callsites and obscure
+// the intent (no I/O, no promises). Next.js 16 forbids non-async EXPORTS
+// from a "use server" module, but inner helpers may be sync.
+function revalidateFactSurfaces(
+  subjectKind: string | null,
+  subjectId: string | null | undefined,
+) {
+  // Settings → AI is the viewer surface — always invalidate so the list
+  // mirrors the write without relying on the caller's router.refresh().
+  revalidatePath("/settings/ai");
+  if (!subjectKind) return;
+  if (subjectKind === "client" && subjectId) {
+    revalidatePath(`/clients/${subjectId}`);
+    revalidatePath("/clients");
+  } else if (subjectKind === "vendor" && subjectId) {
+    revalidatePath(`/vendors/${subjectId}`);
+    revalidatePath("/spending/vendors");
+  } else if (subjectKind === "entity" && subjectId) {
+    revalidatePath(`/entities/${subjectId}`);
+    revalidatePath("/clients/people");
+  } else if (subjectKind === "project" && subjectId) {
+    revalidatePath(`/projects/${subjectId}`);
+    revalidatePath("/projects");
+  } else if (subjectKind === "plan" && subjectId) {
+    revalidatePath(`/plans/${subjectId}`);
+    revalidatePath("/plans");
+  }
+  // user-scope facts surface across many pages — Today reads them too —
+  // but a blanket revalidate would over-invalidate. Settings/ai gets the
+  // refresh above; per-page consumers can do their own targeted revalidate
+  // when they call the mutator.
+}
 
 // Edit a fact in place. `key` is read-only by design — the partial-unique
 // indexes treat key as part of the slot identity, so renaming would
@@ -121,17 +161,26 @@ export async function editFact(
 
     const { data: row } = await supabase
       .from("ai_user_facts")
-      .select("subject_id")
+      .select("subject_kind, subject_id")
       .eq("user_id", user.id)
       .eq("id", factId)
       .maybeSingle();
-    await supabase
+    // Chain .select('id') on the UPDATE so a row that was archived
+    // concurrently (or that RLS quietly hides) doesn't silently succeed.
+    // We need to know "did this affect a row?" or the toast lies.
+    const { data: updated } = await supabase
       .from("ai_user_facts")
       .update(update)
       .eq("user_id", user.id)
-      .eq("id", factId);
-    const subjectId = row?.subject_id as string | null | undefined;
-    if (subjectId) revalidatePath(`/clients/${subjectId}`);
+      .eq("id", factId)
+      .select("id");
+    if (!updated || updated.length === 0) {
+      throw new Error("Fact not found");
+    }
+    revalidateFactSurfaces(
+      (row?.subject_kind as string) ?? null,
+      row?.subject_id as string | null | undefined,
+    );
     return null;
   });
 }
@@ -149,17 +198,25 @@ export async function deleteFact(
     const now = new Date().toISOString();
     const { data: row } = await supabase
       .from("ai_user_facts")
-      .select("subject_id")
+      .select("subject_kind, subject_id")
       .eq("user_id", user.id)
       .eq("id", factId)
       .maybeSingle();
-    await supabase
+    // Same "did the UPDATE bite?" check as editFact — a concurrent
+    // archive or an RLS miss should NOT toast "forgotten".
+    const { data: archived } = await supabase
       .from("ai_user_facts")
       .update({ archived_at: now })
       .eq("user_id", user.id)
-      .eq("id", factId);
-    const subjectId = row?.subject_id as string | null | undefined;
-    if (subjectId) revalidatePath(`/clients/${subjectId}`);
+      .eq("id", factId)
+      .select("id");
+    if (!archived || archived.length === 0) {
+      throw new Error("Fact not found");
+    }
+    revalidateFactSurfaces(
+      (row?.subject_kind as string) ?? null,
+      row?.subject_id as string | null | undefined,
+    );
     return null;
   });
 }
@@ -216,8 +273,10 @@ export async function acceptClientPatternAnswer(
       .eq("id", notificationId);
 
     revalidatePath("/notifications");
-    revalidatePath(`/clients/${clientId}`);
-    revalidatePath("/clients");
+    // Funnel through revalidateFactSurfaces so /settings/ai (the per-subject
+    // viewer) also picks up the brand-new fact written above — previously
+    // only /clients was flushed, so the viewer needed a manual refresh.
+    revalidateFactSurfaces("client", clientId);
     return null;
   });
 }

@@ -12,6 +12,7 @@ import { CommandPaletteHost } from "@/components/app/command-palette";
 import { NotificationModalHost } from "@/components/app/notification-modal-host";
 import { NotificationLinkInterceptor } from "@/components/app/notification-link-interceptor";
 import { ServiceWorkerRegistrar } from "@/components/app/service-worker-registrar";
+import { StatsLettersVisibilityProvider } from "@/components/app/stats-letters-visibility";
 import { hasGemini } from "@/lib/ai/gemini";
 import { readNotificationSettings } from "@/lib/notifications/dispatcher";
 import { loadChangelog } from "@/lib/changelog/load";
@@ -40,6 +41,7 @@ export default async function AppLayout({
   return (
     <NotificationModalHost>
       <ChatbotContextProvider>
+        <StatsLettersVisibilityProvider>
         <div className="relative flex min-h-dvh bg-background">
           <BackgroundOrbs />
           <FxAutoRefresh />
@@ -62,6 +64,7 @@ export default async function AppLayout({
           <ChatbotPill enabled={aiEnabled} />
           <CommandPaletteHost />
         </div>
+        </StatsLettersVisibilityProvider>
       </ChatbotContextProvider>
     </NotificationModalHost>
   );
