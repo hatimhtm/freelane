@@ -37,6 +37,16 @@ export type ChatbotActiveCardArg = {
 // Keep this list in sync with the dispatcher in chat-actions.ts.
 export const CHATBOT_INTENT = {
   IDENTIFY_VENDOR: "identify_vendor",
+  // Vendors workflow — always-ask canonicalize. Payload carries
+  // suggested_answers (top brain chips), alternatives, allow_skip.
+  CLARIFY_VENDOR: "clarify_vendor",
+  // Vendors workflow — per-card AI dot on Active vendor cards.
+  // Unlike CLARIFY_VENDOR (a structured-reply intent), VENDOR_DETAIL
+  // is a casual Q/A scope: the user is asking the chatbot about THIS
+  // vendor. postChatMessage forwards the reply to chat-answer with
+  // the vendor's context (price history, recent spends) merged into
+  // PageContext.relevantData. No structured-action short-circuit.
+  VENDOR_DETAIL: "vendor_detail",
 } as const;
 export type ChatbotIntent =
   (typeof CHATBOT_INTENT)[keyof typeof CHATBOT_INTENT];
@@ -53,6 +63,41 @@ export function isIdentifyVendorIntent(
   const d = card.data as Record<string, unknown>;
   return (
     d.intent === CHATBOT_INTENT.IDENTIFY_VENDOR &&
+    typeof d.vendor_id === "string" &&
+    typeof d.vendor_name === "string"
+  );
+}
+
+// Vendors workflow — always-ask canonicalize intent. The reply handler
+// in src/lib/ai/chatbot/intent-handlers/clarify-vendor.ts writes the
+// canonical_name + brand_key + pushes raw_user_typed_name onto aliases.
+export function isClarifyVendorIntent(
+  card: ChatbotActiveCardArg | undefined,
+): card is ChatbotActiveCardArg & {
+  data: { intent: "clarify_vendor"; vendor_id: string; vendor_name: string };
+} {
+  if (!card?.data) return false;
+  const d = card.data as Record<string, unknown>;
+  return (
+    d.intent === CHATBOT_INTENT.CLARIFY_VENDOR &&
+    typeof d.vendor_id === "string" &&
+    typeof d.vendor_name === "string"
+  );
+}
+
+// Vendors workflow — per-card AI dot on Active vendor cards. Pure
+// Q/A scope (no structured-reply short-circuit), so this guard only
+// drives the per-card data fetcher in spending-data.ts — there's no
+// matching intent handler in chat-actions.
+export function isVendorDetailIntent(
+  card: ChatbotActiveCardArg | undefined,
+): card is ChatbotActiveCardArg & {
+  data: { intent: "vendor_detail"; vendor_id: string; vendor_name: string };
+} {
+  if (!card?.data) return false;
+  const d = card.data as Record<string, unknown>;
+  return (
+    d.intent === CHATBOT_INTENT.VENDOR_DETAIL &&
     typeof d.vendor_id === "string" &&
     typeof d.vendor_name === "string"
   );

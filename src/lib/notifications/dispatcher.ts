@@ -131,10 +131,19 @@ export async function readNotificationSettings(): Promise<NotificationSettings> 
   return settings;
 }
 
-export async function postNotification(input: NotificationInput): Promise<{ ok: boolean }> {
+// Result shape: `ok` stays true when the dispatcher accepted the request,
+// `inserted` is true only when a new row actually landed in
+// notifications_inbox. The (user_id, dedup_key) partial unique index
+// silently rejects duplicates; without surfacing that, callers (the
+// vendor_clarify kickoff + backfill) bump per-vendor debounce stamps
+// for deliveries that never happened. Backward-compatible: existing
+// `.ok`-only callers keep working.
+export async function postNotification(
+  input: NotificationInput,
+): Promise<{ ok: boolean; inserted: boolean }> {
   try {
     const user = await getAuthUser();
-    if (!user) return { ok: false };
+    if (!user) return { ok: false, inserted: false };
     const supabase = await createClient();
 
     // Resolve in-app + push gating via the shared effectivePerKindPref so
@@ -152,7 +161,7 @@ export async function postNotification(input: NotificationInput): Promise<{ ok: 
       input.kind,
     );
 
-    if (!effective.in_app) return { ok: false };
+    if (!effective.in_app) return { ok: false, inserted: false };
 
     const { data: inserted } = await supabase
       .from("notifications_inbox")
@@ -206,9 +215,14 @@ export async function postNotification(input: NotificationInput): Promise<{ ok: 
       }
     }
 
-    return { ok: true };
+    // dedup_key collision returns null inserted — the row already
+    // existed under the same (user_id, dedup_key). ok stays true (the
+    // dispatcher itself didn't fail) but inserted=false signals to
+    // callers that no NEW notification reached the user, so any
+    // "stamp debounce on successful delivery" logic skips this round.
+    return { ok: true, inserted: !!inserted };
   } catch {
-    return { ok: false };
+    return { ok: false, inserted: false };
   }
 }
 

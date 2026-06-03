@@ -4,7 +4,9 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
 import { phtDateString } from "@/lib/utils";
+import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
 import type {
+  CurrencyCode,
   Client,
   Project,
   Payment,
@@ -892,6 +894,48 @@ export async function getAppChangelog(limit = 50) {
 
 // ─────────────────────────── Tier 2 fetchers ──
 
+// Light-weight "known vendors" projection for the SpendModal vendor
+// row's inline dropdown. Vendors workflow (locked 2026-06-02):
+//   "Vendor: text input + dropdown of matching known vendors. No AI in
+//    critical path. On submit, the typed text either resolves to one of
+//    these ids OR auto-creates a new vendor (which kicks off the
+//    canonicalize-vendor brain in the background)."
+// We hand back just id + display_name + slug + aliases so the client can
+// fuzz-match by substring without paying for the full Vendor row weight.
+export type KnownVendorOption = {
+  id: string;
+  display_name: string;
+  slug: string;
+  aliases: string[];
+};
+
+export async function getKnownVendorsForModal(): Promise<KnownVendorOption[]> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const { data } = await supabase
+    .from("vendors")
+    .select("id, canonical_name, raw_user_typed_name, slug, aliases")
+    .eq("user_id", user.id)
+    .eq("archived", false);
+  const rows = (data ?? []) as Array<{
+    id: string;
+    canonical_name: string | null;
+    raw_user_typed_name: string | null;
+    slug: string | null;
+    aliases: unknown;
+  }>;
+  return rows.map((v) => ({
+    id: v.id,
+    display_name:
+      v.canonical_name ?? v.raw_user_typed_name ?? "Untitled vendor",
+    slug: v.slug ?? "",
+    aliases: Array.isArray(v.aliases)
+      ? (v.aliases as unknown[]).filter(
+          (a): a is string => typeof a === "string" && a.length > 0,
+        )
+      : [],
+  }));
+}
+
 // All vendors + their aliases + the linked-spend rollup. Drives /vendors.
 export async function getVendorsData() {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
@@ -908,6 +952,116 @@ export async function getVendorsData() {
     links: (links.data ?? []) as SpendVendorLink[],
     spends: (spends.data ?? []) as Spend[],
     settings: (settings.data ?? null) as Settings | null,
+  };
+}
+
+// Vendors workflow (/spending/vendors) data loader. Aggregates spends per
+// vendor so the sub-view can render lifetime totals, spend counts, last
+// visits, and surface the needs-identification queue in a separate
+// collapsed section without round-tripping a second query.
+//
+// Display name uses coalesce(canonical_name, raw_user_typed_name) — the
+// brain proposes a canonical form (overwritten on the row when confidence
+// >= 0.6), but pre-identification we fall back to the raw text the user
+// typed so the UI never shows a null.
+export type VendorsSubviewRow = {
+  vendor_id: string;
+  display_name: string;
+  spend_count: number;
+  total_base: number;
+  last_visit: string | null;
+  confidence: number | null;
+  archived: boolean;
+  needs_identification: boolean;
+  identification_skipped: boolean;
+  // Pre-resolved canonical_name + brand_key + aliases from the
+  // canonicalize-vendor brain. The "Needs identification" panel uses
+  // them to seed the chatbot pill with the brain's existing chips
+  // (instead of dispatching empty arrays and forcing a re-run on
+  // every tap).
+  canonical_name: string | null;
+  brand_key: string | null;
+  aliases: string[];
+};
+
+export type VendorsSubviewData = {
+  needsIdentification: VendorsSubviewRow[];
+  active: VendorsSubviewRow[];
+  archived: VendorsSubviewRow[];
+  vendorIconCache: VendorIconCacheRow[];
+  baseCurrency: CurrencyCode;
+};
+
+export async function getVendorsSubviewData(): Promise<VendorsSubviewData> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [vendors, links, spends, settings, iconCache] = await Promise.all([
+    supabase.from("vendors").select("*").eq("user_id", user.id),
+    supabase.from("spend_vendor_links").select("spend_id, vendor_id"),
+    supabase
+      .from("spends")
+      .select("id, amount_base, spent_at")
+      .eq("user_id", user.id),
+    supabase.from("settings").select("base_currency").eq("user_id", user.id).maybeSingle(),
+    supabase.from("vendor_icon_cache").select("*").eq("user_id", user.id),
+  ]);
+  const vendorRows = (vendors.data ?? []) as Vendor[];
+  const linkRows = (links.data ?? []) as Array<{ spend_id: string; vendor_id: string }>;
+  const spendRows = (spends.data ?? []) as Array<{
+    id: string;
+    amount_base: number | null;
+    spent_at: string;
+  }>;
+  const spendById = new Map(spendRows.map((s) => [s.id, s] as const));
+
+  type Agg = { count: number; total: number; last: string | null };
+  const agg = new Map<string, Agg>();
+  for (const link of linkRows) {
+    const sp = spendById.get(link.spend_id);
+    if (!sp) continue;
+    const a = agg.get(link.vendor_id) ?? { count: 0, total: 0, last: null };
+    a.count += 1;
+    a.total += Number(sp.amount_base ?? 0);
+    if (!a.last || sp.spent_at > a.last) a.last = sp.spent_at;
+    agg.set(link.vendor_id, a);
+  }
+
+  const buildRow = (v: Vendor): VendorsSubviewRow => {
+    const a = agg.get(v.id) ?? { count: 0, total: 0, last: null };
+    const display =
+      v.canonical_name ?? v.raw_user_typed_name ?? "Untitled vendor";
+    return {
+      vendor_id: v.id,
+      display_name: display,
+      spend_count: a.count,
+      total_base: a.total,
+      last_visit: a.last,
+      confidence: v.confidence ?? null,
+      archived: !!v.archived,
+      needs_identification: !!v.needs_identification,
+      identification_skipped: !!v.identification_skipped,
+      canonical_name: v.canonical_name ?? null,
+      brand_key: v.brand_key ?? null,
+      aliases: Array.isArray(v.aliases) ? v.aliases : [],
+    };
+  };
+
+  const all = vendorRows.map(buildRow);
+  const needsIdentification = all
+    .filter((r) => r.needs_identification && !r.identification_skipped && !r.archived)
+    .sort((a, b) => b.total_base - a.total_base);
+  const active = all
+    .filter((r) => !r.archived && (!r.needs_identification || r.identification_skipped))
+    .sort((a, b) => b.total_base - a.total_base);
+  const archived = all
+    .filter((r) => r.archived)
+    .sort((a, b) => b.total_base - a.total_base);
+
+  return {
+    needsIdentification,
+    active,
+    archived,
+    vendorIconCache: (iconCache.data ?? []) as VendorIconCacheRow[],
+    baseCurrency: (settings.data?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode,
   };
 }
 

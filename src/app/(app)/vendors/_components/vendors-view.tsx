@@ -297,12 +297,24 @@ function CreateVendorModal({
     if (!name.trim()) return;
     setPending(true);
     try {
-      await createVendor({
+      // createVendor now returns ActionResult<{ id, reused }> so the
+      // production "Server Components render" mask never reaches the
+      // toast. result.error carries the real Supabase / RLS / constraint
+      // message; result.ok lets us run optimistic-update path.
+      const result = await createVendor({
         canonical_name: name.trim(),
         short_description: shortDescription.trim() || null,
         notes: notes.trim() || null,
       });
-      toast.success(`Added ${name.trim()}`);
+      if (!result.ok) {
+        toast.error(result.error || "Couldn't add vendor.");
+        return;
+      }
+      toast.success(
+        result.data.reused
+          ? `Reused existing ${name.trim()}`
+          : `Added ${name.trim()}`,
+      );
       reset();
       onOpenChange(false);
       router.refresh();

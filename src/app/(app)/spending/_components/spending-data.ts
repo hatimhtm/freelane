@@ -9,6 +9,7 @@ import {
   getSpendingData,
   getVendorIconCache,
   getDailySafeSnapshotForToday,
+  getKnownVendorsForModal,
 } from "@/lib/data/queries";
 import {
   computeSafeToSpendFromData,
@@ -208,6 +209,14 @@ export async function loadSpendingProps(params: {
   // tier 1 / tier 3 without the cache row).
   const vendorIconCache = await getVendorIconCache().catch(() => []);
 
+  // Vendors workflow — light projection of the user's active vendors so
+  // the spend modal can render the "text input + dropdown of matching
+  // known vendors" affordance without re-fetching the heavy
+  // getVendorsData payload. Failure degrades silently — the dropdown
+  // simply shows no suggestions and the typed text still flows through
+  // resolveLinksForSpend / createVendor on save.
+  const knownVendors = await getKnownVendorsForModal().catch(() => []);
+
   return {
     rows,
     categories: spendCategories,
@@ -225,6 +234,7 @@ export async function loadSpendingProps(params: {
     openNew: params.new === "1",
     defaultCategoryId: params.category,
     vendorIconCache,
+    knownVendors,
     initialSafeForToday: live.initialForToday,
     liveSafeRemaining: live.liveRemaining,
     liveSafeOvershoot: live.overshootBase,
@@ -254,8 +264,11 @@ function parseMonthParam(raw: string | undefined): MonthValue | null {
 import {
   pageKeyFromPath,
   registerChatbotContext,
+  isVendorDetailIntent,
   type PageContext,
+  type ChatbotActiveCardArg,
 } from "@/lib/data/chat-context-registry";
+import { createClient } from "@/lib/supabase/server";
 
 const DAY_MS = 86_400_000;
 
@@ -311,10 +324,105 @@ export async function loadSpendingChatbotContext(
   };
 }
 
+// Vendors workflow — per-card AI dot on Active vendor cards. When the
+// chatbot opens scoped to a specific vendor, pull the most-recent
+// vendor_price_history rows + the trailing 90d of spends linked to
+// this vendor so chat-answer can speak to "are SM prices rising?",
+// "when did I last go", "what do I usually buy here?" without a
+// blanket re-snapshot. Best-effort: any individual sub-fetch failing
+// degrades to the base context plus the activeCard payload.
+async function loadVendorCardContext(
+  userId: string,
+  card: ChatbotActiveCardArg,
+): Promise<Partial<PageContext>> {
+  if (!isVendorDetailIntent(card)) return {};
+  const vendorId = card.data.vendor_id;
+  const supabase = await createClient();
+  const since = new Date(Date.now() - 90 * DAY_MS).toISOString();
+  const [vendorRow, linkRows, priceRows] = await Promise.all([
+    supabase
+      .from("vendors")
+      .select(
+        "id, canonical_name, raw_user_typed_name, brand_key, short_description, kinds, notes, last_seen_at, confidence",
+      )
+      .eq("id", vendorId)
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabase
+      .from("spend_vendor_links")
+      .select("spend_id")
+      .eq("vendor_id", vendorId),
+    supabase
+      .from("vendor_price_history")
+      .select("item_label, unit_price_base, observed_at")
+      .eq("vendor_id", vendorId)
+      .gte("observed_at", since)
+      .order("observed_at", { ascending: false })
+      .limit(30),
+  ]);
+  const linkedSpendIds = (linkRows.data ?? []).map(
+    (r) => r.spend_id as string,
+  );
+  let recentSpends: Array<{
+    id: string;
+    spent_at: string;
+    amount_base: number | null;
+    description: string | null;
+  }> = [];
+  if (linkedSpendIds.length > 0) {
+    const { data: spends } = await supabase
+      .from("spends")
+      .select("id, spent_at, amount_base, description")
+      .in("id", linkedSpendIds.slice(0, 200))
+      .gte("spent_at", since)
+      .order("spent_at", { ascending: false })
+      .limit(30);
+    recentSpends = (spends ?? []) as typeof recentSpends;
+  }
+  const v = vendorRow.data as {
+    id: string;
+    canonical_name: string | null;
+    raw_user_typed_name: string | null;
+    brand_key: string | null;
+    short_description: string | null;
+    kinds: unknown;
+    notes: string | null;
+    last_seen_at: string | null;
+    confidence: number | null;
+  } | null;
+  return {
+    primaryQuestion: `What about ${card.data.vendor_name}?`,
+    relevantData: {
+      vendorCard: {
+        vendor_id: vendorId,
+        canonical_name:
+          v?.canonical_name ?? card.data.vendor_name,
+        brand_key: v?.brand_key ?? null,
+        short_description: v?.short_description ?? null,
+        kinds: Array.isArray(v?.kinds) ? v?.kinds : [],
+        notes: v?.notes ?? null,
+        last_seen_at: v?.last_seen_at ?? null,
+        confidence: v?.confidence ?? null,
+        recentSpends: recentSpends.map((s) => ({
+          spent_at: s.spent_at,
+          amount_base: Math.round(Number(s.amount_base ?? 0)),
+          description: s.description,
+        })),
+        priceHistory: (priceRows.data ?? []).map((p) => ({
+          item_label: p.item_label as string,
+          unit_price_base: Math.round(Number(p.unit_price_base ?? 0)),
+          observed_at: p.observed_at as string,
+        })),
+      },
+    },
+  };
+}
+
 registerChatbotContext({
   match: (path) => {
     const key = pageKeyFromPath(path);
     return key === "spending" || key.startsWith("spending.");
   },
   fetch: loadSpendingChatbotContext,
+  fetchCard: loadVendorCardContext,
 });

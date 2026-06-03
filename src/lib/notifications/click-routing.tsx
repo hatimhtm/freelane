@@ -222,6 +222,88 @@ const KIND_HANDLERS: Record<string, ClickHandler> = {
       );
     }
   },
+  // vendor_clarify — Vendors workflow always-ask path. Opens the chatbot
+  // seeded with intent="clarify_vendor". Payload carries the chip list
+  // (brain proposals up to 3), brain alternatives, and the allow_skip
+  // flag. The chatbot reply handler routes the user's pick through the
+  // clarify-vendor intent server action (see
+  // src/lib/ai/chatbot/intent-handlers/clarify-vendor.ts).
+  vendor_clarify: (n, _openModal, navigate) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: {
+        vendor_id?: string;
+        vendor_name?: string;
+        suggested_answers?: string[];
+        alternatives?: Array<{ canonical_name: string; reasoning: string }>;
+        allow_skip?: boolean;
+      };
+    };
+    const vendorId = payload.kind_specific?.vendor_id;
+    const vendorName = payload.kind_specific?.vendor_name;
+    if (!vendorId || !vendorName) {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[notifications] vendor_clarify missing vendor_id or vendor_name",
+          n,
+        );
+      }
+      navigate("/spending/vendors");
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("freelane:open-chatbot", {
+          detail: {
+            question: `What is "${vendorName}"? Tap the closest, or type it.`,
+            activeCard: {
+              key: `vendor_clarify:${vendorId}`,
+              label: vendorName,
+              data: {
+                intent: "clarify_vendor",
+                vendor_id: vendorId,
+                vendor_name: vendorName,
+                suggested_answers: payload.kind_specific?.suggested_answers ?? [],
+                alternatives: payload.kind_specific?.alternatives ?? [],
+                allow_skip: payload.kind_specific?.allow_skip !== false,
+              },
+            },
+          },
+        }),
+      );
+    }
+  },
+  // vendor_price_check_weekly — opens a modal listing every noteworthy
+  // change the weekly Pro brain bundled into one notification. Each row
+  // has explain/ignore affordances. The handler keeps the modal simple —
+  // a bulleted summary plus a "Open vendors" button — and lets the user
+  // dig deeper from /spending/vendors.
+  vendor_price_check_weekly: (n, openModal, navigate) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: {
+        changes?: Array<{
+          vendor_id: string;
+          vendor_name: string;
+          item_label: string | null;
+          latest_amount: number;
+          prior_4w_avg: number;
+          delta_pct: number;
+          direction: "up" | "down";
+          internal_summary: string;
+          external_context: string;
+        }>;
+      };
+    };
+    const changes = payload.kind_specific?.changes ?? [];
+    if (changes.length === 0) {
+      navigate("/spending/vendors");
+      return;
+    }
+    openModal(
+      <WeeklyPriceCheckModalBody changes={changes} />,
+      { title: n.subject, description: n.body ?? undefined },
+    );
+  },
   ai_clarifying_question: (n, openModal) => {
     const payload = (n.payload ?? {}) as {
       choices?: string[];
@@ -463,6 +545,84 @@ function PlanSatisfactionModalBody({
           className="rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-40"
         >
           {pending ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Weekly vendor price-check body. Render every noteworthy change as a row
+// with: vendor · item · direction arrow · delta_pct · short internal
+// summary + external_context. The "Open vendors" button hands off to the
+// /spending/vendors surface where the full per-vendor history lives.
+function WeeklyPriceCheckModalBody({
+  changes,
+}: {
+  changes: Array<{
+    vendor_id: string;
+    vendor_name: string;
+    item_label: string | null;
+    latest_amount: number;
+    prior_4w_avg: number;
+    delta_pct: number;
+    direction: "up" | "down";
+    internal_summary: string;
+    external_context: string;
+  }>;
+}) {
+  const { closeModal } = useNotificationModal();
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        External context is a rough reference, not ground truth. The internal
+        delta is the real signal.
+      </p>
+      <ul className="flex flex-col gap-2">
+        {changes.map((c, i) => {
+          const arrow = c.direction === "up" ? "↑" : "↓";
+          const pct = Math.round(Math.abs(c.delta_pct) * 100);
+          return (
+            <li
+              key={`${c.vendor_id}:${c.item_label ?? "whole"}:${i}`}
+              className="rounded-lg border border-border/60 bg-card px-3 py-2"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium text-foreground">
+                  {c.vendor_name}
+                  {c.item_label ? ` · ${c.item_label}` : ""}
+                </span>
+                <span
+                  className={
+                    "text-sm font-medium " +
+                    (c.direction === "up"
+                      ? "text-[var(--color-warning,theme(colors.orange.500))]"
+                      : "text-acid-lime")
+                  }
+                >
+                  {arrow} {pct}%
+                </span>
+              </div>
+              {c.internal_summary && (
+                <p className="mt-1 text-[12px] leading-snug text-foreground/80">
+                  {c.internal_summary}
+                </p>
+              )}
+              {c.external_context && (
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                  {c.external_context}
+                </p>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={closeModal}
+          className="rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background"
+        >
+          Got it
         </button>
       </div>
     </div>

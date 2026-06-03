@@ -1051,6 +1051,16 @@ export interface Vendor {
   needs_identification: boolean;
   identification_skipped: boolean;
   last_identify_notif_at: string | null;
+  // Migration 0092 — canonicalization fields. The Pro canonicalize-vendor
+  // brain reads raw_user_typed_name verbatim and proposes canonical_name +
+  // aliases + confidence. brand_key is the resolver's pinned glyph key
+  // (closes the migration 0084 TODO). last_clarify_notif_at gates the
+  // 30-min per-vendor debounce on vendor_clarify notifications.
+  raw_user_typed_name: string | null;
+  aliases: string[];
+  last_clarify_notif_at: string | null;
+  confidence: number | null;
+  brand_key: string | null;
   created_at: string;
   updated_at: string;
 }

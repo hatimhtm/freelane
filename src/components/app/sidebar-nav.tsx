@@ -14,7 +14,6 @@ import {
   Settings,
   Calendar,
   Sparkles,
-  Store,
   HandHeart,
   HeartHandshake,
   FileText,
@@ -49,8 +48,11 @@ const NAV: { title: string; items: NavItem[] }[] = [
   {
     title: "People",
     items: [
+      // Vendors removed from top nav (freelane-vendors-design 2026-06-02).
+      // The Vendors surface now lives as a sub-view inside Spending —
+      // /spending/vendors. /vendors keeps a redirect for backwards
+      // compatibility with bookmarks.
       { href: "/clients",   label: "Clients",   icon: Users },
-      { href: "/vendors",   label: "Vendors",   icon: Store },
       { href: "/entities",  label: "Entities",  icon: HeartHandshake },
     ],
   },

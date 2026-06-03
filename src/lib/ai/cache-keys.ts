@@ -122,6 +122,17 @@ export const BRAIN_TTL = {
   PLAN_STRATEGY_PROPOSALS: 24 * 60 * 60 * 1000,
   PLAN_PURCHASE_DECISION: 0,
   PLAN_SATISFACTION_CHECK: 30 * 24 * 60 * 60 * 1000,
+  // Vendors workflow.
+  //   CANONICALIZE_VENDOR: Pro brain that maps user_typed_name +
+  //     spend_context onto canonical_name + brand_match + alternatives.
+  //     Scoped per vendor_id (scopedBrainKey('vendor', vendorId)) — write-
+  //     once per question. 30-day TTL is a shelf marker; the vendor row's
+  //     canonical_name + confidence are the durable truth.
+  //   WEEKLY_PRICE_CHECK: Pro brain, 7d TTL keyed per-user. Runs on the
+  //     Sunday cron and bundles every noteworthy vendor+item shift into
+  //     one vendor_price_check_weekly notification.
+  CANONICALIZE_VENDOR: 30 * 24 * 60 * 60 * 1000,
+  WEEKLY_PRICE_CHECK: 7 * 24 * 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -157,6 +168,9 @@ export const BRAIN_KEYS = {
   PLAN_STRATEGY_PROPOSALS: "plan_strategy_proposals",
   PLAN_PURCHASE_DECISION: "plan_purchase_decision",
   PLAN_SATISFACTION_CHECK: "plan_satisfaction_check",
+  // Vendors workflow.
+  CANONICALIZE_VENDOR: "canonicalize_vendor",
+  WEEKLY_PRICE_CHECK: "weekly_price_check",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -197,6 +211,8 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.PLAN_STRATEGY_PROPOSALS]: BRAIN_TTL.PLAN_STRATEGY_PROPOSALS,
   [BRAIN_KEYS.PLAN_PURCHASE_DECISION]: BRAIN_TTL.PLAN_PURCHASE_DECISION,
   [BRAIN_KEYS.PLAN_SATISFACTION_CHECK]: BRAIN_TTL.PLAN_SATISFACTION_CHECK,
+  [BRAIN_KEYS.CANONICALIZE_VENDOR]: BRAIN_TTL.CANONICALIZE_VENDOR,
+  [BRAIN_KEYS.WEEKLY_PRICE_CHECK]: BRAIN_TTL.WEEKLY_PRICE_CHECK,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache
@@ -234,6 +250,13 @@ export const FINANCIAL_INVALIDATION_EXEMPT: readonly BrainKey[] = [
   BRAIN_KEYS.PLAN_PRICE_LOOKUP,
   BRAIN_KEYS.PLAN_PURCHASE_DECISION,
   BRAIN_KEYS.PLAN_SATISFACTION_CHECK,
+  // Vendors workflow — both brains are vendor-keyed / user-weekly, not
+  // spend-driven. The Pro canonicalize-vendor brain is write-once per
+  // vendor (the cache row keys off vendor_id), and the weekly price-
+  // check is a calendar-driven sweep — neither benefits from spend-
+  // mutation invalidation.
+  BRAIN_KEYS.CANONICALIZE_VENDOR,
+  BRAIN_KEYS.WEEKLY_PRICE_CHECK,
 ] as const;
 
 // Below-this threshold spends do NOT bust the AI brain cache. A ₱5 cigarette

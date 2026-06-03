@@ -183,7 +183,15 @@ export async function maybeSurfaceClarifyingQuestion(): Promise<void> {
     const { surfaceNextOpenQuestion } = await import(
       "@/lib/ai/open-questions-actions"
     );
-    void surfaceNextOpenQuestion().catch(() => {});
+    // Await the call so module-eval throws and synchronous failures
+    // before the promise even forms cannot bubble past the try/catch.
+    // The brain itself is best-effort; we still don't block on its
+    // result by ignoring the resolved/rejected outcome via .catch.
+    try {
+      await surfaceNextOpenQuestion();
+    } catch {
+      // brain runtime failure — swallowed
+    }
   } catch {
     // ignore — dynamic import safety net
   }
@@ -1872,6 +1880,13 @@ export type SpendInput = {
   // and only inserts links where it finds a confident match.
   vendorIds?: string[];
   entityIds?: string[];
+  // Vendors workflow — free-form vendor name typed in the spend modal's
+  // Vendor row (locked 2026-06-02 freelane-vendors-design). When the
+  // text matches an existing vendor by slug we link to it; when it's
+  // unknown we createVendor (which kicks off canonicalize-vendor in the
+  // background — no AI blocks the save path). Ignored when explicit
+  // vendorIds are also provided.
+  vendorName?: string | null;
   // Sadaka workflow (migration 0075): the explicit "Mark as sadaka" toggle.
   // When true, the createSpend path writes a sadaka_ledger payment row tied
   // to the spend AND a money_ledger sadaka_payment outflow. The auto-detect
@@ -1940,6 +1955,63 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
     if (linkErr) throw linkErr;
   }
 
+  // Insert spend_items BEFORE spend_vendor_links. The vendor_price_history
+  // link trigger checks `count(*) from spend_items where spend_id = ...`
+  // to decide whether to emit a whole-visit observation; if the link
+  // insert lands first the trigger sees zero items and writes a duplicate
+  // whole-visit row alongside the per-item rows the item trigger will
+  // emit moments later. Migration 0094 also makes the link trigger
+  // DEFERRABLE INITIALLY DEFERRED so it fires at commit time — between
+  // the two safeguards (insertion order + deferred trigger) the double-
+  // count failure mode is closed from both angles.
+  if (input.items?.length) {
+    const itemRows = input.items.map((it, i) => ({
+      spend_id: spendId,
+      name: it.name,
+      amount: it.amount ?? null,
+      vat_amount: it.vat_amount ?? null,
+      notes: it.notes ?? null,
+      quantity: it.quantity && it.quantity > 0 ? it.quantity : 1,
+      sort_order: i,
+    }));
+    const { error: itemErr } = await supabase.from("spend_items").insert(itemRows);
+    if (itemErr) throw itemErr;
+  }
+
+  // Vendors workflow — if the spend modal handed us a typed vendor name
+  // (and the caller didn't pre-resolve a vendorIds list), match it
+  // against the user's existing vendors by slug; create a new vendor
+  // row when no match is found. createVendor is the canonical entry
+  // point — it owns archive-collision handling, kickoff of
+  // canonicalize-vendor in the background, and the vendor_icon
+  // best-effort write. The spend save path stays AI-free / non-blocking.
+  let resolvedVendorIds: string[] | undefined = input.vendorIds;
+  const typedVendorName = (input.vendorName ?? "").trim();
+  if (!input.vendorIds && typedVendorName) {
+    const { vendorSlug } = await import("@/lib/spending/vendor-extract");
+    const typedSlug = vendorSlug(typedVendorName);
+    const { data: byslug } = await supabase
+      .from("vendors")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("slug", typedSlug)
+      .eq("archived", false)
+      .maybeSingle();
+    if (byslug?.id) {
+      resolvedVendorIds = [byslug.id as string];
+    } else {
+      // Unknown vendor — auto-create. createVendor is wrapped in
+      // safeRun, so even a transient failure here MUST NOT take down
+      // the spend save itself: fall back to leaving the spend
+      // unlinked (the description-based resolver below still has a
+      // chance to match a known alias).
+      const created = await createVendor({ canonical_name: typedVendorName });
+      if (created.ok) {
+        resolvedVendorIds = [created.data.id];
+      }
+    }
+  }
+
   // Tier 2: vendor + entity links. Explicit IDs from the caller win; if none
   // provided, auto-resolve from the description against the user's vendors
   // and entities. Auto-resolved links carry source='auto' so the user can
@@ -1948,14 +2020,19 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
     supabase,
     userId,
     description: input.description ?? null,
-    explicitVendorIds: input.vendorIds,
+    explicitVendorIds: resolvedVendorIds,
     explicitEntityIds: input.entityIds,
   });
   if (vendorIds.length) {
+    // Vendors typed-in by the user (vendorName path) count as "user"
+    // intent — same as explicit vendorIds — so the dispatcher /
+    // canonicalize-vendor pipeline doesn't treat them as silent
+    // auto-matches the user can override.
+    const userIntendedVendor = !!input.vendorIds || typedVendorName.length > 0;
     const rows = vendorIds.map((vid) => ({
       spend_id: spendId,
       vendor_id: vid,
-      source: input.vendorIds ? "user" : "auto",
+      source: userIntendedVendor ? "user" : "auto",
     }));
     await supabase.from("spend_vendor_links").insert(rows);
     // Refresh last_seen_at for each linked vendor.
@@ -1973,20 +2050,6 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
       source: input.entityIds ? "user" : "auto",
     }));
     await supabase.from("spend_entity_links").insert(rows);
-  }
-
-  if (input.items?.length) {
-    const itemRows = input.items.map((it, i) => ({
-      spend_id: spendId,
-      name: it.name,
-      amount: it.amount ?? null,
-      vat_amount: it.vat_amount ?? null,
-      notes: it.notes ?? null,
-      quantity: it.quantity && it.quantity > 0 ? it.quantity : 1,
-      sort_order: i,
-    }));
-    const { error: itemErr } = await supabase.from("spend_items").insert(itemRows);
-    if (itemErr) throw itemErr;
   }
 
   // Pre-payment: a single row settles N consecutive recurring periods. Emit
@@ -3853,65 +3916,172 @@ export type VendorInput = {
   notes?: string | null;
 };
 
-export async function createVendor(input: VendorInput) {
-  const { supabase, userId } = await userOrThrow();
-  const name = input.canonical_name.trim();
-  if (!name) throw new Error("Vendor needs a name.");
-  const { vendorSlug } = await import("@/lib/spending/vendor-extract");
-  const slug = vendorSlug(name);
-  const { data, error } = await supabase
-    .from("vendors")
-    .insert({
-      user_id: userId,
-      canonical_name: name,
-      slug,
-      short_description: input.short_description ?? null,
-      location: input.location ?? {},
-      kinds: input.kinds ?? [],
-      notes: input.notes ?? null,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "vendor.created",
-    title: `Vendor · ${name}`,
-    entityType: "vendor",
-    entityId: data.id as string,
-    metadata: { slug },
-  });
-  // New vendor = structural event — chatbot brain may want to ask
-  // about this place. Fire-and-forget.
-  await maybeSurfaceClarifyingQuestion();
-  // Brand Identity workflow — fire the vendor icon brain. We AWAIT it
-  // (with a try/catch so failures never block the create) so the
-  // vendor_icon_cache row lands BEFORE maybeDispatchVendorIdentifyRequest
-  // runs. Without awaiting, the dispatcher always sees an empty cache on
-  // first create and asks the user about every vendor — even ones the
-  // auto-brain would have identified with high confidence.
-  try {
-    const { identifyVendorIconAction } = await import("@/lib/ai/vendor-icon-actions");
-    await identifyVendorIconAction(name);
-  } catch {
-    /* best-effort — brain failure cannot block vendor create */
-  }
-  // Spendings workflow — fire a vendor_identify_request notification
-  // when the vendor is genuinely unknown (no curated brand match, no
-  // user_overridden cache row, no high-confidence auto-identified row).
-  // Best-effort: failure NEVER blocks the create. Debounce + 5/hr cap
-  // is enforced via the helper below.
-  try {
-    await maybeDispatchVendorIdentifyRequest({
-      vendorId: data.id as string,
-      vendorName: name,
+// CRITICAL BUG FIX (locked 2026-06-02 Vendors workflow): createVendor
+// previously threw on unique(user_id, slug) collisions (Postgres error
+// 23505) and any uncaught throw from a server action surfaces as the
+// generic "An error occurred in the Server Components render" message
+// in production. We now:
+//   1. Wrap the whole body in safeRunLabeled so the real error reaches
+//      the caller as ActionResult<{ id: string }> instead of a thrown
+//      string that Next 16 masks.
+//   2. Pre-check for an existing vendor with the same (user_id, slug)
+//      and return its id when found — so the always-ask canonicalize
+//      flow can re-use the row instead of failing the spend.
+//   3. Use awaited try/catch around the dynamic-imported AI module so
+//      module-eval throws cannot bubble past safeRunLabeled.
+export async function createVendor(
+  input: VendorInput,
+): Promise<ActionResult<{ id: string; reused: boolean }>> {
+  return safeRun("create-vendor", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const name = input.canonical_name.trim();
+    if (!name) throw new Error("Vendor needs a name.");
+    const { vendorSlug } = await import("@/lib/spending/vendor-extract");
+    const slug = vendorSlug(name);
+
+    // Pre-check: a vendor with this slug already belongs to the user.
+    // Two paths converge here in the always-ask flow (manual "+ Add
+    // vendor" modal + auto-create when an unknown vendor is typed in the
+    // spend modal); racing those would otherwise hit the unique
+    // constraint and surface as a generic 500.
+    //
+    // Archived rows retain their slug (archiveVendor flips `archived` only
+    // — it never nulls the slug column), so a re-add of a soft-archived
+    // vendor MUST NOT silently resurrect the hidden row. Filtering
+    // `archived = false` here keeps the reused-path semantics tight to
+    // the user's mental model ("Add brings up the SAME vendor I'm using
+    // today" — not "Add un-hides whatever I once archived"). Restoring
+    // from archive is a separate intent and lives in archiveVendor's
+    // restore flow.
+    const { data: existing } = await supabase
+      .from("vendors")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("slug", slug)
+      .eq("archived", false)
+      .maybeSingle();
+    if (existing) {
+      // NB: This path is intentionally READ-ONLY — short_description /
+      // notes / kinds from the new input are NOT merged onto the existing
+      // row. Edits should route through a dedicated updateVendor action
+      // so the user sees the change land + the canonicalize brain gets a
+      // chance to re-evaluate. Re-using a row here is an idempotent
+      // insert, not a silent patch.
+      return { id: existing.id as string, reused: true };
+    }
+
+    const { data, error } = await supabase
+      .from("vendors")
+      .insert({
+        user_id: userId,
+        canonical_name: name,
+        // Vendors workflow — preserve the raw text the user typed for
+        // the canonicalize brain. canonical_name doubles as the legacy
+        // display name until the brain proposes a clean form (kickoff
+        // overwrites canonical_name only when confidence >= 0.6).
+        raw_user_typed_name: name,
+        slug,
+        short_description: input.short_description ?? null,
+        location: input.location ?? {},
+        kinds: input.kinds ?? [],
+        notes: input.notes ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      // Race fallback — concurrent insert won the unique constraint.
+      // Re-read instead of bubbling the 23505 up as a server error.
+      // Same archived-exclusion contract as the pre-check above: the
+      // unique index on (user_id, slug) includes archived rows, so a
+      // collision on a hidden vendor is reported with a friendlier
+      // message instead of silently resurrecting it.
+      if (String(error.code) === "23505") {
+        const { data: raced } = await supabase
+          .from("vendors")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("slug", slug)
+          .eq("archived", false)
+          .maybeSingle();
+        if (raced) return { id: raced.id as string, reused: true };
+        // 23505 with no live row = the collision is against an archived
+        // vendor. Translate to a user-friendly error so the toast doesn't
+        // surface raw constraint internals.
+        throw new Error(
+          `An archived vendor with that name exists. Restore it from the archive instead.`,
+        );
+      }
+      // Friendly translations for the other Postgres constraint codes
+      // we can predict. safeRun still logs the raw error to console via
+      // safeRunLabeled, so the diagnostic trail survives even though
+      // the toast stays human.
+      const pgCode = String(error.code ?? "");
+      if (pgCode === "23502") {
+        throw new Error("Vendor is missing a required field.");
+      }
+      if (pgCode === "23514") {
+        throw new Error("Vendor input failed a validation check.");
+      }
+      if (pgCode === "42501") {
+        throw new Error("You don't have permission to add a vendor.");
+      }
+      // Generic fallback — the raw Postgres message can leak schema
+      // names and constraint identifiers into the user-facing toast.
+      // Hide them; the original error is still captured by console.error
+      // inside safeRunLabeled.
+      throw new Error("Couldn’t add vendor.");
+    }
+    const newId = data.id as string;
+
+    await logEvent({
+      userId,
+      kind: "vendor.created",
+      title: `Vendor · ${name}`,
+      entityType: "vendor",
+      entityId: newId,
+      metadata: { slug },
     });
-  } catch {
-    /* best-effort */
-  }
-  revalidatePath("/vendors");
-  revalidatePath("/spending");
-  return data;
+
+    // New vendor = structural event — chatbot brain may want to ask
+    // about this place. Fire-and-forget; dynamic import wrapped to
+    // contain module-eval throws inside safeRun.
+    try {
+      await maybeSurfaceClarifyingQuestion();
+    } catch {
+      /* dynamic-import safety net — never blocks the create */
+    }
+
+    // Brand Identity workflow — fire the vendor icon brain. We AWAIT it
+    // (with a try/catch so failures never block the create) so the
+    // vendor_icon_cache row lands BEFORE the always-ask kickoff runs.
+    try {
+      const { identifyVendorIconAction } = await import("@/lib/ai/vendor-icon-actions");
+      await identifyVendorIconAction(name);
+    } catch {
+      /* best-effort — brain failure cannot block vendor create */
+    }
+
+    // Vendors workflow — ALWAYS-ASK canonicalization. The kickoff helper
+    // runs the Pro canonicalize-vendor brain async then queues a
+    // vendor_clarify notification regardless of confidence. Debouncing
+    // (30m per vendor + 3/day cap) is enforced inside the helper.
+    try {
+      const { kickoffVendorCanonicalize } = await import(
+        "@/lib/vendors/canonicalize-kickoff"
+      );
+      void kickoffVendorCanonicalize({
+        vendorId: newId,
+        vendorName: name,
+      }).catch(() => {});
+    } catch {
+      /* dynamic-import safety net */
+    }
+
+    revalidatePath("/vendors");
+    revalidatePath("/spending");
+    revalidatePath("/spending/vendors");
+    return { id: newId, reused: false };
+  });
 }
 
 // Dispatcher helper for the vendor_identify_request kind. Gates (run in
@@ -3935,7 +4105,15 @@ export async function createVendor(input: VendorInput) {
 //
 // On dispatch: writes last_identify_notif_at = now to throttle the next
 // dispatch for THIS vendor for 30 minutes regardless of cap state.
-async function maybeDispatchVendorIdentifyRequest(args: {
+// Legacy Spendings-workflow dispatcher for vendor_identify_request
+// notifications. The Vendors workflow (2026-06-02) ALWAYS asks via the
+// new vendor_clarify kind + canonicalize-kickoff helper, so this helper
+// is no longer invoked from the createVendor fast path. It is kept here
+// (rather than deleted) so the Spendings workflow's gate logic + 5/hr
+// cap stay documented in one place. If the always-ask experiment is
+// reversed, re-wire by calling this from createVendor.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function _maybeDispatchVendorIdentifyRequest(args: {
   vendorId: string;
   vendorName: string;
 }): Promise<void> {

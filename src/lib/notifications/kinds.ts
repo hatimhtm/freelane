@@ -20,6 +20,7 @@ import {
   Sparkles,
   Star,
   Store,
+  TrendingUp,
   UserCog,
   Wallet,
   type LucideIcon,
@@ -108,6 +109,19 @@ export const KNOWN_KINDS: KindMeta[] = [
     label: "Plan target approaching",
     description: "Thirty days before a plan's target date — a quiet heads-up.",
   },
+  // Vendors workflow — two new kinds.
+  {
+    key: "vendor_clarify",
+    label: "What is this vendor?",
+    description:
+      "The brain proposes a canonical name for a vendor you just typed; pick a chip or correct it.",
+  },
+  {
+    key: "vendor_price_check_weekly",
+    label: "Weekly vendor price changes",
+    description:
+      "Sunday morning bundle of vendor + item price shifts noticed over the trailing weeks.",
+  },
 ];
 
 export const KNOWN_KIND_KEYS = new Set(KNOWN_KINDS.map((k) => k.key));
@@ -131,6 +145,8 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   plan_satisfaction_check: Star,
   plan_strategy_stale: AlertCircle,
   plan_target_approaching: CalendarClock,
+  vendor_clarify: HelpCircle,
+  vendor_price_check_weekly: TrendingUp,
 };
 
 export function iconForKind(kind: string): LucideIcon {

@@ -5,10 +5,12 @@ import { getAuthUser } from "@/lib/auth";
 import { safeRunLabeled, type ActionResult } from "@/lib/data/actions";
 import {
   getChatbotContextForPath,
+  isClarifyVendorIntent,
   isIdentifyVendorIntent,
   type ChatbotActiveCardArg,
   type PageContext,
 } from "@/lib/data/chat-context-registry";
+import { clarifyVendorAction } from "@/lib/ai/chatbot/intent-handlers/clarify-vendor";
 import { getFreelaneStateSnapshot } from "./freelane-state-snapshot";
 import { answerChat, type ChatHistoryMessage } from "./brains/chat-answer";
 import { summarizeSession } from "./brains/session-summarizer";
@@ -183,6 +185,62 @@ export async function postChatMessage(args: {
         assistantContent = result.ok
           ? `Thanks — saved that for ${vendorName}. I'll use it next time.`
           : `Couldn't save that for ${vendorName}: ${result.error ?? "unknown error"}`;
+      }
+
+      const { data: assistantRow } = await supabase
+        .from("chat_messages")
+        .insert({
+          user_id: user.id,
+          session_id: args.sessionId,
+          page_key: args.pageKey,
+          role: "assistant",
+          content: assistantContent,
+          page_context: pageContext as unknown as Record<string, unknown>,
+        })
+        .select("id")
+        .single();
+
+      return {
+        assistantContent,
+        suggestedFollowups: [],
+        userMessageId: userRow.id as string,
+        assistantMessageId: (assistantRow?.id as string) ?? "",
+      };
+    }
+
+    // Vendors workflow — always-ask canonicalize intent. User's reply
+    // (chip pick OR typed canonical OR "skip") routes through the
+    // clarify-vendor handler. Mirrors the identify_vendor path above.
+    if (isClarifyVendorIntent(args.activeCard)) {
+      const { vendor_id: vendorId, vendor_name: vendorName } =
+        args.activeCard.data;
+      const { data: userRow } = await supabase
+        .from("chat_messages")
+        .insert({
+          user_id: user.id,
+          session_id: args.sessionId,
+          page_key: args.pageKey,
+          role: "user",
+          content,
+          page_context: pageContext as unknown as Record<string, unknown>,
+        })
+        .select("id")
+        .single();
+      if (!userRow) throw new Error("Couldn't save your message.");
+
+      const result = await clarifyVendorAction({
+        vendorId,
+        vendorName,
+        reply: content,
+      });
+
+      let assistantContent: string;
+      if (!result.ok) {
+        assistantContent = `Couldn't save that for ${vendorName}: ${result.error ?? "unknown error"}`;
+      } else if (result.data.skipped) {
+        assistantContent = `Got it — I'll leave ${vendorName} alone.`;
+      } else {
+        assistantContent = `Saved. I'll remember "${vendorName}" as "${content.trim()}".`;
       }
 
       const { data: assistantRow } = await supabase

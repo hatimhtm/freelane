@@ -42,6 +42,8 @@ import type {
 import type { SafeToSpendBreakdown } from "@/lib/safe-to-spend";
 import type { SpendingAnomaly } from "@/lib/ai/spending-anomalies";
 import { SpendModal, type WalletOpt, type SpendModalDefaults } from "./spend-modal";
+import { VendorsSubview } from "./vendors-subview";
+import type { VendorsSubviewRow, KnownVendorOption } from "@/lib/data/queries";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -89,9 +91,11 @@ export function SpendingView({
   defaultCategoryId,
   tab = "spends",
   vendorIconCache,
+  knownVendors,
   initialSafeForToday,
   liveSafeRemaining,
   liveSafeOvershoot,
+  vendorsSubview,
 }: {
   rows: SpendRow[];
   categories: SpendCategory[];
@@ -111,6 +115,13 @@ export function SpendingView({
   defaultCategoryId?: string;
   tab?: SpendingTab;
   vendorIconCache?: VendorIconCacheRow[];
+  // Vendors workflow — light projection of active vendors (id +
+  // display_name + slug + aliases) so the spend modal can render the
+  // "text input + matching-vendors dropdown" affordance without a
+  // round-trip. Optional for graceful degradation: the modal still
+  // accepts a free-form vendor name and lets the server resolve / auto-
+  // create on save.
+  knownVendors?: KnownVendorOption[];
   // BUG FIX #2 (LIVE DAILY SAFE) — server-loaded numbers. The page
   // upserts daily_safe_snapshots on first read of the day.
   initialSafeForToday?: number;
@@ -119,6 +130,15 @@ export function SpendingView({
   // positive. The Live Daily Safe widget swaps subtitle to "₱X past
   // safe" terracotta when > 0 so the user keeps the magnitude signal.
   liveSafeOvershoot?: number;
+  // Vendors workflow — payload for the /spending/vendors sub-view.
+  // Optional because the Spends + Trends subtabs don't need it; the
+  // vendors-sub-view-only page (page.tsx for /spending/vendors)
+  // hydrates this branch.
+  vendorsSubview?: {
+    needsIdentification: VendorsSubviewRow[];
+    active: VendorsSubviewRow[];
+    archived: VendorsSubviewRow[];
+  };
 }) {
   const showSpends = tab === "spends";
   const showTrends = tab === "trends";
@@ -515,21 +535,26 @@ export function SpendingView({
       )}
 
       {showVendors && (
-        <section className="mt-5 space-y-4">
-          <div className="rounded-[14px] border border-foreground/10 bg-card/40 p-5">
-            <div className="display-eyebrow text-muted-foreground">Vendors</div>
-            <p className="mt-2 text-[13px] text-foreground/85">
-              Vendor management surface arrives next.
-            </p>
-            <p className="mt-1.5 text-[12px] text-muted-foreground">
-              Lifetime totals, spend rhythm, and per-vendor memory will live
-              here once the Vendors workflow ships.
-            </p>
-          </div>
-          <Panel eyebrow="Top vendors" subtitle="Lifetime pattern, click for detail.">
-            <VendorIntelligence spends={recentSpends} baseCurrency={baseCurrency} vendorIconCache={vendorIconCache} />
-          </Panel>
-        </section>
+        <>
+          {vendorsSubview ? (
+            <VendorsSubview
+              needsIdentification={vendorsSubview.needsIdentification}
+              active={vendorsSubview.active}
+              archived={vendorsSubview.archived}
+              baseCurrency={baseCurrency}
+              vendorIconCache={vendorIconCache ?? []}
+            />
+          ) : (
+            <section className="mt-5 space-y-4">
+              <div className="rounded-[14px] border border-foreground/10 bg-card/40 p-5">
+                <div className="display-eyebrow text-muted-foreground">Vendors</div>
+                <p className="mt-2 text-[13px] text-foreground/85">
+                  Loading vendor data…
+                </p>
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       {/* Filter row — Spends subtab. Two-zone layout per the design:
@@ -687,6 +712,7 @@ export function SpendingView({
         safeToSpendBaseline={safeToSpendBaseline}
         initialSafeForToday={initialForToday}
         liveSafeRemaining={liveRemaining}
+        knownVendors={knownVendors ?? []}
         defaults={sheetDefaults}
       />
     </div>

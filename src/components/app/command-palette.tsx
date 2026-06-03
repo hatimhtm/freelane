@@ -107,7 +107,12 @@ export function CommandPaletteHost() {
             <CommandItem onSelect={() => go("/clients")}>
               <Users className="mr-2 h-4 w-4" /> Clients
             </CommandItem>
-            <CommandItem onSelect={() => go("/vendors")}>
+            {/* Vendors moved into Spending → Vendors per
+                freelane-vendors-design (2026-06-02). The command-palette
+                entry below routes to the new sub-view; legacy /vendors
+                URL redirects via the page-level redirect in
+                src/app/(app)/vendors/page.tsx. */}
+            <CommandItem onSelect={() => go("/spending/vendors")}>
               <Store className="mr-2 h-4 w-4" /> Vendors
             </CommandItem>
             <CommandItem onSelect={() => go("/entities")}>

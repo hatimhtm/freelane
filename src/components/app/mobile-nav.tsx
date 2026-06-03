@@ -17,7 +17,6 @@ import {
   Settings,
   ShoppingBag,
   Sparkles,
-  Store,
   Sun,
   Users,
   Wallet,
@@ -57,8 +56,8 @@ const NAV: { title: string; items: NavItem[] }[] = [
   {
     title: "People",
     items: [
+      // Vendors moved to /spending/vendors per freelane-vendors-design.
       { href: "/clients",   label: "Clients",   icon: Users },
-      { href: "/vendors",   label: "Vendors",   icon: Store },
       { href: "/entities",  label: "Entities",  icon: HeartHandshake },
     ],
   },

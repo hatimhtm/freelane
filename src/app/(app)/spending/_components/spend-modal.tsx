@@ -58,6 +58,7 @@ import type {
   SpendCategoryLink,
   SpendItem,
 } from "@/lib/supabase/types";
+import type { KnownVendorOption } from "@/lib/data/queries";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const PHP: CurrencyCode = "PHP";
@@ -103,6 +104,7 @@ export function SpendModal({
   safeToSpendBaseline,
   initialSafeForToday,
   liveSafeRemaining,
+  knownVendors,
   defaults,
 }: {
   open: boolean;
@@ -123,6 +125,12 @@ export function SpendModal({
   // spend.amount_base. Optional so legacy callers still work.
   initialSafeForToday?: number;
   liveSafeRemaining?: number;
+  // Vendors workflow — light projection of the user's existing vendors
+  // (id + display_name + slug + aliases). Drives the Vendor row's
+  // inline matching dropdown. Empty list = brand-new user / loader
+  // failure; the typed name still flows through createSpend on save
+  // and the server auto-creates the vendor.
+  knownVendors?: KnownVendorOption[];
   defaults?: SpendModalDefaults;
 }) {
   const router = useRouter();
@@ -148,6 +156,17 @@ export function SpendModal({
   // Sadaka workflow (Phase 2, migration 0075). Explicit toggle. The action
   // path writes a sadaka_ledger payment row and short-circuits auto-detect.
   const [sadaka, setSadaka] = useState(false);
+  // Vendors workflow — typed vendor name + open-dropdown state. The
+  // brief locks this as "Text input + dropdown of matching known
+  // vendors. onChange suggestions. No AI inline. Immediate submit +
+  // background canonicalize." The dropdown shows up to MAX_VENDOR_MATCHES
+  // active vendors whose canonical_name OR aliases contain the typed
+  // substring (case + diacritic insensitive). Tapping a match writes
+  // its display_name back into the input — server save normalizes
+  // both paths through slug-matching, so the typed text alone is
+  // enough; tapping is a convenience.
+  const [vendorTyped, setVendorTyped] = useState("");
+  const [vendorDropdownOpen, setVendorDropdownOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [businessRelevant, setBusinessRelevant] = useState(false);
@@ -169,6 +188,8 @@ export function SpendModal({
     setSpentAt(phtToday());
     setSpentTime(phtTimeHHMM());
     setCurrency(PHP);
+    setVendorTyped("");
+    setVendorDropdownOpen(false);
     setDescription(defaults?.description ?? "");
     setNotes(defaults?.note ?? "");
     setBusinessRelevant(false);
@@ -187,6 +208,39 @@ export function SpendModal({
       setAmount("");
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Substring match against canonical_name + aliases. Sorted by best-fit
+  // (startsWith first, then includes) so the most likely target sits at
+  // the top of the dropdown. Bounded so the popover never grows past a
+  // glanceable height.
+  const matchingVendors = useMemo<KnownVendorOption[]>(() => {
+    const q = vendorTyped.trim().toLowerCase();
+    if (!q) return [];
+    const list = knownVendors ?? [];
+    const scored: Array<{ v: KnownVendorOption; score: number }> = [];
+    for (const v of list) {
+      const name = v.display_name.toLowerCase();
+      let score = -1;
+      if (name === q) score = 100;
+      else if (name.startsWith(q)) score = 80;
+      else if (name.includes(q)) score = 60;
+      else {
+        for (const alias of v.aliases) {
+          const a = alias.toLowerCase();
+          if (a.startsWith(q)) {
+            score = Math.max(score, 50);
+            break;
+          }
+          if (a.includes(q)) {
+            score = Math.max(score, 40);
+          }
+        }
+      }
+      if (score >= 0) scored.push({ v, score });
+    }
+    scored.sort((a, b) => b.score - a.score || a.v.display_name.localeCompare(b.v.display_name));
+    return scored.slice(0, 6).map((s) => s.v);
+  }, [vendorTyped, knownVendors]);
 
   const amountNum = Number(amount) || 0;
   const amountBase = useMemo(
@@ -374,6 +428,11 @@ export function SpendModal({
         covers_periods: recurringSpendId ? Math.max(1, coversPeriods) : 1,
         recurring_spend_id: recurringSpendId,
         categoryIds: selectedCategoryIds,
+        // Vendors workflow — typed name routes through createSpend's
+        // slug-matcher; unknown names auto-create the vendor row and
+        // kick off canonicalize-vendor in the background. Empty
+        // string normalized to null so the server skips the path.
+        vendorName: vendorTyped.trim() || null,
         items: cleanItems.length
           ? cleanItems.map((it) => ({ name: it.name, quantity: it.quantity, amount: it.amount, notes: it.notes }))
           : undefined,
@@ -494,6 +553,29 @@ export function SpendModal({
               onApplyFix={(v) => setAmount(String(v))}
             />
           )}
+
+          <Row label="Vendor" optional>
+            <VendorTypeahead
+              value={vendorTyped}
+              onChange={(next) => {
+                setVendorTyped(next);
+                setVendorDropdownOpen(true);
+              }}
+              matches={matchingVendors}
+              open={vendorDropdownOpen && matchingVendors.length > 0}
+              onFocus={() => {
+                if (vendorTyped.trim().length > 0) setVendorDropdownOpen(true);
+              }}
+              onBlur={() => {
+                // Delay so an onMouseDown on a match still fires.
+                setTimeout(() => setVendorDropdownOpen(false), 120);
+              }}
+              onPick={(v) => {
+                setVendorTyped(v.display_name);
+                setVendorDropdownOpen(false);
+              }}
+            />
+          </Row>
 
           <Row label="Description">
             <Textarea
@@ -810,6 +892,77 @@ function hasCigarettesTagSelected({
 
 function Hairline() {
   return <div className="h-px w-full bg-border/60" />;
+}
+
+// Vendors workflow — text input + inline matching-vendors dropdown.
+// Behaviour:
+//   - The input is the authoritative value; `onPick` just writes the
+//     match's display_name back into the input (so the user sees it as
+//     they would have typed it).
+//   - The dropdown is bounded to MAX_VENDOR_MATCHES by the parent's
+//     useMemo; we render whatever the parent passed in.
+//   - "No AI in critical path" — the parent neither blocks nor spins;
+//     unknown text simply flows through createSpend on save and the
+//     server auto-creates the vendor + kicks canonicalize-vendor.
+function VendorTypeahead({
+  value,
+  onChange,
+  matches,
+  open,
+  onFocus,
+  onBlur,
+  onPick,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  matches: KnownVendorOption[];
+  open: boolean;
+  onFocus: () => void;
+  onBlur: () => void;
+  onPick: (v: KnownVendorOption) => void;
+}) {
+  return (
+    <div className="relative">
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        placeholder="Where (sari-sari, SM, Globe…)"
+        className="h-9 text-sm"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-56 overflow-auto rounded-[10px] border border-foreground/10 bg-card shadow-[0_18px_38px_-22px_oklch(from_var(--foreground)_l_c_h_/_0.35)]"
+        >
+          {matches.map((v) => (
+            <li key={v.id} role="option" aria-selected={false}>
+              <button
+                type="button"
+                // onMouseDown beats onBlur — picks land cleanly without
+                // racing the blur-driven close.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onPick(v);
+                }}
+                className="block w-full px-3 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-foreground/[0.04]"
+              >
+                <span className="truncate">{v.display_name}</span>
+                {v.aliases.length > 0 && (
+                  <span className="ml-2 text-[10.5px] text-muted-foreground/80 truncate">
+                    {v.aliases.slice(0, 2).join(" · ")}
+                  </span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 // Spendings workflow — TAG SYSTEM (3 kinds, post-0083).
