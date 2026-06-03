@@ -1303,23 +1303,47 @@ export async function getWifeState() {
 //   - "me"            → user-wide letter set (no narrowing)
 //   - "year-YYYY"     → letters generated in a single PHT year
 //   - "client-<id>"   → letters tagged to this client (blocks/period_key)
+//   - "window"        → trailing N-day window keyed by generated_at
 //
 // The Tier 3 schema doesn't carry a first-class subject_id, so the
 // client-scope filter inspects the letter's `blocks` JSON for any of the
 // known shapes (top_vendors[].entity_id / reference_event.entity_id /
 // spotlight.client_id / spotlight.entity_id) and falls through to a
 // period_key match for the year scope.
+//
+// Verifier fix (high): parseLettersScope now mirrors resolveScopeRange's
+// grammar — bare-year "2026" + trailing-window tokens (30d/90d/6m/1y)
+// were previously folded to {kind:"me"}, so /stats/2026/letters served
+// lifetime letters and hasLettersInScope reported true for every scope.
+// We resolve these to {kind:"year"} / {kind:"window"} respectively so
+// the chip and the page agree on what's in scope.
 export type LettersScope =
   | { kind: "me" }
   | { kind: "year"; year: number }
-  | { kind: "client"; clientId: string };
+  | { kind: "client"; clientId: string }
+  | { kind: "window"; fromIso: string; toIso: string };
 
 export function parseLettersScope(scope: string | null | undefined): LettersScope {
-  if (!scope || scope === "me") return { kind: "me" };
-  const yearMatch = scope.match(/^year-(\d{4})$/);
+  if (!scope || scope === "me" || scope === "lifetime" || scope === "all") {
+    return { kind: "me" };
+  }
+  const yearMatch = scope.match(/^(?:year-)?(\d{4})$/);
   if (yearMatch) return { kind: "year", year: Number(yearMatch[1]) };
   const clientMatch = scope.match(/^client-(.+)$/);
   if (clientMatch) return { kind: "client", clientId: clientMatch[1] };
+  // Trailing-window tokens — mirror resolveScopeRange (30d / 90d / 6m / 1y).
+  const windowMap: Record<string, number> = {
+    "30d": 30,
+    "90d": 90,
+    "6m": 182,
+    "1y": 365,
+  };
+  const windowDays = windowMap[scope];
+  if (typeof windowDays === "number") {
+    const now = new Date();
+    const from = new Date(now.getTime() - windowDays * 86_400_000);
+    return { kind: "window", fromIso: from.toISOString(), toIso: now.toISOString() };
+  }
   return { kind: "me" };
 }
 
@@ -1341,7 +1365,16 @@ export async function getLetters(
     // (period_key = full PHT date "YYYY-MM-DD") match the same prefix.
     query = query.like("period_key", `${scope.year}%`);
   }
-  query = query.limit(limit);
+  if (scope.kind === "window") {
+    query = query.gte("generated_at", scope.fromIso).lte("generated_at", scope.toIso);
+  }
+  // Verifier fix (high): client scope filters in JS AFTER the SQL bound.
+  // limit=1 hides client-scope letters when the first-by-date row doesn't
+  // reference the client. Over-fetch enough rows to reliably probe the
+  // archive (client filters are rare; this is bounded by the user's
+  // letter archive size).
+  const sqlLimit = scope.kind === "client" ? Math.max(limit * 20, 60) : limit;
+  query = query.limit(sqlLimit);
   const { data } = await query;
   let rows = (data ?? []) as EditorialLetter[];
   if (scope.kind === "client") {
@@ -1349,7 +1382,7 @@ export async function getLetters(
     // JSON for any of the known client/entity id shapes the editorial
     // brain emits. Letters with no client reference fall out.
     const clientId = scope.clientId;
-    rows = rows.filter((l) => letterReferencesClient(l, clientId));
+    rows = rows.filter((l) => letterReferencesClient(l, clientId)).slice(0, limit);
   }
   return rows;
 }
@@ -1385,8 +1418,14 @@ function letterReferencesClient(letter: EditorialLetter, clientId: string): bool
 }
 
 // Used by the Stats Letters subtab to decide whether to render the
-// section at all. Cheap COUNT-style probe — fetch up to 1 row in scope
+// section at all. Cheap COUNT-style probe — fetch a small batch in scope
 // and report presence.
+//
+// Verifier fix (high): client scope filters in JS AFTER the SQL bound.
+// Probing with limit=1 hides every client whose most-recent letter row
+// doesn't reference the client. Defer to getLetters(limit=1, ...) which
+// over-fetches for client scope internally; for non-client scopes a
+// single-row SQL probe is exact.
 export async function hasLettersInScope(scope: LettersScope): Promise<boolean> {
   const rows = await getLetters(1, scope);
   return rows.length > 0;

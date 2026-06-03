@@ -8,10 +8,13 @@
 
 import {
   AlertCircle,
+  AlertOctagon,
   AlertTriangle,
   Bell,
   CalendarClock,
   ClipboardList,
+  Clock,
+  HandCoins,
   HandHeart,
   HelpCircle,
   Info,
@@ -159,6 +162,26 @@ export const KNOWN_KINDS: KindMeta[] = [
     description:
       "A new editorial letter is ready — Sunday, end-of-month, anniversary, or quiet receipt response.",
   },
+  // Loans workflow (freelane-loans-design 2026-06-02) — three kinds
+  // covering proposal, due-soon, and overdue. Proposal opens a center
+  // modal with accept / reject buttons; due-soon + overdue deep-link to
+  // the loan detail sheet in /spending.
+  {
+    key: "loan_proposal",
+    label: "Was this a loan?",
+    description:
+      "The brain spotted loan-ish language on a beneficiary spend and asks before logging it as a loan.",
+  },
+  {
+    key: "loan_due_soon",
+    label: "Loan due soon",
+    description: "Three-day heads-up before a loan's due date.",
+  },
+  {
+    key: "loan_overdue",
+    label: "Loan overdue",
+    description: "A loan's due date has passed.",
+  },
 ];
 
 export const KNOWN_KIND_KEYS = new Set(KNOWN_KINDS.map((k) => k.key));
@@ -189,6 +212,9 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   entity_introduction: MessageCircle,
   entity_pattern_change: UserCog,
   new_letter: Mail,
+  loan_proposal: HandCoins,
+  loan_due_soon: Clock,
+  loan_overdue: AlertOctagon,
 };
 
 export function iconForKind(kind: string): LucideIcon {

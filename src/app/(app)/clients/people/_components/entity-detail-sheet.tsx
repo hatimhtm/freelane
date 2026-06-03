@@ -334,7 +334,7 @@ function LoansSection({
                   You owe · open
                 </span>
                 <span className="tabular text-foreground/85">
-                  {formatMoney(totals.receivedOpenCount > 0 ? totals.receivedOutstandingBase : 0, baseCurrency)}
+                  {formatMoney(totals.receivedOutstandingBase, baseCurrency)}
                 </span>
               </div>
             )}

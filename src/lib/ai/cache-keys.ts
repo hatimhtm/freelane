@@ -169,6 +169,17 @@ export const BRAIN_TTL = {
   //     EXEMPT from financial-mutation invalidation: classification keys off
   //     the message text + page + day, not the user's running money state.
   INTENT_CLASSIFIER: 24 * 60 * 60 * 1000,
+  // Loans workflow (migration 0106).
+  //   LOAN_PROPOSAL: Flash Lite — decides whether a freshly saved
+  //     beneficiary spend is more likely a LOAN than a regular spend
+  //     on the beneficiary's behalf. Cache slot is scoped per-spend
+  //     (scopedBrainKey(LOAN_PROPOSAL, 'spend', spendId)) +
+  //     phtDayAnchored:true, so the same spend re-fingerprinted on the
+  //     same PHT day hits the cache. An edit changes the description /
+  //     notes / amount and busts the fingerprint. EXEMPT from financial-
+  //     mutation invalidation — the brain keys off the spend's own
+  //     payload, not the user-wide money state.
+  LOAN_PROPOSAL: 24 * 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -215,6 +226,8 @@ export const BRAIN_KEYS = {
   LETTER_WORTH_SAYING: "letter_worth_saying",
   // Should-I-Buy collapse workflow.
   INTENT_CLASSIFIER: "intent_classifier",
+  // Loans workflow.
+  LOAN_PROPOSAL: "loan_proposal",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -262,6 +275,7 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.ENTITY_PATTERN_CHANGE]: BRAIN_TTL.ENTITY_PATTERN_CHANGE,
   [BRAIN_KEYS.LETTER_WORTH_SAYING]: BRAIN_TTL.LETTER_WORTH_SAYING,
   [BRAIN_KEYS.INTENT_CLASSIFIER]: BRAIN_TTL.INTENT_CLASSIFIER,
+  [BRAIN_KEYS.LOAN_PROPOSAL]: BRAIN_TTL.LOAN_PROPOSAL,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache
@@ -324,6 +338,11 @@ export const FINANCIAL_INVALIDATION_EXEMPT: readonly BrainKey[] = [
   // should_i_buy intent, so spend-driven invalidation would just burn
   // Gemini cost.
   BRAIN_KEYS.INTENT_CLASSIFIER,
+  // Loans workflow — the loan-proposal brain keys off a specific spend's
+  // own description / notes / amount. Other spends in the user's history
+  // can't change whether THIS spend was a loan, so spend-driven
+  // invalidation would just burn Gemini cost.
+  BRAIN_KEYS.LOAN_PROPOSAL,
 ] as const;
 
 // Below-this threshold spends do NOT bust the AI brain cache. A ₱5 cigarette

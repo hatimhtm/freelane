@@ -18,6 +18,10 @@ import {
   rejectEntityDiscovery,
   acceptEntityPatternAnswer,
 } from "@/lib/entities/discovery-actions";
+import {
+  acceptLoanProposal,
+  rejectLoanProposal,
+} from "@/lib/loans/proposal-actions";
 import { LetterReader } from "@/components/letters/letter-reader";
 
 // Generalized click-routing for notification bell + /notifications + the
@@ -528,6 +532,34 @@ const KIND_HANDLERS: Record<string, ClickHandler> = {
       size: "reader",
       chromeless: true,
     });
+  },
+  // Loans workflow — loan_proposal opens a center modal with Accept /
+  // Not a loan buttons. Accept forwards to createPersonalLoan via
+  // acceptLoanProposal; reject stamps spends.non_loan via
+  // rejectLoanProposal so the brain doesn't re-propose the same row.
+  // Both actions mark the notification read on success.
+  loan_proposal: (n, openModal) => {
+    openModal(
+      <LoanProposalModalBody
+        notificationId={n.id}
+        subject={n.subject}
+        body={n.body}
+      />,
+      { title: n.subject, description: undefined },
+    );
+  },
+  // loan_due_soon + loan_overdue carry link_url=/spending?loans=1&loan_id=…
+  // and would route via the generic link_url fallback below. Register
+  // them explicitly so KIND_HANDLERS coverage is unambiguous and a
+  // future handler swap (e.g. opening a quick "Record return" modal)
+  // doesn't have to dig through the fallback path.
+  loan_due_soon: (_n, _openModal, navigate) => {
+    const link = _n.link_url;
+    navigate(link ?? "/spending?loans=1");
+  },
+  loan_overdue: (_n, _openModal, navigate) => {
+    const link = _n.link_url;
+    navigate(link ?? "/spending?loans=1");
   },
   ai_clarifying_question: (n, openModal) => {
     const payload = (n.payload ?? {}) as {
@@ -1102,6 +1134,83 @@ function EntityPatternAnswerModalBody({
             Send
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Body for the loan_proposal kind. The brain spotted loan-ish language
+// on a beneficiary spend; the user confirms (createPersonalLoan via
+// acceptLoanProposal) or rejects (stamp spends.non_loan via
+// rejectLoanProposal). The payload carries the full proposed_loan shape
+// already — both server actions re-read it from the inbox row so we
+// don't have to thread anything through the modal beyond the
+// notification id.
+function LoanProposalModalBody({
+  notificationId,
+  subject,
+  body,
+}: {
+  notificationId: string;
+  subject: string;
+  body: string | null;
+}) {
+  const { closeModal } = useNotificationModal();
+  const [busy, setBusy] = useState<"accept" | "reject" | null>(null);
+  const [pending, start] = useTransition();
+
+  const accept = () => {
+    setBusy("accept");
+    start(async () => {
+      const res = await acceptLoanProposal(notificationId);
+      if (!res.ok) {
+        toast.error(res.error || "Couldn't log the loan.");
+        setBusy(null);
+        return;
+      }
+      toast.success("Logged as a loan.");
+      closeModal();
+    });
+  };
+
+  const reject = () => {
+    setBusy("reject");
+    start(async () => {
+      const res = await rejectLoanProposal(notificationId);
+      if (!res.ok) {
+        toast.error(res.error || "Couldn't save.");
+        setBusy(null);
+        return;
+      }
+      closeModal();
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      {body && (
+        <p className="text-sm leading-snug text-muted-foreground">{body}</p>
+      )}
+      <p className="text-sm font-medium text-foreground">
+        {subject || "Was this a loan?"}
+      </p>
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={accept}
+          disabled={pending}
+          className="w-full rounded-lg bg-foreground px-3 py-2.5 text-left text-sm font-medium text-background transition-colors disabled:opacity-50"
+        >
+          {busy === "accept" ? "Logging…" : "Yes, log loan"}
+        </button>
+        <button
+          type="button"
+          onClick={reject}
+          disabled={pending}
+          className="w-full rounded-lg border border-border/70 bg-card px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-50"
+        >
+          {busy === "reject" ? "Saving…" : "Not a loan"}
+        </button>
       </div>
     </div>
   );

@@ -32,6 +32,7 @@ import type {
   RecurringScheduleKind,
   RecurringSpend,
 } from "@/lib/supabase/types";
+import type { WalletBrandKey } from "@/lib/brand/wallets";
 
 async function userOrThrow() {
   const supabase = await createClient();
@@ -1601,7 +1602,9 @@ export type PaymentMethodInput = {
   // Explicit picker write — what the resolver fallback comment calls out
   // as the user's escape hatch when fuzzy-match misses an idiosyncratic
   // wallet name. Pass null to clear and fall back to fuzzy matching.
-  brand_key?: string | null;
+  // Narrowed to WalletBrandKey so a typo at a callsite lights up the
+  // compiler instead of degrading silently to the fuzzy-match fallback.
+  brand_key?: WalletBrandKey | null;
   // Custom brand fallback (migration 0110). Only populated when brand_key
   // is the literal "custom"; resolver reads them verbatim into a generic
   // tile. Both nullable — the picker flushes them when a curated brand
@@ -1658,11 +1661,12 @@ export async function updatePaymentMethod(id: string, input: Partial<PaymentMeth
 // wallets — fuzzy fallback stays in place once brand_key is null again.
 export async function updateMethodBrand(
   id: string,
-  brandKey: string | null,
-): Promise<ActionResult<{ id: string; brand_key: string | null }>> {
+  brandKey: WalletBrandKey | null,
+): Promise<ActionResult<{ id: string; brand_key: WalletBrandKey | null }>> {
   return safeRun("updateMethodBrand", async () => {
     const { supabase, userId } = await userOrThrow();
-    const normalized = brandKey?.trim() ? brandKey.trim() : null;
+    const trimmed = brandKey?.trim();
+    const normalized = (trimmed ? (trimmed as WalletBrandKey) : null);
     const { error } = await supabase
       .from("payment_methods")
       .update({ brand_key: normalized })
@@ -2306,6 +2310,17 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
     // that signal past the 3-day window).
     void (async () => {
       try {
+        const { hasLoanishKeyword, proposeLoanFromSpend } = await import(
+          "@/lib/ai/brains/loan-proposal"
+        );
+        // Cheap keyword reject FIRST — every >=500 beneficiary spend
+        // would otherwise pay a Supabase RTT to read spends.non_loan
+        // even when the description carries no loan-ish language. The
+        // dispatcher gate (per the brain header) is keyword AND
+        // amount AND beneficiary; pay for the DB read only when the
+        // free signal is already present.
+        const text = `${input.description ?? ""} ${input.notes ?? ""}`;
+        if (!hasLoanishKeyword(text)) return;
         // Skip if the user already said "no, not a loan" on this spend.
         const { data: spendRow } = await supabase
           .from("spends")
@@ -2314,11 +2329,6 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
           .eq("user_id", userId)
           .maybeSingle();
         if (spendRow && (spendRow as { non_loan?: boolean }).non_loan) return;
-        const { hasLoanishKeyword, proposeLoanFromSpend } = await import(
-          "@/lib/ai/brains/loan-proposal"
-        );
-        const text = `${input.description ?? ""} ${input.notes ?? ""}`;
-        if (!hasLoanishKeyword(text)) return;
         // Pull the beneficiary's display name + relationship for the
         // brain prompt. Best-effort — empty values fall through.
         let beneficiaryName = "";

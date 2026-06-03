@@ -12,6 +12,7 @@ import {
   getKnownVendorsForModal,
   getKnownPeopleForModal,
 } from "@/lib/data/queries";
+import { getLoansForSpendIds, normalizeDirection } from "@/lib/loans/queries";
 import {
   computeSafeToSpendFromData,
   computeSafeToSpend,
@@ -65,19 +66,52 @@ export async function loadSpendingProps(params: {
   }
   const walletNameById = new Map(methods.map((m) => [m.id, m.name]));
 
-  const rows: SpendRow[] = spends.map((s) => ({
-    id: s.id,
-    spentAt: s.spent_at,
-    amount: Number(s.amount),
-    currency: s.currency as CurrencyCode,
-    amountBase: Number(s.amount_base ?? 0),
-    description: s.description ?? null,
-    walletId: s.wallet_id,
-    walletName: walletNameById.get(s.wallet_id) ?? "Untagged",
-    categoryIds: tagsBySpend.get(s.id) ?? [],
-    businessRelevant: !!s.business_relevant,
-    forUs: !!s.for_us,
-  }));
+  // Loans workflow — project loan state onto each spend row. The spending
+  // list shows given-direction loans inline (received loans have no
+  // origin spend by design and live in entity detail instead). Single
+  // batched query keyed off the spend ids in scope; degrades gracefully
+  // (badges hide, deep links inert) if the call throws.
+  const loansBySpendId = new Map<
+    string,
+    { loanId: string; direction: "given" | "received"; status: string }
+  >();
+  try {
+    const spendIds = spends.map((s) => s.id);
+    const loanRows = await getLoansForSpendIds(spendIds);
+    for (const l of loanRows) {
+      if (!l.origin_spend_id) continue;
+      const dir = normalizeDirection(l.direction);
+      if (!dir) continue;
+      loansBySpendId.set(l.origin_spend_id, {
+        loanId: l.id,
+        direction: dir,
+        status: l.status,
+      });
+    }
+  } catch {
+    // Swallow — the spends list still renders without loan badges.
+  }
+
+  const rows: SpendRow[] = spends.map((s) => {
+    const loanMatch = loansBySpendId.get(s.id);
+    return {
+      id: s.id,
+      spentAt: s.spent_at,
+      amount: Number(s.amount),
+      currency: s.currency as CurrencyCode,
+      amountBase: Number(s.amount_base ?? 0),
+      description: s.description ?? null,
+      walletId: s.wallet_id,
+      walletName: walletNameById.get(s.wallet_id) ?? "Untagged",
+      categoryIds: tagsBySpend.get(s.id) ?? [],
+      businessRelevant: !!s.business_relevant,
+      forUs: !!s.for_us,
+      isLoan: !!loanMatch,
+      loanId: loanMatch?.loanId ?? null,
+      loanDirection: loanMatch?.direction ?? null,
+      loanStatus: loanMatch?.status ?? null,
+    };
+  });
 
   // Phase 1.5: ledger reader first; falls back to source-table math for
   // wallets the ledger doesn't yet cover.
