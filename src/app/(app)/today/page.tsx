@@ -296,59 +296,54 @@ export default async function TodayPage() {
     console.error("Today: live daily safe snapshot threw", err);
   }
 
-  // Calm weather: read the cache only — even if stale — so the page can
-  // render immediately. If the row is missing or stale, fire a background
-  // refresh that the user will see on the next visit (a mutation will also
-  // invalidate it through invalidateAiSafeSpendCache). The cachedCalmWeather
-  // already came down with getDashboardData and is the canonical fallback.
-  const calmWeatherRow = await getCalmWeatherCached().catch(() => null);
-  const calmWeather = calmWeatherRow ?? cachedCalmWeather ?? null;
-  const calmStale = calmWeather === null || new Date(calmWeather.expires_at).getTime() <= now.getTime();
-  if (calmStale) {
-    void refreshCalmWeather({ force: false }).catch(() => {});
-  }
+  // Every independent read for the rest of the page fans out in ONE parallel
+  // batch instead of a serial chain. Calm-weather (cache-only), today's
+  // morning log, the 5 cache-only brain payloads, the calendar year-recall,
+  // today's diary entry, and the sadaka pool + suggestion don't depend on one
+  // another — serializing them only stacked round-trips. Each keeps its own
+  // .catch default so one slow or missing read never sinks the page, and the
+  // brain regen bodies still live in the client widgets (these are pure cache
+  // reads). morningLog is consumed later by recentNights, not by any sibling.
   const ramadan: RamadanPeriod | null = nextRamadanPeriod(islamicCalendar, now);
-
-  // Pull non-AI DB reads first so the AI fan-out below isn't conflated with
-  // a serial morning-log fetch. morningLog feeds sleepEcho's Gemini call —
-  // having it ready in advance is what lets every brain race in parallel.
-  const morningLog: MorningLog | null = await getTodayMorningLog().catch(() => null);
-
-  // 5 blocking brains → cache-only server reads in parallel. Each one
-  // returns a CachedBrainPayload<T> | null (the brain's regen body lives
-  // inside withBrainCache and is now driven from the client widgets).
-  // yearRecall stays serial-ish for now — it's calendar-driven and not on
-  // the hot Gemini path.
   const [
+    calmWeatherRow,
+    morningLog,
     tightModeCached,
     eidPrepCached,
     sadakaCached,
     postPaydayCached,
     sleepEchoCached,
     yearRecall,
+    diaryEntry,
+    sadakaPool,
+    sadakaSuggested,
   ] = await Promise.all([
+    getCalmWeatherCached().catch(() => null),
+    getTodayMorningLog().catch(() => null as MorningLog | null),
     getTightModeCached().catch(() => null),
     getEidPrepCached().catch(() => null),
     getSadakaRhythmCached().catch(() => null),
     getPostPaydaySurgeCached().catch(() => null),
     getSleepSpendEchoCached().catch(() => null),
     buildYearMemoryRecall().catch(() => null as YearMemoryRecall | null),
+    getDiaryEntry(todayStr).catch(() => null),
+    readPoolBalance().catch(() => ({ rawBase: 0, displayBase: 0 })),
+    getSuggestedToday().catch(() => ({
+      suggested_amount: 0,
+      reasoning: "",
+      surface_today: false,
+    })),
   ]);
 
-  // Diary entry for today.
-  const diaryEntry = await getDiaryEntry(todayStr).catch(() => null);
-
-  // Sadaka workflow — pool balance + suggested-today brain payload. Both
-  // best-effort: missing tables on a stale schema return zero/empty defaults.
-  const sadakaPool = await readPoolBalance().catch(() => ({
-    rawBase: 0,
-    displayBase: 0,
-  }));
-  const sadakaSuggested = await getSuggestedToday().catch(() => ({
-    suggested_amount: 0,
-    reasoning: "",
-    surface_today: false,
-  }));
+  // Calm weather: prefer the freshly-read cache row, fall back to the copy
+  // that already came down with getDashboardData. If it's missing or stale,
+  // fire a background refresh the user sees next visit (a mutation also
+  // invalidates it through invalidateAiSafeSpendCache).
+  const calmWeather = calmWeatherRow ?? cachedCalmWeather ?? null;
+  const calmStale = calmWeather === null || new Date(calmWeather.expires_at).getTime() <= now.getTime();
+  if (calmStale) {
+    void refreshCalmWeather({ force: false }).catch(() => {});
+  }
 
   // Recent sleep nights — past 3 from morning_log.
   const recentNights: Array<{ slept: number | null }> = [

@@ -7,6 +7,7 @@ import {
   ArrowDownToLine,
   ChevronDown,
   ChevronRight,
+  Layers,
   Plus,
   Trash2,
   Wallet,
@@ -72,6 +73,7 @@ import type { CurrencyCode } from "@/lib/supabase/types";
 import type { HoldingBalanceRow } from "@/lib/payment-chain";
 import type { WarningResult } from "@/lib/warnings/registry";
 import { ChainModal } from "./chain-modal";
+import { BulkPaymentModal } from "./bulk-payment-modal";
 import { WithdrawalModal } from "./withdrawal-modal";
 import { WalletDetailSheet } from "./wallet-detail-sheet";
 
@@ -173,6 +175,7 @@ export function PaymentsView({
   const showWithdrawals = tab === "withdrawals";
   const showHistory = tab === "history";
   const [sheetOpen, setSheetOpen] = useState(openNew ?? false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(openWithdraw ?? false);
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
   // Landing-wallet filter for the payments list ("" = all).
@@ -297,9 +300,18 @@ export function PaymentsView({
               </Button>
             )}
             {(showWallets || showHistory) && (
-              <Button onClick={() => setSheetOpen(true)} disabled={allProjects.length === 0}>
-                <Plus className="mr-1.5 h-4 w-4" /> Log payment
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setBulkOpen(true)}
+                  disabled={allProjects.length === 0}
+                >
+                  <Layers className="mr-1.5 h-4 w-4" /> Log several
+                </Button>
+                <Button onClick={() => setSheetOpen(true)} disabled={allProjects.length === 0}>
+                  <Plus className="mr-1.5 h-4 w-4" /> Log payment
+                </Button>
+              </>
             )}
           </div>
         }
@@ -443,6 +455,17 @@ export function PaymentsView({
         rates={rates}
         baseCurrency={currency}
         defaultProjectId={defaultProjectId}
+      />
+
+      <BulkPaymentModal
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        projects={formProjects}
+        methods={methodsBare}
+        balances={balancesByMethod}
+        currencies={currencies}
+        rates={rates}
+        baseCurrency={currency}
       />
 
       <WithdrawalModal

@@ -498,17 +498,22 @@ export async function loadDashboardProps(): Promise<DashboardProps> {
   // Pull the sadaka pool balance + suggested-today brain payload through
   // the canonical lib/sadaka readers. Both best-effort: a stale schema
   // (pre-migration 0073) returns zero/empty defaults without crashing.
-  const { readPoolBalance: readSadakaPoolBalance } = await import("@/lib/sadaka/ledger");
-  const { getSuggestedToday: getSadakaSuggestedToday } = await import("@/lib/sadaka/suggestion");
-  const sadakaPool = await readSadakaPoolBalance().catch(() => ({
-    rawBase: 0,
-    displayBase: 0,
-  }));
-  const sadakaSuggestion = await getSadakaSuggestedToday().catch(() => ({
-    suggested_amount: 0,
-    reasoning: "",
-    surface_today: false,
-  }));
+  // Both modules and both reads are independent — load + read in parallel
+  // rather than serially. Best-effort: a stale schema (pre-migration 0073)
+  // returns zero/empty defaults without crashing.
+  const [{ readPoolBalance: readSadakaPoolBalance }, { getSuggestedToday: getSadakaSuggestedToday }] =
+    await Promise.all([
+      import("@/lib/sadaka/ledger"),
+      import("@/lib/sadaka/suggestion"),
+    ]);
+  const [sadakaPool, sadakaSuggestion] = await Promise.all([
+    readSadakaPoolBalance().catch(() => ({ rawBase: 0, displayBase: 0 })),
+    getSadakaSuggestedToday().catch(() => ({
+      suggested_amount: 0,
+      reasoning: "",
+      surface_today: false,
+    })),
+  ]);
 
   const scalarWarnings = resolveAllWarnings({
     periodEnd: null,

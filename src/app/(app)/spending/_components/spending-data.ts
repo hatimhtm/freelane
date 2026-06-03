@@ -232,30 +232,25 @@ export async function loadSpendingProps(params: {
   const spendsThisMonth = spends.filter(
     (s) => new Date(s.spent_at) >= startOfMonth,
   );
-  const anomalies = await generateSpendingAnomalies({
-    spendsThisMonth,
-    spendsTrailing6mo,
-    categories: spendCategories,
-    categoryLinks: spendCategoryLinks,
-  });
-
-  // Brand Identity workflow — vendor icon cache for the spend list + the
-  // vendor leaderboard. Failure swallowed (resolver falls through to
-  // tier 1 / tier 3 without the cache row).
-  const vendorIconCache = await getVendorIconCache().catch(() => []);
-
-  // Vendors workflow — light projection of the user's active vendors so
-  // the spend modal can render the "text input + dropdown of matching
-  // known vendors" affordance without re-fetching the heavy
-  // getVendorsData payload. Failure degrades silently — the dropdown
-  // simply shows no suggestions and the typed text still flows through
-  // resolveLinksForSpend / createVendor on save.
-  const knownVendors = await getKnownVendorsForModal().catch(() => []);
-  // Entities workflow — light projection of the user's active entities
-  // for the "For someone else" picker on the spend modal. Failure
-  // degrades silently — the picker still accepts free-text input and
-  // Gate 1 fires on save.
-  const knownPeople = await getKnownPeopleForModal().catch(() => []);
+  // These four reads are independent — anomaly detection, the vendor icon
+  // cache (Brand Identity), and the light vendor/people projections the spend
+  // modal uses for its pickers all draw from different sources. Fan them out
+  // in one batch instead of a serial chain. Each keeps its own .catch default
+  // so a missing cache/projection degrades silently:
+  //   • vendor icon cache → resolver falls through to tier 1 / tier 3
+  //   • known vendors      → modal dropdown shows no suggestions (free text still saves)
+  //   • known people       → "For someone else" picker accepts free text (Gate 1 on save)
+  const [anomalies, vendorIconCache, knownVendors, knownPeople] = await Promise.all([
+    generateSpendingAnomalies({
+      spendsThisMonth,
+      spendsTrailing6mo,
+      categories: spendCategories,
+      categoryLinks: spendCategoryLinks,
+    }),
+    getVendorIconCache().catch(() => []),
+    getKnownVendorsForModal().catch(() => []),
+    getKnownPeopleForModal().catch(() => []),
+  ]);
 
   return {
     rows,

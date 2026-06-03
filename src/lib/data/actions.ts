@@ -956,6 +956,86 @@ export async function addPayment(input: PaymentInput) {
   });
 }
 
+// Bulk "I got paid — several at once" entry. Each row is one project's payment
+// where the user enters the GROSS owed and (optionally) the fee the rail ate;
+// net landed = grossBase − fee. We map each row to a single-hop chain and run
+// it through the canonical addPaymentWithChain so ledger mirror, sadaka hook,
+// allocations, project recompute, audit event, and revalidation behave EXACTLY
+// as a one-by-one entry — no money logic is duplicated, only the gross/fee →
+// net arithmetic the bulk form exists for. Rows are processed sequentially so
+// per-project status recompute never races. A failed row is collected and
+// reported; the rest still land (partial success is honest here — money that
+// arrived shouldn't be discarded because a sibling row was malformed).
+export type BulkPaymentRowInput = {
+  project_id: string;
+  paid_at: string;
+  gross_amount: number;     // amount owed, in gross_currency (usually project ccy)
+  gross_currency: string;
+  fee_base?: number;        // fee the rail ate, in base currency; 0/omitted = none
+  landing_method_id?: string | null; // wallet it landed in (final hop destination)
+  from_method_id?: string | null;    // optional source wallet
+  reference?: string;
+  notes?: string;
+};
+
+export async function addPaymentsReceivedBulk(rows: BulkPaymentRowInput[]) {
+  if (!rows.length) throw new Error("Add at least one payment.");
+  const { supabase, userId } = await userOrThrow();
+
+  // Base currency + FX fetched ONCE for the whole batch — net = grossBase − fee
+  // is computed here so each row hands addPaymentWithChain a base-currency
+  // amount_out (currency_out = base), making its own toBase a no-op for net.
+  const [{ data: settings }, { data: rates }] = await Promise.all([
+    supabase.from("settings").select("base_currency").eq("user_id", userId).maybeSingle(),
+    supabase.from("exchange_rates").select("code,rate_to_base").eq("user_id", userId),
+  ]);
+  const baseCurrency = settings?.base_currency ?? "PHP";
+  const rateRows = (rates ?? []) as RatePair[];
+
+  const created: { id: string; clientId: string }[] = [];
+  const clientIds = new Set<string>();
+  const errors: { index: number; message: string }[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    try {
+      if (!row.project_id) throw new Error("Pick a project.");
+      const gross = Number(row.gross_amount);
+      if (!Number.isFinite(gross) || gross <= 0) throw new Error("Gross amount must be greater than 0.");
+      const grossBase = toBaseAmount(gross, row.gross_currency, rateRows);
+      const fee = Math.max(0, Number(row.fee_base) || 0);
+      const netBase = Math.max(0, Math.round((grossBase - fee) * 100) / 100);
+      const res = await addPaymentWithChain({
+        project_id: row.project_id,
+        paid_at: row.paid_at,
+        reference: row.reference,
+        notes: row.notes,
+        steps: [
+          {
+            from_method_id: row.from_method_id ?? null,
+            method_id: row.landing_method_id ?? null,
+            amount_in: gross,
+            currency_in: row.gross_currency,
+            amount_out: netBase,
+            currency_out: baseCurrency,
+          },
+        ],
+      });
+      created.push(res);
+      if (res.clientId) clientIds.add(res.clientId);
+    } catch (err) {
+      errors.push({ index: i, message: (err as Error).message });
+    }
+  }
+
+  return {
+    created: created.length,
+    total: rows.length,
+    clientIds: Array.from(clientIds),
+    errors,
+  };
+}
+
 // Safe-field edits ONLY (notes, reference, invoice_id, method). Direct money
 // edits (project_id / amount / currency / paid_at) bypass allocation rewrites
 // and project status recompute — go through updatePaymentDetails for the
