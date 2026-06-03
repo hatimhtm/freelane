@@ -15,7 +15,6 @@ import {
   Calendar,
   Sparkles,
   HandHeart,
-  HeartHandshake,
   FileText,
   ShoppingBag,
   Bell,
@@ -52,8 +51,12 @@ const NAV: { title: string; items: NavItem[] }[] = [
       // The Vendors surface now lives as a sub-view inside Spending —
       // /spending/vendors. /vendors keeps a redirect for backwards
       // compatibility with bookmarks.
+      //
+      // Entities removed from top nav (freelane-entities-design 2026-06-03).
+      // The People surface now lives as a Clients sub-tab —
+      // /clients/people. /entities keeps a redirect for legacy links and
+      // command-palette history.
       { href: "/clients",   label: "Clients",   icon: Users },
-      { href: "/entities",  label: "Entities",  icon: HeartHandshake },
     ],
   },
   {

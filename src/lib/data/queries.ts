@@ -936,6 +936,46 @@ export async function getKnownVendorsForModal(): Promise<KnownVendorOption[]> {
   }));
 }
 
+// Entities workflow — light projection of the user's active entities
+// for the spend modal's "For someone else" picker. Mirrors the shape +
+// fallback semantics of getKnownVendorsForModal: failure degrades to
+// an empty list; the picker still allows free-text input and Gate 1
+// fires on save.
+export type KnownPersonOption = {
+  id: string;
+  name: string;
+  relationship: string | null;
+};
+
+export async function getKnownPeopleForModal(): Promise<KnownPersonOption[]> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  // Verifier fix: the BeneficiaryPicker UX ("Wife, Junjun, Auntie
+  // Maria…") is for things you buy FOR. Filter on the kinds that match
+  // — person / household / pet — so place / concept / habit / ritual
+  // rows ('Manila apartment', 'Morning prayer') don't surface in the
+  // dropdown. Other kinds are still valid entities; they just don't
+  // belong in this picker.
+  const { data } = await supabase
+    .from("entities")
+    .select("id, canonical_name, relationship")
+    .eq("user_id", user.id)
+    .eq("archived", false)
+    .in("kind", ["person", "household", "pet"])
+    .order("canonical_name");
+  const rows = (data ?? []) as Array<{
+    id: string;
+    canonical_name: string | null;
+    relationship: string | null;
+  }>;
+  return rows
+    .filter((r) => !!r.canonical_name)
+    .map((r) => ({
+      id: r.id,
+      name: r.canonical_name!,
+      relationship: r.relationship ?? null,
+    }));
+}
+
 // All vendors + their aliases + the linked-spend rollup. Drives /vendors.
 export async function getVendorsData() {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
@@ -1111,6 +1151,116 @@ export async function getEntitiesData() {
     entities: (entities.data ?? []) as Entity[],
     links: (links.data ?? []) as SpendEntityLink[],
     spends: (spends.data ?? []) as Spend[],
+    settings: (settings.data ?? null) as Settings | null,
+  };
+}
+
+// People sub-tab data — three buckets:
+//   needsIntroduction: introduction_status pending/asked AND not archived
+//   active: introduction_status='introduced' AND not archived
+//   archived: archived=true (collapsed by default in UI)
+//
+// Adds last_interaction_at + transfer_count derived from
+// spend_entity_links + spends.beneficiary_entity_id. The brief calls
+// out "transfer count" — for v1 we count beneficiary_spend links + raw
+// spend_entity_links so the card has a number to display.
+export async function getEntitiesPeopleData() {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [entities, links, spends, settings] = await Promise.all([
+    supabase
+      .from("entities")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("archived")
+      .order("canonical_name"),
+    supabase.from("spend_entity_links").select("*"),
+    supabase
+      .from("spends")
+      .select("id,beneficiary_entity_id,spent_at,amount_base")
+      .eq("user_id", user.id)
+      .order("spent_at", { ascending: false })
+      .limit(800),
+    supabase.from("settings").select("*").eq("user_id", user.id).maybeSingle(),
+  ]);
+
+  const allEntities = (entities.data ?? []) as Entity[];
+  const allLinks = (links.data ?? []) as SpendEntityLink[];
+  const allSpends = (spends.data ?? []) as Array<{
+    id: string;
+    beneficiary_entity_id: string | null;
+    spent_at: string;
+    amount_base: number | null;
+  }>;
+
+  // Build per-entity counters + last_interaction_at across BOTH link
+  // paths (legacy spend_entity_links + new beneficiary_entity_id).
+  //
+  // Verifier fix: createSpend writes BOTH a spend_entity_links mirror
+  // row AND sets spends.beneficiary_entity_id, so a naive union would
+  // double-count every beneficiary spend in transferCount. We dedupe on
+  // (entity_id, spend_id) using a per-entity Set so each spend bumps
+  // the counter exactly once.
+  const transferCount = new Map<string, number>();
+  const lastInteractionAt = new Map<string, string>();
+  const seenSpendByEntity = new Map<string, Set<string>>();
+  const bumpInteraction = (entityId: string, spendId: string, when: string) => {
+    let seen = seenSpendByEntity.get(entityId);
+    if (!seen) {
+      seen = new Set<string>();
+      seenSpendByEntity.set(entityId, seen);
+    }
+    if (seen.has(spendId)) {
+      // Still refresh last_interaction_at (idempotent max) — only the
+      // counter is at risk of double-counting.
+      const prior = lastInteractionAt.get(entityId);
+      if (!prior || prior < when) lastInteractionAt.set(entityId, when);
+      return;
+    }
+    seen.add(spendId);
+    transferCount.set(entityId, (transferCount.get(entityId) ?? 0) + 1);
+    const prior = lastInteractionAt.get(entityId);
+    if (!prior || prior < when) lastInteractionAt.set(entityId, when);
+  };
+  const spendById = new Map(allSpends.map((s) => [s.id, s] as const));
+  for (const l of allLinks) {
+    const s = spendById.get(l.spend_id);
+    if (s) bumpInteraction(l.entity_id, l.spend_id, s.spent_at);
+  }
+  for (const s of allSpends) {
+    if (s.beneficiary_entity_id) {
+      bumpInteraction(s.beneficiary_entity_id, s.id, s.spent_at);
+    }
+  }
+
+  const decorate = (e: Entity) => ({
+    ...e,
+    transferCount: transferCount.get(e.id) ?? 0,
+    lastInteractionAt: lastInteractionAt.get(e.id) ?? null,
+  });
+
+  // Verifier fix: silenced rows (introduction_status='silenced',
+  // archived=false) were leaked from every bucket. The Archived / Silent
+  // section in people-view promises to surface them; widen that bucket
+  // to include silenced-but-not-archived rows and narrow live to
+  // !archived AND !silenced.
+  const live = allEntities.filter(
+    (e) => !e.archived && e.introduction_status !== "silenced",
+  );
+  const needsIntroduction = live
+    .filter((e) => e.introduction_status === "pending" || e.introduction_status === "asked")
+    .map(decorate);
+  const active = live
+    .filter((e) => e.introduction_status === "introduced")
+    .map(decorate);
+  const archived = allEntities
+    .filter((e) => e.archived || e.introduction_status === "silenced")
+    .map(decorate);
+
+  return {
+    needsIntroduction,
+    active,
+    archived,
+    links: allLinks,
     settings: (settings.data ?? null) as Settings | null,
   };
 }
@@ -1476,6 +1626,110 @@ export async function getClientPatternHistory(
       .eq("user_id", user.id)
       .eq("subject_kind", "client")
       .eq("subject_id", clientId)
+      .in("key", factKeys)
+      .is("archived_at", null);
+    for (const f of facts ?? []) {
+      const value = (f.value ?? {}) as { answer?: unknown };
+      if (typeof value.answer === "string") {
+        answersByKey.set(f.key as string, value.answer);
+      }
+    }
+  }
+
+  const fromQuestions: ClientPatternHistoryRow[] = (questions ?? []).map((q) => ({
+    id: q.id as string,
+    source: "open_question" as const,
+    pattern_kind: (q.fact_key as string) ?? null,
+    summary: null,
+    question: (q.question_text as string) ?? null,
+    answer: answersByKey.get((q.fact_key as string) ?? "") ?? null,
+    created_at: (q.answered_at as string) ?? (q.created_at as string),
+  }));
+
+  return [...fromNotifications, ...fromQuestions]
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .slice(0, limit);
+}
+
+// Verifier fix: parallel timeline for entities so the entity detail
+// sheet can render pattern-change history (entity_pattern_change
+// notifications + answered entity_pattern_* open questions). Mirrors
+// getClientPatternHistory.
+export async function getEntityPatternHistory(
+  entityId: string,
+  limit = 20,
+): Promise<ClientPatternHistoryRow[]> {
+  const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
+  const [{ data: notifications }, { data: questions }] = await Promise.all([
+    supabase
+      .from("notifications_inbox")
+      .select("id,subject,body,payload,answer,created_at")
+      .eq("user_id", user.id)
+      .eq("kind", "entity_pattern_change")
+      .filter("payload->kind_specific->>entity_id", "eq", entityId)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+    supabase
+      .from("ai_open_questions")
+      .select("id,question_text,suggested_answers,fact_key,status,answered_at,created_at")
+      .eq("user_id", user.id)
+      .eq("subject_kind", "entity")
+      .eq("subject_id", entityId)
+      .eq("status", "answered")
+      .order("answered_at", { ascending: false })
+      .limit(limit),
+  ]);
+
+  const fromNotifications: ClientPatternHistoryRow[] = (notifications ?? [])
+    .filter((n) => {
+      const payload = (n.payload ?? {}) as {
+        kind_specific?: { entity_id?: string };
+      };
+      return payload.kind_specific?.entity_id === entityId;
+    })
+    .map((n) => {
+      const payload = (n.payload ?? {}) as {
+        kind_specific?: {
+          pattern_kind?: string;
+          summary?: string;
+          question?: string;
+        };
+      };
+      const answer = (n.answer ?? null) as
+        | { kind?: string; value?: string }
+        | string
+        | null;
+      const answerText =
+        typeof answer === "string"
+          ? answer
+          : (answer?.value as string | undefined) ?? null;
+      return {
+        id: n.id as string,
+        source: "notification" as const,
+        pattern_kind: (payload.kind_specific?.pattern_kind as string) ?? null,
+        summary:
+          (payload.kind_specific?.summary as string) ?? (n.body as string) ?? null,
+        question: (payload.kind_specific?.question as string) ?? null,
+        answer: answerText,
+        created_at: n.created_at as string,
+      };
+    });
+
+  const factKeys = Array.from(
+    new Set(
+      (questions ?? [])
+        .map((q) => (q.fact_key as string | null) ?? null)
+        .filter((k): k is string => !!k),
+    ),
+  );
+  const answersByKey = new Map<string, string>();
+  if (factKeys.length > 0) {
+    const { data: facts } = await supabase
+      .from("ai_user_facts")
+      .select("key,value")
+      .eq("user_id", user.id)
+      .eq("subject_kind", "entity")
+      .eq("subject_id", entityId)
       .in("key", factKeys)
       .is("archived_at", null);
     for (const f of facts ?? []) {

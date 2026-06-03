@@ -1892,6 +1892,14 @@ export type SpendInput = {
   // to the spend AND a money_ledger sadaka_payment outflow. The auto-detect
   // pipeline short-circuits — explicit beats inferred.
   is_sadaka?: boolean;
+  // Entities workflow (migration 0096): "For someone else" toggle +
+  // beneficiary entity picker. is_for_someone_else can be true with
+  // beneficiary_entity_id=null when the user knows it was for someone
+  // but hasn't picked an entity — beneficiary_typed_name then feeds
+  // Gate 1 propose-entity-from-signal.
+  is_for_someone_else?: boolean;
+  beneficiary_entity_id?: string | null;
+  beneficiary_typed_name?: string | null;
 };
 
 export async function createSpend(input: SpendInput): Promise<ActionResult<{ id: string }>> {
@@ -1931,6 +1939,11 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
       loan_installment_id: input.loan_installment_id ?? null,
       for_us: !!input.for_us,
       is_sadaka: !!input.is_sadaka,
+      // Entities workflow — beneficiary fields. Server tolerates the
+      // is_for_someone_else=true / beneficiary_entity_id=null state
+      // (Gate 1 fires below on the typed name).
+      is_for_someone_else: !!input.is_for_someone_else,
+      beneficiary_entity_id: input.beneficiary_entity_id ?? null,
     })
     .select("id")
     .single();
@@ -2050,6 +2063,89 @@ export async function createSpend(input: SpendInput): Promise<ActionResult<{ id:
       source: input.entityIds ? "user" : "auto",
     }));
     await supabase.from("spend_entity_links").insert(rows);
+  }
+
+  // Entities workflow — beneficiary linkage. When the user picked a
+  // known entity from the "For someone else" picker, mirror the link
+  // into spend_entity_links (source='user') so legacy readers (Sadaka
+  // auto-detect mechanism 1, entity detail history, stats aggregates)
+  // keep working alongside the new column. Idempotent on conflict.
+  if (input.is_for_someone_else && input.beneficiary_entity_id) {
+    try {
+      // Overwrite-source semantics (verifier fix): if the auto-resolver
+      // above already inserted a row with source='auto' for the same
+      // entity, upgrade it to 'user' so downstream consumers that
+      // distinguish user-intent from inferred matches don't misclassify
+      // the explicit beneficiary pick.
+      await supabase.from("spend_entity_links").upsert(
+        {
+          spend_id: spendId,
+          entity_id: input.beneficiary_entity_id,
+          source: "user",
+        },
+        { onConflict: "spend_id,entity_id" },
+      );
+    } catch {
+      // Best-effort — the beneficiary_entity_id column on spends is the
+      // primary source of truth; the link mirror is for reader parity.
+    }
+    // Fire the Trigger 1 introduction hook (first monetary event with
+    // this entity). Idempotent via introduction_status; safe to call on
+    // every beneficiary spend.
+    try {
+      const { fireFirstMonetaryEvent } = await import(
+        "@/lib/entities/introductions"
+      );
+      void fireFirstMonetaryEvent({
+        entityId: input.beneficiary_entity_id,
+        eventKind: "beneficiary_spend",
+        amountBase,
+      }).catch(() => {});
+    } catch {
+      /* dynamic-import safety net */
+    }
+    // Entities workflow — pattern-change driver. Verifier fix: the
+    // brain + baseline cache table were both shipped but never wired
+    // into a write path. Run all four pattern checks + refresh the
+    // baseline. Fire-and-forget; the driver swallows every error so the
+    // primary mutation is never blocked by a brain failure.
+    try {
+      const { runEntityPatternChangeForEvent } = await import(
+        "@/lib/entities/pattern-actions"
+      );
+      void runEntityPatternChangeForEvent({
+        kind: "beneficiary_spend",
+        spendId: spendId,
+        entityId: input.beneficiary_entity_id,
+        amountBase,
+        spentAt: new Date(spentAt).toISOString(),
+      }).catch(() => {});
+    } catch {
+      /* dynamic-import safety net */
+    }
+  }
+
+  // Entities workflow — Gate 1. When the user typed a beneficiary name
+  // but did NOT pick an existing entity, scan the typed name through
+  // propose-entity-from-signal so the user is prompted to add it.
+  if (
+    input.is_for_someone_else &&
+    !input.beneficiary_entity_id &&
+    (input.beneficiary_typed_name ?? "").trim().length > 0
+  ) {
+    try {
+      const { scanForCandidateEntity } = await import(
+        "@/lib/entities/discovery"
+      );
+      void scanForCandidateEntity({
+        sourceKind: "spend_note",
+        sourceText: input.description ?? "",
+        candidateName: input.beneficiary_typed_name!.trim(),
+        signalId: spendId,
+      }).catch(() => {});
+    } catch {
+      /* dynamic-import safety net */
+    }
   }
 
   // Pre-payment: a single row settles N consecutive recurring periods. Emit
@@ -2186,7 +2282,38 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
     "loan_installment_id",
     "for_us",
     "is_sadaka",
+    // Entities workflow — beneficiary fields editable post-create. A
+    // user editing a spend can now turn "For someone else" on/off, swap
+    // the beneficiary, or clear a wrongly-picked one. The mirror
+    // spend_entity_links + Gate 1 + introduction-trigger sync runs
+    // below after the row patch lands.
+    "is_for_someone_else",
+    "beneficiary_entity_id",
   ];
+  // Snapshot the pre-edit state before the patch lands so the
+  // beneficiary-transition sync below can decide what changed.
+  const beneficiaryWillChange =
+    "is_for_someone_else" in input || "beneficiary_entity_id" in input;
+  let priorBeneficiary: {
+    is_for_someone_else: boolean | null;
+    beneficiary_entity_id: string | null;
+  } | null = null;
+  if (beneficiaryWillChange) {
+    const { data: prior } = await supabase
+      .from("spends")
+      .select("is_for_someone_else,beneficiary_entity_id")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (prior) {
+      priorBeneficiary = {
+        is_for_someone_else: (prior as { is_for_someone_else: boolean | null })
+          .is_for_someone_else ?? null,
+        beneficiary_entity_id: (prior as { beneficiary_entity_id: string | null })
+          .beneficiary_entity_id ?? null,
+      };
+    }
+  }
   for (const k of writable) {
     if (k in input) {
       const raw = (input as Record<string, unknown>)[k];
@@ -2266,11 +2393,20 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
   // DELETE). When is_sadaka transitions false → true, write a fresh payment
   // row. Money-affecting edits (amount / wallet) also re-archive then re-
   // insert so the pool reflects the new amount.
-  if ("is_sadaka" in patch || moneyAffecting) {
+  //
+  // Verifier fix (high): the trigger condition now ALSO includes
+  // beneficiary changes. The Sadaka auto-detect mechanism 1 fires when a
+  // spend's beneficiary entity has entities.sadaka_recipient=true. When
+  // the user edits the beneficiary away from that recipient (clear it or
+  // pick a non-recipient), the prior auto_detected sadaka_ledger row
+  // tied to this spend stays live and the pool double-counts. Including
+  // beneficiaryWillChange in the trigger lets CASE A archive the
+  // orphaned auto_detected row before CASE D re-runs detection.
+  if ("is_sadaka" in patch || moneyAffecting || beneficiaryWillChange) {
     try {
       const { data: latestSpend } = await supabase
         .from("spends")
-        .select("is_sadaka,amount_base,spent_at")
+        .select("is_sadaka,amount_base,spent_at,beneficiary_entity_id")
         .eq("id", id)
         .maybeSingle();
       const existingSadakaRow = await findLiveLedgerRowBySource("spend", id);
@@ -2281,6 +2417,42 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
       // user can re-mark explicitly if they want it back.
       if (existingSadakaRow && existingSadakaRow.kind === "payment" && wantsAuto) {
         await archiveSadakaLedgerRow(existingSadakaRow.id, "edit · un-marked");
+      }
+      // CASE A' (verifier fix): beneficiary swapped/cleared on a spend
+      // whose live sadaka row is an auto_detected mirror. If the NEW
+      // beneficiary isn't a sadaka_recipient (or was cleared entirely),
+      // the auto_detected row is orphaned — archive it so CASE D's
+      // re-run of onSpendSadakaDetect can either insert a fresh row for
+      // the new recipient or leave the slot empty. Skipped when the
+      // spend is explicitly marked sadaka — that's an explicit payment
+      // owned by the user, not an auto-mirror to invalidate.
+      if (
+        existingSadakaRow &&
+        existingSadakaRow.kind === "auto_detected" &&
+        !wantsSadaka &&
+        beneficiaryWillChange
+      ) {
+        const nextEntityId =
+          (latestSpend as { beneficiary_entity_id: string | null } | null)
+            ?.beneficiary_entity_id ?? null;
+        let nextStillRecipient = false;
+        if (nextEntityId) {
+          const { data: recipientRow } = await supabase
+            .from("entities")
+            .select("sadaka_recipient")
+            .eq("id", nextEntityId)
+            .eq("user_id", userId)
+            .maybeSingle();
+          nextStillRecipient = !!(
+            recipientRow as { sadaka_recipient?: boolean | null } | null
+          )?.sadaka_recipient;
+        }
+        if (!nextStillRecipient) {
+          await archiveSadakaLedgerRow(
+            existingSadakaRow.id,
+            "edit · beneficiary changed",
+          );
+        }
       }
       // CASE B: spend is now sadaka. Two transitions to cover:
       //   • false→true on a spend with an existing auto_detected (or
@@ -2382,6 +2554,174 @@ export async function updateSpend(id: string, input: Partial<SpendInput>) {
         source: "user",
       }));
       await supabase.from("spend_entity_links").insert(rows);
+    }
+  }
+
+  // Entities workflow — beneficiary transition sync (verifier fix).
+  // Mirrors the createSpend side-effects on the edit path so the user
+  // can correct mistakes without leaving stale links / silent
+  // notifications / mis-firing introduction hooks.
+  if (beneficiaryWillChange && priorBeneficiary) {
+    try {
+      const nextIsForSomeoneElse =
+        "is_for_someone_else" in input
+          ? !!input.is_for_someone_else
+          : !!priorBeneficiary.is_for_someone_else;
+      const nextEntityId =
+        "beneficiary_entity_id" in input
+          ? input.beneficiary_entity_id ?? null
+          : priorBeneficiary.beneficiary_entity_id;
+      const priorEntityId = priorBeneficiary.beneficiary_entity_id;
+
+      // CASE A: beneficiary cleared (or toggle turned off) — drop the
+      // mirror link row written by the original createSpend. Only the
+      // user-source row is removed so any auto-resolver row stays.
+      if (priorEntityId && (nextEntityId !== priorEntityId || !nextIsForSomeoneElse)) {
+        await supabase
+          .from("spend_entity_links")
+          .delete()
+          .eq("spend_id", id)
+          .eq("entity_id", priorEntityId)
+          .eq("source", "user");
+      }
+      // CASE B: beneficiary set or swapped — upsert the new mirror row
+      // with source='user' (overwrite-source semantics so an existing
+      // auto row gets upgraded to user). Then fire the trigger 1
+      // introduction hook on the NEW entity. Idempotent via
+      // introduction_status, safe to call.
+      if (nextIsForSomeoneElse && nextEntityId) {
+        await supabase.from("spend_entity_links").upsert(
+          {
+            spend_id: id,
+            entity_id: nextEntityId,
+            source: "user",
+          },
+          { onConflict: "spend_id,entity_id" },
+        );
+        try {
+          const { fireFirstMonetaryEvent } = await import(
+            "@/lib/entities/introductions"
+          );
+          const { data: spendRow } = await supabase
+            .from("spends")
+            .select("amount_base, spent_at")
+            .eq("id", id)
+            .maybeSingle();
+          const amountBase = Number(
+            (spendRow as { amount_base: number | null } | null)?.amount_base ?? 0,
+          );
+          const spentAt =
+            (spendRow as { spent_at: string | null } | null)?.spent_at ??
+            new Date().toISOString();
+          void fireFirstMonetaryEvent({
+            entityId: nextEntityId,
+            eventKind: "beneficiary_spend",
+            amountBase,
+          }).catch(() => {});
+          // Verifier fix: the createSpend path runs pattern detection
+          // + baseline refresh on every beneficiary event, but the
+          // edit path (beneficiary transition) silently skipped it.
+          // Mirror the same fire-and-forget driver call here so a
+          // beneficiary swap on an existing spend refreshes the
+          // pattern cache and surfaces a shift if the math fires.
+          try {
+            const { runEntityPatternChangeForEvent } = await import(
+              "@/lib/entities/pattern-actions"
+            );
+            void runEntityPatternChangeForEvent({
+              kind: "beneficiary_spend",
+              spendId: id,
+              entityId: nextEntityId,
+              amountBase,
+              spentAt: new Date(spentAt).toISOString(),
+            }).catch(() => {});
+          } catch {
+            /* dynamic-import safety net */
+          }
+        } catch {
+          /* dynamic-import safety net */
+        }
+      }
+      // CASE C: typed-only beneficiary on the edit path (toggle on,
+      // entity id null, beneficiary_typed_name supplied) — same Gate 1
+      // flow as createSpend.
+      if (
+        nextIsForSomeoneElse &&
+        !nextEntityId &&
+        (input.beneficiary_typed_name ?? "").trim().length > 0
+      ) {
+        try {
+          const { scanForCandidateEntity } = await import(
+            "@/lib/entities/discovery"
+          );
+          // Verifier fix: when the user edits ONLY the beneficiary
+          // fields and never touches description/notes, input.description
+          // is undefined and the brain receives empty source context.
+          // Fall back to the persisted spend row's description + notes
+          // so propose-entity-from-signal still has the surrounding
+          // context it would have had on create.
+          let sourceText = input.description ?? "";
+          if (!sourceText.trim()) {
+            try {
+              const { data: persisted } = await supabase
+                .from("spends")
+                .select("description, notes")
+                .eq("id", id)
+                .maybeSingle();
+              const desc = (
+                (persisted as { description?: string | null } | null)
+                  ?.description ?? ""
+              ).toString();
+              const notesText = (
+                (persisted as { notes?: string | null } | null)?.notes ?? ""
+              ).toString();
+              sourceText = [desc, notesText].filter(Boolean).join("\n");
+            } catch {
+              /* best-effort */
+            }
+          }
+          void scanForCandidateEntity({
+            sourceKind: "spend_note",
+            sourceText,
+            candidateName: input.beneficiary_typed_name!.trim(),
+            signalId: id,
+          }).catch(() => {});
+        } catch {
+          /* dynamic-import safety net */
+        }
+      }
+      // CASE D: a beneficiary change might re-classify the spend
+      // through the sadaka_recipient pipeline. Re-run onSpendSadakaDetect
+      // when the beneficiary entity changed AND the spend isn't already
+      // explicitly marked sadaka.
+      if (priorEntityId !== nextEntityId) {
+        try {
+          const { data: postRow } = await supabase
+            .from("spends")
+            .select("amount_base,description,notes,is_sadaka,spent_at")
+            .eq("id", id)
+            .maybeSingle();
+          if (postRow && !(postRow as { is_sadaka: boolean }).is_sadaka) {
+            await onSpendSadakaDetect({
+              id,
+              user_id: userId,
+              amount_base: Number(
+                (postRow as { amount_base: number }).amount_base ?? 0,
+              ),
+              description: (postRow as { description: string | null }).description,
+              notes: (postRow as { notes: string | null }).notes,
+              is_sadaka: false,
+              spent_at: new Date(
+                (postRow as { spent_at: string }).spent_at,
+              ).toISOString(),
+            }).catch(() => {});
+          }
+        } catch {
+          /* best-effort */
+        }
+      }
+    } catch {
+      // Best-effort — primary write already landed.
     }
   }
 
@@ -4349,20 +4689,85 @@ export type EntityInput = {
   aliases?: string[];
   vague?: boolean;
   notes?: string | null;
+  // Entities workflow — internal flag. When true, createEntity skips
+  // the always-ask Gate 2 kickoff. Used by acceptEntityDiscovery so the
+  // user gets exactly ONE notification (the Gate 1 entity_discovery_request
+  // they just answered) instead of two (discovery_request + a fresh
+  // entity_clarify firing as a side effect of createEntity). The caller
+  // is responsible for setting canonical_name + relationship + confidence
+  // before/after the insert so the entity row reflects the user's Gate 1
+  // answer.
+  suppressKickoff?: boolean;
 };
 
-export async function createEntity(input: EntityInput): Promise<ActionResult<{ id: string }>> {
+// CRITICAL BUG FIX (locked 2026-06-03 Entities workflow): createEntity
+// previously bubbled the raw Postgres error message to the toast (via
+// `throw new Error(error.message)`), leaking constraint identifiers and
+// schema names into the user-facing surface AND failing the always-ask
+// canonicalize flow when two paths converged on the same (user_id,
+// lower(canonical_name)) pair. Mirrors the createVendor hardening from
+// the Vendors workflow:
+//   1. Pre-check for an existing entity by (user_id, lower(canonical_name))
+//      so manual + Gate 1 confirmation paths can re-use the row instead
+//      of failing.
+//   2. 23505 race fallback re-reads and returns the existing id with
+//      reused=true. The unique index in finance.entities was added in
+//      0033 (canonical_name + user_id pair via the canonical-name trgm
+//      index); even when no formal UNIQUE constraint exists, the
+//      pre-check is still the safe path for the always-ask flow that
+//      may surface the same name multiple times.
+//   3. Friendly translations for 23502 (not_null_violation), 23514
+//      (check_violation — introduction_status check from 0097), and
+//      42501 (RLS violation) so the toast stays human.
+//   4. Generic "Couldn’t add entity." fallback hides raw PG text. safeRun
+//      still logs the original error to console.
+//
+// The returned ActionResult shape extends with `reused: boolean` to match
+// createVendor. Existing callers that destructure { id } keep working
+// (TypeScript widens via the discriminated union; readers that ignore
+// reused stay valid).
+export async function createEntity(
+  input: EntityInput,
+): Promise<ActionResult<{ id: string; reused: boolean }>> {
   return safeRun("createEntity", async () => {
     const { supabase, userId } = await userOrThrow();
     const name = input.canonical_name.trim();
     if (!name) throw new Error("Entity needs a name.");
     if (!input.kind) throw new Error("Pick a kind.");
+
+    // Pre-check: an entity with the same canonical_name (case-insensitive)
+    // already exists for this user. Two paths converge on this row in the
+    // always-ask flow (manual "+ New entity" modal + Gate 1 confirmation
+    // when the user accepts a propose-entity-from-signal suggestion); a
+    // race would otherwise surface as either a unique-constraint 23505
+    // or a duplicate row that breaks the entity_clarify dedup_key.
+    //
+    // archived rows are excluded — restoring is a separate intent (mirrors
+    // createVendor's archived-exclusion semantics).
+    const { data: existing } = await supabase
+      .from("entities")
+      .select("id")
+      .eq("user_id", userId)
+      .ilike("canonical_name", name)
+      .eq("archived", false)
+      .maybeSingle();
+    if (existing) {
+      // Read-only re-use — short_description / notes / kind from the new
+      // input are NOT merged onto the existing row. Edits go through
+      // updateEntity so the user sees the change land + the canonicalize
+      // brain gets a chance to re-evaluate.
+      return { id: existing.id as string, reused: true };
+    }
+
     const { data, error } = await supabase
       .from("entities")
       .insert({
         user_id: userId,
         kind: input.kind,
         canonical_name: name,
+        // Entities workflow — preserve the raw text the user typed for
+        // the canonicalize-entity brain (parallel to vendors.raw_user_typed_name).
+        raw_user_typed_name: name,
         short_description: input.short_description ?? null,
         aliases: input.aliases ?? [],
         vague: !!input.vague,
@@ -4370,20 +4775,87 @@ export async function createEntity(input: EntityInput): Promise<ActionResult<{ i
       })
       .select("id")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      // 23505 race fallback — concurrent insert won the unique constraint.
+      // Re-read instead of bubbling the raw 23505 up as a server error.
+      if (String(error.code) === "23505") {
+        const { data: raced } = await supabase
+          .from("entities")
+          .select("id")
+          .eq("user_id", userId)
+          .ilike("canonical_name", name)
+          .eq("archived", false)
+          .maybeSingle();
+        if (raced) return { id: raced.id as string, reused: true };
+        throw new Error(
+          `An archived entity with that name exists. Restore it from the archive instead.`,
+        );
+      }
+      // Friendly translations for the Postgres constraint codes we can
+      // predict. safeRun still logs the raw error to console via
+      // safeRunLabeled, so the diagnostic trail survives.
+      const pgCode = String(error.code ?? "");
+      if (pgCode === "23502") {
+        throw new Error("Entity is missing a required field.");
+      }
+      if (pgCode === "23514") {
+        throw new Error("Entity input failed a validation check.");
+      }
+      if (pgCode === "42501") {
+        throw new Error("You don't have permission to add an entity.");
+      }
+      // Generic fallback — the raw Postgres message can leak schema
+      // names and constraint identifiers into the user-facing toast.
+      throw new Error("Couldn’t add entity.");
+    }
+    const newId = data.id as string;
+
     await logEvent({
       userId,
       kind: "entity.created",
       title: `Entity · ${name}`,
       entityType: "entity",
-      entityId: data.id as string,
+      entityId: newId,
       metadata: { kind: input.kind, vague: !!input.vague },
     });
+
     // New entity = structural event — chatbot brain may want to ask
-    // about it. Fire-and-forget.
-    await maybeSurfaceClarifyingQuestion();
+    // about it. Fire-and-forget; never blocks the create.
+    try {
+      await maybeSurfaceClarifyingQuestion();
+    } catch {
+      /* dynamic-import safety net — never blocks the create */
+    }
+
+    // Entities workflow — ALWAYS-ASK Gate 2 canonicalization. The kickoff
+    // helper runs the Pro canonicalize-entity brain async then queues an
+    // entity_clarify notification regardless of confidence. Debouncing
+    // (30m per entity + 3/day cap) lives inside the helper.
+    //
+    // suppressKickoff (verifier fix): when acceptEntityDiscovery is the
+    // caller, the user already answered the canonicalize question via
+    // Gate 1's modal — firing a fresh entity_clarify here would land a
+    // second notification on the inbox seconds after the first. The
+    // caller patches relationship + canonical_name + confidence directly
+    // so Gate 2 is functionally complete without the kickoff.
+    if (!input.suppressKickoff) {
+      try {
+        const { kickoffEntityCanonicalize } = await import(
+          "@/lib/entities/discovery"
+        );
+        void kickoffEntityCanonicalize({
+          entityId: newId,
+          entityName: name,
+          relationshipHint: null,
+        }).catch(() => {});
+      } catch {
+        /* dynamic-import safety net */
+      }
+    }
+
     revalidatePath("/entities");
-    return { id: data.id as string };
+    revalidatePath("/clients/people");
+    return { id: newId, reused: false };
   });
 }
 
@@ -4401,12 +4873,44 @@ export async function updateEntity(id: string, input: Partial<EntityInput>) {
   if ("vague" in input) patch.vague = !!input.vague;
   if ("notes" in input) patch.notes = input.notes ?? null;
   if (Object.keys(patch).length === 0) return;
+
+  // Verifier fix: wire Trigger 2 (first_note) introduction. Snapshot
+  // the prior notes value BEFORE the patch lands; when notes transition
+  // from empty -> non-empty (or notes are written for the first time),
+  // fire fireFirstNote. Idempotent via introduction_status + per-trigger
+  // fact key.
+  const noteTransitionRelevant = "notes" in input;
+  let priorNotes: string | null = null;
+  if (noteTransitionRelevant) {
+    const { data: priorRow } = await supabase
+      .from("entities")
+      .select("notes")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    priorNotes = (priorRow as { notes: string | null } | null)?.notes ?? null;
+  }
   const { error } = await supabase
     .from("entities")
     .update(patch)
     .eq("id", id)
     .eq("user_id", userId);
   if (error) throw error;
+  if (noteTransitionRelevant) {
+    const nextNotes = (input.notes ?? null)?.trim?.() ?? null;
+    const priorNotesTrimmed = priorNotes?.trim?.() ?? null;
+    if (nextNotes && nextNotes.length > 0 && !priorNotesTrimmed) {
+      try {
+        const { fireFirstNote } = await import("@/lib/entities/introductions");
+        void fireFirstNote({
+          entityId: id,
+          noteExcerpt: nextNotes,
+        }).catch(() => {});
+      } catch {
+        /* dynamic-import safety net */
+      }
+    }
+  }
   await logEvent({
     userId,
     kind: "entity.updated",
@@ -4416,6 +4920,8 @@ export async function updateEntity(id: string, input: Partial<EntityInput>) {
   });
   revalidatePath("/entities");
   revalidatePath(`/entities/${id}`);
+  revalidatePath("/clients/people");
+  revalidatePath(`/clients/people/${id}`);
 }
 
 export async function archiveEntity(id: string, archived = true) {

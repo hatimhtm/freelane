@@ -105,6 +105,7 @@ export function SpendModal({
   initialSafeForToday,
   liveSafeRemaining,
   knownVendors,
+  knownPeople,
   defaults,
 }: {
   open: boolean;
@@ -131,6 +132,11 @@ export function SpendModal({
   // failure; the typed name still flows through createSpend on save
   // and the server auto-creates the vendor.
   knownVendors?: KnownVendorOption[];
+  // Entities workflow — light projection of the user's active entities
+  // for the "For someone else" beneficiary picker. Empty list = no
+  // entities yet; the picker degrades to "+ New" only and the chosen
+  // name still flows through Gate 1 propose-entity-from-signal.
+  knownPeople?: Array<{ id: string; name: string; relationship: string | null }>;
   defaults?: SpendModalDefaults;
 }) {
   const router = useRouter();
@@ -167,6 +173,16 @@ export function SpendModal({
   // enough; tapping is a convenience.
   const [vendorTyped, setVendorTyped] = useState("");
   const [vendorDropdownOpen, setVendorDropdownOpen] = useState(false);
+  // Entities workflow — "For someone else" toggle + beneficiary picker.
+  // is_for_someone_else can be true with beneficiary_entity_id=null (the
+  // user knows it was for someone but hasn't picked an entity yet); Gate
+  // 1 still fires on save in that case via the typed name in
+  // beneficiaryTyped.
+  const [isForSomeoneElse, setIsForSomeoneElse] = useState(false);
+  const [beneficiaryEntityId, setBeneficiaryEntityId] = useState<string | null>(
+    null,
+  );
+  const [beneficiaryTyped, setBeneficiaryTyped] = useState("");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [businessRelevant, setBusinessRelevant] = useState(false);
@@ -190,6 +206,9 @@ export function SpendModal({
     setCurrency(PHP);
     setVendorTyped("");
     setVendorDropdownOpen(false);
+    setIsForSomeoneElse(false);
+    setBeneficiaryEntityId(null);
+    setBeneficiaryTyped("");
     setDescription(defaults?.description ?? "");
     setNotes(defaults?.note ?? "");
     setBusinessRelevant(false);
@@ -358,6 +377,15 @@ export function SpendModal({
         const stripped = prev.filter((x) => !audienceIndex.ids.has(x));
         return has ? stripped : [...stripped, id];
       });
+      // Verifier fix: 'For us' audience selection is mutually exclusive
+      // with the 'For someone else' beneficiary toggle. Selecting 'For
+      // us' clears the beneficiary toggle so the saved row doesn't end
+      // up tagged as both household-spending AND beneficiary-spending.
+      if (id === audienceIndex.forUs) {
+        setIsForSomeoneElse(false);
+        setBeneficiaryEntityId(null);
+        setBeneficiaryTyped("");
+      }
       return;
     }
     setSelectedCategoryIds((prev) =>
@@ -433,6 +461,16 @@ export function SpendModal({
         // kick off canonicalize-vendor in the background. Empty
         // string normalized to null so the server skips the path.
         vendorName: vendorTyped.trim() || null,
+        // Entities workflow — "For someone else" toggle. When the user
+        // picked a beneficiary from the picker, beneficiary_entity_id
+        // flows through. When the toggle is on but the user typed a
+        // name that doesn't match an existing entity, the server's
+        // Gate 1 propose-entity-from-signal fires on the typed name.
+        is_for_someone_else: isForSomeoneElse,
+        beneficiary_entity_id: isForSomeoneElse ? beneficiaryEntityId : null,
+        beneficiary_typed_name: isForSomeoneElse && !beneficiaryEntityId
+          ? beneficiaryTyped.trim() || null
+          : null,
         items: cleanItems.length
           ? cleanItems.map((it) => ({ name: it.name, quantity: it.quantity, amount: it.amount, notes: it.notes }))
           : undefined,
@@ -576,6 +614,52 @@ export function SpendModal({
               }}
             />
           </Row>
+
+          {/* Entities workflow — "For someone else" toggle. Reveals a
+              typeahead picker over knownPeople when on; chosen entity
+              feeds beneficiary_entity_id, typed-only feeds Gate 1.
+              Verifier fix: 'For us' (household audience chip) and 'For
+              someone else' are mutually exclusive intents. When this
+              toggle flips on, clear the audience-chip 'For us' so the
+              save doesn't end up labelled as both household-spending
+              AND beneficiary-spending. */}
+          <Row label="For someone else" optional>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-muted-foreground">
+                Wife, friends, sadaka recipients — tracks per person.
+              </span>
+              <Switch
+                checked={isForSomeoneElse}
+                onCheckedChange={(v) => {
+                  setIsForSomeoneElse(v);
+                  if (v && audienceIndex.forUs) {
+                    // Clear the 'For us' audience chip if it was set.
+                    setSelectedCategoryIds((prev) =>
+                      prev.filter((cid) => cid !== audienceIndex.forUs),
+                    );
+                  }
+                  if (!v) {
+                    setBeneficiaryEntityId(null);
+                    setBeneficiaryTyped("");
+                  }
+                }}
+              />
+            </div>
+          </Row>
+
+          {isForSomeoneElse && (
+            <Row label="Who?">
+              <BeneficiaryPicker
+                people={knownPeople ?? []}
+                value={beneficiaryTyped}
+                selectedId={beneficiaryEntityId}
+                onChange={(text, pickedId) => {
+                  setBeneficiaryTyped(text);
+                  setBeneficiaryEntityId(pickedId);
+                }}
+              />
+            </Row>
+          )}
 
           <Row label="Description">
             <Textarea
@@ -954,6 +1038,80 @@ function VendorTypeahead({
                 {v.aliases.length > 0 && (
                   <span className="ml-2 text-[10.5px] text-muted-foreground/80 truncate">
                     {v.aliases.slice(0, 2).join(" · ")}
+                  </span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Entities workflow — beneficiary picker. Typeahead over knownPeople +
+// a free-text fallback so the user can type a brand-new name (Gate 1
+// fires on save). Choosing an existing entity sets selectedId; typing a
+// non-match leaves selectedId=null and feeds the typed string back so
+// the createSpend handler can route it through Gate 1.
+function BeneficiaryPicker({
+  people,
+  value,
+  selectedId,
+  onChange,
+}: {
+  people: Array<{ id: string; name: string; relationship: string | null }>;
+  value: string;
+  selectedId: string | null;
+  onChange: (text: string, pickedId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const q = value.trim().toLowerCase();
+  const matches = q
+    ? people
+        .filter((p) => p.name.toLowerCase().includes(q))
+        .slice(0, 6)
+    : people.slice(0, 6);
+  return (
+    <div className="relative">
+      <Input
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value, null);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        placeholder="Wife, Junjun, Auntie Maria…"
+        className="h-9 text-sm"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      {selectedId && (
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+          Linked
+        </span>
+      )}
+      {open && matches.length > 0 && (
+        <ul
+          role="listbox"
+          className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-56 overflow-auto rounded-[10px] border border-foreground/10 bg-card shadow-[0_18px_38px_-22px_oklch(from_var(--foreground)_l_c_h_/_0.35)]"
+        >
+          {matches.map((p) => (
+            <li key={p.id} role="option" aria-selected={false}>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange(p.name, p.id);
+                  setOpen(false);
+                }}
+                className="block w-full px-3 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-foreground/[0.04]"
+              >
+                <span className="truncate">{p.name}</span>
+                {p.relationship && (
+                  <span className="ml-2 text-[10.5px] text-muted-foreground/80 truncate">
+                    {p.relationship}
                   </span>
                 )}
               </button>

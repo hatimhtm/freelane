@@ -1,20 +1,9 @@
-import { getEntitiesData } from "@/lib/data/queries";
-import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
-import type { CurrencyCode } from "@/lib/supabase/types";
-import { EntitiesView } from "./_components/entities-view";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Entities" };
-
-export default async function EntitiesPage() {
-  const { entities, links, spends, settings } = await getEntitiesData();
-  const baseCurrency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
-
-  return (
-    <EntitiesView
-      entities={entities}
-      links={links}
-      spends={spends}
-      baseCurrency={baseCurrency}
-    />
-  );
+// Entities moved to /clients/people (freelane-entities-design 2026-06-03).
+// This page keeps the legacy URL alive for bookmarks, the in-app
+// command-palette history, and any notifications already in flight that
+// were composed with the old link_url.
+export default function EntitiesRedirect(): never {
+  redirect("/clients/people");
 }

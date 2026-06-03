@@ -10,7 +10,6 @@ import {
   FileText,
   FolderKanban,
   HandHeart,
-  HeartHandshake,
   LayoutDashboard,
   LogOut,
   MessagesSquare,
@@ -115,8 +114,14 @@ export function CommandPaletteHost() {
             <CommandItem onSelect={() => go("/spending/vendors")}>
               <Store className="mr-2 h-4 w-4" /> Vendors
             </CommandItem>
-            <CommandItem onSelect={() => go("/entities")}>
-              <HeartHandshake className="mr-2 h-4 w-4" /> Entities
+            {/* Entities moved into Clients → People per
+                freelane-entities-design (2026-06-03). The command-palette
+                entry now routes to the new sub-tab; the legacy /entities
+                URL redirects via the page-level redirect in
+                src/app/(app)/entities/page.tsx so historical command-
+                palette history keeps resolving. */}
+            <CommandItem onSelect={() => go("/clients/people")}>
+              <Users className="mr-2 h-4 w-4" /> People
             </CommandItem>
           </CommandGroup>
           <CommandSeparator />

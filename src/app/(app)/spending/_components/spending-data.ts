@@ -10,6 +10,7 @@ import {
   getVendorIconCache,
   getDailySafeSnapshotForToday,
   getKnownVendorsForModal,
+  getKnownPeopleForModal,
 } from "@/lib/data/queries";
 import {
   computeSafeToSpendFromData,
@@ -216,6 +217,11 @@ export async function loadSpendingProps(params: {
   // simply shows no suggestions and the typed text still flows through
   // resolveLinksForSpend / createVendor on save.
   const knownVendors = await getKnownVendorsForModal().catch(() => []);
+  // Entities workflow — light projection of the user's active entities
+  // for the "For someone else" picker on the spend modal. Failure
+  // degrades silently — the picker still accepts free-text input and
+  // Gate 1 fires on save.
+  const knownPeople = await getKnownPeopleForModal().catch(() => []);
 
   return {
     rows,
@@ -235,6 +241,7 @@ export async function loadSpendingProps(params: {
     defaultCategoryId: params.category,
     vendorIconCache,
     knownVendors,
+    knownPeople,
     initialSafeForToday: live.initialForToday,
     liveSafeRemaining: live.liveRemaining,
     liveSafeOvershoot: live.overshootBase,

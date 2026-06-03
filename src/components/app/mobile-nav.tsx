@@ -10,7 +10,6 @@ import {
   FileText,
   FolderKanban,
   HandHeart,
-  HeartHandshake,
   LayoutDashboard,
   Menu,
   Receipt,
@@ -57,8 +56,9 @@ const NAV: { title: string; items: NavItem[] }[] = [
     title: "People",
     items: [
       // Vendors moved to /spending/vendors per freelane-vendors-design.
+      // Entities moved to /clients/people per freelane-entities-design
+      // (2026-06-03). /entities keeps a redirect for legacy links.
       { href: "/clients",   label: "Clients",   icon: Users },
-      { href: "/entities",  label: "Entities",  icon: HeartHandshake },
     ],
   },
   {

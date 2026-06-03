@@ -719,6 +719,13 @@ export interface Spend {
   // the createSpend pipeline writes a sadaka_ledger payment row tied to the
   // spend AND short-circuits the auto-detect hook.
   is_sadaka: boolean;
+  // ── Entities workflow — migration 0096 (locked 2026-06-03)
+  // "For someone else" toggle on the spend modal + the resolved
+  // beneficiary entity. is_for_someone_else can be true with
+  // beneficiary_entity_id=null (user knows it was for someone but
+  // hasn't identified them) — that signal still drives Gate 1.
+  beneficiary_entity_id: string | null;
+  is_for_someone_else: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1103,6 +1110,19 @@ export interface PriceDriftObservation {
   created_at: string;
 }
 
+// Entities workflow (migration 0097 — locked 2026-06-03).
+// introduction_status drives the NEW ELEMENT TRIGGERS state machine:
+//   pending → asked → introduced | silenced
+// The entity_introduction dispatcher reads + advances this string after
+// each first-event trigger (first monetary event, first note, first chat
+// mention, first appearance in any LifeOS surface) so the same prompt
+// fires AT MOST ONCE per (entity_id, trigger_kind).
+export type EntityIntroductionStatus =
+  | "pending"
+  | "asked"
+  | "introduced"
+  | "silenced";
+
 export interface Entity {
   id: string;
   user_id: string;
@@ -1116,6 +1136,14 @@ export interface Entity {
   archived: boolean;
   created_at: string;
   updated_at: string;
+  // ── Entities workflow — migration 0097 (locked 2026-06-03)
+  raw_user_typed_name: string | null;
+  relationship: string | null;
+  identification_skipped: boolean;
+  last_clarify_notif_at: string | null;
+  confidence: number | null;
+  discovered_from: string | null;
+  introduction_status: EntityIntroductionStatus;
 }
 
 export interface SpendEntityLink {

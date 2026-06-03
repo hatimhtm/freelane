@@ -92,6 +92,7 @@ export function SpendingView({
   tab = "spends",
   vendorIconCache,
   knownVendors,
+  knownPeople,
   initialSafeForToday,
   liveSafeRemaining,
   liveSafeOvershoot,
@@ -122,6 +123,13 @@ export function SpendingView({
   // accepts a free-form vendor name and lets the server resolve / auto-
   // create on save.
   knownVendors?: KnownVendorOption[];
+  // Entities workflow — light projection of the user's active entities
+  // for the spend modal's "For someone else" beneficiary picker.
+  knownPeople?: Array<{
+    id: string;
+    name: string;
+    relationship: string | null;
+  }>;
   // BUG FIX #2 (LIVE DAILY SAFE) — server-loaded numbers. The page
   // upserts daily_safe_snapshots on first read of the day.
   initialSafeForToday?: number;
@@ -713,6 +721,7 @@ export function SpendingView({
         initialSafeForToday={initialForToday}
         liveSafeRemaining={liveRemaining}
         knownVendors={knownVendors ?? []}
+        knownPeople={knownPeople ?? []}
         defaults={sheetDefaults}
       />
     </div>

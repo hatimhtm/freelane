@@ -133,6 +133,20 @@ export const BRAIN_TTL = {
   //     one vendor_price_check_weekly notification.
   CANONICALIZE_VENDOR: 30 * 24 * 60 * 60 * 1000,
   WEEKLY_PRICE_CHECK: 7 * 24 * 60 * 60 * 1000,
+  // Entities workflow (freelane-entities-design 2026-06-03).
+  //   PROPOSE_ENTITY_FROM_SIGNAL: Flash Lite. Write-once per signal
+  //     fingerprint (source_kind + source_text + candidate_name). 30-day
+  //     TTL is a shelf marker; the denylist row is the durable rejection
+  //     truth, the entity row is the durable acceptance truth.
+  //   CANONICALIZE_ENTITY: Pro. Scoped per entity_id; write-once per
+  //     question (same shape as CANONICALIZE_VENDOR).
+  //   ENTITY_PATTERN_CHANGE: Pro, ~1h TTL — keyed by (entity_id,
+  //     event_id) via per-event fingerprint. Like CLIENT_PATTERN_CHANGE,
+  //     the cache slot is per-user; the per-event fingerprint guarantees
+  //     idempotent dispatch.
+  PROPOSE_ENTITY_FROM_SIGNAL: 30 * 24 * 60 * 60 * 1000,
+  CANONICALIZE_ENTITY: 30 * 24 * 60 * 60 * 1000,
+  ENTITY_PATTERN_CHANGE: 60 * 60 * 1000,
 } as const;
 
 export const BRAIN_KEYS = {
@@ -171,6 +185,10 @@ export const BRAIN_KEYS = {
   // Vendors workflow.
   CANONICALIZE_VENDOR: "canonicalize_vendor",
   WEEKLY_PRICE_CHECK: "weekly_price_check",
+  // Entities workflow.
+  PROPOSE_ENTITY_FROM_SIGNAL: "propose_entity_from_signal",
+  CANONICALIZE_ENTITY: "canonicalize_entity",
+  ENTITY_PATTERN_CHANGE: "entity_pattern_change",
 } as const;
 
 export type BrainKey = (typeof BRAIN_KEYS)[keyof typeof BRAIN_KEYS];
@@ -213,6 +231,9 @@ export const BRAIN_TTL_BY_KEY: Record<BrainKey, number> = {
   [BRAIN_KEYS.PLAN_SATISFACTION_CHECK]: BRAIN_TTL.PLAN_SATISFACTION_CHECK,
   [BRAIN_KEYS.CANONICALIZE_VENDOR]: BRAIN_TTL.CANONICALIZE_VENDOR,
   [BRAIN_KEYS.WEEKLY_PRICE_CHECK]: BRAIN_TTL.WEEKLY_PRICE_CHECK,
+  [BRAIN_KEYS.PROPOSE_ENTITY_FROM_SIGNAL]: BRAIN_TTL.PROPOSE_ENTITY_FROM_SIGNAL,
+  [BRAIN_KEYS.CANONICALIZE_ENTITY]: BRAIN_TTL.CANONICALIZE_ENTITY,
+  [BRAIN_KEYS.ENTITY_PATTERN_CHANGE]: BRAIN_TTL.ENTITY_PATTERN_CHANGE,
 };
 
 // Single source of truth for the catalogue. Used by invalidateAiSafeSpendCache
@@ -257,6 +278,12 @@ export const FINANCIAL_INVALIDATION_EXEMPT: readonly BrainKey[] = [
   // mutation invalidation.
   BRAIN_KEYS.CANONICALIZE_VENDOR,
   BRAIN_KEYS.WEEKLY_PRICE_CHECK,
+  // Entities workflow — entity-scoped / signal-scoped / event-scoped.
+  // None of these brains shift on a spend mutation against a different
+  // entity, so spend-driven invalidation would just burn Gemini cost.
+  BRAIN_KEYS.PROPOSE_ENTITY_FROM_SIGNAL,
+  BRAIN_KEYS.CANONICALIZE_ENTITY,
+  BRAIN_KEYS.ENTITY_PATTERN_CHANGE,
 ] as const;
 
 // Below-this threshold spends do NOT bust the AI brain cache. A ₱5 cigarette

@@ -122,6 +122,32 @@ export const KNOWN_KINDS: KindMeta[] = [
     description:
       "Sunday morning bundle of vendor + item price shifts noticed over the trailing weeks.",
   },
+  // Entities workflow (freelane-entities-design 2026-06-03) — four new
+  // kinds covering Gate 1, Gate 2, introductions, and pattern detection.
+  {
+    key: "entity_discovery_request",
+    label: "Add a new person?",
+    description:
+      "The brain spotted a name in a spend note, chat, or sadaka tag and asks before adding it as someone you know.",
+  },
+  {
+    key: "entity_clarify",
+    label: "Who is this person?",
+    description:
+      "After an entity is created, the brain proposes a name + relationship; pick a chip or correct it.",
+  },
+  {
+    key: "entity_introduction",
+    label: "Tell me about this person",
+    description:
+      "First monetary event or first note with someone — a single quiet question to capture context.",
+  },
+  {
+    key: "entity_pattern_change",
+    label: "Person pattern changed",
+    description:
+      "Someone's cadence, amount, interaction kind, or money-flow direction shifted significantly.",
+  },
 ];
 
 export const KNOWN_KIND_KEYS = new Set(KNOWN_KINDS.map((k) => k.key));
@@ -147,6 +173,10 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   plan_target_approaching: CalendarClock,
   vendor_clarify: HelpCircle,
   vendor_price_check_weekly: TrendingUp,
+  entity_discovery_request: UserCog,
+  entity_clarify: HelpCircle,
+  entity_introduction: MessageCircle,
+  entity_pattern_change: UserCog,
 };
 
 export function iconForKind(kind: string): LucideIcon {

@@ -13,6 +13,11 @@ import { ClarifyingQuestionCard } from "@/components/app/chatbot/clarifying-ques
 import { useNotificationModal } from "@/components/app/notification-modal-host";
 import { acceptClientPatternAnswer } from "@/lib/ai/facts-actions";
 import { rateSatisfaction } from "@/app/(app)/plans/_actions/plan-actions";
+import {
+  acceptEntityDiscovery,
+  rejectEntityDiscovery,
+  acceptEntityPatternAnswer,
+} from "@/lib/entities/discovery-actions";
 
 // Generalized click-routing for notification bell + /notifications + the
 // ?notification=<id> deep-link interceptor.
@@ -272,6 +277,170 @@ const KIND_HANDLERS: Record<string, ClickHandler> = {
         }),
       );
     }
+  },
+  // entity_discovery_request — GATE 1 (Entities workflow). The brain
+  // proposed an entity from a signal (spend note / chat / sadaka tag /
+  // transfer target). Open a center modal with Add / Edit / Not an
+  // entity / Skip actions. The modal commits via acceptEntityDiscovery
+  // (or rejectEntityDiscovery for the denylist path).
+  entity_discovery_request: (n, openModal) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: {
+        signal_fingerprint?: string;
+        source_kind?: string;
+        source_text?: string;
+        candidate_name?: string;
+        suggested_name?: string;
+        suggested_relationship?: string | null;
+        confidence?: number;
+        reasoning?: string;
+      };
+    };
+    const ks = payload.kind_specific ?? {};
+    if (!ks.signal_fingerprint || !ks.candidate_name) {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[notifications] entity_discovery_request missing signal_fingerprint or candidate_name",
+          n,
+        );
+      }
+      return;
+    }
+    openModal(
+      <EntityDiscoveryModalBody
+        notificationId={n.id}
+        signalFingerprint={ks.signal_fingerprint}
+        sourceKind={ks.source_kind ?? null}
+        sourceText={ks.source_text ?? null}
+        candidateName={ks.candidate_name}
+        suggestedName={ks.suggested_name ?? ks.candidate_name}
+        suggestedRelationship={ks.suggested_relationship ?? null}
+        reasoning={ks.reasoning ?? ""}
+      />,
+      { title: n.subject, description: n.body ?? undefined },
+    );
+  },
+  // entity_clarify — GATE 2 (Entities workflow). Opens the chatbot
+  // seeded with intent="clarify_entity". Payload carries the chip list
+  // (brain proposals up to 3) + relationship suggestion. Mirrors the
+  // vendor_clarify wiring.
+  entity_clarify: (n, _openModal, navigate) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: {
+        entity_id?: string;
+        entity_name?: string;
+        suggested_answers?: string[];
+        alternatives?: Array<{
+          canonical_name: string;
+          relationship: string;
+          reasoning: string;
+        }>;
+        suggested_relationship?: string | null;
+        allow_skip?: boolean;
+      };
+    };
+    const entityId = payload.kind_specific?.entity_id;
+    const entityName = payload.kind_specific?.entity_name;
+    if (!entityId || !entityName) {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[notifications] entity_clarify missing entity_id or entity_name",
+          n,
+        );
+      }
+      navigate("/clients/people");
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("freelane:open-chatbot", {
+          detail: {
+            question: `Who is "${entityName}"? Tap the closest, or type it.`,
+            activeCard: {
+              key: `entity_clarify:${entityId}`,
+              label: entityName,
+              data: {
+                intent: "clarify_entity",
+                entity_id: entityId,
+                entity_name: entityName,
+                suggested_answers:
+                  payload.kind_specific?.suggested_answers ?? [],
+                alternatives: payload.kind_specific?.alternatives ?? [],
+                suggested_relationship:
+                  payload.kind_specific?.suggested_relationship ?? null,
+                allow_skip: payload.kind_specific?.allow_skip !== false,
+              },
+            },
+          },
+        }),
+      );
+    }
+  },
+  // entity_introduction — NEW ELEMENT TRIGGERS. Open a center modal
+  // with a free-text capture so the user can drop a one-line context
+  // about the entity. The payload's freeText flag + placeholder mirror
+  // the generic FreeTextAnswer renderer; we reuse the modal body so the
+  // submit lands in notifications_inbox.answer (and the entity row's
+  // introduction_status advances via the dispatcher's read hook).
+  entity_introduction: (n, openModal, navigate) => {
+    const payload = (n.payload ?? null) as NotificationPayload | null;
+    const placeholder =
+      payload?.placeholder ??
+      "What should I know about them? (Or tap the link to open their page.)";
+    if (payload?.freeText) {
+      openModal(<FreeTextModalBody n={n} placeholder={placeholder} />, {
+        title: n.subject,
+        description: n.body ?? undefined,
+      });
+      return;
+    }
+    if (n.link_url) {
+      navigate(n.link_url);
+    }
+  },
+  // entity_pattern_change — mirrors client_pattern_change. Renders the
+  // suggested chip list + "Other" textbox; selection routes through
+  // acceptEntityPatternAnswer which UPSERTs an ai_user_facts row
+  // (subject_kind=entity, key=entity_pattern_change_<kind>,
+  // source=user_answered).
+  entity_pattern_change: (n, openModal) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: {
+        entity_id?: string;
+        pattern_kind?: string;
+        question?: string;
+        summary?: string;
+        suggested_answers?: string[];
+      };
+    };
+    const entityId = payload.kind_specific?.entity_id;
+    const patternKind = payload.kind_specific?.pattern_kind;
+    const question = payload.kind_specific?.question ?? n.body ?? n.subject;
+    const summary = payload.kind_specific?.summary ?? n.body ?? "";
+    const suggested = payload.kind_specific?.suggested_answers ?? [];
+    if (!entityId || !patternKind) {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[notifications] entity_pattern_change missing entity_id or pattern_kind",
+          n,
+        );
+      }
+      return;
+    }
+    openModal(
+      <EntityPatternAnswerModalBody
+        notificationId={n.id}
+        entityId={entityId}
+        patternKind={patternKind}
+        question={question}
+        summary={summary}
+        suggested={suggested}
+      />,
+      { title: n.subject, description: undefined },
+    );
   },
   // vendor_price_check_weekly — opens a modal listing every noteworthy
   // change the weekly Pro brain bundled into one notification. Each row
@@ -624,6 +793,259 @@ function WeeklyPriceCheckModalBody({
         >
           Got it
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Entity discovery (Gate 1) modal body. Renders the suggested name +
+// reasoning at top, then four actions: Add as entity / Edit then add /
+// Not an entity / Skip. The "Edit then add" path opens an inline form
+// with editable name + relationship before submitting via
+// acceptEntityDiscovery; the other paths route through their dedicated
+// actions and close the modal.
+function EntityDiscoveryModalBody({
+  notificationId,
+  signalFingerprint,
+  sourceKind,
+  sourceText,
+  candidateName,
+  suggestedName,
+  suggestedRelationship,
+  reasoning,
+}: {
+  notificationId: string;
+  signalFingerprint: string;
+  sourceKind: string | null;
+  sourceText: string | null;
+  candidateName: string;
+  suggestedName: string;
+  suggestedRelationship: string | null;
+  reasoning: string;
+}) {
+  const { closeModal } = useNotificationModal();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const [editMode, setEditMode] = useState(false);
+  const [editName, setEditName] = useState(suggestedName);
+  const [editRel, setEditRel] = useState(suggestedRelationship ?? "");
+
+  const submitAdd = (finalName: string, relationship: string | null) => {
+    setBusy("add");
+    start(async () => {
+      const res = await acceptEntityDiscovery({
+        notificationId,
+        signalFingerprint,
+        candidateName,
+        finalName,
+        relationship: relationship || null,
+        sourceKind,
+      });
+      if (!res.ok) {
+        toast.error(res.error || "Couldn't add.");
+        setBusy(null);
+        return;
+      }
+      closeModal();
+    });
+  };
+
+  const submitReject = () => {
+    setBusy("reject");
+    start(async () => {
+      const res = await rejectEntityDiscovery({
+        notificationId,
+        signalFingerprint,
+        candidateName,
+        sourceKind,
+        sourceText,
+      });
+      if (!res.ok) {
+        toast.error(res.error || "Couldn't save rejection.");
+        setBusy(null);
+        return;
+      }
+      closeModal();
+    });
+  };
+
+  if (editMode) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm font-medium text-foreground">
+          Edit before adding
+        </p>
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Name
+          </label>
+          <input
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            className="w-full rounded-lg border border-border/70 bg-card px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Relationship
+          </label>
+          <input
+            type="text"
+            value={editRel}
+            onChange={(e) => setEditRel(e.target.value)}
+            placeholder="wife / sibling / friend / neighbour"
+            className="w-full rounded-lg border border-border/70 bg-card px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setEditMode(false)}
+            disabled={pending}
+            className="rounded-lg border border-border/70 bg-card px-3 py-2 text-sm font-medium text-foreground"
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={() => submitAdd(editName.trim(), editRel.trim() || null)}
+            disabled={pending || !editName.trim()}
+            className="rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-40"
+          >
+            {busy === "add" ? "Adding…" : "Add as entity"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {reasoning && (
+        <p className="text-sm leading-snug text-muted-foreground">{reasoning}</p>
+      )}
+      <p className="text-sm text-foreground">
+        Add <span className="font-medium">{suggestedName}</span>
+        {suggestedRelationship ? ` (${suggestedRelationship})` : ""} as someone
+        you know?
+      </p>
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => submitAdd(suggestedName, suggestedRelationship)}
+          disabled={pending}
+          className="w-full rounded-lg bg-foreground px-3 py-2.5 text-left text-sm font-medium text-background transition-colors disabled:opacity-50"
+        >
+          {busy === "add" ? "Adding…" : "Add as entity"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditMode(true)}
+          disabled={pending}
+          className="w-full rounded-lg border border-border/70 bg-card px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-50"
+        >
+          Edit then add
+        </button>
+        <button
+          type="button"
+          onClick={submitReject}
+          disabled={pending}
+          className="w-full rounded-lg border border-border/70 bg-card px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-50"
+        >
+          {busy === "reject" ? "Saving…" : "Not an entity"}
+        </button>
+        <button
+          type="button"
+          onClick={closeModal}
+          disabled={pending}
+          className="w-full rounded-lg border border-border/70 bg-card px-3 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-50"
+        >
+          Skip
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Body for the entity_pattern_change kind. Renders the suggested
+// answers as chips + an optional free-text "Other" fallback. Selection
+// routes through acceptEntityPatternAnswer which UPSERTs an
+// ai_user_facts row (subject_kind=entity).
+function EntityPatternAnswerModalBody({
+  notificationId,
+  entityId,
+  patternKind,
+  question,
+  summary,
+  suggested,
+}: {
+  notificationId: string;
+  entityId: string;
+  patternKind: string;
+  question: string;
+  summary: string;
+  suggested: string[];
+}) {
+  const { closeModal } = useNotificationModal();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const [other, setOther] = useState("");
+
+  const submit = (answer: string) => {
+    if (!answer.trim()) return;
+    setBusy(answer);
+    start(async () => {
+      const res = await acceptEntityPatternAnswer(
+        notificationId,
+        entityId,
+        patternKind,
+        answer.trim(),
+      );
+      if (!res.ok) {
+        toast.error(res.error || "Couldn't save.");
+        setBusy(null);
+        return;
+      }
+      closeModal();
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      {summary && (
+        <p className="text-sm leading-snug text-muted-foreground">{summary}</p>
+      )}
+      <p className="text-sm font-medium text-foreground">{question}</p>
+      <div className="flex flex-col gap-2">
+        {suggested.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => submit(s)}
+            disabled={pending}
+            className="w-full rounded-lg border border-border/70 bg-card px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-50"
+          >
+            {busy === s ? "Saving…" : s}
+          </button>
+        ))}
+        <div className="flex gap-2 pt-1">
+          <input
+            type="text"
+            value={other}
+            onChange={(e) => setOther(e.target.value)}
+            placeholder="Other (optional)"
+            className="flex-1 rounded-lg border border-border/70 bg-card px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => submit(other)}
+            disabled={pending || !other.trim()}
+            className="rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-40"
+          >
+            Send
+          </button>
+        </div>
       </div>
     </div>
   );

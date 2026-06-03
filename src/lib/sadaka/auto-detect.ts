@@ -115,7 +115,27 @@ export async function onSpendCreated(spend: SpendForDetection): Promise<void> {
           reasoning: `Auto-detected · transfer to ${first.name}`,
           event_at: spend.spent_at,
         });
-        if (shouldStopAfter(r)) return;
+        if (shouldStopAfter(r)) {
+          // Entities workflow — pattern detection for sadaka recipient.
+          // The same entity received money in a sadaka_payment shape;
+          // fire the brain so cadence / amount / kind-switch shifts get
+          // surfaced. Fire-and-forget, never throws.
+          try {
+            const { runEntityPatternChangeForEvent } = await import(
+              "@/lib/entities/pattern-actions"
+            );
+            void runEntityPatternChangeForEvent({
+              kind: "sadaka_payment",
+              paymentId: spend.id,
+              entityId: first.id,
+              amountBase: Math.abs(spend.amount_base),
+              paidAt: spend.spent_at,
+            }).catch(() => {});
+          } catch {
+            /* dynamic-import safety net */
+          }
+          return;
+        }
         // Transient failure — fall through to the next mechanism.
       }
     }

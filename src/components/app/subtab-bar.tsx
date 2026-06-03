@@ -26,13 +26,22 @@ export function SubtabBar({
 }) {
   const prefersReducedMotion = useReducedMotion();
 
+  // Verifier fix: the prior per-tab isActive() marked both /clients
+  // and /clients/people active when on /clients/people, because the
+  // prefix match `startsWith("/clients/")` swallowed the deeper
+  // route. With shared layoutId="subtab-underline" on framer-motion,
+  // two active underlines rendered simultaneously and both labels got
+  // text-foreground styling. The fix is to pick exactly ONE active
+  // tab per render — the most-specific (longest href) match wins.
+  const activeHref = pickMostSpecificActive(activePath, subtabs);
+
   return (
     <nav
       aria-label="Page sections"
       className="flex items-center gap-1"
     >
       {subtabs.map((sub) => {
-        const active = isActive(activePath, sub.href);
+        const active = sub.href === activeHref;
         return (
           <Link
             key={sub.href}
@@ -66,11 +75,26 @@ export function SubtabBar({
   );
 }
 
-// Active when the path matches exactly, or when the path starts with the
-// href followed by a "/" — covers nested routes like /stats/[scope]/money
-// matching from /stats/[scope]/money/anything.
-function isActive(activePath: string, href: string): boolean {
-  if (activePath === href) return true;
-  if (activePath.startsWith(href + "/")) return true;
-  return false;
+// Pick the single most-specific tab to mark active. Prefers an exact
+// path match; otherwise picks the longest href whose prefix matches the
+// path (covers nested routes like /stats/[scope]/money/anything → its
+// /stats/[scope]/money tab). Returns null when no tab matches so all
+// tabs render inactive (e.g. the parent layout was wrong).
+function pickMostSpecificActive(
+  activePath: string,
+  subtabs: Subtab[],
+): string | null {
+  // Exact match wins outright.
+  const exact = subtabs.find((s) => s.href === activePath);
+  if (exact) return exact.href;
+  // Prefix match — pick the longest matching href.
+  let best: { href: string; len: number } | null = null;
+  for (const s of subtabs) {
+    if (activePath.startsWith(s.href + "/")) {
+      if (!best || s.href.length > best.len) {
+        best = { href: s.href, len: s.href.length };
+      }
+    }
+  }
+  return best?.href ?? null;
 }

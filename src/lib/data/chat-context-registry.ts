@@ -47,6 +47,18 @@ export const CHATBOT_INTENT = {
   // the vendor's context (price history, recent spends) merged into
   // PageContext.relevantData. No structured-action short-circuit.
   VENDOR_DETAIL: "vendor_detail",
+  // Entities workflow — Gate 2 canonicalize. Payload carries
+  // suggested_answers + alternatives + suggested_relationship +
+  // allow_skip. The reply handler writes canonical_name + relationship
+  // + pushes raw_user_typed_name onto aliases (mirror of clarify_vendor).
+  CLARIFY_ENTITY: "clarify_entity",
+  // Entities workflow — chatbot-internal capture for the
+  // propose-entity-from-signal Trigger 3 (first chat mention). When the
+  // chatbot itself notices a previously-unknown person-like name in a
+  // user message, it asks INLINE (no notification) — this intent flags
+  // the reply so the chat-context layer can route the answer to
+  // acceptEntityDiscovery + noteFirstChatMention.
+  IDENTIFY_ENTITY: "identify_entity",
 } as const;
 export type ChatbotIntent =
   (typeof CHATBOT_INTENT)[keyof typeof CHATBOT_INTENT];
@@ -82,6 +94,47 @@ export function isClarifyVendorIntent(
     d.intent === CHATBOT_INTENT.CLARIFY_VENDOR &&
     typeof d.vendor_id === "string" &&
     typeof d.vendor_name === "string"
+  );
+}
+
+// Entities workflow — Gate 2 always-ask canonicalize intent. The reply
+// handler writes canonical_name + relationship + pushes
+// raw_user_typed_name onto aliases on the entity row.
+export function isClarifyEntityIntent(
+  card: ChatbotActiveCardArg | undefined,
+): card is ChatbotActiveCardArg & {
+  data: { intent: "clarify_entity"; entity_id: string; entity_name: string };
+} {
+  if (!card?.data) return false;
+  const d = card.data as Record<string, unknown>;
+  return (
+    d.intent === CHATBOT_INTENT.CLARIFY_ENTITY &&
+    typeof d.entity_id === "string" &&
+    typeof d.entity_name === "string"
+  );
+}
+
+// Entities workflow — chatbot inline Trigger 3 (first chat mention).
+// The chatbot fires propose-entity-from-signal when a user message
+// references a previously-unknown person-like name, and asks INLINE.
+// Reply routes through acceptEntityDiscovery + noteFirstChatMention.
+export function isProposeEntityIntent(
+  card: ChatbotActiveCardArg | undefined,
+): card is ChatbotActiveCardArg & {
+  data: {
+    intent: "identify_entity";
+    candidate_name: string;
+    signal_fingerprint: string;
+    suggested_name?: string;
+    suggested_relationship?: string | null;
+  };
+} {
+  if (!card?.data) return false;
+  const d = card.data as Record<string, unknown>;
+  return (
+    d.intent === CHATBOT_INTENT.IDENTIFY_ENTITY &&
+    typeof d.candidate_name === "string" &&
+    typeof d.signal_fingerprint === "string"
   );
 }
 
@@ -145,6 +198,13 @@ export function pageKeyFromPath(pathname: string): string {
     return segments[1] ? `spending.${segments[1]}` : "spending";
   }
   if (segments[0] === "clients") {
+    // Entities workflow — /clients/people is the new home for the
+    // entities surface. Two depths: "clients.people" for the list,
+    // "clients.people.detail" for the per-entity view. Anything else
+    // under /clients/ matches the historical clients.detail bucket.
+    if (segments[1] === "people") {
+      return segments[2] ? "clients.people.detail" : "clients.people";
+    }
     return segments[1] ? "clients.detail" : "clients";
   }
   if (segments[0] === "projects") {

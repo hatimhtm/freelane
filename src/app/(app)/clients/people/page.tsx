@@ -1,25 +1,19 @@
-import { getEntitiesData } from "@/lib/data/queries";
-import { BASE_CURRENCY_FALLBACK } from "@/lib/constants";
-import type { CurrencyCode } from "@/lib/supabase/types";
-import { EntitiesView } from "@/app/(app)/entities/_components/entities-view";
+import { getEntitiesPeopleData } from "@/lib/data/queries";
+import { PeopleView } from "./_components/people-view";
 
 export const metadata = { title: "Clients · People" };
 
-// People subtab — entities surface. Mirrors /entities so the SubtabBar
-// resolves cleanly under /clients. The legacy /entities route stays
-// live (command palette + memory links may still point to it) and
-// continues to render the same EntitiesView; this page is the
-// canonical home going forward.
+// People sub-tab — Entities workflow surface (freelane-entities-design
+// 2026-06-03). Lives at /clients/people; the legacy /entities URL
+// redirects here.
 export default async function ClientsPeoplePage() {
-  const { entities, links, spends, settings } = await getEntitiesData();
-  const baseCurrency = (settings?.base_currency ?? BASE_CURRENCY_FALLBACK) as CurrencyCode;
-
+  const { needsIntroduction, active, archived } =
+    await getEntitiesPeopleData();
   return (
-    <EntitiesView
-      entities={entities}
-      links={links}
-      spends={spends}
-      baseCurrency={baseCurrency}
+    <PeopleView
+      needsIntroduction={needsIntroduction}
+      active={active}
+      archived={archived}
     />
   );
 }
