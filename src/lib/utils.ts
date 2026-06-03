@@ -52,6 +52,31 @@ export function phtTimeHHMM(d: Date = new Date()): string {
   return `${h}:${m}`;
 }
 
+// PHT clock-time formatted for the user (e.g. "3:47 PM"). Used by the
+// Activity feed row + anywhere we render a single ISO instant alongside
+// a date group. Keeps the PHT offset arithmetic in exactly one place so
+// future ICU/Intl changes never have to be repeated.
+export function phtTimeString(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  const shifted = new Date(d.getTime() + PHT_OFFSET_MS);
+  const h = shifted.getUTCHours();
+  const m = shifted.getUTCMinutes();
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+// Add N PHT-days to a "YYYY-MM-DD" PHT date string and return another
+// "YYYY-MM-DD" PHT key. Built from UTC arithmetic so it never drifts when
+// the server clock is UTC. Used by habits/queries.ts + cron handlers — any
+// surface that walks PHT-days without crossing into actual time math.
+export function addDaysPht(day: string, days: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
 // Milliseconds until the next PHT-midnight (rollover into the next PHT
 // day). Used by the Today + Spending client views to schedule a
 // router.refresh() at exactly the boundary so the live-daily snapshot
