@@ -85,8 +85,20 @@ const KIND_HANDLERS: Record<string, ClickHandler> = {
   info: () => {
     // Dismiss-only — the calling site marks read regardless.
   },
-  app_update_available: (_n, _openModal, navigate) => {
-    navigate("/settings/updates");
+  // app_update_available (freelane-whatsnew-design 2026-06-02). Lands the
+  // user on Settings → Updates with the new entry expanded. Payload
+  // carries `kind_specific.version` so the deep link auto-opens the
+  // exact release entry that triggered the notification.
+  app_update_available: (n, _openModal, navigate) => {
+    const payload = (n.payload ?? {}) as {
+      kind_specific?: { version?: string };
+    };
+    const version = payload.kind_specific?.version;
+    navigate(
+      version
+        ? `/settings/updates?expand=${encodeURIComponent(version)}`
+        : "/settings/updates",
+    );
   },
   // Storm + stale anchor route to the today tight-mode landing.
   storm_active: (_n, _openModal, navigate) => {

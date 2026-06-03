@@ -1,30 +1,31 @@
 import { NextResponse } from "next/server";
-import { getAppChangelog } from "@/lib/data/queries";
+import { loadChangelog } from "@/lib/changelog/load";
 
-// JSON feed for the macOS Swift app's "What's New" menu. Same data the web
-// /changelog page renders — single source of truth. Auth uses the same RLS
-// path; the Swift client will pass the user's session cookie.
+// JSON feed for the macOS Swift app's "What's New" menu. Source pivoted
+// from finance.app_changelog (dropped in migration 0105) to CHANGELOG.md
+// at the repo root (freelane-whatsnew-design 2026-06-02). The shape stays
+// `{ version: "1", entries: [...] }` so existing consumers keep working.
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const entries = await getAppChangelog(80);
+    const { entries, currentVersion } = await loadChangelog();
     return NextResponse.json({
       version: "1",
+      current_version: currentVersion,
       entries: entries.map((e) => ({
-        id: e.id,
         version: e.version,
-        released_at: e.released_at,
-        kind: e.kind,
-        title: e.title,
-        body: e.body,
-        highlights: e.highlights,
-        tier: e.tier,
-        is_pinned: e.is_pinned,
+        unreleased: e.unreleased,
+        released_at: e.date,
+        sections: e.sections,
       })),
     });
   } catch {
-    return NextResponse.json({ version: "1", entries: [] }, { status: 200 });
+    return NextResponse.json(
+      { version: "1", current_version: null, entries: [] },
+      { status: 200 },
+    );
   }
 }

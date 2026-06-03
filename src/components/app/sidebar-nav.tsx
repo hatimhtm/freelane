@@ -13,7 +13,6 @@ import {
   FolderKanban,
   Settings,
   Calendar,
-  Sparkles,
   HandHeart,
   Bell,
 } from "lucide-react";
@@ -70,13 +69,28 @@ const NAV: { title: string; items: NavItem[] }[] = [
     title: "Log",
     items: [
       { href: "/activity",  label: "Activity",   icon: Activity },
-      { href: "/changelog", label: "What's new", icon: Sparkles },
+      // What's New moved to Settings → Updates (freelane-whatsnew-design
+      // 2026-06-02). The CHANGELOG.md in the repo root is the single
+      // source of truth; the Settings landing surfaces a small red dot
+      // on the Updates row when a release the user hasn't acknowledged
+      // has landed.
       { href: "/settings",  label: "Settings",   icon: Settings },
     ],
   },
 ];
 
-export function SidebarNav() {
+export function SidebarNav({
+  settingsHasUpdate = false,
+}: {
+  /**
+   * When true, paint a small rose dot on the Settings nav row to flag a
+   * release the user hasn't acknowledged. Computed server-side in the
+   * (app) layout from `settings.last_seen_version` vs the build's
+   * CURRENT_VERSION so the cue is correct on first paint without a
+   * client round-trip.
+   */
+  settingsHasUpdate?: boolean;
+}) {
   const pathname = usePathname();
 
   return (
@@ -98,6 +112,8 @@ export function SidebarNav() {
                 pathname === href ||
                 pathname.startsWith(href + "/") ||
                 (href === "/dashboard" && pathname === "/");
+              const showUpdateDot =
+                href === "/settings" && settingsHasUpdate;
               return (
                 <Link
                   key={href}
@@ -124,12 +140,20 @@ export function SidebarNav() {
                       transition={{ type: "spring", stiffness: 420, damping: 34 }}
                     />
                   )}
-                  <Icon
-                    className={cn(
-                      "relative h-[18px] w-[18px] shrink-0 transition-transform",
-                      active ? "text-foreground" : "text-sidebar-foreground/55 group-hover:scale-105",
+                  <span className="relative shrink-0">
+                    <Icon
+                      className={cn(
+                        "h-[18px] w-[18px] transition-transform",
+                        active ? "text-foreground" : "text-sidebar-foreground/55 group-hover:scale-105",
+                      )}
+                    />
+                    {showUpdateDot && (
+                      <span
+                        aria-label="New release available"
+                        className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-rose-500"
+                      />
                     )}
-                  />
+                  </span>
                   <span className={cn("relative", active && "font-medium")}>{label}</span>
                 </Link>
               );

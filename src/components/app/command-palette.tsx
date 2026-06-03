@@ -16,7 +16,6 @@ import {
   Receipt,
   RefreshCw,
   Settings,
-  Sparkles,
   Store,
   Sun,
   Users,
@@ -145,8 +144,11 @@ export function CommandPaletteHost() {
             <CommandItem onSelect={() => go("/activity")}>
               <Activity className="mr-2 h-4 w-4" /> Activity
             </CommandItem>
-            <CommandItem onSelect={() => go("/changelog")}>
-              <Sparkles className="mr-2 h-4 w-4" /> What&apos;s new
+            {/* What's New moved to Settings → Updates (freelane-whatsnew-
+                design 2026-06-02). Legacy /changelog bookmarks are
+                redirected via next.config.ts's redirects() entry. */}
+            <CommandItem onSelect={() => go("/settings/updates")}>
+              <RefreshCw className="mr-2 h-4 w-4" /> Updates
             </CommandItem>
             <CommandItem onSelect={() => go("/settings")}>
               <Settings className="mr-2 h-4 w-4" /> Settings

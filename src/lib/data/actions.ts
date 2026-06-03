@@ -4225,83 +4225,39 @@ export async function refreshCalmWeatherAction(): Promise<void> {
   revalidatePath("/dashboard");
 }
 
-// ───────────────────────────────────────── App Changelog (Tier 1) ──
+// ───────────────────────────────────────── App Changelog (markdown pivot) ──
+//
+// The app changelog lives at CHANGELOG.md in the repo root. The old SQL-
+// backed create/update/delete actions that wrote to finance.app_changelog
+// were removed when the table was dropped in migration 0105 — see
+// freelane-whatsnew-design and the load.ts parser.
+//
+// The single server-side write the new flow still needs is a stamp of the
+// per-user "last opened the Updates page on this version" marker. The
+// Settings landing reads it to paint a small red dot when the user
+// hasn't acknowledged the latest release yet. Writes flow through the
+// same safeRun + ActionResult contract as the rest of the file.
 
-export type AppChangelogInput = {
-  version: string;
-  released_at?: string;             // "YYYY-MM-DD"; defaults to today
-  kind?: "release" | "improvement" | "fix" | "note";
-  title: string;
-  body?: string | null;             // markdown
-  highlights?: string[];
-  tier?: number | null;
-  is_pinned?: boolean;
-};
-
-export async function createChangelogEntry(input: AppChangelogInput) {
-  const { supabase, userId } = await userOrThrow();
-  const version = input.version.trim();
-  const title = input.title.trim();
-  if (!version) throw new Error("Version required.");
-  if (!title) throw new Error("Title required.");
-  const { data, error } = await supabase
-    .from("app_changelog")
-    .insert({
-      author_id: userId,
-      version,
-      released_at: input.released_at ?? phtToday(),
-      kind: input.kind ?? "release",
-      title,
-      body: input.body ?? null,
-      highlights: input.highlights ?? [],
-      tier: input.tier ?? null,
-      is_pinned: !!input.is_pinned,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  await logEvent({
-    userId,
-    kind: "app_changelog.published",
-    title: `Changelog · ${title}`,
-    entityType: "app_changelog",
-    entityId: data.id as string,
-    metadata: { version, tier: input.tier ?? null },
+export async function markUpdatesSeen(
+  version: string,
+): Promise<ActionResult<{ version: string }>> {
+  return safeRun("markUpdatesSeen", async () => {
+    const { supabase, userId } = await userOrThrow();
+    const trimmed = version.trim();
+    if (!trimmed) throw new Error("Version required.");
+    const { error } = await supabase
+      .from("settings")
+      .update({ last_seen_version: trimmed })
+      .eq("user_id", userId);
+    if (error) throw error;
+    revalidatePath("/settings");
+    // The Updates page reads last_seen_version server-side, so a soft-
+    // nav back into the route must see the freshly stamped value too —
+    // a single revalidate of the parent /settings doesn't cover the
+    // nested route segment cache.
+    revalidatePath("/settings/updates");
+    return { version: trimmed };
   });
-  revalidatePath("/changelog");
-  return data;
-}
-
-export async function updateChangelogEntry(id: string, input: Partial<AppChangelogInput>) {
-  const { supabase, userId } = await userOrThrow();
-  const patch: Record<string, unknown> = {};
-  if ("version" in input) patch.version = input.version?.trim();
-  if ("released_at" in input) patch.released_at = input.released_at;
-  if ("kind" in input) patch.kind = input.kind;
-  if ("title" in input) patch.title = input.title?.trim();
-  if ("body" in input) patch.body = input.body ?? null;
-  if ("highlights" in input) patch.highlights = input.highlights ?? [];
-  if ("tier" in input) patch.tier = input.tier ?? null;
-  if ("is_pinned" in input) patch.is_pinned = !!input.is_pinned;
-  if (Object.keys(patch).length === 0) return;
-  const { error } = await supabase
-    .from("app_changelog")
-    .update(patch)
-    .eq("id", id)
-    .eq("author_id", userId);
-  if (error) throw error;
-  revalidatePath("/changelog");
-}
-
-export async function deleteChangelogEntry(id: string) {
-  const { supabase, userId } = await userOrThrow();
-  const { error } = await supabase
-    .from("app_changelog")
-    .delete()
-    .eq("id", id)
-    .eq("author_id", userId);
-  if (error) throw error;
-  revalidatePath("/changelog");
 }
 
 // AI question with free-text note alongside the chip (universal notes rule).

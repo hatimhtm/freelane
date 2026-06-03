@@ -36,7 +36,6 @@ import type {
   PlannedSpend,
   PlanStrategy,
   CalmWeatherState,
-  AppChangelogEntry,
   Vendor,
   VendorAlias,
   SpendVendorLink,
@@ -876,19 +875,25 @@ export async function getCalmWeatherState() {
   return ((data?.payload as CalmWeatherState | undefined) ?? null) as CalmWeatherState | null;
 }
 
-// Full app changelog feed — pinned first, then newest first. Single-author
-// table (Hatim).
-export async function getAppChangelog(limit = 50) {
+// App changelog now lives in CHANGELOG.md at the repo root (parsed by
+// src/lib/changelog/load.ts). The old getAppChangelog() that read from
+// finance.app_changelog was removed when the table was dropped in
+// migration 0105 — see freelane-whatsnew-design.
+//
+// Per-user "what version did you last open the Updates page on?" so the
+// Settings nav can paint a small red dot when a release the user hasn't
+// acknowledged has landed. Backed by settings.last_seen_version (column
+// added in migration 0104). A missing row means the user has never
+// opened Updates — the badge paints by default.
+export async function getLastSeenVersion(): Promise<string | null> {
   const [supabase, user] = await Promise.all([createClient(), userOrThrow()]);
   const { data } = await supabase
-    .from("app_changelog")
-    .select("*")
-    .eq("author_id", user.id)
-    .order("is_pinned", { ascending: false })
-    .order("released_at", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  return (data ?? []) as AppChangelogEntry[];
+    .from("settings")
+    .select("last_seen_version")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const row = data as { last_seen_version: string | null } | null;
+  return row?.last_seen_version ?? null;
 }
 
 // ─────────────────────────── Tier 2 fetchers ──

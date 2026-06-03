@@ -12,11 +12,15 @@ import { TopBarSubtabSlot } from "@/components/app/top-bar-subtab-slot";
 // Search lives ONLY in ⌘K now (CommandPaletteHost mounted in the (app)
 // layout). The profile icon is gone — Settings is reached via the
 // sidebar's Log group; sign-out lives in the ⌘K Log group.
-export function TopBar() {
+export function TopBar({
+  settingsHasUpdate = false,
+}: {
+  settingsHasUpdate?: boolean;
+}) {
   return (
     <header className="sticky top-0 z-30 grid h-14 grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-border/60 bg-background/75 px-4 backdrop-blur-xl md:px-6">
       <div className="flex items-center gap-2">
-        <MobileNav />
+        <MobileNav settingsHasUpdate={settingsHasUpdate} />
       </div>
       <div className="flex min-w-0 items-center justify-center">
         <TopBarSubtabSlot />

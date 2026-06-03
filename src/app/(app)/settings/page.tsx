@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Bell, ChevronRight } from "lucide-react";
+import { Bell, ChevronRight, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
-import { getSettings } from "@/lib/data/queries";
+import { getSettings, getLastSeenVersion } from "@/lib/data/queries";
 import type { CurrencyCode } from "@/lib/supabase/types";
+import { loadChangelog } from "@/lib/changelog/load";
 import { IssuerForm } from "./_components/issuer-form";
 import { MethodsForm } from "./_components/methods-form";
 import { OpeningBalanceForm } from "./_components/opening-balance-form";
@@ -17,6 +18,10 @@ export const metadata = { title: "Settings" };
 export default async function SettingsPage() {
   const { settings, rates, currencies, methods } = await getSettings();
   const sadakaConfig = await getSadakaConfig();
+  const { currentVersion } = await loadChangelog();
+  const lastSeenVersion = await getLastSeenVersion().catch(() => null);
+  const hasUpdate =
+    !lastSeenVersion || lastSeenVersion !== currentVersion;
 
   return (
     <div className="mx-auto max-w-4xl p-6 lg:p-10">
@@ -74,6 +79,40 @@ export default async function SettingsPage() {
                 <div className="text-sm font-medium">Open notification settings</div>
                 <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
                   Retention, push, and per-kind toggles.
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </Link>
+        </Section>
+
+        <Section
+          title="Updates"
+          hint="Every release that lands in Freelane. The latest entry opens automatically."
+        >
+          <Link
+            href="/settings/updates"
+            className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 transition-colors hover:bg-foreground/[0.04]"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative shrink-0">
+                <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                {hasUpdate && (
+                  <span
+                    aria-label="New release available"
+                    className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-rose-500"
+                  />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium">
+                  Open updates
+                  <span className="ml-2 text-[11px] font-normal text-muted-foreground tabular">
+                    {currentVersion}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                  What landed — and what's coming next.
                 </p>
               </div>
             </div>

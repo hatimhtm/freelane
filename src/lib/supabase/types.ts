@@ -56,7 +56,10 @@ export type PlannedSpendStatus =
 
 export type PlannedSpendCertainty = "firm" | "probable" | "maybe";
 
-export type AppChangelogKind = "release" | "improvement" | "fix" | "note";
+// App changelog enum removed (migrations 0104-0105 pivoted the source of
+// truth to CHANGELOG.md at the repo root — freelane-whatsnew-design
+// 2026-06-02). The 'app_changelog.published' event kind below stays so
+// legacy finance.events rows render in the activity feed.
 
 export type CalmWeatherBand =
   | "still"
@@ -361,6 +364,10 @@ export interface Settings {
   invoice_language: string;
   invoice_reminder_days: number;
   theme: string;
+  // Migration 0104 — last CHANGELOG.md version this user opened in
+  // Settings -> Updates. Drives the red-dot badge on the Settings
+  // landing. NULL means the user has never opened Updates.
+  last_seen_version: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -879,22 +886,11 @@ export interface AiQuestion {
 
 // ─────────────────────────── Tier 1 entities (migrations 0026-0031) ──
 
-// App changelog — single source of truth read by both /changelog and the
-// future macOS Swift app's What's New menu.
-export interface AppChangelogEntry {
-  id: string;
-  author_id: string;
-  version: string;
-  released_at: string;
-  kind: AppChangelogKind;
-  title: string;
-  body: string | null;
-  highlights: string[];
-  tier: number | null;
-  is_pinned: boolean;
-  created_at: string;
-  updated_at: string;
-}
+// App changelog table dropped in migration 0105 — see
+// freelane-whatsnew-design 2026-06-02. CHANGELOG.md at the repo root is
+// now the single source of truth, parsed by src/lib/changelog/load.ts
+// into ChangelogEntry rows for both the in-app Updates surface and the
+// /api/changelog.json feed the macOS companion consumes.
 
 // A future intent row — MacBook, Apple Dev, Eid prep envelope. Counts against
 // runway as if already on the calendar, doesn't count against spend totals
@@ -1371,7 +1367,8 @@ export type Database = {
       planned_spends:              Table<PlannedSpend>;
       // Migration 0089 — AI-proposed savings strategies per plan.
       plan_strategies:             Table<PlanStrategy>;
-      app_changelog:               Table<AppChangelogEntry>;
+      // finance.app_changelog dropped in migration 0105 —
+      // CHANGELOG.md at the repo root is the new source of truth.
       calm_weather_state:          Table<CalmWeatherState>;
       vendors:                     Table<Vendor>;
       vendor_aliases:              Table<VendorAlias>;
@@ -1479,7 +1476,7 @@ export type Database = {
       spend_category_kind:      SpendCategoryKind;
       planned_spend_status:     PlannedSpendStatus;
       planned_spend_certainty:  PlannedSpendCertainty;
-      app_changelog_kind:       AppChangelogKind;
+      // finance.app_changelog_kind enum dropped in migration 0105.
       calm_weather_band:        CalmWeatherBand;
       vendor_link_source:       VendorLinkSource;
       vendor_kind:              VendorKind;

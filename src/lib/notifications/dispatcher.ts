@@ -41,6 +41,12 @@ export type NotificationInput = {
   // until deliver_at <= now(). Push is also suppressed until the
   // satisfaction sweep flips it visible.
   deliverAt?: string;
+  // Suppress the OS push for this dispatch even when push_enabled +
+  // per-kind push are true. Used by the on-mount /api/check-updates
+  // probe: the user is already actively in the app, so the inbox row
+  // alone is the right shape — no need to also fire an OS toast for the
+  // app they're currently using.
+  skipPush?: boolean;
 };
 
 export type Notification = {
@@ -190,7 +196,13 @@ export async function postNotification(
     const isScheduled =
       !!input.deliverAt && new Date(input.deliverAt).getTime() > Date.now();
 
-    if (inserted && !isScheduled && settings.push_enabled && effective.push) {
+    if (
+      inserted &&
+      !isScheduled &&
+      !input.skipPush &&
+      settings.push_enabled &&
+      effective.push
+    ) {
       // Fire-and-forget push send. A failure here MUST NOT block the
       // dispatcher result — the inbox row is the canonical delivery.
       // sound=false flips `silent: true` on the push payload so the

@@ -14,6 +14,8 @@ import { NotificationLinkInterceptor } from "@/components/app/notification-link-
 import { ServiceWorkerRegistrar } from "@/components/app/service-worker-registrar";
 import { hasGemini } from "@/lib/ai/gemini";
 import { readNotificationSettings } from "@/lib/notifications/dispatcher";
+import { loadChangelog } from "@/lib/changelog/load";
+import { getLastSeenVersion } from "@/lib/data/queries";
 
 export default async function AppLayout({
   children,
@@ -25,6 +27,15 @@ export default async function AppLayout({
   const aiEnabled = hasGemini();
   const notifSettings = await readNotificationSettings().catch(() => null);
   const pushEnabled = notifSettings?.push_enabled ?? false;
+  // Top-level "settings has an unseen release" signal — drives the dot
+  // on the Settings entry in BOTH SidebarNav and MobileNav, so a user
+  // who never navigates into Settings still sees a nav-level cue.
+  const [{ currentVersion }, lastSeenVersion] = await Promise.all([
+    loadChangelog().catch(() => ({ currentVersion: "" })),
+    getLastSeenVersion().catch(() => null),
+  ]);
+  const settingsHasUpdate =
+    !!currentVersion && lastSeenVersion !== currentVersion;
 
   return (
     <NotificationModalHost>
@@ -34,9 +45,9 @@ export default async function AppLayout({
           <FxAutoRefresh />
           <ServiceWorkerRegistrar enabled={pushEnabled} />
           <NotificationLinkInterceptor />
-          <SidebarNav />
+          <SidebarNav settingsHasUpdate={settingsHasUpdate} />
           <div className="flex min-w-0 flex-1 flex-col">
-            <TopBar />
+            <TopBar settingsHasUpdate={settingsHasUpdate} />
             {/* pb-32 (128px) baseline clearance for the ChatbotPill +
                 per-page floating CTAs (bottom-6 / right-6 ≈ 24px from
                 edge, 48-56px button height). Every page inherits the

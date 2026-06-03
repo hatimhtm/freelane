@@ -15,6 +15,22 @@
     {
       "path": "/api/cron/sadaka-daily",
       "schedule": "30 17 * * *"
+    },
+    {
+      "path": "/api/cron/vendors-backfill",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron/weekly-price-check",
+      "schedule": "0 22 * * 6"
+    },
+    {
+      "path": "/api/cron/letters-time-keyed",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/check-updates",
+      "schedule": "0 1 * * *"
     }
   ]
 }

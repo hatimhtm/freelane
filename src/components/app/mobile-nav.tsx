@@ -13,7 +13,6 @@ import {
   Menu,
   Receipt,
   Settings,
-  Sparkles,
   Sun,
   Users,
   Wallet,
@@ -67,13 +66,24 @@ const NAV: { title: string; items: NavItem[] }[] = [
     title: "Log",
     items: [
       { href: "/activity",  label: "Activity",   icon: Activity },
-      { href: "/changelog", label: "What's new", icon: Sparkles },
+      // What's New moved to Settings → Updates (freelane-whatsnew-design
+      // 2026-06-02). CHANGELOG.md in the repo root is the source of
+      // truth; Settings paints a badge when a release the user hasn't
+      // opened has landed.
       { href: "/settings",  label: "Settings",   icon: Settings },
     ],
   },
 ];
 
-export function MobileNav() {
+export function MobileNav({
+  settingsHasUpdate = false,
+}: {
+  /**
+   * When true, paint a small rose dot on the Settings nav row. Mirrors
+   * SidebarNav's same prop so the cue is consistent on phones + tablets.
+   */
+  settingsHasUpdate?: boolean;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -107,6 +117,8 @@ export function MobileNav() {
                     pathname === href ||
                     pathname.startsWith(href + "/") ||
                     (href === "/dashboard" && pathname === "/");
+                  const showUpdateDot =
+                    href === "/settings" && settingsHasUpdate;
                   return (
                     <Link
                       key={href}
@@ -120,7 +132,15 @@ export function MobileNav() {
                       )}
                     >
                       {active && <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-[var(--brand)]" />}
-                      <Icon className="h-[18px] w-[18px] shrink-0" />
+                      <span className="relative shrink-0">
+                        <Icon className="h-[18px] w-[18px]" />
+                        {showUpdateDot && (
+                          <span
+                            aria-label="New release available"
+                            className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-rose-500"
+                          />
+                        )}
+                      </span>
                       {label}
                     </Link>
                   );
