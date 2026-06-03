@@ -25,8 +25,23 @@
 
 -- Step 1 — widen quantity column. Numeric is back-compat with the
 -- existing integer rows (Postgres auto-casts on read).
+--
+-- ─── ORDER MATTERS ──────────────────────────────────────────────────
+-- 0091 defined unit_amount as a STORED generated column over quantity:
+--   unit_amount numeric generated always as (amount / nullif(quantity, 0)) stored
+-- Postgres refuses to ALTER the type of a column that a generated
+-- column reads from:
+--   ERROR: 0A000: cannot alter type of a column used by a generated column
+-- Fix: drop the generated column, widen quantity, recreate the
+-- generated column. The recreated column re-computes for every row.
+alter table finance.vendor_price_history
+  drop column if exists unit_amount;
+
 alter table finance.vendor_price_history
   alter column quantity type numeric(10,3) using quantity::numeric(10,3);
+
+alter table finance.vendor_price_history
+  add column unit_amount numeric generated always as (amount / nullif(quantity, 0)) stored;
 
 -- Step 2 — rebuild the per-item trigger to propagate the real quantity.
 create or replace function finance.vendor_price_history_on_item_insert()
