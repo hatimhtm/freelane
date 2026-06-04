@@ -2,17 +2,16 @@
 
 import { useEffect } from "react";
 
-// Registers /sw.js for EVERY signed-in session. It used to register only when
-// the user had opted into push, but the SW now also provides navigation
-// resilience (a self-healing "Reconnecting…" fallback when the dock/standalone
-// web app reloads during a network blip), which everyone benefits from — not
-// just push users. The `enabled` prop (push opt-in, resolved server-side in
-// the (app) layout) is kept for callers but no longer gates registration.
+// Registers /sw.js for every signed-in session. Registration runs on every
+// load so the browser checks for an updated sw.js — this is how the corrected,
+// fetch-handler-FREE service worker reaches anyone who previously received the
+// broken navigation-intercepting version and evicts it (that SW used
+// skipWaiting + clients.claim). The SW itself is push-only; it does NOT touch
+// page loads. The `enabled` prop (push opt-in, resolved server-side in the
+// (app) layout) is kept for callers but no longer gates registration.
 //
 // Skips on unsupported browsers (no navigator.serviceWorker — e.g. private
-// Firefox). Idempotent: navigator.serviceWorker.register dedupes by scope, so
-// a repeated registration just returns the existing one, and the browser
-// picks up a byte-changed sw.js on the next load.
+// Firefox). Idempotent: navigator.serviceWorker.register dedupes by scope.
 
 export function ServiceWorkerRegistrar({ enabled: _enabled }: { enabled: boolean }) {
   useEffect(() => {

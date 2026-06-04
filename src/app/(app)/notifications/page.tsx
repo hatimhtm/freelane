@@ -1,4 +1,3 @@
-import { Bell } from "lucide-react";
 import {
   listInbox,
   readNotificationSettings,
@@ -34,7 +33,6 @@ export default async function NotificationsPage({
   return (
     <NotificationsView
       rows={rows}
-      icon={Bell}
       retentionDays={retentionDays}
       retentionForever={retentionForever}
       legacyOpenTuesday={sp.open === "tuesday"}

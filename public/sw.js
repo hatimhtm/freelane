@@ -6,8 +6,17 @@
  * scope is inferred from its served path, and a rewrite breaks subscription
  * silently.
  *
- * Registered conditionally by src/components/app/service-worker-registrar.tsx
- * only when the user has opted into push from Settings → Notifications.
+ * IMPORTANT: this SW does NOT handle `fetch`. An earlier version added a
+ * navigation fetch handler (network-first with an offline fallback) to try to
+ * dodge WebKit's "This page couldn't load" screen on PWA reloads. That BROKE
+ * navigation instead: a service worker that calls respondWith() on top-level
+ * navigations in a standalone WebKit web app fails the load (e.g. on redirected
+ * responses), turning every in-app page switch into the error screen. Push
+ * delivery never needed fetch interception — keep it OUT. The skipWaiting +
+ * clients.claim below exist specifically so this corrected SW evicts that bad
+ * version immediately on update.
+ *
+ * Registered by src/components/app/service-worker-registrar.tsx.
  *
  * The push payload is the JSON object the server sends via web-push:
  *   { id, subject, body?, link_url?, silent? }
@@ -36,6 +45,17 @@
 // which would nuke the in-flight state.
 const APP_ROUTE_PATTERN = /^\/(?:$|today|dashboard|spending|payments|projects|plans|clients|notifications|stats|sadaka|letters|activity|settings|should-i-buy)/i;
 
+// Activate the corrected SW immediately and take control of open clients so a
+// previously-installed (broken) version stops controlling navigations at once.
+// There is intentionally NO fetch handler — navigations go straight to the
+// network, exactly as a page with no service worker.
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener("push", (event) => {
   let payload = {};
   try {
@@ -56,93 +76,6 @@ self.addEventListener("push", (event) => {
     badge: "/icon-192.png",
   };
   event.waitUntil(self.registration.showNotification(title, options));
-});
-
-// ─── Navigation resilience ──────────────────────────────────────────
-//
-// The macOS dock/standalone web app reloads its start_url whenever the OS
-// evicts the web-content process (memory pressure on app-switch). If that
-// reload hits the network a beat before connectivity is restored, WebKit
-// shows its dead-end "This page couldn't load" page. We intercept top-level
-// navigations and, on a network failure ONLY, return a self-healing
-// "Reconnecting…" page that reloads itself the moment the origin answers
-// again. Successful loads pass through untouched and NOTHING is cached, so
-// there's no stale-data or auth risk for these dynamic, personalized pages.
-
-const OFFLINE_HTML = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="color-scheme" content="dark" />
-<title>Reconnecting…</title>
-<style>
-  :root { color-scheme: dark; }
-  html,body { height:100%; margin:0; }
-  body {
-    background:#000; color:#fff;
-    font: 400 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-    display:flex; align-items:center; justify-content:center; text-align:center;
-    -webkit-user-select:none; user-select:none;
-  }
-  .wrap { display:flex; flex-direction:column; align-items:center; gap:18px; padding:24px; }
-  .spinner { width:34px; height:34px; border-radius:50%; border:2px solid rgba(255,255,255,.2); border-top-color:#fff; animation:spin .8s linear infinite; }
-  @keyframes spin { to { transform:rotate(360deg); } }
-  h1 { font-size:22px; font-weight:600; margin:0; }
-  p { margin:0; color:rgba(255,255,255,.55); font-size:15px; }
-  button {
-    margin-top:6px; appearance:none; border:0; border-radius:10px;
-    background:#f2f2f2; color:#000; font-size:15px; font-weight:500;
-    padding:10px 20px; cursor:pointer;
-  }
-  @media (prefers-reduced-motion: reduce) { .spinner { animation:none; } }
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="spinner" aria-hidden="true"></div>
-    <h1>Reconnecting…</h1>
-    <p>You went offline for a moment. This will refresh on its own.</p>
-    <button onclick="location.reload()">Reload now</button>
-  </div>
-  <script>
-    // Probe a cheap public endpoint; reload only once the origin actually
-    // answers, so we never thrash reloads while still unreachable.
-    async function check() {
-      try {
-        const r = await fetch('/manifest.webmanifest', { cache: 'no-store' });
-        if (r && r.ok) location.reload();
-      } catch (e) { /* still offline */ }
-    }
-    addEventListener('online', check);
-    setInterval(check, 2500);
-  </script>
-</body>
-</html>`;
-
-// Activate a freshly-installed SW immediately so the navigation fallback is
-// live without waiting for every tab to close.
-self.addEventListener("install", () => {
-  self.skipWaiting();
-});
-self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  // Only top-level document loads (the PWA reload case). Client-side route
-  // changes, RSC payloads, API calls, and POSTs are left entirely alone.
-  if (req.mode !== "navigate") return;
-  event.respondWith(
-    fetch(req).catch(
-      () =>
-        new Response(OFFLINE_HTML, {
-          status: 503,
-          headers: { "Content-Type": "text/html; charset=utf-8" },
-        }),
-    ),
-  );
 });
 
 self.addEventListener("notificationclick", (event) => {
