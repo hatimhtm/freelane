@@ -118,7 +118,11 @@ export function SidebarNav({
                 <Link
                   key={href}
                   href={href}
-                  prefetch
+                  // prefetch on hover only (not eagerly for every link in the
+                  // always-visible sidebar). Eager prefetch fired ~10 full-page
+                  // requests on every load and starved the real navigation of
+                  // the browser's ~6 connections — the "stuck loading" symptom.
+                  prefetch={false}
                   className={cn(
                     "group relative flex items-center gap-3 rounded-[6px] px-3 py-2 text-sm transition-colors",
                     active
