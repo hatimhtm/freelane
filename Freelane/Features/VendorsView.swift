@@ -57,7 +57,8 @@ struct VendorsView: View {
     private var needsIdentifying: Int { spends.filter { ($0.vendorName ?? "").isEmpty }.count }
 
     var body: some View {
-        Page("Vendors", subtitle: "Identified places you spend at.") {
+        let trends = VendorTrends.movers(spends)   // computed once, looked up per row
+        return Page("Vendors", subtitle: "Identified places you spend at.") {
             if needsIdentifying > 0 {
                 SectionCard(title: "Needs identifying", subtitle: "The assistant asks about these in the bell", accent: Palette.azure) {
                     HStack {
@@ -90,6 +91,7 @@ struct VendorsView: View {
                                     Text("\(r.count) spends").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                                 }
                                 Spacer()
+                                trendChip(trends[r.name]?.delta)
                                 Text(CurrencyFormat.string(r.total, base, compact: true))
                                     .font(.system(size: 13.5, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                             }
@@ -130,6 +132,21 @@ struct VendorsView: View {
     }
 
     private struct RenameTarget: Identifiable { let name: String; var id: String { name } }
+
+    /// Month-over-month movement pill: ↑ red when spending more here, ↓ mint when less.
+    @ViewBuilder private func trendChip(_ delta: Double?) -> some View {
+        if let d = delta {
+            let up = d > 0
+            HStack(spacing: 3) {
+                Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
+                Text("\(abs(Int((d * 100).rounded())))%").font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+            }
+            .foregroundStyle(up ? Palette.negative : Palette.positive)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(Capsule().fill((up ? Palette.negative : Palette.positive).opacity(0.14)))
+            .help(up ? "Up vs last month" : "Down vs last month")
+        }
+    }
 
     private func daysClean(_ last: Date?) -> String {
         guard let last else { return "stopped" }

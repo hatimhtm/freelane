@@ -203,6 +203,17 @@ struct DashboardView: View {
                        systemImage: "arrow.left.arrow.right", accent: Palette.teal,
                        sub: "\(openLoanCount) open", destination: .loans, morphID: "w.loans"))))
         }
+        // Cross-link: the biggest month-over-month vendor swing (taps through to Vendors).
+        if let mv = VendorTrends.biggest(spends), let d = mv.delta {
+            let up = d > 0
+            specs.append(("vendortrend", AnyView(MiniWidget(
+                label: up ? "Spending up at" : "Spending down at", value: mv.name,
+                systemImage: up ? "arrow.up.right.circle" : "arrow.down.right.circle",
+                accent: up ? Palette.negative : Palette.positive,
+                sub: "\(abs(Int((d * 100).rounded())))% vs last month",
+                tone: up ? Palette.negative : Palette.positive,
+                destination: .vendors, morphID: "w.vtrend"))))
+        }
         specs.append(("sleep", AnyView(MiniWidget(label: "Sleep", value: lastSleep, systemImage: "bed.double.fill",
                        accent: Palette.indigo, sub: "last logged", destination: .body, morphID: "w.sleep"))))
         specs.append(("faith", AnyView(MiniWidget(label: "Prayers today", value: "\(prayedToday)/5", systemImage: "moon.stars.fill",
