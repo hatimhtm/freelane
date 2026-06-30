@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The Freelane mark, ported from the web app: an ink tile with three ascending
-/// bars, the tallest in the signature acid-lime. The one sanctioned splash of lime.
+/// The Freelane mark: a tile with three ascending bars, the tallest in the signature accent.
+/// Tile + bars are driven by the palette so the mark always matches the app's identity (it used
+/// to hardcode an espresso-brown tile, which clashed once the palette changed).
 struct LogoMark: View {
     var size: CGFloat = 32
 
@@ -12,14 +13,13 @@ struct LogoMark: View {
         let gap = size * 0.095
         return ZStack {
             tile.fill(
-                LinearGradient(colors: [Color(red: 0.175, green: 0.160, blue: 0.135),
-                                        Color(red: 0.075, green: 0.068, blue: 0.055)],
+                LinearGradient(colors: [Palette.ink3, Palette.ink],
                                startPoint: .topLeading, endPoint: .bottomTrailing))
-            tile.strokeBorder(.white.opacity(0.12), lineWidth: max(0.6, size * 0.02))
+            tile.strokeBorder(Palette.acidLime.opacity(0.22), lineWidth: max(0.6, size * 0.02))
 
             HStack(alignment: .bottom, spacing: gap) {
-                bar(w: barW, h: region * 0.46, color: .white.opacity(0.55))
-                bar(w: barW, h: region * 0.72, color: .white.opacity(0.88))
+                bar(w: barW, h: region * 0.46, color: Palette.textSecondary.opacity(0.65))
+                bar(w: barW, h: region * 0.72, color: Palette.textPrimary.opacity(0.85))
                 bar(w: barW, h: region * 1.00, color: Palette.acidLime, glow: true)
             }
             .frame(width: region, height: region, alignment: .bottom)

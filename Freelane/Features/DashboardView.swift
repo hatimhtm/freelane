@@ -86,13 +86,17 @@ struct DashboardView: View {
     private func focusSignals(_ m: DashboardMetrics, _ s: SafeBreakdown) -> [FocusSignal] {
         var out: [FocusSignal] = []
 
-        // Overdrawn holding wallets — the most urgent money state.
-        let over = wallets.filter { $0.isHolding && !$0.archived && !$0.excludedFromTotals
-            && WalletMath.balance(of: $0, ledger: ledger) < -$0.overdraftToleranceBase }
+        // Overdrawn holding wallets — only a MEANINGFUL overdraft (past the wallet's tolerance by
+        // at least ₱1). A sub-peso / floating-point-dust negative used to surface the nonsensical
+        // "₱0 overdrawn"; now trivial negatives are ignored and the real amount is shown.
+        let over = wallets.filter {
+            $0.isHolding && !$0.archived && !$0.excludedFromTotals
+            && -WalletMath.balance(of: $0, ledger: ledger) - $0.overdraftToleranceBase >= 1
+        }
         if let w = over.first {
             let amt = abs(WalletMath.balance(of: w, ledger: ledger))
             out.append(.init(id: "overdrawn", icon: "exclamationmark.triangle.fill",
-                text: over.count == 1 ? "\(w.name) is \(CurrencyFormat.abbreviated(amt, base)) overdrawn"
+                text: over.count == 1 ? "\(w.name) is \(CurrencyFormat.string(amt, base, compact: true)) overdrawn"
                                       : "\(over.count) wallets overdrawn",
                 tint: Palette.negative, destination: .payments, severity: 100))
         }

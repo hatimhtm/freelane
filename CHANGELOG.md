@@ -3,6 +3,17 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.7
+
+A warmer look with real depth — and the app icon finally matches.
+
+- **Warm dark.** Out with the cold slate-and-blue, in with cozy warm-charcoal surfaces, warm-cream text, and a single amber signature. Dark, but inviting instead of clinical.
+- **Depth, not flatness.** Cards now sit on a solid surface that lifts off the background with a stronger edge and shadow, so the screen stops reading as one flat sheet of same-colored panels.
+- **The icon matches now.** The app icon and the in-app logo were redrawn to the new warm-amber identity (they were still the old design).
+- **Fixed a nonsense alert.** "Wise is ₱0 overdrawn" is gone — a wallet only flags as overdrawn when it's *meaningfully* in the red, and it shows the real amount.
+
+Next: a proper light/white mode you can toggle.
+
 ## 0.6
 
 - Cloud sync stays off for now. The offline-first sync foundation is built and ready, but it's dormant until the companion app exists — so Freelane is purely local again: everything lives on this Mac, nothing touches the network, and there's no cloud setup to think about.

@@ -1,56 +1,54 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Palette v3 — "Nordic Slate + Electric"
-// The v2 identity for the rewrite (2026-07): cool graphite/slate surfaces, ONE electric-blue
-// signature, crisp near-white text, and bright jewel accents that give each section its own
-// identity (Money / People / Life / Insights read distinct at a glance). The old espresso-and-gold
-// read warm-editorial; this is sharp, modern, "pro tool" — Linear / Things / Arc energy, and it
-// reads cleanly on both Mac now and a future Android (Compose) port.
+// MARK: - Palette v4 — "Warm Dark" (cozy charcoal + amber)
+// The cool Nordic slate read clinical; this is warm and inviting — warm-charcoal surfaces, ONE
+// amber signature, warm-cream text, and jewel accents that still give each section its own
+// identity. Dark, but cozy instead of cold. A proper warm LIGHT mode is the next step.
 // (Properties keep their historical names — `acidLime`, `azure`, `cyan` — so ~90 files recolor
 // from this single block. The names are labels; the VALUES are the identity.)
 
 enum Palette {
-    /// Signature electric blue — the one bright accent, the app's primary identity color.
-    static let acidLime = Color(red: 0.357, green: 0.549, blue: 1.000)   // #5B8CFF electric blue
+    /// Signature amber — the one warm accent, the app's primary identity color.
+    static let acidLime = Color(red: 0.910, green: 0.569, blue: 0.235)   // #E8913C amber
 
-    // `azure` = the historical name for the PRIMARY accent across the app → electric blue.
+    // `azure` = the historical name for the PRIMARY accent across the app → amber.
     static let azure    = acidLime
-    // Feature accents — bright, cool jewel tones so sections feel distinct while sharing the
-    // crisp Nordic temperature. Wired to sections via `section(...)` below.
-    static let cyan     = Color(red: 0.220, green: 0.812, blue: 0.902)   // #38CFE6 ice / sky
-    static let indigo   = Color(red: 0.486, green: 0.549, blue: 0.973)   // #7C8CF8 periwinkle
-    static let violet   = Color(red: 0.725, green: 0.549, blue: 1.000)   // #B98CFF orchid
+    // Feature accents — jewel tones that stay distinct against warm charcoal so sections read
+    // apart. Wired to sections via `section(...)` below.
+    static let cyan     = Color(red: 0.373, green: 0.718, blue: 0.769)   // #5FB7C4 teal
+    static let indigo   = Color(red: 0.557, green: 0.545, blue: 0.878)   // #8E8BE0 periwinkle
+    static let violet   = Color(red: 0.773, green: 0.549, blue: 0.878)   // #C58CE0 orchid
 
-    // Money-semantic (mint / coral / amber)
-    static let teal     = Color(red: 0.239, green: 0.839, blue: 0.549)   // #3DD68C mint
+    // Money-semantic (mint / coral / amber-yellow)
+    static let teal     = Color(red: 0.373, green: 0.788, blue: 0.541)   // #5FC98A warm mint
     static let positive = teal
-    static let negative = Color(red: 1.000, green: 0.420, blue: 0.420)   // #FF6B6B coral
-    static let warning  = Color(red: 1.000, green: 0.698, blue: 0.243)   // #FFB23E amber
+    static let negative = Color(red: 0.941, green: 0.408, blue: 0.361)   // #F0685C warm coral
+    static let warning  = Color(red: 0.949, green: 0.722, blue: 0.290)   // #F2B84A amber-yellow
 
-    // Text — crisp, cool near-white. Hierarchy carries the structure.
-    static let textPrimary   = Color(red: 0.933, green: 0.945, blue: 0.965)   // #EEF1F6
-    static let textSecondary = Color(red: 0.604, green: 0.643, blue: 0.706)   // #9AA4B4
-    // Kept ≥ AA on the slate background.
-    static let textTertiary  = Color(red: 0.420, green: 0.455, blue: 0.525)   // #6B7486
+    // Text — warm cream, not clinical white. Hierarchy carries the structure.
+    static let textPrimary   = Color(red: 0.949, green: 0.925, blue: 0.890)   // #F2ECE3
+    static let textSecondary = Color(red: 0.659, green: 0.620, blue: 0.565)   // #A89E90 warm taupe
+    // Kept ≥ AA on the warm-charcoal background.
+    static let textTertiary  = Color(red: 0.478, green: 0.439, blue: 0.392)   // #7A7064
 
-    // Backdrop glow pools (what the glass lenses against) — cool electric + indigo light.
-    static let coolGlow = Color(red: 0.298, green: 0.490, blue: 1.000)   // electric blue glow
-    static let warmGlow = Color(red: 0.431, green: 0.353, blue: 0.878)   // indigo-violet glow
+    // Backdrop glow pools (what the glass lenses against) — warm amber + terracotta light.
+    static let coolGlow = Color(red: 0.910, green: 0.635, blue: 0.298)   // warm amber glow
+    static let warmGlow = Color(red: 0.690, green: 0.349, blue: 0.243)   // terracotta glow
 
-    // Mesh-gradient wallpaper stops — low-luminance cool pools (graphite, deep blue, deep
-    // indigo, deep teal) so the glass has a cool temperature range to refract against.
-    static let meshGraphite = Color(red: 0.078, green: 0.094, blue: 0.122)   // #14181F cool graphite
-    static let meshCool     = Color(red: 0.055, green: 0.102, blue: 0.200)   // #0E1A33 deep blue
-    static let meshWarm     = Color(red: 0.086, green: 0.078, blue: 0.200)   // #161433 deep indigo
-    static let meshLime     = Color(red: 0.039, green: 0.133, blue: 0.188)   // #0A2230 deep teal
+    // Mesh-gradient wallpaper stops — low-luminance WARM pools (charcoal, plum, deep amber,
+    // olive-gold) so the glass refracts a warm, candle-lit temperature range.
+    static let meshGraphite = Color(red: 0.102, green: 0.086, blue: 0.078)   // #1A1614 warm charcoal
+    static let meshCool     = Color(red: 0.165, green: 0.102, blue: 0.110)   // #2A1A1C deep plum
+    static let meshWarm     = Color(red: 0.180, green: 0.118, blue: 0.063)   // #2E1E10 deep amber
+    static let meshLime     = Color(red: 0.149, green: 0.118, blue: 0.055)   // #261E0E olive gold
 
-    // Slate neutrals (cool, no warm tint)
-    static let ink   = Color(red: 0.078, green: 0.094, blue: 0.122)   // #14181F background — cool graphite
-    static let ink2  = Color(red: 0.102, green: 0.125, blue: 0.161)   // #1A2029
-    static let ink3  = Color(red: 0.133, green: 0.165, blue: 0.208)   // #222A35
-    // Content card surface — raised slate (glass reserved for nav).
-    static let card  = Color(red: 0.110, green: 0.133, blue: 0.173)   // #1C222C raised slate
+    // Warm-charcoal neutrals
+    static let ink   = Color(red: 0.102, green: 0.086, blue: 0.078)   // #1A1614 background — warm charcoal
+    static let ink2  = Color(red: 0.133, green: 0.110, blue: 0.094)   // #221C18
+    static let ink3  = Color(red: 0.173, green: 0.141, blue: 0.118)   // #2C241E
+    // Content card surface — a touch lighter than the bg so panes lift off it (depth, not flat).
+    static let card  = Color(red: 0.149, green: 0.125, blue: 0.106)   // #26201B raised charcoal
 
     static func accent(for index: Int) -> Color {
         [acidLime, teal, violet, cyan, indigo][index % 5]
@@ -61,11 +59,11 @@ enum Palette {
     enum Section { case overview, money, people, life, insights, settings }
     static func section(_ s: Section) -> Color {
         switch s {
-        case .overview:  return azure     // electric blue — the home temperature
+        case .overview:  return azure     // amber — the home temperature
         case .money:     return positive  // mint — it's money
         case .people:    return indigo    // periwinkle
         case .life:      return violet    // orchid
-        case .insights:  return cyan      // ice
+        case .insights:  return cyan      // teal
         case .settings:  return textSecondary
         }
     }
@@ -166,25 +164,29 @@ struct GlassCardModifier: ViewModifier {
             .background {
                 ZStack {
                     shape.fill(.ultraThinMaterial)
-                    if let tint { shape.fill(tint.opacity(0.13)) }
+                    // A solid card tone OVER the material so panes read as distinct surfaces that
+                    // lift off the backdrop — this is the fix for the "everything's flat / samey"
+                    // feel: cards are now clearly their own thing, not translucent on translucent.
+                    shape.fill(Palette.card.opacity(0.55))
+                    if let tint { shape.fill(tint.opacity(0.16)) }
                     shape.fill(LinearGradient(stops: [
-                        .init(color: .white.opacity(0.09), location: 0),
-                        .init(color: .white.opacity(0.02), location: 0.28),
-                        .init(color: .clear, location: 0.62),
-                        .init(color: .black.opacity(0.08), location: 1),
+                        .init(color: .white.opacity(0.12), location: 0),
+                        .init(color: .white.opacity(0.03), location: 0.30),
+                        .init(color: .clear, location: 0.65),
+                        .init(color: .black.opacity(0.12), location: 1),
                     ], startPoint: .topLeading, endPoint: .bottomTrailing))
                 }
             }
             .overlay(shape.strokeBorder(
                 LinearGradient(stops: [
-                    .init(color: .white.opacity(interactive && hover ? 0.46 : 0.34), location: 0),
-                    .init(color: .white.opacity(0.07), location: 0.45),
-                    .init(color: .white.opacity(0.03), location: 1),
+                    .init(color: .white.opacity(interactive && hover ? 0.50 : 0.40), location: 0),
+                    .init(color: .white.opacity(0.08), location: 0.45),
+                    .init(color: .white.opacity(0.04), location: 1),
                 ], startPoint: .top, endPoint: .bottom), lineWidth: 1))
             .clipShape(shape)
-            .shadow(color: .black.opacity(elevated ? 0.30 : 0.17),
-                    radius: elevated ? 26 : 13, x: 0, y: elevated ? 13 : 6)
-            .shadow(color: .black.opacity(0.14), radius: 2.5, y: 1)
+            .shadow(color: .black.opacity(elevated ? 0.40 : 0.26),
+                    radius: elevated ? 28 : 15, x: 0, y: elevated ? 14 : 7)
+            .shadow(color: .black.opacity(0.18), radius: 3, y: 1.5)
             .contentShape(shape)
             .onHover { hover = $0 }
             .animation(.easeOut(duration: 0.16), value: hover)
