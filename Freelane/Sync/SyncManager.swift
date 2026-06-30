@@ -5,6 +5,11 @@ import Observation
 @MainActor
 @Observable
 final class SyncManager {
+    /// Cloud sync is fully BUILT but deliberately DORMANT until the Android companion exists.
+    /// While this is `false` the app is purely local: no session restore, no auto-sync, no Cloud
+    /// settings tab, nothing touches the network. Flip to `true` when shipping multi-device.
+    static let cloudSyncEnabled = false
+
     var connected = false
     var busy = false
     var statusLine = "Local only"

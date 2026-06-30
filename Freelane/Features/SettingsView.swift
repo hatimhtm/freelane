@@ -43,15 +43,21 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Page("Settings", subtitle: sync.connected ? "Synced to your private cloud — and fully usable offline." : "All data lives on this Mac. Cloud sync is optional.",
-             subtabs: ["General", "Storage", "Notifications", "AI", "Integrations", "Cloud", "About"], selection: $sub) {
-            switch sub {
-            case 0: generalCard
-            case 1: storageCard; recalibrateCard
-            case 2: notificationsCard
-            case 3: aiCard
-            case 4: integrationsCard
-            case 5: cloudCard
+        let tabs = SyncManager.cloudSyncEnabled
+            ? ["General", "Storage", "Notifications", "AI", "Integrations", "Cloud", "About"]
+            : ["General", "Storage", "Notifications", "AI", "Integrations", "About"]
+        let current = sub < tabs.count ? tabs[sub] : (tabs.last ?? "General")
+        let subtitle = (SyncManager.cloudSyncEnabled && sync.connected)
+            ? "Synced to your private cloud — and fully usable offline."
+            : "All data lives on this Mac. No cloud, fully private."
+        return Page("Settings", subtitle: subtitle, subtabs: tabs, selection: $sub) {
+            switch current {
+            case "General": generalCard
+            case "Storage": storageCard; recalibrateCard
+            case "Notifications": notificationsCard
+            case "AI": aiCard
+            case "Integrations": integrationsCard
+            case "Cloud": cloudCard
             default: aboutCard
             }
         }
