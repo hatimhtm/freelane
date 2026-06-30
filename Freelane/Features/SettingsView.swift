@@ -28,6 +28,7 @@ struct SettingsView: View {
     @State private var backedUp = false
     @State private var showTrash = false
     @State private var showRestore = false
+    @State private var cloudPassword = ""
 
     private let baseCurrencies = CurrencyFormat.supported
 
@@ -42,14 +43,15 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Page("Settings", subtitle: "All data lives on this Mac. No cloud, fully private.",
-             subtabs: ["General", "Storage", "Notifications", "AI", "Integrations", "About"], selection: $sub) {
+        Page("Settings", subtitle: sync.connected ? "Synced to your private cloud — and fully usable offline." : "All data lives on this Mac. Cloud sync is optional.",
+             subtabs: ["General", "Storage", "Notifications", "AI", "Integrations", "Cloud", "About"], selection: $sub) {
             switch sub {
             case 0: generalCard
             case 1: storageCard; recalibrateCard
             case 2: notificationsCard
             case 3: aiCard
             case 4: integrationsCard
+            case 5: cloudCard
             default: aboutCard
             }
         }
@@ -131,6 +133,74 @@ struct SettingsView: View {
             recalFlash = abs(delta) < 0.01
                 ? "\(w.name) was already correct."
                 : "\(w.name) recalibrated to \(CurrencyFormat.string(native, cur, compact: true)) (Δ \(CurrencyFormat.string(delta, base, compact: true)))."
+        }
+    }
+
+    // MARK: Cloud sync
+
+    @ViewBuilder private var cloudCard: some View {
+        SectionCard(title: "Cloud sync", subtitle: sync.connected
+                    ? "Your data syncs to your private Supabase. Everything still works offline — changes queue and sync when you're back online."
+                    : "Optional. Sync this Mac to your own private Supabase so your data is backed up and ready for other devices. Off by default.",
+                    accent: Palette.section(.overview)) {
+            VStack(alignment: .leading, spacing: 14) {
+                // Live status line.
+                HStack(spacing: 10) {
+                    Image(systemName: sync.connected ? "checkmark.icloud.fill" : "icloud.slash")
+                        .font(.system(size: 15)).foregroundStyle(sync.connected ? Palette.positive : Palette.textTertiary).frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sync.statusLine).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary)
+                        if let d = sync.lastSync {
+                            Text("Last synced \(d.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                        }
+                    }
+                    Spacer()
+                    if sync.busy { ProgressView().controlSize(.small) }
+                }
+
+                if sync.connected {
+                    HStack(spacing: 10) {
+                        Button { Task { await sync.syncNow() } } label: {
+                            Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
+                        }.buttonStyle(.glassProminent).tint(Palette.section(.overview)).disabled(sync.busy)
+                        Button(role: .destructive) { sync.disconnect() } label: {
+                            Label("Disconnect", systemImage: "xmark.icloud")
+                        }.buttonStyle(.glass)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 9) {
+                        cloudField("Supabase URL", "https://xxxx.supabase.co", text: Binding(get: { sync.urlString }, set: { sync.urlString = $0 }))
+                        cloudField("Anon key", "eyJhbGci…", text: Binding(get: { sync.anonKey }, set: { sync.anonKey = $0 }), secure: true)
+                        cloudField("Email", "owner@freelane.local", text: Binding(get: { sync.email }, set: { sync.email = $0 }))
+                        SecureField("Password", text: $cloudPassword).textFieldStyle(GlassFieldStyle())
+                        Button {
+                            Task { await sync.connectAndImport(password: cloudPassword); cloudPassword = "" }
+                        } label: {
+                            Label(sync.busy ? "Connecting…" : "Connect & import", systemImage: "icloud.and.arrow.down")
+                        }
+                        .buttonStyle(.glassProminent).tint(Palette.section(.overview))
+                        .disabled(sync.busy || !sync.isConfigured || cloudPassword.isEmpty)
+                    }
+                }
+
+                if let err = sync.lastError {
+                    Text(err).font(.system(size: 11)).foregroundStyle(Palette.negative).fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Your password is never stored — only a refresh token, in the macOS Keychain. Data lives in your own Supabase project.")
+                    .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func cloudField(_ label: String, _ placeholder: String, text: Binding<String>, secure: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textSecondary)
+            if secure {
+                SecureField(placeholder, text: text).textFieldStyle(GlassFieldStyle())
+            } else {
+                TextField(placeholder, text: text).textFieldStyle(GlassFieldStyle())
+            }
         }
     }
 

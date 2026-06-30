@@ -186,6 +186,8 @@ struct RootView: View {
                 NightShift.maybeRunOnOpen(context, ai: ai)
                 // Warm the local model while you're here; instant AI when you log things.
                 LocalLLM.shared.appActive()
+                // Push anything logged elsewhere / while away, and pull the latest.
+                Task { await sync.autoSync() }
             } else {
                 // Closing the app frees the local model's RAM immediately (gaming-safe);
                 // a brief focus-switch just lets its keep-alive lapse on its own.
@@ -199,6 +201,11 @@ struct RootView: View {
         .environment(undo)
         .task {
             sync.attach(context: context)
+            // Offline-first sync: restore the cloud session and flush any queued (dirty) local
+            // edits the moment we're online — at launch, and again whenever the network returns.
+            // Done off the launch path so a slow network can't hold up first paint.
+            Reachability.shared.onBecameOnline = { Task { await sync.autoSync() } }
+            Task { await sync.restoreSession(); await sync.autoSync() }
             SampleData.seedIfEmpty(context)
             // First launch lands in .active before onChange can fire — warm the local model now.
             LocalLLM.shared.appActive()
@@ -295,6 +302,7 @@ struct RootView: View {
 
 private struct Sidebar: View {
     @Binding var feature: Feature
+    @Environment(SyncManager.self) private var sync
 
     var body: some View {
         ScrollView {
@@ -334,17 +342,38 @@ private struct Sidebar: View {
     }
 
     private var storageChip: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "internaldrive").font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Palette.teal)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Stored locally").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textPrimary)
-                Text("No cloud · private").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+        // Reflects live sync state: synced ↔ offline ↔ local-only. Tap to open the cloud settings.
+        let connected = sync.connected
+        let icon = connected ? (sync.busy ? "arrow.triangle.2.circlepath" : "checkmark.icloud") : "internaldrive"
+        let tint = connected ? Palette.positive : Palette.teal
+        let title = connected ? "Cloud synced" : "Stored locally"
+        let subtitle: String = {
+            if !connected { return "No cloud · private" }
+            if sync.busy { return "Syncing…" }
+            if let d = sync.lastSync { return "Synced " + Self.relative(d) }
+            return sync.statusLine
+        }()
+        return Button { select(.settings) } label: {
+            HStack(spacing: 9) {
+                Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
+                    .symbolEffect(.rotate, options: .repeating, isActive: connected && sync.busy)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textPrimary)
+                    Text(subtitle).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                }
+                Spacer()
             }
-            Spacer()
+            .padding(11)
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .glassCard(cornerRadius: 13)
         }
-        .padding(11)
-        .glassCard(cornerRadius: 13)
+        .buttonStyle(.plain)
+        .help("Cloud sync settings")
+    }
+
+    private static func relative(_ d: Date) -> String {
+        let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated
+        return f.localizedString(for: d, relativeTo: .now)
     }
 }
 

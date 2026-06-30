@@ -100,10 +100,13 @@ final class SyncManager {
 
     func syncNow() async {
         guard let context, accessToken != nil else { return }
+        guard Reachability.shared.online else { statusLine = "Offline · saved locally"; return }
         busy = true; lastError = nil; statusLine = "Syncing…"
         defer { busy = false }
         do {
             let api = try makeAPI()
+            // Push local edits FIRST, then pull — so a stale server row can't clobber a change you
+            // just made offline (your dirty rows go up, then the pull brings back the merged state).
             try await pushDirty(api: api, from: context)
             try await importAll(api: api, into: context)
             lastSync = .now
@@ -112,6 +115,17 @@ final class SyncManager {
             lastError = error.localizedDescription
             statusLine = "Sync failed"
         }
+    }
+
+    /// Fire-and-forget sync when it makes sense: connected, online, and not already busy. Safe to
+    /// call on launch, on app-foreground, and the moment the network comes back — it no-ops
+    /// otherwise. This is what makes sync feel automatic instead of a button you must remember.
+    func autoSync() async {
+        guard connected, accessToken != nil, !busy, Reachability.shared.online else {
+            if connected && !Reachability.shared.online { statusLine = "Offline · saved locally" }
+            return
+        }
+        await syncNow()
     }
 
     func disconnect() {
@@ -449,6 +463,42 @@ final class SyncManager {
             ]
         })
         projects.forEach { $0.dirty = false }
+
+        // Clients (safe-field upsert).
+        let clients = ((try? context.fetch(FetchDescriptor<Client>())) ?? []).filter { $0.dirty }
+        try await api.upsert("clients", rows: clients.map { c in
+            [
+                "id": c.id.uuidString.lowercased(),
+                "name": c.name,
+                "company": c.company ?? NSNull(),
+                "default_currency": c.defaultCurrency ?? NSNull(),
+                "accent_color": c.accentColor ?? NSNull(),
+                "short_description": c.shortDescription ?? NSNull(),
+                "notes": c.notes ?? NSNull(),
+                "email": c.email ?? NSNull(),
+                "phone": c.phone ?? NSNull(),
+                "archived": c.archived,
+            ]
+        })
+        clients.forEach { $0.dirty = false }
+
+        // Spends — the everyday offline case: a spend you logged with no network is marked dirty
+        // and lands here on the next sync, so it actually reaches the cloud instead of staying
+        // stranded on this Mac (spends used to be pull-only).
+        let spends = ((try? context.fetch(FetchDescriptor<Spend>())) ?? []).filter { $0.dirty }
+        try await api.upsert("spends", rows: spends.map { s in
+            [
+                "id": s.id.uuidString.lowercased(),
+                "wallet_id": s.walletId?.uuidString.lowercased() ?? NSNull(),
+                "spent_at": DateParse.string(s.spentAt),
+                "amount": s.amount, "currency": s.currency,
+                "amount_base": s.amountBase,
+                "description": s.spendDescription ?? NSNull(),
+                "is_sadaka": s.isSadaka,
+                "notes": s.notes ?? NSNull(),
+            ]
+        })
+        spends.forEach { $0.dirty = false }
 
         try context.save()
     }
