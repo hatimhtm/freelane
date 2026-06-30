@@ -1,0 +1,142 @@
+{
+  "$comment": "Golden test vectors for the Freelane money engine. EVERY platform (macOS/Swift, web/TS, Android/Kotlin) must reproduce these outputs to the cent. See MONEY-ENGINE.md for the rules. Inputs use clean decimals that avoid IEEE-754 half-way knife-edges so results are reproducible across languages. Base currency = PHP throughout; rates map nativeAmount * rate = baseAmount.",
+  "version": 1,
+  "baseCurrency": "PHP",
+  "rates": { "PHP": 1.0, "USD": 56.0, "MAD": 5.6 },
+
+  "round2": [
+    { "name": "truncate below half", "in": 1.2345, "out": 1.23 },
+    { "name": "round up above half", "in": 1.2367, "out": 1.24 },
+    { "name": "exact 2dp unchanged", "in": 970.0, "out": 970.0 },
+    { "name": "negative away from zero", "in": -2.346, "out": -2.35 },
+    { "name": "thousands", "in": 5599.996, "out": 5600.0 }
+  ],
+
+  "payments": [
+    {
+      "name": "single hop, same currency, 30 fee",
+      "steps": [
+        { "stepOrder": 1, "amountIn": 1000.0, "currencyIn": "PHP", "amountOut": 970.0, "currencyOut": "PHP", "isFinal": true }
+      ],
+      "expect": { "grossBase": 1000.0, "netBase": 970.0, "feeBase": 30.0 }
+    },
+    {
+      "name": "two-hop chain with FX (USD in, PHP out)",
+      "steps": [
+        { "stepOrder": 1, "amountIn": 100.0, "currencyIn": "USD", "amountOut": 5500.0, "currencyOut": "PHP", "isFinal": false },
+        { "stepOrder": 2, "amountIn": 5500.0, "currencyIn": "PHP", "amountOut": 5400.0, "currencyOut": "PHP", "isFinal": true }
+      ],
+      "expect": { "grossBase": 5600.0, "netBase": 5400.0, "feeBase": 200.0 }
+    },
+    {
+      "name": "feeUnknown collapses fee to zero (net := gross)",
+      "feeUnknown": true,
+      "steps": [
+        { "stepOrder": 1, "amountIn": 100.0, "currencyIn": "USD", "amountOut": 5400.0, "currencyOut": "PHP", "isFinal": true }
+      ],
+      "expect": { "grossBase": 5600.0, "netBase": 5600.0, "feeBase": 0.0 }
+    },
+    {
+      "name": "no fee (net == gross)",
+      "steps": [
+        { "stepOrder": 1, "amountIn": 250.0, "currencyIn": "PHP", "amountOut": 250.0, "currencyOut": "PHP", "isFinal": true }
+      ],
+      "expect": { "grossBase": 250.0, "netBase": 250.0, "feeBase": 0.0 }
+    }
+  ],
+
+  "walletBalance": [
+    {
+      "name": "opening + live entries since anchor; pre-anchor and archived excluded",
+      "openingBalanceBase": 1000.0,
+      "anchor": "2026-01-01T00:00:00Z",
+      "ledger": [
+        { "amountBase": 970.0,  "eventAt": "2026-01-05T00:00:00Z", "archived": false, "comment": "income +970" },
+        { "amountBase": -200.0, "eventAt": "2026-01-06T00:00:00Z", "archived": false, "comment": "spend -200" },
+        { "amountBase": -150.0, "eventAt": "2026-01-07T00:00:00Z", "archived": false, "comment": "outflow -150" },
+        { "amountBase": -500.0, "eventAt": "2026-01-08T00:00:00Z", "archived": true,  "comment": "archived, excluded" },
+        { "amountBase": 300.0,  "eventAt": "2025-12-20T00:00:00Z", "archived": false, "comment": "pre-anchor, excluded" }
+      ],
+      "expect": { "balance": 1620.0 }
+    }
+  ],
+
+  "allocations": [
+    {
+      "name": "clean 50/30/20 split of 1000",
+      "netBase": 1000.0,
+      "projects": [
+        { "allocationAmount": 50.0, "currency": "PHP" },
+        { "allocationAmount": 30.0, "currency": "PHP" },
+        { "allocationAmount": 20.0, "currency": "PHP" }
+      ],
+      "expect": { "alloc": [500.0, 300.0, 200.0], "sum": 1000.0 }
+    },
+    {
+      "name": "thirds of 100 — last absorbs the cent",
+      "netBase": 100.0,
+      "projects": [
+        { "allocationAmount": 1.0, "currency": "PHP" },
+        { "allocationAmount": 1.0, "currency": "PHP" },
+        { "allocationAmount": 1.0, "currency": "PHP" }
+      ],
+      "expect": { "alloc": [33.33, 33.33, 33.34], "sum": 100.0 }
+    }
+  ],
+
+  "withdrawals": [
+    {
+      "name": "transfer with 100 fee → two ledger legs",
+      "fromMethodId": "W_FROM", "toMethodId": "W_TO",
+      "grossBase": 5000.0, "netBase": 4900.0,
+      "expect": {
+        "feeBase": 100.0,
+        "ledger": [
+          { "walletId": "W_FROM", "kind": "transfer", "amountBase": -5000.0 },
+          { "walletId": "W_TO",   "kind": "transfer", "amountBase": 4900.0 }
+        ]
+      }
+    },
+    {
+      "name": "cash-out (no destination) → single outflow leg, net clamped to gross",
+      "fromMethodId": "W_FROM", "toMethodId": null,
+      "grossBase": 2000.0, "netBase": 2500.0,
+      "expect": {
+        "feeBase": 0.0,
+        "clampedNetBase": 2000.0,
+        "ledger": [
+          { "walletId": "W_FROM", "kind": "outflow", "amountBase": -2000.0 }
+        ]
+      }
+    }
+  ],
+
+  "projectStatus": [
+    {
+      "name": "partially paid 6000 of 10000",
+      "project": { "amount": 10000.0, "currency": "PHP" },
+      "allocations": [ { "allocationAmount": 6000.0, "currency": "PHP" } ],
+      "expect": { "paidGrossBase": 6000.0, "outstandingBase": 4000.0, "status": "partiallyPaid" }
+    },
+    {
+      "name": "fully paid (within 1e-9 tolerance)",
+      "project": { "amount": 10000.0, "currency": "PHP" },
+      "allocations": [
+        { "allocationAmount": 7000.0, "currency": "PHP" },
+        { "allocationAmount": 3000.0, "currency": "PHP" }
+      ],
+      "expect": { "paidGrossBase": 10000.0, "outstandingBase": 0.0, "status": "paid" }
+    },
+    {
+      "name": "unpaid (no allocations)",
+      "project": { "amount": 10000.0, "currency": "PHP" },
+      "allocations": [],
+      "expect": { "paidGrossBase": 0.0, "outstandingBase": 10000.0, "status": "unpaid" }
+    }
+  ],
+
+  "spendLedger": [
+    { "name": "ordinary spend → negative outflow", "amountBase": 250.0, "isSadaka": false, "expect": { "kind": "outflow", "amountBase": -250.0 } },
+    { "name": "sadaka spend → negative sadaka_payment", "amountBase": 100.0, "isSadaka": true, "expect": { "kind": "sadaka_payment", "amountBase": -100.0 } }
+  ]
+}
