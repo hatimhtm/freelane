@@ -24,8 +24,8 @@ struct DashboardView: View {
     @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
     @Query(sort: \InsightLog.createdAt, order: .reverse) private var insights: [InsightLog]
     @Environment(AIManager.self) private var ai
+    @Environment(\.navigate) private var navigate
     @State private var generatingInsights = false
-    @State private var scrubDate: Date?
     @AppStorage("dash.tileOrder") private var tileOrderRaw = ""
     @State private var draggingTile: String?
 
@@ -49,18 +49,108 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        // Compute the heavy aggregates ONCE per render and thread them down — previously
-        // `metrics`/`safe` recomputed the full money engine ~9× on every body invalidation
-        // (every chart-scrub hover included).
+        // Compute the heavy aggregates ONCE per render and thread them down. The chart's scrub
+        // state now lives inside `CashFlowCard`, so hovering the chart no longer reruns the whole
+        // money engine here (it used to recompute `metrics`/`safe` ~9× per hover).
         let m = metrics
         let s = safe
-        return Page(greeting, subtitle: "Everything at a glance.") {
-            hero(m, s)                 // money first
+        let signals = focusSignals(m, s)
+        return Page(greeting, subtitle: signals.isEmpty ? "All clear — everything at a glance." : "A few things need you.") {
+            // Priority first: the few things actually worth a tap. When nothing needs you, the
+            // calm weather banner takes this slot instead of a wall of equal-weight tiles.
+            if signals.isEmpty {
+                CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
+            } else {
+                needsYouCard(signals)
+            }
+            hero(m, s)
             insightsCard
             grid(m, s)
-            CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
-            cashFlowCard(m)
+            CashFlowCard(points: m.cashFlow, base: base)
         }
+    }
+
+    // MARK: Needs you — the prioritized attention surface
+
+    /// One thing worth a tap right now. Severity orders them (overdrawn beats a prayer nudge).
+    private struct FocusSignal: Identifiable {
+        let id: String
+        let icon: String
+        let text: String
+        let tint: Color
+        let destination: Feature
+        let severity: Int
+    }
+
+    /// What actually needs the user, derived only from already-computed money/life state — ranked.
+    private func focusSignals(_ m: DashboardMetrics, _ s: SafeBreakdown) -> [FocusSignal] {
+        var out: [FocusSignal] = []
+
+        // Overdrawn holding wallets — the most urgent money state.
+        let over = wallets.filter { $0.isHolding && !$0.archived && !$0.excludedFromTotals
+            && WalletMath.balance(of: $0, ledger: ledger) < -$0.overdraftToleranceBase }
+        if let w = over.first {
+            let amt = abs(WalletMath.balance(of: w, ledger: ledger))
+            out.append(.init(id: "overdrawn", icon: "exclamationmark.triangle.fill",
+                text: over.count == 1 ? "\(w.name) is \(CurrencyFormat.abbreviated(amt, base)) overdrawn"
+                                      : "\(over.count) wallets overdrawn",
+                tint: Palette.negative, destination: .payments, severity: 100))
+        }
+
+        // Overdue projects.
+        if overdueProjects > 0 {
+            out.append(.init(id: "overdue", icon: "folder.badge.questionmark",
+                text: "\(overdueProjects) project\(overdueProjects == 1 ? "" : "s") overdue",
+                tint: Palette.warning, destination: .projects, severity: 80))
+        }
+
+        // Spending past today's safe-to-spend.
+        if s.initialForToday > 0 && s.spentToday > s.initialForToday {
+            out.append(.init(id: "overspent", icon: "cart.badge.minus",
+                text: "Over today's safe-to-spend by \(CurrencyFormat.abbreviated(s.spentToday - s.initialForToday, base))",
+                tint: Palette.negative, destination: .spending, severity: 70))
+        } else if s.liveRemaining <= 0 {
+            out.append(.init(id: "nosafe", icon: "shield.slash",
+                text: "Nothing safe to spend left today", tint: Palette.warning, destination: .spending, severity: 55))
+        }
+
+        // A gentle evening nudge only — never during the day.
+        if PHT.calendar.component(.hour, from: .now) >= 19 && prayedToday < 5 {
+            let left = 5 - prayedToday
+            out.append(.init(id: "prayers", icon: "moon.stars.fill",
+                text: "\(left) prayer\(left == 1 ? "" : "s") left today",
+                tint: Palette.violet, destination: .faith, severity: 30))
+        }
+
+        return out.sorted { $0.severity > $1.severity }
+    }
+
+    private func needsYouCard(_ signals: [FocusSignal]) -> some View {
+        SectionCard(title: "Needs you", subtitle: "The few things worth a tap right now",
+                    accent: signals.first?.tint ?? Palette.warning) {
+            VStack(spacing: 8) {
+                ForEach(signals.prefix(4)) { sig in
+                    Button { navigate(sig.destination) } label: { signalRow(sig) }
+                        .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func signalRow(_ sig: FocusSignal) -> some View {
+        HStack(spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous).fill(sig.tint.opacity(0.16))
+                    .frame(width: 30, height: 30)
+                Image(systemName: sig.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(sig.tint)
+            }
+            Text(sig.text).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     // MARK: Hero
@@ -218,10 +308,50 @@ struct DashboardView: View {
         return Set(prayerLogs.filter { $0.id.hasSuffix("|\(key)") }.map { $0.prayer }).count
     }
 
-    // MARK: Cash flow chart
+    // MARK: Derived values
 
-    private func cashFlowCard(_ m: DashboardMetrics) -> some View {
-        let pts = m.cashFlow
+    private var net30: Double {
+        let start = PHT.daysAgo(30)
+        return ledger.filter { $0.archivedAt == nil && $0.eventAt >= start }.reduce(0) { $0 + $1.amountBase }
+    }
+    private var overdrawn: Bool {
+        wallets.filter { $0.isHolding && !$0.archived && !$0.excludedFromTotals }.contains { WalletMath.balance(of: $0, ledger: ledger) < -$0.overdraftToleranceBase }
+    }
+    private func runway(_ safe: SafeBreakdown) -> Double? {
+        // Use the EVERYDAY pace (one-off / investment buys excluded) so a MacBook or a
+        // big bill doesn't make your runway look tiny.
+        let burn = SafeToSpend.typicalDailySpend(spends)
+        return burn > 0 ? safe.walletTotal / burn : nil
+    }
+    private var sadakaMTD: Double {
+        Sadaka.given(spends: spends, loans: loans, since: PHT.startOfMonth())
+    }
+    private var paidThisMonth: Int {
+        let m = PHT.startOfMonth()
+        return projects.filter { $0.status == .paid && ($0.completedAt ?? $0.updatedAt) >= m }.count
+    }
+    private var openLoans: [Loan] { loans.filter { $0.statusRaw == "open" || $0.statusRaw == "partially_returned" } }
+    private var openLoanCount: Int { openLoans.count }
+    private var loanOutstanding: Double { openLoans.reduce(0) { $0 + $1.outstandingBase } }
+    private var lastSleep: String {
+        guard let log = bodyLogs.filter({ $0.sleepHours != nil }).max(by: { $0.day < $1.day }),
+              let h = log.sleepHours else { return "—" }
+        return String(format: "%.1fh", h)
+    }
+}
+
+// MARK: Cash flow chart
+//
+// A standalone view that OWNS its scrub state — so hovering the chart only re-renders the chart,
+// not the parent Dashboard (which would otherwise recompute the whole money engine every frame).
+
+private struct CashFlowCard: View {
+    let points: [DashboardMetrics.DayPoint]
+    let base: String
+    @State private var scrubDate: Date?
+
+    var body: some View {
+        let pts = points
         return SectionCard(title: "Net cash flow", subtitle: "Cumulative across all wallets · 90 days",
                            accent: Palette.azure) {
             if pts.count < 2 {
@@ -273,36 +403,5 @@ struct DashboardView: View {
                 .frame(height: 220)
             }
         }
-    }
-
-    // MARK: Derived values
-
-    private var net30: Double {
-        let start = PHT.daysAgo(30)
-        return ledger.filter { $0.archivedAt == nil && $0.eventAt >= start }.reduce(0) { $0 + $1.amountBase }
-    }
-    private var overdrawn: Bool {
-        wallets.filter { $0.isHolding && !$0.archived && !$0.excludedFromTotals }.contains { WalletMath.balance(of: $0, ledger: ledger) < -$0.overdraftToleranceBase }
-    }
-    private func runway(_ safe: SafeBreakdown) -> Double? {
-        // Use the EVERYDAY pace (one-off / investment buys excluded) so a MacBook or a
-        // big bill doesn't make your runway look tiny.
-        let burn = SafeToSpend.typicalDailySpend(spends)
-        return burn > 0 ? safe.walletTotal / burn : nil
-    }
-    private var sadakaMTD: Double {
-        Sadaka.given(spends: spends, loans: loans, since: PHT.startOfMonth())
-    }
-    private var paidThisMonth: Int {
-        let m = PHT.startOfMonth()
-        return projects.filter { $0.status == .paid && ($0.completedAt ?? $0.updatedAt) >= m }.count
-    }
-    private var openLoans: [Loan] { loans.filter { $0.statusRaw == "open" || $0.statusRaw == "partially_returned" } }
-    private var openLoanCount: Int { openLoans.count }
-    private var loanOutstanding: Double { openLoans.reduce(0) { $0 + $1.outstandingBase } }
-    private var lastSleep: String {
-        guard let log = bodyLogs.filter({ $0.sleepHours != nil }).max(by: { $0.day < $1.day }),
-              let h = log.sleepHours else { return "—" }
-        return String(format: "%.1fh", h)
     }
 }

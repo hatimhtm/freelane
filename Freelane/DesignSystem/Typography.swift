@@ -1,12 +1,13 @@
 import SwiftUI
 
 /// App type system. Uses Apple's built-in faces — no bundling:
-/// `.serif` resolves to **New York** (editorial titles), `.rounded` to SF Pro
-/// Rounded (figures), `.default` to SF Pro Text (UI). Distinct, premium, native.
+/// `.default` resolves to **SF Pro** (crisp titles + UI), `.rounded` to SF Pro
+/// Rounded (figures). Sharp, modern, native — the Nordic / pro-tool identity
+/// (Linear / Things / Arc lean on clean sans, not serif).
 enum Typo {
-    // Editorial titles (New York serif)
-    static func display(_ size: CGFloat = 32) -> Font { .system(size: size, weight: .bold, design: .serif) }
-    static func title(_ size: CGFloat = 22) -> Font { .system(size: size, weight: .semibold, design: .serif) }
+    // Titles (SF Pro Display — clean sans, tightened with negative tracking at the call site)
+    static func display(_ size: CGFloat = 32) -> Font { .system(size: size, weight: .bold, design: .default) }
+    static func title(_ size: CGFloat = 22) -> Font { .system(size: size, weight: .semibold, design: .default) }
 
     // Figures (SF Pro Rounded, monospaced digits applied at call site)
     static func figure(_ size: CGFloat = 30) -> Font { .system(size: size, weight: .semibold, design: .rounded) }
@@ -17,11 +18,11 @@ enum Typo {
 }
 
 extension Text {
-    /// Editorial page/hero title. Large sizes get tight optical tracking (Fraunces-like).
+    /// Page/hero title. Large sizes get tight optical tracking for a sharp, condensed feel.
     func displayStyle(_ size: CGFloat = 30) -> some View {
         self.font(Typo.display(size))
             .foregroundStyle(Palette.textPrimary)
-            .tracking(size >= 26 ? -0.5 : 0.1)
+            .tracking(size >= 26 ? -0.6 : -0.2)
     }
     /// Card / section serif title.
     func titleStyle(_ size: CGFloat = 18) -> some View {

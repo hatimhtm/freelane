@@ -1,58 +1,73 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Palette v2 — "Espresso & Gold"
-// A new identity for the mac app (2026-06-13): warm espresso-black surfaces, ONE champagne-gold
-// signature, cream text, and quiet jewel accents per feature. The old graphite + acid-lime read
-// like the web app's shadow; this is built for glass — warm, expensive, unmistakably its own.
-// (Properties keep their historical names — `acidLime`, `azure`, `cyan` — so 90 files recolor
+// MARK: - Palette v3 — "Nordic Slate + Electric"
+// The v2 identity for the rewrite (2026-07): cool graphite/slate surfaces, ONE electric-blue
+// signature, crisp near-white text, and bright jewel accents that give each section its own
+// identity (Money / People / Life / Insights read distinct at a glance). The old espresso-and-gold
+// read warm-editorial; this is sharp, modern, "pro tool" — Linear / Things / Arc energy, and it
+// reads cleanly on both Mac now and a future Android (Compose) port.
+// (Properties keep their historical names — `acidLime`, `azure`, `cyan` — so ~90 files recolor
 // from this single block. The names are labels; the VALUES are the identity.)
 
 enum Palette {
-    /// Signature champagne gold — the one bright accent, used sparingly (once per screen).
-    static let acidLime = Color(red: 0.95, green: 0.78, blue: 0.38)
+    /// Signature electric blue — the one bright accent, the app's primary identity color.
+    static let acidLime = Color(red: 0.357, green: 0.549, blue: 1.000)   // #5B8CFF electric blue
 
-    // `azure` = the historical name for the PRIMARY accent across the app → champagne gold.
+    // `azure` = the historical name for the PRIMARY accent across the app → electric blue.
     static let azure    = acidLime
-    // Feature accents — quiet jewel tones with warmth in common, so sections feel distinct
-    // without breaking the espresso-and-gold room they all live in.
-    static let cyan     = Color(red: 0.55, green: 0.76, blue: 0.84)   // sea glass
-    static let indigo   = Color(red: 0.64, green: 0.66, blue: 0.93)   // dusk periwinkle
-    static let violet   = Color(red: 0.82, green: 0.64, blue: 0.88)   // orchid
+    // Feature accents — bright, cool jewel tones so sections feel distinct while sharing the
+    // crisp Nordic temperature. Wired to sections via `section(...)` below.
+    static let cyan     = Color(red: 0.220, green: 0.812, blue: 0.902)   // #38CFE6 ice / sky
+    static let indigo   = Color(red: 0.486, green: 0.549, blue: 0.973)   // #7C8CF8 periwinkle
+    static let violet   = Color(red: 0.725, green: 0.549, blue: 1.000)   // #B98CFF orchid
 
-    // Money-semantic (green / rose / amber)
-    static let teal     = Color(red: 0.45, green: 0.80, blue: 0.58)   // sage mint
+    // Money-semantic (mint / coral / amber)
+    static let teal     = Color(red: 0.239, green: 0.839, blue: 0.549)   // #3DD68C mint
     static let positive = teal
-    static let negative = Color(red: 0.93, green: 0.45, blue: 0.42)   // ember coral
-    static let warning  = Color(red: 0.95, green: 0.60, blue: 0.26)   // burnt apricot
+    static let negative = Color(red: 1.000, green: 0.420, blue: 0.420)   // #FF6B6B coral
+    static let warning  = Color(red: 1.000, green: 0.698, blue: 0.243)   // #FFB23E amber
 
-    // Text — warm cream, not clinical white. Hierarchy carries the luxury.
-    static let textPrimary   = Color(red: 0.97, green: 0.95, blue: 0.91)
-    static let textSecondary = Color(red: 0.72, green: 0.69, blue: 0.63)
-    // Kept ≥ AA on the espresso background.
-    static let textTertiary  = Color(red: 0.60, green: 0.58, blue: 0.53)
+    // Text — crisp, cool near-white. Hierarchy carries the structure.
+    static let textPrimary   = Color(red: 0.933, green: 0.945, blue: 0.965)   // #EEF1F6
+    static let textSecondary = Color(red: 0.604, green: 0.643, blue: 0.706)   // #9AA4B4
+    // Kept ≥ AA on the slate background.
+    static let textTertiary  = Color(red: 0.420, green: 0.455, blue: 0.525)   // #6B7486
 
-    // Backdrop glow pools (what the glass lenses against)
-    static let coolGlow = Color(red: 0.95, green: 0.72, blue: 0.35)   // candle gold
-    static let warmGlow = Color(red: 0.62, green: 0.32, blue: 0.45)   // mulled plum
+    // Backdrop glow pools (what the glass lenses against) — cool electric + indigo light.
+    static let coolGlow = Color(red: 0.298, green: 0.490, blue: 1.000)   // electric blue glow
+    static let warmGlow = Color(red: 0.431, green: 0.353, blue: 0.878)   // indigo-violet glow
 
-    // Mesh-gradient wallpaper stops — low-luminance pools of warm light, like a room lit by
-    // a few candles: amber, plum, moss-gold, and ONE cool ink-blue pool for contrast so the
-    // glass has a temperature range to refract.
-    static let meshGraphite = Color(red: 0.095, green: 0.082, blue: 0.068)   // warm espresso
-    static let meshCool     = Color(red: 0.075, green: 0.095, blue: 0.175)   // deep ink-blue
-    static let meshWarm     = Color(red: 0.215, green: 0.125, blue: 0.060)   // deep amber
-    static let meshLime     = Color(red: 0.150, green: 0.130, blue: 0.045)   // moss gold
+    // Mesh-gradient wallpaper stops — low-luminance cool pools (graphite, deep blue, deep
+    // indigo, deep teal) so the glass has a cool temperature range to refract against.
+    static let meshGraphite = Color(red: 0.078, green: 0.094, blue: 0.122)   // #14181F cool graphite
+    static let meshCool     = Color(red: 0.055, green: 0.102, blue: 0.200)   // #0E1A33 deep blue
+    static let meshWarm     = Color(red: 0.086, green: 0.078, blue: 0.200)   // #161433 deep indigo
+    static let meshLime     = Color(red: 0.039, green: 0.133, blue: 0.188)   // #0A2230 deep teal
 
-    // Espresso neutrals (warm, no blue tint)
-    static let ink   = Color(red: 0.078, green: 0.070, blue: 0.058)   // background — warm near-black
-    static let ink2  = Color(red: 0.104, green: 0.094, blue: 0.080)
-    static let ink3  = Color(red: 0.142, green: 0.130, blue: 0.112)
-    // Content card surface — solid/elevated espresso (glass reserved for nav).
-    static let card  = Color(red: 0.136, green: 0.124, blue: 0.106)
+    // Slate neutrals (cool, no warm tint)
+    static let ink   = Color(red: 0.078, green: 0.094, blue: 0.122)   // #14181F background — cool graphite
+    static let ink2  = Color(red: 0.102, green: 0.125, blue: 0.161)   // #1A2029
+    static let ink3  = Color(red: 0.133, green: 0.165, blue: 0.208)   // #222A35
+    // Content card surface — raised slate (glass reserved for nav).
+    static let card  = Color(red: 0.110, green: 0.133, blue: 0.173)   // #1C222C raised slate
 
     static func accent(for index: Int) -> Color {
         [acidLime, teal, violet, cyan, indigo][index % 5]
+    }
+
+    /// Per-section identity accent. Each sidebar area owns a color so Money / People / Life /
+    /// Insights are distinguishable at a glance (Phase 1 wires this into the shell + screens).
+    enum Section { case overview, money, people, life, insights, settings }
+    static func section(_ s: Section) -> Color {
+        switch s {
+        case .overview:  return azure     // electric blue — the home temperature
+        case .money:     return positive  // mint — it's money
+        case .people:    return indigo    // periwinkle
+        case .life:      return violet    // orchid
+        case .insights:  return cyan      // ice
+        case .settings:  return textSecondary
+        }
     }
 }
 
@@ -255,6 +270,19 @@ enum Radii {
     static func inner(_ parent: CGFloat, pad: CGFloat) -> CGFloat { max(4, parent - pad) }
 }
 
+/// The spacing scale — one source for gaps and padding so screens stop hand-tuning magic
+/// numbers (the v1 audit found 8/12/14/18/20pt scattered everywhere). 4pt rhythm.
+enum Spacing {
+    static let xxs: CGFloat = 2
+    static let xs: CGFloat = 4
+    static let s: CGFloat = 8
+    static let m: CGFloat = 12
+    static let l: CGFloat = 16
+    static let xl: CGFloat = 20
+    static let xxl: CGFloat = 28
+    static let xxxl: CGFloat = 40
+}
+
 /// The app's motion vocabulary — a few distinct spring curves instead of one. Heroes are bouncier,
 /// lists snappier, modals pop. (Was a single .spring(0.5, 0.82) everywhere.)
 enum Motion {
@@ -263,6 +291,9 @@ enum Motion {
     static let list  = Animation.spring(response: 0.30, dampingFraction: 0.90)
     static let modal = Animation.spring(response: 0.48, dampingFraction: 0.78)
     static let snappy = Animation.snappy(duration: 0.22)
+    /// The single curve for switching pages — used by every nav callsite (sidebar, ⌘K, ⌘F,
+    /// deep links, the bell) so navigation feels like one consistent motion, not three.
+    static let page  = Animation.spring(response: 0.34, dampingFraction: 0.90)
 }
 
 /// Shimmering skeleton placeholder for content that's loading.

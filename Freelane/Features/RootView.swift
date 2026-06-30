@@ -10,6 +10,17 @@ enum FeatureGroup: String, CaseIterable, Identifiable {
     case life = "Life"
     case insights = "Insights"
     var id: String { rawValue }
+
+    /// Each section owns an accent so Money / People / Life / Insights read distinct at a glance.
+    var accent: Color {
+        switch self {
+        case .overview: return Palette.section(.overview)
+        case .money:    return Palette.section(.money)
+        case .people:   return Palette.section(.people)
+        case .life:     return Palette.section(.life)
+        case .insights: return Palette.section(.insights)
+        }
+    }
 }
 
 enum Feature: String, CaseIterable, Identifiable {
@@ -68,19 +79,10 @@ enum Feature: String, CaseIterable, Identifiable {
         }
     }
 
+    /// A feature inherits its section's accent — so all of Money reads mint, all of Life reads
+    /// orchid, etc. Coherent section identity beats a per-screen rainbow (and kills the monotony).
     var accent: Color {
-        switch self {
-        case .dashboard, .stats, .agenda: return Palette.azure
-        case .payments, .today: return Palette.positive
-        case .wallets, .loans: return Palette.teal
-        case .projects: return Palette.violet
-        case .spending, .vendors: return Palette.warning
-        case .clients: return Palette.cyan
-        case .people: return Palette.violet
-        case .sadaka, .body: return Palette.negative
-        case .faith, .letters: return Palette.indigo
-        case .activity, .settings: return Palette.textSecondary
-        }
+        self == .settings ? Palette.section(.settings) : group.accent
     }
 
     var group: FeatureGroup {
@@ -121,13 +123,14 @@ struct RootView: View {
                 AppBackground()
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .id(feature)                                   // recreate per page
-                    .transition(.asymmetric(                       // fluid swap: new page eases up, old fades
-                        insertion: .opacity.combined(with: .offset(y: 8)),
-                        removal: .opacity))
+                    .id(feature)                                   // recreate per page (fresh scroll position)
+                    .transition(.opacity)                          // clean crossfade — the per-section
+                                                                   // `fluidAppear` cascade inside Page is the
+                                                                   // real entrance, so the outer swap stays quiet
             }
             .overlay(alignment: .topTrailing) {
-                BellButton(onOpenFeature: { feature = $0 }).padding(.top, 14).padding(.trailing, 20)
+                BellButton(onOpenFeature: { f in withAnimation(Motion.page) { feature = f } })
+                    .padding(.top, 14).padding(.trailing, 20)
             }
             .overlay(alignment: .bottomTrailing) {
                 FloatingAIButton(page: feature).padding(24)
@@ -147,10 +150,10 @@ struct RootView: View {
         }
         .sheet(isPresented: $showShortcuts) { ShortcutsHUD() }
         .sheet(isPresented: $showSearch) {
-            SearchPalette { f in showSearch = false; withAnimation(.snappy(duration: 0.2)) { feature = f } }
+            SearchPalette { f in showSearch = false; withAnimation(Motion.page) { feature = f } }
         }
         .sheet(isPresented: $showPalette) {
-            CommandPalette { f in showPalette = false; withAnimation(.snappy(duration: 0.2)) { feature = f } }
+            CommandPalette { f in showPalette = false; withAnimation(Motion.page) { feature = f } }
         }
         .sheet(isPresented: $quickSpend) { AddSpendSheet() }
         .sheet(isPresented: $quickPayment) { BulkPaymentSheet() }
@@ -158,7 +161,7 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .flLogPayment)) { _ in quickPayment = true }
         .onReceive(NotificationCenter.default.publisher(for: .flOpenFeature)) { note in
             if let raw = note.userInfo?["feature"] as? String, let f = Feature(rawValue: raw) {
-                withAnimation(.snappy(duration: 0.22)) { feature = f }
+                withAnimation(Motion.page) { feature = f }
             }
         }
         .overlay {
@@ -190,7 +193,7 @@ struct RootView: View {
                 WidgetBridge.update(context)   // keep the desktop widget fresh
             }
         }
-        .environment(\.navigate, { f in withAnimation(.snappy(duration: 0.22)) { feature = f } })
+        .environment(\.navigate, { f in withAnimation(Motion.page) { feature = f } })
         .environment(sync)
         .environment(ai)
         .environment(undo)
@@ -301,10 +304,14 @@ private struct Sidebar: View {
                     // Wallets live inside Payments now (not a separate sidebar item).
                     let items = Feature.allCases.filter { $0.group == group && $0 != .settings && $0 != .wallets }
                     if !items.isEmpty {
-                        Text(group.rawValue)
-                            .font(Typo.label(10)).textCase(.uppercase).kerning(1.0)
-                            .foregroundStyle(Palette.textTertiary)
-                            .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 6)
+                        HStack(spacing: 7) {
+                            Circle().fill(group.accent).frame(width: 5, height: 5)
+                                .shadow(color: group.accent.opacity(0.7), radius: 3)
+                            Text(group.rawValue)
+                                .font(Typo.label(10)).textCase(.uppercase).kerning(1.0)
+                                .foregroundStyle(Palette.textTertiary)
+                        }
+                        .padding(.horizontal, 18).padding(.top, Spacing.l).padding(.bottom, 6)
                         ForEach(items) { item in NavRow(item: item, selected: feature == item) { select(item) } }
                     }
                 }
@@ -323,7 +330,7 @@ private struct Sidebar: View {
     }
 
     private func select(_ item: Feature) {
-        withAnimation(.snappy(duration: 0.18)) { feature = item }
+        withAnimation(Motion.page) { feature = item }
     }
 
     private var storageChip: some View {

@@ -5,9 +5,16 @@ import UserNotifications
 
 /// All app data lives in one organized folder.
 enum AppPaths {
+    /// System Application Support dir, with a hard fallback to the conventional path. The lookup
+    /// effectively never returns empty on macOS, but this is the data ROOT — a force-unwrap here
+    /// would be an unrecoverable launch crash, so we never gamble on it.
+    static var appSupportBase: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+    }
     static var root: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = base.appendingPathComponent("Freelane", isDirectory: true)
+        let dir = appSupportBase.appendingPathComponent("Freelane", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -80,7 +87,7 @@ struct FreelaneApp: App {
     static func migrateLegacyStoreIfNeeded() {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: AppPaths.store.path) else { return }
-        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let base = AppPaths.appSupportBase
         for suffix in ["", "-shm", "-wal"] {
             let old = base.appendingPathComponent("default.store\(suffix)")
             let new = AppPaths.root.appendingPathComponent("Freelane.store\(suffix)")
