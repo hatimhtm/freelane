@@ -104,8 +104,16 @@ To cut a release: bump `MARKETING_VERSION` + `CURRENT_PROJECT_VERSION` in the Xc
 
 Local-first. No account, no analytics. The only network calls are: checking this GitHub repo for updates when you ask, optional Supabase sync if you enable it, and cloud AI (Gemini) only if you turn it on — with health/intimate terms scrubbed before anything leaves the device. Your data lives in `~/Library/Application Support/Freelane/`.
 
+
 ---
 
 <p align="center">
-  <sub>Built by <a href="https://github.com/hatimhtm">Hatim El Hassak</a> · MIT licensed · made on macOS</sub>
+  <a href="https://hatimelhassak.is-a.dev"><img src="https://img.shields.io/badge/PORTFOLIO-1A1A1A?style=for-the-badge&logo=vercel&logoColor=CCFF00" alt="Portfolio" /></a>
+  <a href="https://cal.com/hatimelhassak/engineering-discovery"><img src="https://img.shields.io/badge/BOOK_A_CALL-CCFF00?style=for-the-badge&logo=googlecalendar&logoColor=1A1A1A" alt="Book a call" /></a>
+  <a href="https://www.linkedin.com/in/hatim-elhassak/"><img src="https://img.shields.io/badge/LINKEDIN-1A1A1A?style=for-the-badge&logo=linkedin&logoColor=CCFF00" alt="LinkedIn" /></a>
+  <a href="mailto:hatimelhassak.official@gmail.com"><img src="https://img.shields.io/badge/EMAIL-1A1A1A?style=for-the-badge&logo=gmail&logoColor=CCFF00" alt="Email" /></a>
+</p>
+
+<p align="center">
+  <code>///&nbsp;&nbsp;OPEN FOR NEW WORK&nbsp;&nbsp;///&nbsp;&nbsp;CONTRACT &amp; FREELANCE&nbsp;&nbsp;///&nbsp;&nbsp;REMOTE WORLDWIDE&nbsp;&nbsp;///</code>
 </p>
