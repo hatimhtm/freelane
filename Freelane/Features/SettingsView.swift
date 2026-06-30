@@ -460,7 +460,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 infoRow("Version", appVersionString)
                 infoRow("Platform", "macOS · Apple Silicon · Liquid Glass")
-                Text("Freelane is a native app. Your finances never leave this Mac.")
+                Text("Freelane is a native app. Your finances never leave this Mac — updates come straight from GitHub.")
                     .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                 updateRow
             }

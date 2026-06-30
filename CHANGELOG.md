@@ -3,6 +3,10 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.2
+
+- A first tiny update to try out in-app updating — the About screen now notes that updates come straight from GitHub.
+
 ## 0.1
 
 First public build of the native macOS app.
