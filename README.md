@@ -1,4 +1,9 @@
-<h1 align="center">Freelane</h1>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets-readme/hero-banner-dark.svg" />
+    <img src="assets-readme/hero-banner.svg" alt="Freelane" width="100%" />
+  </picture>
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-26_Tahoe-1A1A1A?style=for-the-badge&logo=apple&logoColor=CCFF00" alt="macOS 26" />
