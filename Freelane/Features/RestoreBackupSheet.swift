@@ -27,7 +27,7 @@ struct RestoreBackupSheet: View {
             }
             .padding(20)
 
-            Divider().overlay(.white.opacity(0.06))
+            Divider().overlay(Palette.hairline)
 
             if items.isEmpty {
                 EmptyStateCard(icon: "externaldrive", title: "No backups yet",
@@ -44,7 +44,7 @@ struct RestoreBackupSheet: View {
             }
 
             if let p = preview, let sel = selected {
-                Divider().overlay(.white.opacity(0.06))
+                Divider().overlay(Palette.hairline)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("This backup contains")
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)

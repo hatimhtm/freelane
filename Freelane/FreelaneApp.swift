@@ -50,12 +50,17 @@ extension Notification.Name {
 struct FreelaneApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var updater = UpdaterModel.shared   // owns the Sparkle updater for the app's lifetime
+    // Held here so a change in Settings re-renders the scene and flips the scheme LIVE (no relaunch).
+    @AppStorage("appearance") private var appearance = "dark"
+    private var scheme: ColorScheme? {
+        switch appearance { case "light": return .light; case "system": return nil; default: return .dark }
+    }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .frame(minWidth: 1100, minHeight: 720)
-                .appAppearance()
+                .preferredColorScheme(scheme)
                 .task { UpdaterModel.shared.checkSilently() }   // quiet probe → surfaces an Update badge if newer
         }
         .modelContainer(AppContainer.shared)

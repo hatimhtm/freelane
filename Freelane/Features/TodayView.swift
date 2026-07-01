@@ -183,7 +183,7 @@ struct TodayView: View {
                                 .font(.system(size: 11)).foregroundStyle(d < PHT.startOfDay() ? Palette.negative : Palette.textTertiary)
                         }
                     }.padding(.vertical, 7)
-                    if r.id != reminders.prefix(6).last?.id { Divider().overlay(.white.opacity(0.06)) }
+                    if r.id != reminders.prefix(6).last?.id { Divider().overlay(Palette.hairline) }
                 }
             }
         }

@@ -3,6 +3,13 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.8
+
+Light mode — and a calmer, grounded look with less glass.
+
+- **Warm light mode.** A proper warm-paper light theme to go with the warm dark. Switch it in Settings → General → Appearance: **Light / Dark / System** — it flips instantly, no relaunch.
+- **Less glass, more grounded.** Content cards are now solid matte panels with a hairline edge and a soft shadow, instead of glossy glass boxes. Real Liquid Glass is kept where Apple uses it — the floating nav, the bell, the assistant pill — not on every card.
+
 ## 0.7
 
 A warmer look with real depth — and the app icon finally matches.

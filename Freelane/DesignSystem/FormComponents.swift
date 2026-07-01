@@ -118,7 +118,7 @@ struct SheetScaffold<Content: View>: View {
             }
             .padding(.horizontal, 18).padding(.vertical, 14)
             .background(.white.opacity(0.04))
-            .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.08)).frame(height: 0.7) }
+            .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18, content: content).padding(24)
@@ -145,7 +145,7 @@ struct SheetScaffold<Content: View>: View {
             }
             .padding(14)
             .background(.white.opacity(0.03))
-            .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.08)).frame(height: 0.7) }
+            .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
         }
         .frame(width: 540, height: 600)
         .background(AppBackground())
@@ -436,7 +436,7 @@ struct GlassSegment<T: Hashable>: View {
             }
         }
         .padding(4)
-        .background(.white.opacity(0.05), in: Capsule())
+        .background(Palette.hairline, in: Capsule())
         .overlay(Capsule().strokeBorder(.white.opacity(0.10), lineWidth: 0.8))
     }
 }
@@ -456,7 +456,7 @@ struct SearchField: View {
             }
         }
         .padding(.horizontal, 11).padding(.vertical, 8)
-        .background(.white.opacity(0.05), in: Capsule())
+        .background(Palette.hairline, in: Capsule())
         .overlay(Capsule().strokeBorder(.white.opacity(0.10), lineWidth: 0.8))
     }
 }

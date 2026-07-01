@@ -99,7 +99,7 @@ struct PaymentsView: View {
                             case .payment(let p): paymentRow(p)
                             case .withdrawal(let w): withdrawalRow(w)
                             }
-                            if row.id != list.last?.id { Divider().overlay(.white.opacity(0.06)) }
+                            if row.id != list.last?.id { Divider().overlay(Palette.hairline) }
                         }
                     }
                 }
@@ -355,7 +355,7 @@ struct BulkPaymentSheet: View {
             }
             .padding(.horizontal, 18).padding(.vertical, 14)
             .background(.white.opacity(0.04))
-            .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.08)).frame(height: 0.7) }
+            .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
 
             ScrollView {
                 VStack(spacing: 12) {
@@ -383,7 +383,7 @@ struct BulkPaymentSheet: View {
                 .padding(20)
             }
 
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Total landed").tileLabel()

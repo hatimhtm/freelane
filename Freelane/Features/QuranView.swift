@@ -76,7 +76,7 @@ struct QuranReaderSheet: View {
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                         Button("Mark as my position") { QuranService.setPosition(surah: s.number, ayah: a.numberInSurah) }
                                             .buttonStyle(.glass).controlSize(.mini)
-                                        Divider().overlay(.white.opacity(0.06))
+                                        Divider().overlay(Palette.hairline)
                                     }
                                 }
                             } else {

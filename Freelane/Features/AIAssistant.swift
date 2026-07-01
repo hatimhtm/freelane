@@ -80,7 +80,7 @@ struct AIChatSheet: View {
                 .padding(.horizontal, 18)
             }
 
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             HStack(spacing: 10) {
                 TextField("Message…", text: $input).textFieldStyle(GlassFieldStyle()).onSubmit { send(input) }
                 Button { send(input) } label: { Image(systemName: "arrow.up.circle.fill").font(.system(size: 24)).foregroundStyle(Palette.azure) }

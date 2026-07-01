@@ -119,7 +119,7 @@ struct SpendingView: View {
                 LazyVStack(spacing: 0) {
                     ForEach(list) { s in
                         row(s)
-                        if s.id != list.last?.id { Divider().overlay(.white.opacity(0.06)) }
+                        if s.id != list.last?.id { Divider().overlay(Palette.hairline) }
                     }
                 }
             }
@@ -190,12 +190,12 @@ struct SpendingView: View {
                 .chartXSelection(value: $selMonth)
                 .chartYAxis {
                     AxisMarks(position: .leading) { v in
-                        AxisGridLine().foregroundStyle(.white.opacity(0.06))
+                        AxisGridLine().foregroundStyle(Palette.hairline)
                         AxisValueLabel { if let d = v.as(Double.self) { Text(CurrencyFormat.abbreviated(d, base)).foregroundStyle(Palette.textTertiary) } }
                     }
                 }
                 .chartXAxis { AxisMarks(values: .stride(by: .month)) { _ in
-                    AxisGridLine().foregroundStyle(.white.opacity(0.05))
+                    AxisGridLine().foregroundStyle(Palette.hairline)
                     AxisValueLabel(format: .dateTime.month(.abbreviated)).foregroundStyle(Palette.textTertiary)
                 } }
                 .frame(height: 200)
@@ -252,7 +252,7 @@ struct SpendingView: View {
                 LazyVStack(spacing: 0) {
                     ForEach(recurrings.sorted { $0.label < $1.label }) { r in
                         recurringRow(r)
-                        if r.id != recurrings.last?.id { Divider().overlay(.white.opacity(0.06)) }
+                        if r.id != recurrings.last?.id { Divider().overlay(Palette.hairline) }
                     }
                 }
             }
@@ -693,7 +693,7 @@ struct FlexTags: View {
                         .foregroundStyle(on ? Palette.ink : Palette.textSecondary)
                         .padding(.horizontal, 10).padding(.vertical, 6)
                         .frame(maxWidth: .infinity)
-                        .background(on ? AnyShapeStyle(Palette.acidLime) : AnyShapeStyle(.white.opacity(0.06)), in: Capsule())
+                        .background(on ? AnyShapeStyle(Palette.acidLime) : AnyShapeStyle(Palette.hairline), in: Capsule())
                 }.buttonStyle(.cardPress)
             }
         }
@@ -845,7 +845,7 @@ struct SpendHeatmap: View {
     @State private var sel: (date: Date, total: Double)?
 
     private func color(_ v: Double, _ maxV: Double) -> Color {
-        guard v > 0 else { return .white.opacity(0.05) }
+        guard v > 0 else { return Palette.hairline }
         return Palette.warning.opacity(0.28 + 0.62 * min(1, v / maxV))
     }
     private func weekdayLabel(_ row: Int, _ d: [(date: Date, total: Double)]) -> String {

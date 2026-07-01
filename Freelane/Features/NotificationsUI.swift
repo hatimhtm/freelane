@@ -180,7 +180,7 @@ struct BellButton: View {
                 }
             }
             if tab == 1 && !read.isEmpty {
-                Divider().overlay(.white.opacity(0.08))
+                Divider().overlay(Palette.hairline)
                 Button("Clear read") { read.forEach { $0.dismissedAt = .now }; try? context.save() }
                     .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Palette.textTertiary).padding(10)
             }
@@ -268,7 +268,7 @@ struct AnswerSheet: View {
                     }
                 }.padding(18)
             }
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             HStack { Spacer(); Button("Ignore") { Curiosity.dismissQuestion(context, note: note); dismiss() }.buttonStyle(.glass) }.padding(14)
         }
         .frame(width: 440, height: 480).flagshipSheet()

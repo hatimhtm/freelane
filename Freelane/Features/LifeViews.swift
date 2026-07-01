@@ -66,7 +66,7 @@ struct LoansView: View {
                                 }
                                 .padding(.vertical, 9).contentShape(Rectangle())
                             }.buttonStyle(.plain)
-                            if g.id != groups.last?.id { Divider().overlay(.white.opacity(0.06)) }
+                            if g.id != groups.last?.id { Divider().overlay(Palette.hairline) }
                         }
                     }
                 }
@@ -192,7 +192,7 @@ struct LoanPersonSheet: View {
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction).help("Close")
             }.padding(18)
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if loans.isEmpty {
@@ -754,7 +754,7 @@ struct LettersView: View {
                     }
                     .foregroundStyle(journalStreak > 0 ? Palette.warning : Palette.textTertiary)
                     .padding(.horizontal, 10).frame(height: 30)
-                }.buttonStyle(.plain).background(.white.opacity(0.06), in: Capsule())
+                }.buttonStyle(.plain).background(Palette.hairline, in: Capsule())
                     .overlay(Capsule().strokeBorder((journalStreak > 0 ? Palette.warning : .white).opacity(0.2), lineWidth: 0.8))
                 Menu {
                     Button("This month") { write("month") }
@@ -869,12 +869,12 @@ struct LettersView: View {
                         }
                         ForEach(l.themes, id: \.self) { t in
                             Text(t).font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
-                                .padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.06), in: Capsule())
+                                .padding(.horizontal, 8).padding(.vertical, 3).background(Palette.hairline, in: Capsule())
                         }
                     }.padding(.horizontal, 22).padding(.top, 8)
                 }
                 ScrollView { Text(l.body).font(.system(size: 14)).foregroundStyle(Palette.textSecondary).frame(maxWidth: .infinity, alignment: .leading).padding(22) }
-                Divider().overlay(.white.opacity(0.08))
+                Divider().overlay(Palette.hairline)
                 HStack {
                     Button { analyze(l) } label: {
                         Label(busyAnalyze ? "Reflecting…" : (l.sentiment == nil ? "Reflect with AI" : "Re-reflect"), systemImage: "sparkles")
@@ -922,7 +922,7 @@ struct LettersView: View {
                 Button { selectedDay = nil } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
             }.padding(16)
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             ScrollView {
                 VStack(spacing: 0) {
                     ForEach(day.entries) { l in
@@ -940,7 +940,7 @@ struct LettersView: View {
                             Button(l.pinned ? "Unpin" : "Pin", systemImage: l.pinned ? "pin.slash" : "pin") { l.pinned.toggle(); l.dirty = true; try? context.save() }
                             Button("Delete", systemImage: "trash", role: .destructive) { undo.trashSimple(l, label: "entry", context: context); selectedDay = nil }
                         }
-                        if l.id != day.entries.last?.id { Divider().overlay(.white.opacity(0.06)) }
+                        if l.id != day.entries.last?.id { Divider().overlay(Palette.hairline) }
                     }
                 }.padding(.horizontal, 18)
             }
@@ -1001,7 +1001,7 @@ struct LettersView: View {
             }.buttonStyle(.iconPress).help("Good question — ask more in this spirit")
             Button { dismissPrompt(p) } label: {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.textTertiary)
-                    .padding(5).background(.white.opacity(0.06), in: Circle())
+                    .padding(5).background(Palette.hairline, in: Circle())
             }.buttonStyle(.iconPress).help("Not for me — dismiss it, and the AI learns to avoid this kind")
         }
         .padding(.vertical, 7).padding(.horizontal, 10)
@@ -1261,7 +1261,7 @@ struct StreakMenu: View {
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 19)).foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
             }.padding(16)
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             ScrollView {
                 VStack(spacing: 14) {
                     HStack {
@@ -1623,7 +1623,7 @@ struct FaithView: View {
                 Text("Allow notifications in Settings → Notifications to receive these.")
                     .font(.system(size: 11)).foregroundStyle(Palette.warning)
             }
-            Divider().overlay(.white.opacity(0.06))
+            Divider().overlay(Palette.hairline)
             if editingLoc {
                 HStack(spacing: 10) {
                     LabeledField("Latitude") { TextField("14.0667", text: $latStr).textFieldStyle(GlassFieldStyle()) }

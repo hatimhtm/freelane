@@ -36,7 +36,7 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 13) {
             header
             safeCard
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             captureSection
             if !reminderCandidates.isEmpty { reminderSection }
             if !spends.isEmpty { recentSection }

@@ -149,7 +149,7 @@ struct ProjectsView: View {
                     Circle().fill(accent).frame(width: 7, height: 7)
                     Text(title).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                     Text("\(items.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                        .padding(.horizontal, 6).padding(.vertical, 2).background(.white.opacity(0.06), in: Capsule())
+                        .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.hairline, in: Capsule())
                     Spacer()
                 }.padding(.horizontal, 12).padding(.vertical, 9).contentShape(Rectangle())
             }.buttonStyle(.plain)
@@ -159,7 +159,7 @@ struct ProjectsView: View {
                 } else {
                     ForEach(items) { p in
                         tableRow(p)
-                        if p.id != items.last?.id { Divider().overlay(.white.opacity(0.05)) }
+                        if p.id != items.last?.id { Divider().overlay(Palette.hairline) }
                     }
                 }
             }
@@ -194,7 +194,7 @@ struct ProjectsView: View {
         return RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(.white.opacity(isTarget ? 0.08 : 0.03))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(isTarget ? accent.opacity(0.65) : .white.opacity(0.06), lineWidth: isTarget ? 1.6 : 0.7))
+                .strokeBorder(isTarget ? accent.opacity(0.65) : Palette.hairline, lineWidth: isTarget ? 1.6 : 0.7))
             .shadow(color: isTarget ? accent.opacity(0.35) : .clear, radius: 14)
             .animation(.easeOut(duration: 0.15), value: isTarget)
     }
@@ -205,7 +205,7 @@ struct ProjectsView: View {
                 Circle().fill(accent).frame(width: 7, height: 7).shadow(color: accent, radius: 3)
                 Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                 Text("\(items.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                    .padding(.horizontal, 6).padding(.vertical, 2).background(.white.opacity(0.06), in: Capsule())
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.hairline, in: Capsule())
                 Spacer()
             }
             if items.isEmpty {
@@ -233,7 +233,7 @@ struct ProjectsView: View {
                     Circle().fill(Palette.positive).frame(width: 7, height: 7).shadow(color: Palette.positive, radius: 3)
                     Text("Paid").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                     Text("\(paid.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                        .padding(.horizontal, 6).padding(.vertical, 2).background(.white.opacity(0.06), in: Capsule())
+                        .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.hairline, in: Capsule())
                     Spacer()
                 }.contentShape(Rectangle())
             }.buttonStyle(.plain)

@@ -401,7 +401,7 @@ private struct CashFlowCard: View {
                 .chartXSelection(value: $scrubDate)
                 .chartYAxis {
                     AxisMarks(position: .leading) { value in
-                        AxisGridLine().foregroundStyle(.white.opacity(0.06))
+                        AxisGridLine().foregroundStyle(Palette.hairline)
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
                                 Text(CurrencyFormat.abbreviated(v, base)).foregroundStyle(Palette.textTertiary)
@@ -411,7 +411,7 @@ private struct CashFlowCard: View {
                 }
                 .chartXAxis {
                     AxisMarks(values: .stride(by: .day, count: 21)) { _ in
-                        AxisGridLine().foregroundStyle(.white.opacity(0.05))
+                        AxisGridLine().foregroundStyle(Palette.hairline)
                         AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.textTertiary)
                     }
                 }

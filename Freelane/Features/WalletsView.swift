@@ -158,7 +158,7 @@ struct WalletDetailSheet: View {
                                     HStack {
                                         Text(kindLabel(e)).font(.system(size: 9.5, weight: .semibold))
                                             .foregroundStyle(Palette.textTertiary).padding(.horizontal, 6).padding(.vertical, 2)
-                                            .background(.white.opacity(0.06), in: Capsule())
+                                            .background(Palette.hairline, in: Capsule())
                                         Text(e.note ?? "").font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1)
                                         Spacer()
                                         Text((e.amountBase >= 0 ? "+" : "") + CurrencyFormat.string(e.amountBase, base, compact: true))

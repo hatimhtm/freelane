@@ -100,7 +100,7 @@ struct VendorsView: View {
                                 Button("Rename / merge…", systemImage: "arrow.triangle.merge") { renameTo = r.name; renaming = r.name }
                                 Button("Stop using", systemImage: "hand.raised") { toggleStopped(r.name) }
                             }
-                            if r.id != list.last?.id { Divider().overlay(.white.opacity(0.06)) }
+                            if r.id != list.last?.id { Divider().overlay(Palette.hairline) }
                         }
                     }
                 }
@@ -120,7 +120,7 @@ struct VendorsView: View {
                                     .help("Move \(r.name) back to active vendors")
                             }
                             .padding(.vertical, 9)
-                            if r.id != quitRolls.last?.id { Divider().overlay(.white.opacity(0.06)) }
+                            if r.id != quitRolls.last?.id { Divider().overlay(Palette.hairline) }
                         }
                     }
                 }

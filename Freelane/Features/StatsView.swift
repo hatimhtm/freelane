@@ -238,13 +238,13 @@ struct StatsView: View {
                 .chartYScale(domain: 0...(maxV * 1.08))
                 .chartXSelection(value: $selMonth)
                 .chartYAxis { AxisMarks(position: .leading) { v in
-                    AxisGridLine().foregroundStyle(.white.opacity(0.06))
+                    AxisGridLine().foregroundStyle(Palette.hairline)
                     AxisValueLabel { if let d = v.as(Double.self) {
                         Text(CurrencyFormat.abbreviated(d, base)).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                     } }
                 } }
                 .chartXAxis { AxisMarks(values: .stride(by: .month, count: 2)) { _ in
-                    AxisGridLine().foregroundStyle(.white.opacity(0.05))
+                    AxisGridLine().foregroundStyle(Palette.hairline)
                     AxisValueLabel(format: .dateTime.month(.abbreviated)).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 } }
                 .frame(height: 230)
@@ -286,7 +286,7 @@ struct StatsView: View {
                                         .foregroundStyle(Palette.positive)
                                 }
                                 GeometryReader { geo in
-                                    Capsule().fill(.white.opacity(0.07))
+                                    Capsule().fill(Palette.hairline)
                                         .overlay(alignment: .leading) {
                                             Capsule().fill(Palette.violet.opacity(0.75))
                                                 .frame(width: geo.size.width * max(0.02, min(1, c.earned / maxEarned)))
@@ -326,7 +326,7 @@ struct StatsView: View {
                                         Text("\(r.count) pmts").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                                     }
                                     GeometryReader { geo in
-                                        Capsule().fill(.white.opacity(0.07))
+                                        Capsule().fill(Palette.hairline)
                                             .overlay(alignment: .leading) {
                                                 Capsule().fill(r.netPct >= 0.95 ? Palette.positive : Palette.warning)
                                                     .frame(width: geo.size.width * max(0, min(1, r.netPct)))

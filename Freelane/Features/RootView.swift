@@ -325,7 +325,7 @@ private struct Sidebar: View {
                         ForEach(items) { item in NavRow(item: item, selected: feature == item) { select(item) } }
                     }
                 }
-                Divider().overlay(.white.opacity(0.06)).padding(.horizontal, 14).padding(.vertical, 10)
+                Divider().overlay(Palette.hairline).padding(.horizontal, 14).padding(.vertical, 10)
                 NavRow(item: .settings, selected: feature == .settings) { select(.settings) }
                 Spacer(minLength: 8)
                 storageChip.padding(12)
@@ -423,7 +423,7 @@ private struct NavRow: View {
                             Capsule().fill(item.accent).frame(width: 3, height: 16).shadow(color: item.accent, radius: 4).padding(.leading, 3)
                         }
                 } else if hovering {
-                    shape.fill(.white.opacity(0.06))
+                    shape.fill(Palette.hairline)
                 }
             }
             .modifier(SelectedGlass(active: selected, shape: shape, tint: item.accent))
@@ -548,7 +548,7 @@ struct SubtabBar: View {
                                 .overlay(Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 0.7))
                                 .matchedGeometryEffect(id: "subtab.pill", in: ns)
                         } else if hovered == i {
-                            Capsule().fill(.white.opacity(0.05))
+                            Capsule().fill(Palette.hairline)
                         }
                     }
                     .contentShape(Capsule())

@@ -52,10 +52,10 @@ struct CommandPalette: View {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress)
                 }
                 Text("⌘K").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textTertiary)
-                    .padding(.horizontal, 6).padding(.vertical, 3).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.horizontal, 6).padding(.vertical, 3).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))
             }
             .padding(16)
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 2) {
@@ -110,7 +110,7 @@ struct CommandPalette: View {
                 }
                 .padding(.horizontal, 10).padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: Radii.row, style: .continuous)
-                    .fill(hover || isTop ? .white.opacity(0.07) : .clear))
+                    .fill(hover || isTop ? Palette.hairline : .clear))
             }
             .buttonStyle(.plain)
             .onHover { hover = $0 }
@@ -139,14 +139,14 @@ struct ShortcutsHUD: View {
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
             }.padding(16)
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             VStack(spacing: 2) {
                 ForEach(shortcuts, id: \.0) { s in
                     HStack(spacing: 14) {
                         Text(s.0).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textPrimary)
                             .frame(width: 92, alignment: .leading)
                             .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                            .background(Palette.hairline, in: RoundedRectangle(cornerRadius: 7))
                         Text(s.1).font(.system(size: 13)).foregroundStyle(Palette.textSecondary)
                         Spacer()
                     }.padding(.horizontal, 16).padding(.vertical, 3)

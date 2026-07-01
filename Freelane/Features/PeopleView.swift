@@ -156,7 +156,7 @@ struct PeopleView: View {
                     .background(Palette.violet.opacity(0.16), in: RoundedRectangle(cornerRadius: Radii.row, style: .continuous))
                 Spacer()
                 Text(e.kind.label).font(.system(size: 9.5, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                    .padding(.horizontal, 7).padding(.vertical, 3).background(.white.opacity(0.06), in: Capsule())
+                    .padding(.horizontal, 7).padding(.vertical, 3).background(Palette.hairline, in: Capsule())
             }
             Text(e.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
             Text((e.relationship?.isEmpty == false ? e.relationship! : "Tap to tell me more"))

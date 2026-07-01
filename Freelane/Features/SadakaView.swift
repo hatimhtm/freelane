@@ -65,7 +65,7 @@ struct SadakaView: View {
                 zakatField("Gold / silver / investments", $zakatGold)
                 zakatField("Debts you owe (deduct)", $zakatDebts)
                 zakatField("Nisab threshold (value of 595g silver)", $zakatNisab)
-                Divider().overlay(.white.opacity(0.08))
+                Divider().overlay(Palette.hairline)
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Zakatable wealth").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
@@ -185,7 +185,7 @@ struct SadakaView: View {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(recentItems.prefix(40))) { item in
                         row(item)
-                        if item.id != recentItems.prefix(40).last?.id { Divider().overlay(.white.opacity(0.06)) }
+                        if item.id != recentItems.prefix(40).last?.id { Divider().overlay(Palette.hairline) }
                     }
                 }
             }

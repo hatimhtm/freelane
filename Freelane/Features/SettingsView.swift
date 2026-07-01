@@ -117,7 +117,7 @@ struct SettingsView: View {
                                 .font(.system(size: 10)).foregroundStyle(Palette.negative)
                         }
                     }
-                    if w.id != wallets.filter({ $0.isHolding && !$0.archived }).last?.id { Divider().overlay(.white.opacity(0.06)) }
+                    if w.id != wallets.filter({ $0.isHolding && !$0.archived }).last?.id { Divider().overlay(Palette.hairline) }
                 }
                 if let recalFlash {
                     Label(recalFlash, systemImage: "checkmark.circle.fill").font(.system(size: 12)).foregroundStyle(Palette.positive)
@@ -218,7 +218,7 @@ struct SettingsView: View {
                 integToggle($remindersOn, "Reminders", "See and complete your Apple Reminders alongside Tasks.", "checklist") {
                     await EventBridge.requestReminders()
                 }
-                Divider().overlay(.white.opacity(0.06))
+                Divider().overlay(Palette.hairline)
                 integToggle($contactsOn, "Contacts", "Match people in your spends (a name the AI spots) to your address book.", "person.crop.circle") {
                     await ContactsBridge.request()
                 }
@@ -471,7 +471,7 @@ struct SettingsView: View {
                     if let e = ai.lastError { Label(e, systemImage: "xmark.circle").font(.system(size: 12)).foregroundStyle(Palette.negative).lineLimit(1) }
                     Spacer()
                 }
-                Divider().overlay(.white.opacity(0.06))
+                Divider().overlay(Palette.hairline)
                 Text("PRIVACY — redact before sending to the cloud").font(.system(size: 9.5, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
                 Toggle(isOn: Binding(get: { redactHealth }, set: { redactHealth = $0 })) {
                     Text("Hide health terms (doctor, therapy…)").font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary)
@@ -515,10 +515,10 @@ struct SettingsView: View {
                 }
             }
             LabeledField("Appearance") {
-                GlassSegment(options: ["dark", "system"],
+                GlassSegment(options: ["light", "dark", "system"],
                              selection: Binding(get: { appearance }, set: { appearance = $0 }),
-                             label: { $0 == "dark" ? "Dark" : "Match system" })
-                Text("Full light theme arrives in the polish pass; for now Dark or follow the system.")
+                             label: { $0 == "light" ? "Light" : $0 == "dark" ? "Dark" : "System" })
+                Text("Warm light or warm dark — switches instantly, or follow the system.")
                     .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
             }
             Toggle(isOn: Binding(get: { captureHotkey }, set: { captureHotkey = $0; HotkeyManager.shared.apply() })) {
@@ -552,7 +552,7 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var updateRow: some View {
-        Divider().overlay(.white.opacity(0.06)).padding(.vertical, 4)
+        Divider().overlay(Palette.hairline).padding(.vertical, 4)
         if updater.updateAvailable {
             HStack {
                 Label("Update available\(updater.latestVersion.map { " · \($0)" } ?? "")", systemImage: "arrow.down.circle.fill")

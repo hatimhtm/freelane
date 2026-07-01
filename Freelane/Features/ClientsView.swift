@@ -65,7 +65,7 @@ struct ClientsView: View {
                             .font(.system(size: 11.5, weight: .semibold))
                             .foregroundStyle(owesOnly ? Palette.ink : Palette.textSecondary)
                             .padding(.horizontal, 12).padding(.vertical, 7)
-                            .background(owesOnly ? AnyShapeStyle(Palette.warning) : AnyShapeStyle(.white.opacity(0.05)), in: Capsule())
+                            .background(owesOnly ? AnyShapeStyle(Palette.warning) : AnyShapeStyle(Palette.hairline), in: Capsule())
                             .overlay(Capsule().strokeBorder(owesOnly ? Palette.warning.opacity(0.45) : .white.opacity(0.10), lineWidth: 0.8))
                             .contentShape(Capsule())
                     }

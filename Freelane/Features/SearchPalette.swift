@@ -49,9 +49,9 @@ struct SearchPalette: View {
                     .textFieldStyle(.plain).font(.system(size: 16)).focused($focused)
                     .onSubmit { if let f = hits.first { onNavigate(f.feature); dismiss() } }
                 Text("⌘F").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textTertiary)
-                    .padding(.horizontal, 6).padding(.vertical, 3).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.horizontal, 6).padding(.vertical, 3).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))
             }.padding(16)
-            Divider().overlay(.white.opacity(0.08))
+            Divider().overlay(Palette.hairline)
             ScrollView {
                 LazyVStack(spacing: 2) {
                     if query.isEmpty {

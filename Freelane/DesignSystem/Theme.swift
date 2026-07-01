@@ -1,54 +1,67 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Palette v4 — "Warm Dark" (cozy charcoal + amber)
-// The cool Nordic slate read clinical; this is warm and inviting — warm-charcoal surfaces, ONE
-// amber signature, warm-cream text, and jewel accents that still give each section its own
-// identity. Dark, but cozy instead of cold. A proper warm LIGHT mode is the next step.
-// (Properties keep their historical names — `acidLime`, `azure`, `cyan` — so ~90 files recolor
-// from this single block. The names are labels; the VALUES are the identity.)
+// MARK: - Palette v5 — "Warm Dark + Warm Light" (adaptive)
+// One warm identity in two moods. Every color resolves to a LIGHT or DARK variant based on the
+// current appearance (see `dyn`), so the WHOLE app flips between cozy warm-charcoal and warm paper
+// with zero call-site changes — driven by Settings → Appearance (System / Light / Dark).
+// Names are historical labels (`acidLime`, `azure`, `cyan`); the VALUES are the identity.
+
+/// A color that resolves to `light` in a light appearance and `dark` in a dark one. Tuples are
+/// sRGB (r, g, b, a). This one function is how the whole app themes both modes from a single block.
+private func dyn(_ light: (Double, Double, Double, Double), _ dark: (Double, Double, Double, Double)) -> Color {
+    Color(nsColor: NSColor(name: nil) { ap in
+        let isDark = ap.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let c = isDark ? dark : light
+        return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: c.3)
+    })
+}
 
 enum Palette {
-    /// Signature amber — the one warm accent, the app's primary identity color.
-    static let acidLime = Color(red: 0.910, green: 0.569, blue: 0.235)   // #E8913C amber
-
-    // `azure` = the historical name for the PRIMARY accent across the app → amber.
+    /// Signature amber — the one warm accent (deepened in light mode for contrast on paper).
+    static let acidLime = dyn((0.761, 0.459, 0.122, 1), (0.910, 0.569, 0.235, 1))
     static let azure    = acidLime
-    // Feature accents — jewel tones that stay distinct against warm charcoal so sections read
-    // apart. Wired to sections via `section(...)` below.
-    static let cyan     = Color(red: 0.373, green: 0.718, blue: 0.769)   // #5FB7C4 teal
-    static let indigo   = Color(red: 0.557, green: 0.545, blue: 0.878)   // #8E8BE0 periwinkle
-    static let violet   = Color(red: 0.773, green: 0.549, blue: 0.878)   // #C58CE0 orchid
+
+    // Feature accents — jewel tones, deepened for light mode so they read on paper.
+    static let cyan   = dyn((0.180, 0.533, 0.600, 1), (0.373, 0.718, 0.769, 1))   // teal
+    static let indigo = dyn((0.345, 0.322, 0.753, 1), (0.557, 0.545, 0.878, 1))   // periwinkle
+    static let violet = dyn((0.588, 0.278, 0.761, 1), (0.773, 0.549, 0.878, 1))   // orchid
 
     // Money-semantic (mint / coral / amber-yellow)
-    static let teal     = Color(red: 0.373, green: 0.788, blue: 0.541)   // #5FC98A warm mint
+    static let teal     = dyn((0.180, 0.620, 0.388, 1), (0.373, 0.788, 0.541, 1))
     static let positive = teal
-    static let negative = Color(red: 0.941, green: 0.408, blue: 0.361)   // #F0685C warm coral
-    static let warning  = Color(red: 0.949, green: 0.722, blue: 0.290)   // #F2B84A amber-yellow
+    static let negative = dyn((0.824, 0.255, 0.184, 1), (0.941, 0.408, 0.361, 1))
+    static let warning  = dyn((0.761, 0.525, 0.106, 1), (0.949, 0.722, 0.290, 1))
 
-    // Text — warm cream, not clinical white. Hierarchy carries the structure.
-    static let textPrimary   = Color(red: 0.949, green: 0.925, blue: 0.890)   // #F2ECE3
-    static let textSecondary = Color(red: 0.659, green: 0.620, blue: 0.565)   // #A89E90 warm taupe
-    // Kept ≥ AA on the warm-charcoal background.
-    static let textTertiary  = Color(red: 0.478, green: 0.439, blue: 0.392)   // #7A7064
+    // Text — deep warm ink on paper / warm cream on charcoal.
+    static let textPrimary   = dyn((0.141, 0.114, 0.078, 1), (0.949, 0.925, 0.890, 1))
+    static let textSecondary = dyn((0.431, 0.384, 0.322, 1), (0.659, 0.620, 0.565, 1))
+    static let textTertiary  = dyn((0.612, 0.561, 0.482, 1), (0.478, 0.439, 0.392, 1))
 
-    // Backdrop glow pools (what the glass lenses against) — warm amber + terracotta light.
-    static let coolGlow = Color(red: 0.910, green: 0.635, blue: 0.298)   // warm amber glow
-    static let warmGlow = Color(red: 0.690, green: 0.349, blue: 0.243)   // terracotta glow
+    // Backdrop glow pools (what the glass lenses against).
+    static let coolGlow = dyn((0.910, 0.635, 0.298, 1), (0.910, 0.635, 0.298, 1))   // warm amber glow
+    static let warmGlow = dyn((0.804, 0.549, 0.443, 1), (0.690, 0.349, 0.243, 1))   // terracotta
 
-    // Mesh-gradient wallpaper stops — low-luminance WARM pools (charcoal, plum, deep amber,
-    // olive-gold) so the glass refracts a warm, candle-lit temperature range.
-    static let meshGraphite = Color(red: 0.102, green: 0.086, blue: 0.078)   // #1A1614 warm charcoal
-    static let meshCool     = Color(red: 0.165, green: 0.102, blue: 0.110)   // #2A1A1C deep plum
-    static let meshWarm     = Color(red: 0.180, green: 0.118, blue: 0.063)   // #2E1E10 deep amber
-    static let meshLime     = Color(red: 0.149, green: 0.118, blue: 0.055)   // #261E0E olive gold
+    // Mesh wallpaper stops — warm paper pools in light, warm-charcoal pools in dark.
+    static let meshGraphite = dyn((0.953, 0.929, 0.878, 1), (0.102, 0.086, 0.078, 1))
+    static let meshCool     = dyn((0.929, 0.890, 0.839, 1), (0.165, 0.102, 0.110, 1))
+    static let meshWarm     = dyn((0.965, 0.914, 0.824, 1), (0.180, 0.118, 0.063, 1))
+    static let meshLime     = dyn((0.941, 0.918, 0.839, 1), (0.149, 0.118, 0.055, 1))
 
-    // Warm-charcoal neutrals
-    static let ink   = Color(red: 0.102, green: 0.086, blue: 0.078)   // #1A1614 background — warm charcoal
-    static let ink2  = Color(red: 0.133, green: 0.110, blue: 0.094)   // #221C18
-    static let ink3  = Color(red: 0.173, green: 0.141, blue: 0.118)   // #2C241E
-    // Content card surface — a touch lighter than the bg so panes lift off it (depth, not flat).
-    static let card  = Color(red: 0.149, green: 0.125, blue: 0.106)   // #26201B raised charcoal
+    // Neutrals — warm paper in light, warm charcoal in dark.
+    static let ink   = dyn((0.965, 0.945, 0.906, 1), (0.102, 0.086, 0.078, 1))   // background
+    static let ink2  = dyn((0.937, 0.910, 0.855, 1), (0.133, 0.110, 0.094, 1))
+    static let ink3  = dyn((0.898, 0.863, 0.800, 1), (0.173, 0.141, 0.118, 1))
+    // Content card surface — near-white on paper, raised charcoal in dark (lifts off the bg).
+    static let card  = dyn((0.992, 0.984, 0.965, 1), (0.149, 0.125, 0.106, 1))
+
+    // Adaptive surface tones — the replacement for hardcoded `.white.opacity(...)` that assumed a
+    // dark background (dark ink on paper, white on charcoal), so hairlines/wells work in both modes.
+    static let hairline      = dyn((0.10, 0.09, 0.07, 0.10), (1, 1, 1, 0.08))
+    static let wellFill      = dyn((0.10, 0.09, 0.07, 0.04), (1, 1, 1, 0.05))
+    static let wellFillHover = dyn((0.10, 0.09, 0.07, 0.07), (1, 1, 1, 0.08))
+    static let wellStroke    = dyn((0.10, 0.09, 0.07, 0.12), (1, 1, 1, 0.10))
+    static let cardEdge      = dyn((0.16, 0.13, 0.09, 0.13), (1, 1, 1, 0.12))
 
     static func accent(for index: Int) -> Color {
         [acidLime, teal, violet, cyan, indigo][index % 5]
@@ -78,32 +91,35 @@ enum Palette {
 struct AppBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlActiveState) private var activeState
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         // 20fps is indistinguishable for drift this slow, and the animation PAUSES whenever
         // this window isn't the active one — so background windows, hidden sheets, and an
         // unfocused app cost ~zero CPU/battery on a MacBook.
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: reduceMotion || activeState == .inactive)) { timeline in
+        let dark = scheme == .dark
+        return TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: reduceMotion || activeState == .inactive)) { timeline in
             let t = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
             ZStack {
                 MeshGradient(width: 3, height: 3, points: points(t), colors: meshColors)
                     .ignoresSafeArea()
                 // A slow candle-glow pool that drifts across the room — the warmth the glass bends.
-                RadialGradient(colors: [Palette.coolGlow.opacity(0.05), .clear],
+                RadialGradient(colors: [Palette.coolGlow.opacity(dark ? 0.05 : 0.08), .clear],
                                center: UnitPoint(x: 0.5 + 0.18 * sin(t * 0.11), y: 0.32 + 0.10 * cos(t * 0.09)),
                                startRadius: 60, endRadius: 560)
                     .ignoresSafeArea()
-                // Depth vignette so the center reads brighter and edges recede.
-                RadialGradient(colors: [.clear, .black.opacity(0.40)],
+                // Depth vignette — darkens edges in dark mode; a whisper on paper so it stays bright.
+                RadialGradient(colors: [.clear, .black.opacity(dark ? 0.40 : 0.05)],
                                center: .center, startRadius: 340, endRadius: 1100)
                     .ignoresSafeArea()
             }
         }
     }
 
+    // The center stop uses the (adaptive) graphite so the paper mesh never goes black in light mode.
     private var meshColors: [Color] {
         [Palette.meshGraphite, Palette.meshCool,     Palette.meshGraphite,
-         Palette.meshWarm,     Color.black,          Palette.meshCool,
+         Palette.meshWarm,     Palette.meshGraphite, Palette.meshCool,
          Palette.meshGraphite, Palette.meshLime,     Palette.meshGraphite]
     }
 
@@ -151,45 +167,23 @@ struct GlassCardModifier: ViewModifier {
     var interactive: Bool = false   // accepted for call-site compatibility; no longer used
     var morphID: String? = nil      // (morphing removed — it caused the two-tile flow)
 
-    @State private var hover = false
-
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        // The PANE recipe. Content cards are hand-built glass (not the system .glassEffect, which
-        // morph-fused tiles and read flat on large surfaces): a translucent material the mesh
-        // wallpaper shows through, a top-left specular wash (light always falls from one place),
-        // a bright rim that fades down the edge, and TWO shadows — soft ambient + tight contact —
-        // so panes sit on the backdrop instead of floating. System glass stays on the nav layer.
+        // GROUNDED panel — not glass. A solid matte surface (near-white on paper, raised charcoal in
+        // dark), a hairline edge, and one soft shadow. Real Liquid Glass is reserved for the floating
+        // nav layer (`navGlass`), the way Apple uses it — content cards stay calm and solid.
         return content
             .background {
                 ZStack {
-                    shape.fill(.ultraThinMaterial)
-                    // A solid card tone OVER the material so panes read as distinct surfaces that
-                    // lift off the backdrop — this is the fix for the "everything's flat / samey"
-                    // feel: cards are now clearly their own thing, not translucent on translucent.
-                    shape.fill(Palette.card.opacity(0.55))
-                    if let tint { shape.fill(tint.opacity(0.16)) }
-                    shape.fill(LinearGradient(stops: [
-                        .init(color: .white.opacity(0.12), location: 0),
-                        .init(color: .white.opacity(0.03), location: 0.30),
-                        .init(color: .clear, location: 0.65),
-                        .init(color: .black.opacity(0.12), location: 1),
-                    ], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    shape.fill(Palette.card)
+                    if let tint { shape.fill(tint.opacity(0.10)) }
                 }
             }
-            .overlay(shape.strokeBorder(
-                LinearGradient(stops: [
-                    .init(color: .white.opacity(interactive && hover ? 0.50 : 0.40), location: 0),
-                    .init(color: .white.opacity(0.08), location: 0.45),
-                    .init(color: .white.opacity(0.04), location: 1),
-                ], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+            .overlay(shape.strokeBorder(Palette.cardEdge, lineWidth: 0.8))
             .clipShape(shape)
-            .shadow(color: .black.opacity(elevated ? 0.40 : 0.26),
-                    radius: elevated ? 28 : 15, x: 0, y: elevated ? 14 : 7)
-            .shadow(color: .black.opacity(0.18), radius: 3, y: 1.5)
+            .shadow(color: .black.opacity(elevated ? 0.18 : 0.10),
+                    radius: elevated ? 16 : 8, x: 0, y: elevated ? 6 : 3)
             .contentShape(shape)
-            .onHover { hover = $0 }
-            .animation(.easeOut(duration: 0.16), value: hover)
     }
 }
 
@@ -204,8 +198,8 @@ struct InsetRowModifier: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
-            .background(shape.fill(.white.opacity(hoverable && hover ? 0.075 : 0.045)))
-            .overlay(shape.strokeBorder(.white.opacity(hoverable && hover ? 0.16 : 0.08), lineWidth: 0.8))
+            .background(shape.fill(hoverable && hover ? Palette.wellFillHover : Palette.wellFill))
+            .overlay(shape.strokeBorder(Palette.wellStroke, lineWidth: 0.8))
             .contentShape(shape)
             .onHover { hover = $0 }
             .animation(.easeOut(duration: 0.14), value: hover)

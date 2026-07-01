@@ -155,7 +155,7 @@ struct AgendaView: View {
     }
 
     private var stripDivider: some View {
-        Rectangle().fill(.white.opacity(0.07)).frame(width: 1, height: 30)
+        Rectangle().fill(Palette.hairline).frame(width: 1, height: 30)
     }
 
     private func flowColumn(_ label: String, icon: String, tint: Color, text: String, valueColor: Color) -> some View {
@@ -187,7 +187,7 @@ struct AgendaView: View {
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(Palette.textTertiary)
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(.white.opacity(0.05), in: Capsule())
+            .background(Palette.hairline, in: Capsule())
             .overlay(Capsule().strokeBorder(.white.opacity(0.10), lineWidth: 0.8))
             .contentShape(Capsule())
         }
@@ -267,7 +267,7 @@ struct AgendaView: View {
                     }
                 }
                 .chartYAxis { AxisMarks(position: .leading) { v in
-                    AxisGridLine().foregroundStyle(.white.opacity(0.06))
+                    AxisGridLine().foregroundStyle(Palette.hairline)
                     AxisValueLabel { if let d = v.as(Double.self) { Text(CurrencyFormat.abbreviated(d, base)).foregroundStyle(Palette.textTertiary) } }
                 } }
                 .frame(height: 170)
@@ -298,7 +298,7 @@ struct AgendaView: View {
                 ForEach(Array(dayGroups.enumerated()), id: \.element.day) { idx, group in
                     dayRow(group)
                     if idx < dayGroups.count - 1 {
-                        Divider().overlay(.white.opacity(0.05)).padding(.leading, 62)
+                        Divider().overlay(Palette.hairline).padding(.leading, 62)
                     }
                 }
             }
