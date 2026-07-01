@@ -1,5 +1,42 @@
 import SwiftUI
 import SwiftData
+import QuartzCore
+
+/// Physics-based kanban drag (Deck-style). A custom `DragGesture` feeds this controller, which
+/// tracks smoothed velocity and the hovered column, and drives a floating ghost card that tilts by
+/// drag speed and springs to the cursor — instead of SwiftUI's flat `.draggable`/`.dropDestination`.
+@Observable @MainActor
+final class KanbanDrag {
+    var dragged: UUID?
+    var location: CGPoint = .zero
+    var velocity: CGVector = .zero
+    var hovered: ProjectStatus?
+    private var lastTime: CFTimeInterval?
+    private var lastLocation: CGPoint = .zero
+    private var targets: [ProjectStatus: CGRect] = [:]
+
+    func register(_ status: ProjectStatus, _ rect: CGRect) { targets[status] = rect }
+
+    func begin(_ id: UUID, at p: CGPoint) {
+        dragged = id; location = p; lastLocation = p; lastTime = CACurrentMediaTime(); velocity = .zero
+    }
+    func update(to p: CGPoint) {
+        let now = CACurrentMediaTime()
+        if let last = lastTime {
+            let dt = max(now - last, 1.0 / 240.0)
+            let vx = (p.x - lastLocation.x) / dt, vy = (p.y - lastLocation.y) / dt
+            velocity = CGVector(dx: velocity.dx * 0.4 + vx * 0.6, dy: velocity.dy * 0.4 + vy * 0.6)  // 60% new, smoothed
+        }
+        lastTime = now; lastLocation = p; location = p
+        hovered = targets.first { $0.value.contains(p) }?.key
+    }
+    /// The (project, destination column) to commit, or nil if dropped on no column. Resets state.
+    func commit() -> (UUID, ProjectStatus)? {
+        defer { dragged = nil; hovered = nil; velocity = .zero; lastTime = nil }
+        guard let id = dragged, let h = hovered else { return nil }
+        return (id, h)
+    }
+}
 
 struct ProjectsView: View {
     @Environment(\.modelContext) private var context
@@ -23,8 +60,9 @@ struct ProjectsView: View {
     @State private var payProject: Project?
     @State private var query = ""
 
-    // Native drag-and-drop: which column is being hovered as a drop target.
-    @State private var dropTarget: ProjectStatus?
+    // Physics kanban drag (Deck-style): the controller + the board's global origin (to place the ghost).
+    @State private var drag = KanbanDrag()
+    @State private var boardOrigin: CGPoint = .zero
     // Table collapse (Paid collapsed by default)
     @State private var collapsed: Set<String> = ["paid"]
 
@@ -54,13 +92,6 @@ struct ProjectsView: View {
             Brain.enqueueProjectPostMortem(context, projectTitle: p.title, clientName: clients.first { $0.id == p.clientId }?.name, outcome: "paid")
         }
     }
-    /// Handle a card dropped on a column: the payload is the project's id string.
-    private func handleDrop(_ ids: [String], to status: ProjectStatus) -> Bool {
-        guard let first = ids.first, let id = UUID(uuidString: first) else { return false }
-        withAnimation(.snappy(duration: 0.25)) { move(id, to: status) }
-        return true
-    }
-
     // Oldest → newest keeps late payers at the top of open columns.
     private func oldestFirst(_ s: ProjectStatus) -> [Project] {
         projects.filter { $0.status == s && matchesQuery($0) }
@@ -86,14 +117,25 @@ struct ProjectsView: View {
                                message: "Add a project to track deliverables, what's owed, and what's landed.",
                                actionLabel: "New project") { showAdd = true }
             } else if mode == "Board" {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 16) {
-                        column("Unpaid", oldestFirst(.unpaid), Palette.cyan, .unpaid)
-                        column("Partially paid", oldestFirst(.partiallyPaid), Palette.warning, .partiallyPaid)
-                        paidColumn
+                ZStack(alignment: .topLeading) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 16) {
+                            column("Unpaid", oldestFirst(.unpaid), Palette.cyan, .unpaid)
+                            column("Partially paid", oldestFirst(.partiallyPaid), Palette.warning, .partiallyPaid)
+                            paidColumn
+                        }
+                        .padding(4)
                     }
-                    .padding(4)
+                    // The floating physics ghost — follows the cursor, tilts by velocity.
+                    if let gid = drag.dragged, let p = projects.first(where: { $0.id == gid }) {
+                        ghost(p)
+                    }
                 }
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { boardOrigin = g.frame(in: .global).origin }
+                        .onChange(of: g.frame(in: .global)) { _, n in boardOrigin = n.origin }
+                })
             } else {
                 groupedTable
             }
@@ -190,13 +232,23 @@ struct ProjectsView: View {
     }
 
     private func columnBackground(_ accent: Color, _ status: ProjectStatus) -> some View {
-        let isTarget = dropTarget == status
+        let isTarget = drag.dragged != nil && drag.hovered == status
         return RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(.white.opacity(isTarget ? 0.08 : 0.03))
+            .fill(isTarget ? accent.opacity(0.14) : Palette.wellFill)
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(isTarget ? accent.opacity(0.65) : Palette.hairline, lineWidth: isTarget ? 1.6 : 0.7))
-            .shadow(color: isTarget ? accent.opacity(0.35) : .clear, radius: 14)
-            .animation(.easeOut(duration: 0.15), value: isTarget)
+                .strokeBorder(isTarget ? accent.opacity(0.7) : Palette.cardEdge, lineWidth: isTarget ? 1.8 : 0.8))
+            .shadow(color: isTarget ? accent.opacity(0.35) : .clear, radius: 16)
+            .scaleEffect(isTarget ? 1.01 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.66), value: isTarget)
+    }
+
+    /// Registers a column's global frame as a drop target for the drag controller.
+    private func targetReader(_ status: ProjectStatus) -> some View {
+        GeometryReader { g in
+            Color.clear
+                .onAppear { drag.register(status, g.frame(in: .global)) }
+                .onChange(of: g.frame(in: .global)) { _, n in drag.register(status, n) }
+        }
     }
 
     private func column(_ title: String, _ items: [Project], _ accent: Color, _ status: ProjectStatus) -> some View {
@@ -218,8 +270,7 @@ struct ProjectsView: View {
         .padding(12)
         .frame(width: 264, alignment: .topLeading)
         .background(columnBackground(accent, status))
-        .dropDestination(for: String.self, action: { ids, _ in handleDrop(ids, to: status) },
-                         isTargeted: { dropTarget = $0 ? status : (dropTarget == status ? nil : dropTarget) })
+        .background(targetReader(status))
         .animation(.snappy(duration: 0.3), value: items.count)
     }
 
@@ -245,20 +296,28 @@ struct ProjectsView: View {
         .padding(12)
         .frame(width: paidOpen ? 264 : 200, alignment: .topLeading)
         .background(columnBackground(Palette.positive, .paid))
-        .dropDestination(for: String.self, action: { ids, _ in handleDrop(ids, to: .paid) },
-                         isTargeted: { dropTarget = $0 ? .paid : (dropTarget == .paid ? nil : dropTarget) })
+        .background(targetReader(.paid))
     }
 
-    /// A card you click to edit and drag to move — native drag-and-drop, so a click is
-    /// never mistaken for a drag (the old custom gesture had that conflict). The card
-    /// itself is the drag preview.
+    /// A card you tap to edit and drag to move. A physics `DragGesture` (min 10pt so a click is
+    /// never mistaken for a drag) feeds the controller; the source dims while its ghost floats.
     private func draggableCard(_ p: Project) -> some View {
-        Button { editing = p } label: { card(p) }
-            .buttonStyle(.cardPress)
-            .draggable(p.id.uuidString) {
-                card(p).frame(width: 240).opacity(0.92)
-                    .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
-            }
+        card(p)
+            .opacity(drag.dragged == p.id ? 0.25 : 1)
+            .contentShape(Rectangle())
+            .onTapGesture { editing = p }
+            .gesture(
+                DragGesture(minimumDistance: 10, coordinateSpace: .global)
+                    .onChanged { v in
+                        if drag.dragged == nil { drag.begin(p.id, at: v.location) }
+                        drag.update(to: v.location)
+                    }
+                    .onEnded { _ in
+                        if let (id, status) = drag.commit() {
+                            withAnimation(.snappy(duration: 0.25)) { move(id, to: status) }
+                        }
+                    }
+            )
             .contextMenu {
                 if p.status != .paid {
                     if p.workCompletedAt == nil {
@@ -268,6 +327,21 @@ struct ProjectsView: View {
                     }
                 }
             }
+    }
+
+    /// The floating ghost while dragging: tilts by horizontal velocity (±10°), scales/shadows by
+    /// speed, and springs to the cursor. Positioned in board-local space (global − board origin).
+    private func ghost(_ p: Project) -> some View {
+        let tilt = max(-10, min(10, drag.velocity.dx * 0.010))
+        let speed = min(1, hypot(drag.velocity.dx, drag.velocity.dy) / 2600)
+        return card(p)
+            .frame(width: 240)
+            .scaleEffect(1.04 + speed * 0.03)
+            .rotationEffect(.degrees(tilt), anchor: .top)
+            .shadow(color: .black.opacity(0.4), radius: 16 + speed * 8, y: 7 + speed * 5)
+            .position(x: drag.location.x - boardOrigin.x, y: drag.location.y - boardOrigin.y)
+            .allowsHitTesting(false)
+            .animation(.spring(response: 0.26, dampingFraction: 0.82), value: drag.location)
     }
 
     /// Mark the work delivered (or clear it) — starts the "waiting to be paid"

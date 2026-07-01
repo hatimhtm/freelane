@@ -3,6 +3,14 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.11
+
+Projects drag-and-drop, now with real physics.
+
+- **A card that feels physical.** Dragging a project card now lifts it into a floating ghost that **tilts with your drag speed**, scales and casts a deeper shadow the faster you move, and springs to follow the cursor — instead of the flat native drag.
+- **Columns react.** The column under your card lights up and lifts as you hover it, so it's obvious where the card will land. Drop it and it settles into place.
+- Tap a card to edit, drag it to move — the two never get confused.
+
 ## 0.10
 
 Loans that finally make sense — record a return in one tap.
