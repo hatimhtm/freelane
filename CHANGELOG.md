@@ -3,6 +3,16 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.9
+
+A leaner sidebar — only the things you actually use.
+
+- **Removed the clutter:** People, Vendors, Faith, and the standalone Today page are gone from the sidebar (their data is kept, nothing is deleted). Today's useful parts — safe-to-spend and runway — already live on the Dashboard.
+- **Clients moved into Money**, where it belongs.
+- Search and ⌘K no longer surface the removed pages; a vendor search now takes you to Spending.
+
+Next: a much easier way to record loan returns, and a physics-based drag for Projects.
+
 ## 0.8
 
 Light mode — and a calmer, grounded look with less glass.

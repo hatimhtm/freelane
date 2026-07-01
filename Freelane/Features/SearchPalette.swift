@@ -7,7 +7,6 @@ struct SearchPalette: View {
     var onNavigate: (Feature) -> Void
     @Environment(\.dismiss) private var dismiss
     @Query(filter: #Predicate<Client> { $0.deletedAt == nil }) private var clients: [Client]
-    @Query(filter: #Predicate<Entity> { $0.deletedAt == nil }) private var entities: [Entity]
     @Query(filter: #Predicate<Project> { $0.deletedAt == nil }) private var projects: [Project]
     @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }, sort: \Spend.spentAt, order: .reverse) private var spends: [Spend]
     @State private var query = ""
@@ -22,9 +21,6 @@ struct SearchPalette: View {
         for c in clients where !c.archived && (c.name.lowercased().contains(q) || (c.company?.lowercased().contains(q) ?? false)) {
             out.append(Hit(title: c.name, sub: c.company ?? "Client", icon: "briefcase", color: Palette.cyan, feature: .clients))
         }
-        for e in entities where !e.archived && (e.name.lowercased().contains(q) || (e.relationship?.lowercased().contains(q) ?? false)) {
-            out.append(Hit(title: e.name, sub: e.relationship ?? e.kind.label, icon: e.kind.icon, color: Palette.violet, feature: .people))
-        }
         for p in projects where p.title.lowercased().contains(q) {
             out.append(Hit(title: p.title, sub: "Project · \(p.status.label)", icon: "folder", color: Palette.cyan, feature: .projects))
         }
@@ -32,7 +28,7 @@ struct SearchPalette: View {
         for s in spends {
             if let v = s.vendorName, !v.isEmpty, v.lowercased().contains(q), !vendorsSeen.contains(v.lowercased()) {
                 vendorsSeen.insert(v.lowercased())
-                out.append(Hit(title: v, sub: "Vendor", icon: "storefront", color: Palette.warning, feature: .vendors))
+                out.append(Hit(title: v, sub: "Vendor", icon: "storefront", color: Palette.warning, feature: .spending))
             }
         }
         for s in spends.prefix(400) where (s.spendDescription?.lowercased().contains(q) ?? false) {
@@ -45,7 +41,7 @@ struct SearchPalette: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.textTertiary)
-                TextField("Search clients, people, vendors, projects, spends…", text: $query)
+                TextField("Search clients, projects, spends…", text: $query)
                     .textFieldStyle(.plain).font(.system(size: 16)).focused($focused)
                     .onSubmit { if let f = hits.first { onNavigate(f.feature); dismiss() } }
                 Text("⌘F").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textTertiary)

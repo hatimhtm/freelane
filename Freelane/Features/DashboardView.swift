@@ -118,14 +118,6 @@ struct DashboardView: View {
                 text: "Nothing safe to spend left today", tint: Palette.warning, destination: .spending, severity: 55))
         }
 
-        // A gentle evening nudge only — never during the day.
-        if PHT.calendar.component(.hour, from: .now) >= 19 && prayedToday < 5 {
-            let left = 5 - prayedToday
-            out.append(.init(id: "prayers", icon: "moon.stars.fill",
-                text: "\(left) prayer\(left == 1 ? "" : "s") left today",
-                tint: Palette.violet, destination: .faith, severity: 30))
-        }
-
         return out.sorted { $0.severity > $1.severity }
     }
 
@@ -216,12 +208,10 @@ struct DashboardView: View {
                 accent: up ? Palette.negative : Palette.positive,
                 sub: "\(abs(Int((d * 100).rounded())))% vs last month",
                 tone: up ? Palette.negative : Palette.positive,
-                destination: .vendors, morphID: "w.vtrend"))))
+                destination: .spending, morphID: "w.vtrend"))))
         }
         specs.append(("sleep", AnyView(MiniWidget(label: "Sleep", value: lastSleep, systemImage: "bed.double.fill",
                        accent: Palette.indigo, sub: "last logged", destination: .body, morphID: "w.sleep"))))
-        specs.append(("faith", AnyView(MiniWidget(label: "Prayers today", value: "\(prayedToday)/5", systemImage: "moon.stars.fill",
-                       accent: Palette.violet, sub: prayedToday == 5 ? "complete" : nil, destination: .faith, morphID: "w.faith"))))
         return specs
     }
 

@@ -85,11 +85,17 @@ enum Feature: String, CaseIterable, Identifiable {
         self == .settings ? Palette.section(.settings) : group.accent
     }
 
+    /// Retired from the UI (2026-07 declutter): removed from the sidebar & palettes. The enum cases
+    /// and their views stay so nothing breaks and the data is untouched — they're just not navigable.
+    static let retired: Set<Feature> = [.today, .people, .vendors, .faith]
+    var isRetired: Bool { Feature.retired.contains(self) }
+
     var group: FeatureGroup {
         switch self {
         case .dashboard, .today, .agenda: return .overview
-        case .payments, .wallets, .projects, .spending, .loans: return .money
-        case .clients, .people, .vendors: return .people
+        // Clients moved into Money — they're freelance clients, part of the money spine.
+        case .payments, .wallets, .projects, .spending, .loans, .clients: return .money
+        case .people, .vendors: return .people
         case .sadaka, .faith, .body, .letters: return .life
         case .stats, .activity: return .insights
         case .settings: return .overview
@@ -312,7 +318,7 @@ private struct Sidebar: View {
                 wordmark
                 ForEach(FeatureGroup.allCases) { group in
                     // Wallets live inside Payments now (not a separate sidebar item).
-                    let items = Feature.allCases.filter { $0.group == group && $0 != .settings && $0 != .wallets }
+                    let items = Feature.allCases.filter { $0.group == group && $0 != .settings && $0 != .wallets && !$0.isRetired }
                     if !items.isEmpty {
                         HStack(spacing: 7) {
                             Circle().fill(group.accent).frame(width: 5, height: 5)

@@ -28,7 +28,7 @@ struct CommandPalette: View {
         ]
     }
     private var allRows: [Row] {
-        Feature.allCases.map { Row(title: $0.title, subtitle: $0.group.rawValue, icon: $0.icon, accent: $0.accent, feature: $0) }
+        Feature.allCases.filter { !$0.isRetired }.map { Row(title: $0.title, subtitle: $0.group.rawValue, icon: $0.icon, accent: $0.accent, feature: $0) }
             + quickActions
     }
     private var rows: [Row] {
