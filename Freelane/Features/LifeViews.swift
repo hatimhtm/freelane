@@ -143,6 +143,51 @@ struct ReturnLoanSheet: View {
     }
 }
 
+/// Pooled return: one amount for a person, applied to their oldest open loan first (FIFO). The
+/// user enters "they paid me 500" and it just works — they never pick which loan.
+struct PersonReturnSheet: View {
+    let loans: [Loan]        // one direction, the person's open loans
+    let personName: String
+    let inbound: Bool        // given → money comes back IN; received → payment goes OUT
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Query(filter: #Predicate<Wallet> { $0.deletedAt == nil }) private var wallets: [Wallet]
+    @Query private var settings: [AppSettings]
+    @State private var walletId: UUID?
+    @State private var amount = ""
+
+    private var base: String { settings.first?.baseCurrency ?? "PHP" }
+    private var outstanding: Double { loans.reduce(0) { $0 + $1.outstandingBase } }
+
+    var body: some View {
+        SheetScaffold(title: inbound ? "Record return" : "Record payment", accent: Palette.teal,
+                      canSave: walletId != nil && (Double(amount) ?? 0) > 0, onSave: {
+            LoanEngine.recordPooledReturn(context, loans: loans, amountBase: Double(amount) ?? 0, walletId: walletId!)
+            dismiss()
+        }) {
+            Text(inbound
+                 ? "\(personName) is paying you back — applied to the oldest loan first, so you don't pick which."
+                 : "You're paying \(personName) back — applied to your oldest debt first.")
+                .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
+            LabeledField(inbound ? "Into wallet" : "From wallet") {
+                GlassMenuPicker(selection: $walletId,
+                                options: [UUID?.none] + wallets.filter { $0.isHolding && !$0.archived }.map { UUID?.some($0.id) },
+                                label: { id in id.flatMap { i in wallets.first(where: { $0.id == i })?.name } ?? "Select…" })
+            }
+            LabeledField("Amount (\(base))") {
+                TextField(CurrencyFormat.string(outstanding, base, compact: true), text: $amount)
+                    .textFieldStyle(GlassFieldStyle())
+            }
+            Text("Total outstanding: \(CurrencyFormat.string(outstanding, base))")
+                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+        }
+        .onAppear {
+            walletId = loans.first?.originWalletId ?? wallets.first { $0.isHolding && !$0.archived }?.id
+            amount = String(format: "%.2f", outstanding)
+        }
+    }
+}
+
 /// One person's whole loan history: every amount lent/borrowed, every repayment (pulled from
 /// the ledger rows each loan created), forgiveness, and per-loan actions — so repeated loans
 /// to the same person live in one place instead of scattered cards.
@@ -154,10 +199,12 @@ struct LoanPersonSheet: View {
     @Query private var settings: [AppSettings]
     @Query(filter: #Predicate<Loan> { $0.deletedAt == nil }) private var allLoans: [Loan]
     @Query private var ledger: [LedgerEntry]
-    @State private var returning: Loan?
+    @State private var pooled: PooledContext?
     @State private var editingLoan: Loan?
     @State private var addMore = false
     @State private var pendingDelete: Loan?
+
+    struct PooledContext: Identifiable { let id = UUID(); let loans: [Loan]; let inbound: Bool }
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
     private var loans: [Loan] {
@@ -166,9 +213,18 @@ struct LoanPersonSheet: View {
     }
     private var lentOutstanding: Double { loans.filter { $0.direction == .given }.reduce(0) { $0 + $1.outstandingBase } }
     private var borrowedOutstanding: Double { loans.filter { $0.direction == .received }.reduce(0) { $0 + $1.outstandingBase } }
-    /// The money movements this loan created (principal + every repayment), oldest first.
-    private func entries(for loan: Loan) -> [LedgerEntry] {
-        ledger.filter { $0.relatedId == loan.id && $0.archivedAt == nil }.sorted { $0.eventAt < $1.eventAt }
+    /// Every money movement across ALL this person's loans — the persistent history, newest first.
+    private var history: [LedgerEntry] {
+        let ids = Set(loans.map { $0.id })
+        return ledger
+            .filter { ($0.relatedId.map(ids.contains) ?? false) && $0.archivedAt == nil }
+            .sorted { $0.eventAt > $1.eventAt }
+    }
+    private var givenOpen: [Loan] {
+        loans.filter { $0.direction == .given && $0.outstandingBase > 0.001 && $0.status != .returned && $0.status != .forgiven }
+    }
+    private var receivedOpen: [Loan] {
+        loans.filter { $0.direction == .received && $0.outstandingBase > 0.001 && $0.status != .returned && $0.status != .forgiven }
     }
     private var summaryLine: String {
         if lentOutstanding > 0.005 && borrowedOutstanding > 0.005 {
@@ -198,12 +254,32 @@ struct LoanPersonSheet: View {
                     if loans.isEmpty {
                         Text("Nothing left here.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary).padding(.top, 8)
                     }
+                    // Pooled return — one amount, applied to the oldest loan first (no picking).
+                    if !givenOpen.isEmpty || !receivedOpen.isEmpty {
+                        HStack(spacing: 8) {
+                            if !givenOpen.isEmpty {
+                                Button { pooled = PooledContext(loans: givenOpen, inbound: true) } label: {
+                                    Label("Record return", systemImage: "arrow.down.left").frame(maxWidth: .infinity)
+                                }.buttonStyle(.glassProminent).tint(Palette.teal).controlSize(.large)
+                            }
+                            if !receivedOpen.isEmpty {
+                                Button { pooled = PooledContext(loans: receivedOpen, inbound: false) } label: {
+                                    Label("Record payment", systemImage: "arrow.up.right").frame(maxWidth: .infinity)
+                                }.buttonStyle(.glassProminent).tint(Palette.negative).controlSize(.large)
+                            }
+                        }
+                    }
+                    if !history.isEmpty { historySection }
+                    if !loans.isEmpty {
+                        Text("Loans").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).kerning(0.6)
+                            .foregroundStyle(Palette.textTertiary).padding(.top, 2)
+                    }
                     ForEach(loans) { l in loanBlock(l) }
                 }.padding(18)
             }
         }
-        .frame(width: 470, height: 580).flagshipSheet()
-        .sheet(item: $returning) { ReturnLoanSheet(loan: $0) }
+        .frame(width: 470, height: 600).flagshipSheet()
+        .sheet(item: $pooled) { PersonReturnSheet(loans: $0.loans, personName: person.name, inbound: $0.inbound) }
         .sheet(item: $editingLoan) { EditLoanSheet(loan: $0) }
         .sheet(isPresented: $addMore) { AddLoanSheet(prefillName: person.name) }
         .confirmationDialog("Delete this loan?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), presenting: pendingDelete) { l in
@@ -216,6 +292,38 @@ struct LoanPersonSheet: View {
         } message: { l in Text("\(CurrencyFormat.string(l.outstandingBase, base)) outstanding · removes its wallet movement") }
     }
 
+    /// The persistent, unified timeline — every lend and every repayment for this person, newest
+    /// first — so the whole relationship stays visible in one place.
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("History").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).kerning(0.6)
+                .foregroundStyle(Palette.textTertiary)
+            VStack(spacing: 6) {
+                ForEach(history) { e in
+                    HStack(spacing: 9) {
+                        Image(systemName: e.amountBase >= 0 ? "arrow.down.left" : "arrow.up.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(e.amountBase >= 0 ? Palette.positive : Palette.negative).frame(width: 16)
+                        Text(e.note ?? (e.amountBase >= 0 ? "Money in" : "Money out"))
+                            .font(.system(size: 12)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                        Spacer(minLength: 6)
+                        Text(e.eventAt.formatted(.dateTime.month().day().year()))
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                        Text(CurrencyFormat.string(e.amountBase, base, compact: true))
+                            .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                            .foregroundStyle(e.amountBase >= 0 ? Palette.positive : Palette.negative)
+                            .frame(width: 78, alignment: .trailing)
+                    }
+                    .padding(.vertical, 7).padding(.horizontal, 10)
+                    .insetRow(hoverable: false)
+                }
+            }
+        }
+        .padding(13).glassCard(cornerRadius: Radii.field)
+    }
+
+    /// A compact loan card for management (edit / forgive / delete). Repayments live in the unified
+    /// history above, and returns are recorded pooled — so no per-loan return button here.
     @ViewBuilder
     private func loanBlock(_ l: Loan) -> some View {
         let open = l.status != .returned && l.status != .forgiven
@@ -230,29 +338,12 @@ struct LoanPersonSheet: View {
             }
             Text(l.startedAt.formatted(.dateTime.month().day().year()) + (open ? " · \(CurrencyFormat.string(l.outstandingBase, base, compact: true)) outstanding" : ""))
                 .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-            let es = entries(for: l)
-            if !es.isEmpty {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(es) { e in
-                        HStack(spacing: 8) {
-                            Circle().fill((e.amountBase >= 0 ? Palette.positive : Palette.negative).opacity(0.6)).frame(width: 6, height: 6)
-                            Text(e.note ?? (e.amountBase >= 0 ? "Money in" : "Money out")).font(.system(size: 11)).foregroundStyle(Palette.textSecondary).lineLimit(1)
-                            Spacer()
-                            Text(e.eventAt.formatted(.dateTime.month().day())).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                            Text(CurrencyFormat.string(e.amountBase, base, compact: true))
-                                .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
-                                .foregroundStyle(e.amountBase >= 0 ? Palette.positive : Palette.negative)
-                        }
-                    }
-                }.padding(.leading, 2).padding(.top, 2)
-            }
             if let fb = l.forgivenBase, fb > 0 {
                 Text("Forgiven \(CurrencyFormat.string(fb, base, compact: true)) — counted as sadaka").font(.system(size: 10.5)).foregroundStyle(Palette.violet)
             }
             HStack(spacing: 8) {
-                if open {
-                    Button("Record return") { returning = l }.buttonStyle(.glass).controlSize(.small)
-                    if l.direction == .given { Button("Forgive") { LoanEngine.forgive(context, loan: l) }.buttonStyle(.glass).controlSize(.small) }
+                if open && l.direction == .given {
+                    Button("Forgive") { LoanEngine.forgive(context, loan: l) }.buttonStyle(.glass).controlSize(.small)
                 }
                 Button("Edit") { editingLoan = l }.buttonStyle(.glass).controlSize(.small)
                 Spacer()

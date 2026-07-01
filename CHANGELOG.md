@@ -3,6 +3,14 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.10
+
+Loans that finally make sense — record a return in one tap.
+
+- **One "Record return" button per person.** Enter how much they paid you back and it's applied to your **oldest loan first** (even partially), spilling across loans as needed. You never pick which specific loan — a person's debt is treated as one pool, the way you actually think about it.
+- **A persistent history.** Every lend and every repayment for a person now lives in one unified timeline that always stays visible, instead of being scattered across separate loan cards.
+- Individual loans are still there for edits, forgiving, or corrections — just tucked below the history.
+
 ## 0.9
 
 A leaner sidebar — only the things you actually use.

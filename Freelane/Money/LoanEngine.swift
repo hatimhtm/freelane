@@ -44,6 +44,27 @@ enum LoanEngine {
         try? context.save()
     }
 
+    /// Apply a return across a person's OPEN loans of ONE direction, OLDEST FIRST (FIFO), spilling
+    /// partials across loans as needed. The person's debt is treated as one pool, so the user never
+    /// has to pick which specific loan a repayment goes against. Returns the amount actually applied.
+    @discardableResult
+    static func recordPooledReturn(_ context: ModelContext, loans: [Loan], amountBase: Double, walletId: UUID) -> Double {
+        var remaining = round2(amountBase)
+        guard remaining > 0 else { return 0 }
+        let open = loans
+            .filter { $0.outstandingBase > 0.001 && $0.status != .returned && $0.status != .forgiven }
+            .sorted { $0.startedAt < $1.startedAt }   // oldest first
+        var applied = 0.0
+        for loan in open {
+            if remaining <= 0.001 { break }
+            let chunk = round2(min(remaining, loan.outstandingBase))
+            recordReturn(context, loan: loan, amountBase: chunk, walletId: walletId)   // ledger + status + save
+            remaining = round2(remaining - chunk)
+            applied = round2(applied + chunk)
+        }
+        return applied
+    }
+
     /// Forgive a loan you gave: the money already left your wallet, so no ledger
     /// movement — just zero the balance and mark it.
     static func forgive(_ context: ModelContext, loan: Loan) {
