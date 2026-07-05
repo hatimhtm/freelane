@@ -1,12 +1,20 @@
 import SwiftUI
 import SwiftData
 
+/// Legacy standalone route (the sidebar now reaches this through Insights ▸ Activity).
+/// Kept so any stale selection or deep link still lands somewhere sensible.
+struct ActivityView: View {
+    var body: some View {
+        Page("Activity", subtitle: "The money audit trail.") { ActivityFeed() }
+    }
+}
+
 /// The money audit trail — every payment, spend and transfer, grouped by day
 /// ("Today", "Yesterday", then weekday + date). Each day is a SectionCard whose
 /// subtitle carries the day's totals, so even a collapsed day tells you something.
 /// Rows: kind icon chip · what happened · detail (vendor / category / from → to) ·
-/// amount + time right-aligned.
-struct ActivityView: View {
+/// amount + time right-aligned. Embeddable (lives inside Insights as a subtab).
+struct ActivityFeed: View {
     @Query private var settings: [AppSettings]
     @Query(filter: #Predicate<Payment> { $0.deletedAt == nil }, sort: \Payment.paidAt, order: .reverse) private var payments: [Payment]
     @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }, sort: \Spend.spentAt, order: .reverse) private var spends: [Spend]
@@ -61,13 +69,13 @@ struct ActivityView: View {
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
-        Page("Activity", subtitle: "\(events.count) events — what you did",
-             toolbar: AnyView(
-                Button { showTrash = true } label: { Label("Trash", systemImage: "trash") }.buttonStyle(.glass)),
-             subtabs: ["All", "Money in", "Money out"], selection: $filter) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
+                GlassSegment(options: [0, 1, 2], selection: $filter) { ["All", "Money in", "Money out"][$0] }
                 SearchField(text: $query, placeholder: "Search vendor, project, amount…")
                 if !query.isEmpty { Text("\(events.count) match\(events.count == 1 ? "" : "es")").font(.system(size: 11)).foregroundStyle(Palette.textTertiary) }
+                Spacer(minLength: 0)
+                Button { showTrash = true } label: { Label("Trash", systemImage: "trash") }.buttonStyle(.glass)
             }
             if events.isEmpty {
                 if query.isEmpty {

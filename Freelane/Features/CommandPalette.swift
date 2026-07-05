@@ -124,10 +124,14 @@ struct ShortcutsHUD: View {
     private let shortcuts: [(String, String)] = [
         ("⌘K", "Command palette — jump anywhere"),
         ("⌘F", "Search across everything"),
+        ("⌘N", "Log a spend"),
+        ("⌘⇧N", "Log a payment"),
+        ("⌘1…9", "Jump to a sidebar page, in order"),
+        ("⌘,", "Settings"),
         ("⌘?", "This shortcut sheet"),
-        ("⌃⌥Space", "Quick-capture a spend (global)"),
-        ("↑ ↓", "Move selection in the palette"),
-        ("⏎", "Run the highlighted action"),
+        ("⌃⌥Space", "Quick-capture a spend (global — enable in Settings)"),
+        ("↑ ↓", "Move selection in ⌘K and ⌘F"),
+        ("⏎", "Run the highlighted action / save a sheet"),
         ("Esc", "Close any sheet or popover"),
     ]
     var body: some View {

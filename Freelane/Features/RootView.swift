@@ -50,7 +50,7 @@ enum Feature: String, CaseIterable, Identifiable {
         case .faith: return "Faith"
         case .body: return "Body"
         case .letters: return "Journal"
-        case .stats: return "Stats"
+        case .stats: return "Insights"
         case .activity: return "Activity"
         case .settings: return "Settings"
         }
@@ -87,7 +87,8 @@ enum Feature: String, CaseIterable, Identifiable {
 
     /// Retired from the UI (2026-07 declutter): removed from the sidebar & palettes. The enum cases
     /// and their views stay so nothing breaks and the data is untouched — they're just not navigable.
-    static let retired: Set<Feature> = [.today, .people, .vendors, .faith]
+    // Activity lives inside Insights (Stats) as a subtab now, not as its own sidebar row.
+    static let retired: Set<Feature> = [.today, .people, .vendors, .faith, .activity]
     var isRetired: Bool { Feature.retired.contains(self) }
 
     var group: FeatureGroup {
@@ -144,16 +145,8 @@ struct RootView: View {
             .toolbar(removing: .title)
             .toolbarBackground(.hidden, for: .windowToolbar)
         }
-        // ⌘K command palette / ⌘F search.
-        .background {
-            Button("") { showPalette.toggle() }.keyboardShortcut("k", modifiers: .command).opacity(0)
-        }
-        .background {
-            Button("") { showSearch.toggle() }.keyboardShortcut("f", modifiers: .command).opacity(0)
-        }
-        .background {     // ⌘? keyboard-shortcut HUD
-            Button("") { showShortcuts.toggle() }.keyboardShortcut("/", modifiers: .command).opacity(0)
-        }
+        // Hidden keyboard wiring: ⌘K palette, ⌘F search, ⌘? HUD, ⌘1…9 jumps, ⌘, Settings.
+        .background { hiddenShortcuts }
         .sheet(isPresented: $showShortcuts) { ShortcutsHUD() }
         .sheet(isPresented: $showSearch) {
             SearchPalette { f in showSearch = false; withAnimation(Motion.page) { feature = f } }
@@ -279,6 +272,18 @@ struct RootView: View {
             // reveal a still-churning UI). A max-timeout fallback in the overlay guards against a stall.
             withAnimation(.easeOut(duration: 0.45)) { splash = false }
         }
+    }
+
+    /// Invisible buttons carrying the app-wide shortcuts, grouped in ONE background so the
+    /// root body stays type-checkable: ⌘K palette, ⌘F search, ⌘? HUD, ⌘1…9 jumps, ⌘, Settings.
+    private var hiddenShortcuts: some View {
+        ZStack {
+            Button("") { showPalette.toggle() }.keyboardShortcut("k", modifiers: .command)
+            Button("") { showSearch.toggle() }.keyboardShortcut("f", modifiers: .command)
+            Button("") { showShortcuts.toggle() }.keyboardShortcut("/", modifiers: .command)
+            SectionJumpShortcuts { f in withAnimation(Motion.page) { feature = f } }
+        }
+        .opacity(0)
     }
 
     @ViewBuilder
@@ -535,6 +540,25 @@ private func staggered<V: View>(_ v: V) -> some View {
 
 /// A glass segmented control for in-page subtabs with a fluid sliding indicator
 /// (matchedGeometryEffect) — the native echo of the web app's morphing underline.
+/// Invisible ⌘1…⌘9 (sidebar order) + ⌘, (Settings) buttons — muscle-memory navigation.
+/// Lives in its own view so RootView's body stays type-checkable.
+struct SectionJumpShortcuts: View {
+    var jump: (Feature) -> Void
+    private var jumps: [Feature] {
+        Array(Feature.allCases.filter { !$0.isRetired && $0 != .settings }.prefix(9))
+    }
+    var body: some View {
+        ZStack {
+            ForEach(Array(jumps.enumerated()), id: \.element) { pair in
+                Button("") { jump(pair.element) }
+                    .keyboardShortcut(KeyEquivalent(Character(String(pair.offset + 1))), modifiers: .command)
+            }
+            Button("") { jump(.settings) }.keyboardShortcut(",", modifiers: .command)
+        }
+        .opacity(0)
+    }
+}
+
 struct SubtabBar: View {
     var tabs: [String]
     @Binding var selection: Int

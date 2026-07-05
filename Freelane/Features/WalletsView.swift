@@ -24,16 +24,22 @@ struct WalletsView: View {
     var body: some View {
         Page("Wallets", subtitle: "Balances are derived from your ledger.",
              toolbar: AnyView(toolbarButtons)) {
-            StatTile(label: "Total across wallets", value: total, code: base,
-                     systemImage: "wallet.bifold", accent: Palette.teal,
-                     chip: ("\(holding.count) wallets", nil), chipColor: Palette.teal)
-            .frame(maxWidth: 300, alignment: .leading)
+            if holding.isEmpty {
+                EmptyStateCard(icon: "wallet.bifold", title: "No wallets yet",
+                               message: "Add the places your money lives — banks, e-wallets, cash. Every payment, spend, and transfer flows through them, and balances are derived from the ledger automatically.",
+                               actionLabel: "Add wallet") { showAdd = true }
+            } else {
+                StatTile(label: "Total across wallets", value: total, code: base,
+                         systemImage: "wallet.bifold", accent: Palette.teal,
+                         chip: ("\(holding.count) wallets", nil), chipColor: Palette.teal)
+                .frame(maxWidth: 300, alignment: .leading)
 
-            let cols = [GridItem(.adaptive(minimum: 188), spacing: 12)]
-            GlassGroup(spacing: 16) {
-                LazyVGrid(columns: cols, spacing: 16) {
-                    ForEach(holding) { w in
-                        Button { selected = w } label: { walletCard(w) }.buttonStyle(.cardPress)
+                let cols = [GridItem(.adaptive(minimum: 188), spacing: 12)]
+                GlassGroup(spacing: 16) {
+                    LazyVGrid(columns: cols, spacing: 16) {
+                        ForEach(holding) { w in
+                            Button { selected = w } label: { walletCard(w) }.buttonStyle(.cardPress)
+                        }
                     }
                 }
             }

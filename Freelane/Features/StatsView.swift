@@ -136,12 +136,14 @@ struct StatsView: View {
     // MARK: Body
 
     var body: some View {
-        Page("Stats", subtitle: "How the business is actually doing.",
-             subtabs: ["This month", "This year", "Lifetime"], selection: $sub) {
-            if payments.isEmpty {
+        Page("Insights", subtitle: "How the business is actually doing.",
+             subtabs: ["This month", "This year", "Lifetime", "Activity"], selection: $sub) {
+            if sub == 3 {
+                ActivityFeed()
+            } else if payments.isEmpty {
                 EmptyStateCard(icon: "chart.bar",
                                title: "No income yet",
-                               message: "Log your first payment and Stats will start answering how the business is doing — trend, fees, and who pays the bills.")
+                               message: "Log your first payment and Insights will start answering how the business is doing — trend, fees, and who pays the bills.")
             } else {
                 hero
                 pulseGrid

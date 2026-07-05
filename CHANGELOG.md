@@ -3,6 +3,15 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.14
+
+Structure — a tighter map and real keyboard muscle memory.
+
+- **Stats and Activity are now one page: Insights.** The month/year/lifetime business read and the day-by-day activity trail were both "look back at what happened" — now they're subtabs of a single sidebar destination (Activity's filters, search, and Trash all came along). One less sidebar row.
+- **⌘1…⌘9 jump straight to any sidebar page** in order, and **⌘, opens Settings** like every Mac app. The ⌘? cheat sheet now tells the whole truth — it gained ⌘N (log spend), ⌘⇧N (log payment), and the new jumps, and stopped claiming things that didn't work.
+- **Wallets finally greets you.** With no wallets it now explains what wallets are and offers the add button — instead of a lonely ₱0 over a blank grid.
+- **The Qur'an reader matches the app now** — the warm backdrop, entrance animation, click-outside and Esc to close, instead of the flat dark panel it's been since v0.1.
+
 ## 0.13
 
 Feel — the app responds to your hand now.

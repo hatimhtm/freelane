@@ -42,7 +42,7 @@ struct QuranReaderSheet: View {
                 }
             }
             .frame(minWidth: 220, maxWidth: 280)
-            .background(Palette.ink)
+            .background(Palette.ink2.opacity(0.6))
 
             // Reader
             Group {
@@ -84,8 +84,8 @@ struct QuranReaderSheet: View {
                                 // end-of-ayah number stays anchored to its verse (one giant concatenated RTL
                                 // string makes the bidi algorithm scramble the markers + break words).
                                 ForEach(ayahs) { a in
-                                    Text("\(a.arabic)  \(Text("﴿\(arabicNumerals(a.numberInSurah))﴾").font(.system(size: 19)).foregroundColor(Palette.teal))")
-                                        .font(.system(size: 27, weight: .medium)).foregroundColor(Palette.textPrimary)
+                                    Text("\(a.arabic)  \(Text("﴿\(arabicNumerals(a.numberInSurah))﴾").font(.system(size: 19)).foregroundStyle(Palette.teal))")
+                                        .font(.system(size: 27, weight: .medium)).foregroundStyle(Palette.textPrimary)
                                         .environment(\.layoutDirection, .rightToLeft)
                                         .multilineTextAlignment(.trailing)
                                         .lineSpacing(14)
@@ -110,7 +110,8 @@ struct QuranReaderSheet: View {
             .frame(minWidth: 380)
         }
         .frame(width: 760, height: 620)
-        .background(Palette.ink)
+        .flagshipSheet()
+        .background { Button("") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0) }
         .task {
             surahs = await QuranService.surahList()
             if let resume = surahs.first(where: { $0.number == QuranService.surah }) { open(resume) }
