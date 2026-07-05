@@ -205,7 +205,7 @@ struct PaymentsView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text("+" + CurrencyFormat.string(p.netAmountBase ?? 0, base))
-                    .font(.system(size: 13.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Palette.positive).lineLimit(1).minimumScaleFactor(0.8)
                 if fee > 0 {
                     Text("−" + CurrencyFormat.string(fee, base) + " fee")
@@ -239,7 +239,7 @@ struct PaymentsView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text("−" + CurrencyFormat.string(w.grossBase, base))
-                    .font(.system(size: 13.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Palette.textPrimary).lineLimit(1).minimumScaleFactor(0.8)
                 if w.feeBase > 0 {
                     Text("−" + CurrencyFormat.string(w.feeBase, base) + " fee")
@@ -354,7 +354,7 @@ struct BulkPaymentSheet: View {
                     .help("Close (Esc)").accessibilityLabel("Close")
             }
             .padding(.horizontal, 18).padding(.vertical, 14)
-            .background(.white.opacity(0.04))
+            .background(Palette.wellFill)
             .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
 
             ScrollView {

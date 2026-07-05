@@ -183,7 +183,7 @@ struct SpendingView: View {
                         .cornerRadius(6)
                         .opacity(selPt == nil || selPt?.date == m.date ? 1 : 0.4)
                     if let pt = selPt {
-                        RuleMark(x: .value("Month", pt.date, unit: .month)).foregroundStyle(.white.opacity(0.25))
+                        RuleMark(x: .value("Month", pt.date, unit: .month)).foregroundStyle(Palette.textTertiary.opacity(0.45))
                     }
                 }
                 .chartYScale(domain: 0...(maxV * 1.08))       // pinned — hover can't rescale it
@@ -324,7 +324,7 @@ struct SpendingView: View {
             }
             Spacer()
             Text("−" + CurrencyFormat.string(s.amountBase, base))
-                .font(.system(size: 13.5, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
             Menu {
                 Button("Edit", systemImage: "pencil") { editingSpend = s }
                 Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = s }
@@ -886,7 +886,7 @@ struct SpendHeatmap: View {
                                     RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                                         .fill(color(d[idx].total, maxV))
                                         .frame(width: cell, height: cell)
-                                        .overlay(RoundedRectangle(cornerRadius: 2.5).strokeBorder(.white.opacity(isSel ? 0.9 : 0), lineWidth: 1))
+                                        .overlay(RoundedRectangle(cornerRadius: 2.5).strokeBorder(Palette.textPrimary.opacity(isSel ? 0.85 : 0), lineWidth: 1))
                                         .onHover { if $0 { sel = (d[idx].date, d[idx].total) } }
                                 } else { Color.clear.frame(width: cell, height: cell) }
                             }

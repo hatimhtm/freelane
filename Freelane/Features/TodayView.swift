@@ -109,7 +109,7 @@ struct TodayView: View {
             Sparkline(values: sparkline, color: Palette.positive).frame(height: 50)
         }
         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 22, tint: Palette.positive, elevated: true)
+        .glassCard(cornerRadius: Radii.card, tint: Palette.positive, elevated: true)
     }
 
     private var greeting: String {

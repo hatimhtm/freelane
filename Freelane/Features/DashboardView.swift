@@ -377,12 +377,16 @@ private struct CashFlowCard: View {
                                                             startPoint: .leading, endPoint: .trailing))
                     }
                     if let s = scrubPt {     // hover crosshair + value tooltip
-                        RuleMark(x: .value("Date", s.date)).foregroundStyle(.white.opacity(0.22))
+                        RuleMark(x: .value("Date", s.date)).foregroundStyle(Palette.textTertiary.opacity(0.45))
                             .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(s.date, format: .dateTime.month(.abbreviated).day()).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                                     Text(CurrencyFormat.string(s.cumulative, base, compact: true)).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
-                                }.padding(6).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                                }
+                                .padding(6)
+                                .background(Palette.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.cardEdge, lineWidth: 0.7))
+                                .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
                             }
                         PointMark(x: .value("Date", s.date), y: .value("Balance", s.cumulative))
                             .foregroundStyle(Palette.cyan).symbolSize(70)

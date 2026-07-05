@@ -72,7 +72,7 @@ struct QuranReaderSheet: View {
                                             Text(a.arabic).font(.system(size: 24, weight: .medium)).foregroundStyle(Palette.textPrimary)
                                                 .multilineTextAlignment(.trailing).environment(\.layoutDirection, .rightToLeft).lineSpacing(8)
                                         }
-                                        Text(a.translation).font(.system(size: 13.5)).foregroundStyle(Palette.textSecondary)
+                                        Text(a.translation).font(.system(size: 13)).foregroundStyle(Palette.textSecondary)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                         Button("Mark as my position") { QuranService.setPosition(surah: s.number, ayah: a.numberInSurah) }
                                             .buttonStyle(.glass).controlSize(.mini)

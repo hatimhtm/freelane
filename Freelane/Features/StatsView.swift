@@ -229,10 +229,10 @@ struct StatsView: View {
                         .cornerRadius(4)
                         .opacity(selPt == nil || selPt?.month == m.month ? 1 : 0.35)
                     RuleMark(y: .value("Average", monthlyAvg))
-                        .foregroundStyle(.white.opacity(0.16))
+                        .foregroundStyle(Palette.textTertiary.opacity(0.35))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 4]))
                     if let pt = selPt {
-                        RuleMark(x: .value("Month", pt.month, unit: .month)).foregroundStyle(.white.opacity(0.22))
+                        RuleMark(x: .value("Month", pt.month, unit: .month)).foregroundStyle(Palette.textTertiary.opacity(0.45))
                     }
                 }
                 .chartYScale(domain: 0...(maxV * 1.08))

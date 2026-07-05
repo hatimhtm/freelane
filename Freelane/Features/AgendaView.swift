@@ -188,7 +188,7 @@ struct AgendaView: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(Palette.hairline, in: Capsule())
-            .overlay(Capsule().strokeBorder(.white.opacity(0.10), lineWidth: 0.8))
+            .overlay(Capsule().strokeBorder(Palette.wellStroke, lineWidth: 0.8))
             .contentShape(Capsule())
         }
         .menuStyle(.borderlessButton).fixedSize()

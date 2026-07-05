@@ -363,7 +363,7 @@ private struct Sidebar: View {
                 Spacer()
             }
             .padding(11)
-            .glassCard(cornerRadius: 13)
+            .glassCard(cornerRadius: Radii.tile)
         }
     }
 
@@ -390,8 +390,8 @@ private struct Sidebar: View {
                 Spacer()
             }
             .padding(11)
-            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .glassCard(cornerRadius: 13)
+            .contentShape(RoundedRectangle(cornerRadius: Radii.tile, style: .continuous))
+            .glassCard(cornerRadius: Radii.tile)
         }
         .buttonStyle(.plain)
         .help("Cloud sync settings")
@@ -415,7 +415,7 @@ private struct NavRow: View {
             HStack(spacing: 11) {
                 Image(systemName: item.icon).font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(selected ? item.accent : Palette.textSecondary).frame(width: 22)
-                Text(item.title).font(.system(size: 13.5, weight: selected ? .semibold : .medium))
+                Text(item.title).font(.system(size: 13, weight: selected ? .semibold : .medium))
                     .foregroundStyle(selected ? Palette.textPrimary : (hovering ? Palette.textPrimary : Palette.textSecondary))
                 Spacer(minLength: 4)
             }
@@ -545,13 +545,13 @@ struct SubtabBar: View {
         HStack(spacing: 4) {
             ForEach(Array(tabs.enumerated()), id: \.offset) { i, t in
                 Text(t)
-                    .font(.system(size: 12.5, weight: selection == i ? .semibold : .medium))
-                    .foregroundStyle(selection == i ? Palette.textPrimary : (hovered == i ? Palette.textPrimary : Palette.textSecondary))
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(selection == i ? Palette.ink : (hovered == i ? Palette.textPrimary : Palette.textSecondary))
                     .padding(.horizontal, 13).padding(.vertical, 7)
                     .background {
                         if selection == i {
-                            Capsule().fill(.white.opacity(0.14))
-                                .overlay(Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 0.7))
+                            // Same amber pill as GlassSegment — ONE selected-state look app-wide.
+                            Capsule().fill(Palette.acidLime)
                                 .matchedGeometryEffect(id: "subtab.pill", in: ns)
                         } else if hovered == i {
                             Capsule().fill(Palette.hairline)
@@ -560,7 +560,7 @@ struct SubtabBar: View {
                     .contentShape(Capsule())
                     .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
                     .onTapGesture {
-                        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) { selection = i }
+                        withAnimation(Motion.page) { selection = i }
                     }
             }
             Spacer(minLength: 0)

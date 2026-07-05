@@ -173,7 +173,7 @@ private struct TrashRow: View {
                 .foregroundStyle(row.tint).frame(width: 30, height: 30)
                 .background(row.tint.opacity(0.14), in: RoundedRectangle(cornerRadius: Radii.row, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                Text(row.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                 Text(row.sub).font(.system(size: 11.5)).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }
             Spacer()

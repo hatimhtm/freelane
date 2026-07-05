@@ -101,7 +101,7 @@ struct CommandPalette: View {
                         .foregroundStyle(row.accent).frame(width: 30, height: 30)
                         .background(row.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(row.title).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                        Text(row.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
                         Text(row.subtitle).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
                     Spacer()

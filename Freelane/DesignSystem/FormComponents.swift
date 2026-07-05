@@ -71,7 +71,7 @@ struct SheetCloseChrome: ViewModifier {
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 22)).foregroundStyle(Palette.textTertiary)
-                        .background(Circle().fill(.black.opacity(0.25)))
+                        .background(Circle().fill(Palette.ink.opacity(0.55)))
                 }
                 .buttonStyle(.iconPress).padding(12).help("Close (Esc)")
             }
@@ -117,7 +117,7 @@ struct SheetScaffold<Content: View>: View {
                 }.buttonStyle(.iconPress).keyboardShortcut(.cancelAction).help("Close (Esc)")
             }
             .padding(.horizontal, 18).padding(.vertical, 14)
-            .background(.white.opacity(0.04))
+            .background(Palette.wellFill)
             .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
 
             ScrollView {
@@ -144,7 +144,7 @@ struct SheetScaffold<Content: View>: View {
                     .keyboardShortcut(.defaultAction)   // ⏎ saves from anywhere in the sheet
             }
             .padding(14)
-            .background(.white.opacity(0.03))
+            .background(Palette.wellFill)
             .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
         }
         .frame(width: 540, height: 600)
@@ -164,8 +164,8 @@ struct GlassFieldStyle: TextFieldStyle {
             .font(.system(size: 15))
             .foregroundStyle(Palette.textPrimary)
             .padding(.horizontal, 13).padding(.vertical, 11)
-            .background(.white.opacity(0.11), in: RoundedRectangle(cornerRadius: Radii.field, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radii.field, style: .continuous).strokeBorder(.white.opacity(0.16), lineWidth: 1))
+            .background(Palette.fieldFill, in: RoundedRectangle(cornerRadius: Radii.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radii.field, style: .continuous).strokeBorder(Palette.fieldStroke, lineWidth: 1))
     }
 }
 
@@ -437,7 +437,7 @@ struct GlassSegment<T: Hashable>: View {
         }
         .padding(4)
         .background(Palette.hairline, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.10), lineWidth: 0.8))
+        .overlay(Capsule().strokeBorder(Palette.wellStroke, lineWidth: 0.8))
     }
 }
 
@@ -457,7 +457,7 @@ struct SearchField: View {
         }
         .padding(.horizontal, 11).padding(.vertical, 8)
         .background(Palette.hairline, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.10), lineWidth: 0.8))
+        .overlay(Capsule().strokeBorder(Palette.wellStroke, lineWidth: 0.8))
     }
 }
 

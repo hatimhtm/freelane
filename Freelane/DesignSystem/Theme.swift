@@ -62,6 +62,9 @@ enum Palette {
     static let wellFillHover = dyn((0.10, 0.09, 0.07, 0.07), (1, 1, 1, 0.08))
     static let wellStroke    = dyn((0.10, 0.09, 0.07, 0.12), (1, 1, 1, 0.10))
     static let cardEdge      = dyn((0.16, 0.13, 0.09, 0.13), (1, 1, 1, 0.12))
+    // Input fields sit a step above wells so "type here" reads at a glance in both modes.
+    static let fieldFill     = dyn((0.10, 0.09, 0.07, 0.06), (1, 1, 1, 0.11))
+    static let fieldStroke   = dyn((0.10, 0.09, 0.07, 0.16), (1, 1, 1, 0.16))
 
     static func accent(for index: Int) -> Color {
         [acidLime, teal, violet, cyan, indigo][index % 5]
@@ -215,7 +218,7 @@ extension View {
 
 extension View {
     /// Every card uses this — the whole app reads as Liquid Glass over the backdrop.
-    func glassCard(cornerRadius: CGFloat = 20, tint: Color? = nil, elevated: Bool = false,
+    func glassCard(cornerRadius: CGFloat = Radii.card, tint: Color? = nil, elevated: Bool = false,
                    interactive: Bool = false, morphID: String? = nil) -> some View {
         modifier(GlassCardModifier(cornerRadius: cornerRadius, tint: tint, elevated: elevated,
                                    interactive: interactive, morphID: morphID))
@@ -300,7 +303,7 @@ struct Shimmer: ViewModifier {
         content
             .overlay(
                 GeometryReader { geo in
-                    LinearGradient(colors: [.clear, .white.opacity(0.18), .clear], startPoint: .leading, endPoint: .trailing)
+                    LinearGradient(colors: [.clear, Palette.textPrimary.opacity(0.14), .clear], startPoint: .leading, endPoint: .trailing)
                         .frame(width: geo.size.width)
                         .offset(x: x * geo.size.width * 1.5)
                 }
@@ -417,7 +420,7 @@ struct GlyphChip: View {
                 LinearGradient(colors: [color, color.opacity(0.55)],
                                startPoint: .topLeading, endPoint: .bottomTrailing),
                 in: RoundedRectangle(cornerRadius: size * 0.32, style: .continuous))
-            .shadow(color: color.opacity(0.5), radius: 8, y: 3)
+            .shadow(color: color.opacity(0.30), radius: 5, y: 2)
     }
 }
 
@@ -444,7 +447,7 @@ struct StatTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
-        .glassCard(cornerRadius: 18)
+        .glassCard(cornerRadius: Radii.tile)
     }
 }
 
@@ -477,7 +480,7 @@ struct HeroTile: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 22, tint: accent, elevated: true)
+        .glassCard(cornerRadius: Radii.card, tint: accent, elevated: true)
         .parallaxTilt(4)
     }
 }
@@ -535,7 +538,8 @@ struct SectionCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Circle().fill(accent).frame(width: 7, height: 7).shadow(color: accent, radius: 4)
+                // No per-card colored dot: content cards stay calm and neutral (section identity
+                // lives in the sidebar). `accent` is kept for call-site compat + trailing tints.
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).sectionTitle()
                     if let subtitle {
@@ -549,7 +553,7 @@ struct SectionCard<Content: View>: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 24)
+        .glassCard(cornerRadius: Radii.card)
     }
 }
 
@@ -629,7 +633,7 @@ struct MiniWidget: View {
             }
             .padding(13)
             .frame(maxWidth: .infinity, minHeight: 98, alignment: .leading)
-            .glassCard(cornerRadius: 16, tint: hover && destination != nil ? accent : nil,
+            .glassCard(cornerRadius: Radii.tile, tint: hover && destination != nil ? accent : nil,
                        interactive: destination != nil, morphID: morphID)
         }
         .buttonStyle(.plain)

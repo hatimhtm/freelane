@@ -81,7 +81,7 @@ struct WalletsView: View {
         }
         .padding(13)
         .frame(minHeight: CGFloat(density), alignment: .topLeading)
-        .glassCard(cornerRadius: 18, tint: low ? Palette.negative : nil, interactive: true, morphID: "wallet.\(w.id)")
+        .glassCard(cornerRadius: Radii.tile, tint: low ? Palette.negative : nil, interactive: true, morphID: "wallet.\(w.id)")
     }
 }
 
@@ -147,7 +147,7 @@ struct WalletDetailSheet: View {
                             if let a = anchor { Text("since \(a, format: .dateTime.month().day())").font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary) }
                         }
                     }
-                    .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 18, tint: Palette.teal)
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: Radii.tile, tint: Palette.teal)
 
                     SectionCard(title: "Ledger", subtitle: "\(rows.count) entries", accent: Palette.teal) {
                         if rows.isEmpty {
@@ -304,7 +304,7 @@ struct WithdrawalSheet: View {
                     Text("· fee " + CurrencyFormat.string(feeBase, base, compact: true))
                         .font(.system(size: 11)).monospacedDigit().foregroundStyle(Palette.negative)
                 }
-            }.padding(12).glassCard(cornerRadius: 14)
+            }.padding(12).glassCard(cornerRadius: Radii.tile)
             if let error { Text(error).font(.caption).foregroundStyle(Palette.negative) }
         }
         .onAppear {

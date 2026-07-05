@@ -70,7 +70,7 @@ struct UndoToastOverlay: View {
                 }
                 .padding(.horizontal, 16).padding(.vertical, 11)
                 .glassEffect(Glass.regular, in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(Palette.wellStroke, lineWidth: 1))
                 .shadow(color: .black.opacity(0.28), radius: 18, y: 8)
                 .padding(.bottom, 22)
                 .transition(.move(edge: .bottom).combined(with: .opacity))

@@ -3,6 +3,17 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.12
+
+Coherence — the whole app now speaks one visual language.
+
+- **Light mode actually works everywhere now.** Text fields, sheet headers and footers, the selected tab pill, chart crosshairs, the heatmap, the qibla dial — dozens of controls were still painted for a dark room and went nearly invisible on the warm-paper theme. All of them now adapt properly to light and dark.
+- **One selected-state look.** The in-page tab bar now uses the same amber pill as every other segmented control, instead of its own washed-out white one.
+- **Machined corners.** Cards shipped at seven different corner radii (13–24). Now there are exactly two — compact tiles at 16, section cards at 20 — so screens read as one machined surface instead of assembled parts.
+- **Calmer cards.** The glowing colored dot on every card title is gone (Stats alone flashed five different colors), and icon-chip glows are toned down. Color now means something: money states and the amber signature — section identity stays in the sidebar where it belongs.
+- **The last glass box is gone.** The cash-flow hover tooltip was the one remaining frosted-glass element in the content layer; it's now a solid grounded card like everything else.
+- Evened out type drift (a dozen controls used odd half-point sizes).
+
 ## 0.11
 
 Projects drag-and-drop, now with real physics.

@@ -129,7 +129,7 @@ struct SadakaView: View {
             }
         }
         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 22, tint: Palette.negative, elevated: true)
+        .glassCard(cornerRadius: Radii.card, tint: Palette.negative, elevated: true)
     }
 
     private var tiles: some View {
@@ -217,7 +217,7 @@ struct SadakaView: View {
                 }
             }
             Spacer()
-            Text(CurrencyFormat.string(amount, base)).font(.system(size: 13.5, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.negative)
+            Text(CurrencyFormat.string(amount, base)).font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.negative)
         }
         .padding(.vertical, 9)
     }

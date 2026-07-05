@@ -61,7 +61,7 @@ struct SearchPalette: View {
                                 Image(systemName: h.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(h.color)
                                     .frame(width: 30, height: 30).background(h.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(h.title).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                                    Text(h.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                     Text(h.sub).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                                 }
                                 Spacer()

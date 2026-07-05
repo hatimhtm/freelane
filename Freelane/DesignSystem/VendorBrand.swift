@@ -155,7 +155,7 @@ struct VendorMark: View {
                 BrandLogoImage(domain: d, size: size) { fallback(r) }
             } else { fallback(r) }
         }
-        .overlay(r.strokeBorder(.white.opacity(0.14), lineWidth: 0.6))
+        .overlay(r.strokeBorder(Palette.cardEdge, lineWidth: 0.6))
     }
 
     @ViewBuilder private func fallback(_ r: RoundedRectangle) -> some View {

@@ -496,7 +496,7 @@ struct BodyView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 24, tint: Palette.negative, elevated: true)
+        .glassCard(cornerRadius: Radii.card, tint: Palette.negative, elevated: true)
         .animation(Motion.snappy, value: savedToday)
     }
 
@@ -505,7 +505,7 @@ struct BodyView: View {
             Image(systemName: icon).font(.system(size: 12, weight: .bold)).foregroundStyle(color)
                 .frame(width: 26, height: 26)
                 .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text(label).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
             if let v = value, (1...5).contains(v) {
                 Text(words[v - 1]).font(.system(size: 11.5, weight: .medium)).foregroundStyle(color)
             }
@@ -522,7 +522,7 @@ struct BodyView: View {
             Image(systemName: "bed.double.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.indigo)
                 .frame(width: 26, height: 26)
                 .background(Palette.indigo.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text("Sleep").font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+            Text("Sleep").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
             Spacer()
             ForEach([6.0, 7.0, 8.0], id: \.self) { h in
                 Button(hoursFmt(h)) { sleepH = h; saveScales() }
@@ -533,7 +533,7 @@ struct BodyView: View {
                 Button { sleepH = max(0, (sleepH ?? 7.5) - 0.5); saveScales() } label: { Image(systemName: "minus") }
                     .buttonStyle(.glass).controlSize(.small)
                 Text(sleepH.map(hoursFmt) ?? "—")
-                    .font(.system(size: 13.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(sleepH == nil ? Palette.textTertiary : Palette.textPrimary)
                     .frame(minWidth: 38)
                 Button { sleepH = min(16, (sleepH ?? 6.5) + 0.5); saveScales() } label: { Image(systemName: "plus") }
@@ -748,9 +748,9 @@ private struct TapScale: View {
                 let filled = (value ?? 0) >= i
                 Button { onTap(i) } label: {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(filled ? color.opacity(i == value ? 0.95 : 0.55) : .white.opacity(hover == i ? 0.13 : 0.06))
+                        .fill(filled ? AnyShapeStyle(color.opacity(i == value ? 0.95 : 0.55)) : AnyShapeStyle(hover == i ? Palette.wellFillHover : Palette.wellFill))
                         .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(filled ? color.opacity(0.45) : .white.opacity(0.10), lineWidth: 0.8))
+                            .strokeBorder(filled ? color.opacity(0.45) : Palette.wellStroke, lineWidth: 0.8))
                         .frame(width: 32, height: 26)
                         .overlay(Text("\(i)").font(.system(size: 11, weight: .bold, design: .rounded))
                             .foregroundStyle(filled ? .white : Palette.textTertiary))
@@ -982,7 +982,7 @@ struct LettersView: View {
     private func dayMiniCard(_ g: (day: Date, entries: [Letter])) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
-                Text(dayTitle(g.day)).font(.system(size: 13.5, weight: .bold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                Text(dayTitle(g.day)).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                 if g.entries.contains(where: { $0.pinned }) { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(Palette.indigo) }
                 Spacer()
             }
@@ -1088,7 +1088,7 @@ struct LettersView: View {
                 Image(systemName: liked ? "heart.fill" : "heart")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(liked ? Palette.acidLime : Palette.textTertiary)
-                    .padding(5).background(.white.opacity(liked ? 0.10 : 0.06), in: Circle())
+                    .padding(5).background(liked ? Palette.wellFillHover : Palette.wellFill, in: Circle())
             }.buttonStyle(.iconPress).help("Good question — ask more in this spirit")
             Button { dismissPrompt(p) } label: {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.textTertiary)
@@ -1361,7 +1361,7 @@ struct StreakMenu: View {
                         stat("dollarsign.circle.fill", Palette.acidLime, "\(JournalGame.coins)", "coins")
                     }
                     if JournalGame.recoveryStartedAt != nil { recoveryCard }
-                    MonthCalendar(entryCounts: entryCounts, covered: JournalGame.covered, firstEntry: firstEntry).padding(10).glassCard(cornerRadius: 14)
+                    MonthCalendar(entryCounts: entryCounts, covered: JournalGame.covered, firstEntry: firstEntry).padding(10).glassCard(cornerRadius: Radii.tile)
                     Button { _ = JournalGame.freezeToday(); tick += 1 } label: {
                         Label(JournalGame.isFrozenToday() ? "Today is frozen ✓" : "Freeze today · \(JournalGame.freezeCost) coins", systemImage: "snowflake").frame(maxWidth: .infinity)
                     }.buttonStyle(.glass).disabled(JournalGame.isFrozenToday() || JournalGame.coins < JournalGame.freezeCost)
@@ -1517,7 +1517,7 @@ struct FaithView: View {
                                 .font(.system(size: 17)).foregroundStyle(done ? Palette.positive : Palette.textTertiary)
                                 .frame(width: 20)
                             Image(systemName: p.icon).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(width: 15)
-                            Text(p.rawValue).font(.system(size: 13.5, weight: done ? .semibold : .medium))
+                            Text(p.rawValue).font(.system(size: 13, weight: done ? .semibold : .medium))
                                 .foregroundStyle(done ? Palette.positive : Palette.textPrimary)
                             Spacer()
                             Text(p.note).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
@@ -1640,11 +1640,11 @@ struct FaithView: View {
                             .font(.system(size: 17))
                             .foregroundStyle(done ? Palette.positive : (isNow ? Palette.violet : Palette.textTertiary))
                             .frame(width: 20)
-                        Text(r.name).font(.system(size: 13.5, weight: done || isNow ? .semibold : .medium))
+                        Text(r.name).font(.system(size: 13, weight: done || isNow ? .semibold : .medium))
                             .foregroundStyle(done ? Palette.positive : Palette.textPrimary)
                         if isNow && !done { MetricChip(text: "Now", color: Palette.violet) }
                         Spacer()
-                        Text(r.time).font(.system(size: 13.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                        Text(r.time).font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
                             .foregroundStyle(isNow ? Palette.textPrimary : Palette.textSecondary)
                     }
                     .padding(.vertical, 8).padding(.horizontal, 11)
@@ -1680,7 +1680,7 @@ struct FaithView: View {
                         .font(.system(size: 17)).foregroundStyle(fastedToday ? Palette.teal : Palette.textTertiary)
                         .frame(width: 20)
                     Text(fastedToday ? "Fasted today" : "Mark today as fasted")
-                        .font(.system(size: 13.5, weight: fastedToday ? .semibold : .medium))
+                        .font(.system(size: 13, weight: fastedToday ? .semibold : .medium))
                         .foregroundStyle(fastedToday ? Palette.teal : Palette.textPrimary)
                     Spacer()
                     if ramadan {
@@ -1746,9 +1746,9 @@ struct FaithView: View {
         SectionCard(title: "Qibla", subtitle: "True north", accent: Palette.indigo) {
             VStack(spacing: 10) {
                 ZStack {
-                    Circle().stroke(.white.opacity(0.12), lineWidth: 1).frame(width: 130, height: 130)
+                    Circle().stroke(Palette.wellStroke, lineWidth: 1).frame(width: 130, height: 130)
                     ForEach([0, 90, 180, 270], id: \.self) { a in
-                        Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 8)
+                        Rectangle().fill(Palette.textTertiary.opacity(0.5)).frame(width: 1, height: 8)
                             .offset(y: -61).rotationEffect(.degrees(Double(a)))
                     }
                     Image(systemName: "location.north.fill")

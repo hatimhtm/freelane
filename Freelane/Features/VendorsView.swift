@@ -93,7 +93,7 @@ struct VendorsView: View {
                                 Spacer()
                                 trendChip(trends[r.name]?.delta)
                                 Text(CurrencyFormat.string(r.total, base, compact: true))
-                                    .font(.system(size: 13.5, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                             }
                             .padding(.vertical, 9)
                             .contextMenu {

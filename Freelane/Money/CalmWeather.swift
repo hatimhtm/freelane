@@ -100,7 +100,7 @@ struct CalmWeatherBanner: View {
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.textTertiary)
             }
             .padding(13).frame(maxWidth: .infinity, alignment: .leading)
-            .glassCard(cornerRadius: 16, tint: band.color)
+            .glassCard(cornerRadius: Radii.tile, tint: band.color)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -170,7 +170,7 @@ struct WeatherDetailSheet: View {
         HStack {
             Text(label).font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
             Spacer()
-            Text(value).font(.system(size: 13.5, weight: .semibold, design: .rounded)).foregroundStyle(color)
+            Text(value).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(color)
         }.padding(.vertical, 3)
     }
 }

@@ -66,7 +66,7 @@ struct ClientsView: View {
                             .foregroundStyle(owesOnly ? Palette.ink : Palette.textSecondary)
                             .padding(.horizontal, 12).padding(.vertical, 7)
                             .background(owesOnly ? AnyShapeStyle(Palette.warning) : AnyShapeStyle(Palette.hairline), in: Capsule())
-                            .overlay(Capsule().strokeBorder(owesOnly ? Palette.warning.opacity(0.45) : .white.opacity(0.10), lineWidth: 0.8))
+                            .overlay(Capsule().strokeBorder(owesOnly ? Palette.warning.opacity(0.45) : Palette.wellStroke, lineWidth: 0.8))
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -121,7 +121,7 @@ struct ClientsView: View {
                     .background(LinearGradient(colors: [Palette.cyan, Palette.azure], startPoint: .topLeading, endPoint: .bottomTrailing),
                                 in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(c.name).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                    Text(c.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                     if let co = c.company { Text(co).font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
                 }
                 Spacer()
@@ -166,7 +166,7 @@ struct ClientPills: View {
                     .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: lead ? 132 : 84, alignment: .leading)
                     .padding(.horizontal, lead ? 8 : 7).padding(.vertical, lead ? 3.5 : 2.5)
-                    .background((lead ? Palette.cyan : Color.white).opacity(lead ? 0.18 : 0.08), in: Capsule())
+                    .background(lead ? Palette.cyan.opacity(0.18) : Palette.wellFillHover, in: Capsule())
             }
             if total > shown.count {
                 Text("+\(total - shown.count)").font(.system(size: 9.5, weight: .medium)).foregroundStyle(Palette.textTertiary)
@@ -401,7 +401,7 @@ struct ClientDetailSheet: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(l).font(.system(size: 10, weight: .semibold)).textCase(.uppercase).foregroundStyle(Palette.textTertiary)
             Text(v).font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(c).lineLimit(1)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(12).glassCard(cornerRadius: 14)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(12).glassCard(cornerRadius: Radii.tile)
     }
 
     private var signalsCard: some View {
@@ -534,7 +534,7 @@ struct NudgeSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack { Image(systemName: "paperplane.fill").foregroundStyle(Palette.cyan); Text("Draft nudge").font(Typo.title(16)).foregroundStyle(Palette.textPrimary); Spacer() }
             Text(text).font(.system(size: 13)).foregroundStyle(Palette.textPrimary).textSelection(.enabled)
-                .padding(14).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 14)
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: Radii.tile)
             HStack {
                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string); copied = true } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
