@@ -214,7 +214,7 @@ struct AddClientSheet: View {
         }
         .onAppear {
             defaultCurrency = settings.first?.baseCurrency ?? "PHP"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { nameFocused = true }
+            DispatchQueue.main.async { nameFocused = true }
         }
     }
 
@@ -612,7 +612,7 @@ struct EditClientSheet: View {
             defaultCurrency = client.defaultCurrency ?? ""
             timeZoneId = client.timeZoneId ?? ""; nudgeTone = client.nudgeTone ?? "warm"
             isRetainer = client.isRetainer; retainerBase = client.retainerBase
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { nameFocused = true }
+            DispatchQueue.main.async { nameFocused = true }
         }
     }
     private func save() {

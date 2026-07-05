@@ -162,6 +162,6 @@ struct VendorsView: View {
                 .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
             LabeledField("New name") { TextField("Vendor name", text: $renameTo).textFieldStyle(GlassFieldStyle()).focused($renameFocused) }
         }
-        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { renameFocused = true } }
+        .onAppear { DispatchQueue.main.async { renameFocused = true } }
     }
 }

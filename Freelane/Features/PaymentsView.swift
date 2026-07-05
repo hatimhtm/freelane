@@ -223,6 +223,8 @@ struct PaymentsView: View {
             .accessibilityLabel("Payment actions")
         }
         .padding(.vertical, 9)
+        .hoverRow()
+        .onTapGesture { editing = p }
     }
 
     private func withdrawalRow(_ w: Withdrawal) -> some View {
@@ -255,6 +257,8 @@ struct PaymentsView: View {
                 .accessibilityLabel("Transfer actions")
         }
         .padding(.vertical, 9)
+        .hoverRow()
+        .onTapGesture { editingWithdrawal = w }
     }
 
     private func icon(_ name: String, _ color: Color) -> some View {
@@ -360,7 +364,7 @@ struct BulkPaymentSheet: View {
             ScrollView {
                 VStack(spacing: 12) {
                     if draftRows.count > 1 {
-                        Toggle(isOn: $merge.animation(.snappy(duration: 0.2))) {
+                        Toggle(isOn: $merge.animation(Motion.snappy)) {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("Arrived together").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
                                 Text("One transfer covering all of these — enter the single amount you received.").font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
@@ -374,9 +378,11 @@ struct BulkPaymentSheet: View {
                                 .focused($mergedFocus)
                             CurrencyMenu(selection: $mergedCurrency, options: currencies)
                         }.padding(12).glassCard(cornerRadius: Radii.field)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                     ForEach($draftRows) { $row in rowEditor($row) }
-                    Button { draftRows.append(DraftRow()) } label: {
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    Button { withAnimation(Motion.snappy) { draftRows.append(DraftRow()) } } label: {
                         Label("Add another payment", systemImage: "plus").font(.system(size: 12, weight: .medium))
                     }.buttonStyle(.glass).padding(.top, 2)
                 }
@@ -446,7 +452,7 @@ struct BulkPaymentSheet: View {
                 .frame(maxWidth: .infinity)
                 field("Date") { GlassDateField(date: row.date, compact: true).frame(width: 118) }
                 if draftRows.count > 1 {
-                    Button { withAnimation(.snappy(duration: 0.2)) { draftRows.removeAll { $0.id == r.id } } } label: {
+                    Button { withAnimation(Motion.snappy) { draftRows.removeAll { $0.id == r.id } } } label: {
                         Image(systemName: "minus.circle.fill").font(.system(size: 16)).foregroundStyle(Palette.negative.opacity(0.8))
                     }
                     .buttonStyle(.iconPress).padding(.bottom, 7)
@@ -494,7 +500,7 @@ struct BulkPaymentSheet: View {
         }
         .padding(14)
         .glassCard(cornerRadius: Radii.tile)
-        .animation(.snappy(duration: 0.2), value: fee > 0.005)
+        .animation(Motion.snappy, value: fee > 0.005)
     }
 
     private func save() {

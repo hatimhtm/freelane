@@ -214,6 +214,24 @@ extension View {
     func insetRow(cornerRadius: CGFloat = Radii.field, hoverable: Bool = true) -> some View {
         modifier(InsetRowModifier(cornerRadius: cornerRadius, hoverable: hoverable))
     }
+    /// Hover feedback for rows in a divider list (transaction lists): a quiet highlight pill that
+    /// bleeds a little wider than the content without shifting the list's alignment. Pair with an
+    /// `onTapGesture` so the whole row is an affordance, not just the hidden ⋯ menu.
+    func hoverRow() -> some View { modifier(HoverRowModifier()) }
+}
+
+struct HoverRowModifier: ViewModifier {
+    @State private var hover = false
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 10)
+            .background(RoundedRectangle(cornerRadius: Radii.row, style: .continuous)
+                .fill(hover ? Palette.wellFillHover : Color.clear))
+            .padding(.horizontal, -10)
+            .contentShape(Rectangle())
+            .onHover { hover = $0 }
+            .animation(.easeOut(duration: 0.14), value: hover)
+    }
 }
 
 extension View {
@@ -252,7 +270,7 @@ struct FluidAppear: ViewModifier {
             .offset(y: shown || reduceMotion ? 0 : 12)
             .onAppear {
                 guard !shown else { return }
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.82).delay(Double(index) * 0.045)) { shown = true }
+                withAnimation(Motion.appear.delay(Double(index) * 0.045)) { shown = true }
             }
     }
 }
@@ -290,6 +308,10 @@ enum Motion {
     static let list  = Animation.spring(response: 0.30, dampingFraction: 0.90)
     static let modal = Animation.spring(response: 0.48, dampingFraction: 0.78)
     static let snappy = Animation.snappy(duration: 0.22)
+    /// Content entrance (FluidAppear) — calm rise, no overshoot.
+    static let appear = Animation.spring(response: 0.5, dampingFraction: 0.82)
+    /// Press feedback on buttons/cards — quick with a little bounce, like a physical key.
+    static let press = Animation.spring(response: 0.3, dampingFraction: 0.62)
     /// The single curve for switching pages — used by every nav callsite (sidebar, ⌘K, ⌘F,
     /// deep links, the bell) so navigation feels like one consistent motion, not three.
     static let page  = Animation.spring(response: 0.34, dampingFraction: 0.90)

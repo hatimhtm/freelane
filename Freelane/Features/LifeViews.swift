@@ -64,7 +64,7 @@ struct LoansView: View {
                                     }
                                     Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                                 }
-                                .padding(.vertical, 9).contentShape(Rectangle())
+                                .padding(.vertical, 9).hoverRow()
                             }.buttonStyle(.plain)
                             if g.id != groups.last?.id { Divider().overlay(Palette.hairline) }
                         }
@@ -872,7 +872,7 @@ struct LettersView: View {
                         Label("Just write — no prompt", systemImage: "pencil").frame(maxWidth: .infinity)
                     }.buttonStyle(.glass).controlSize(.small)
                 }
-                .animation(.snappy(duration: 0.25), value: openPromptRows.map(\.id))
+                .animation(Motion.snappy, value: openPromptRows.map(\.id))
             }
 
             // Mind × money — patterns connecting how you felt and how money moved. Only shows
@@ -1198,7 +1198,7 @@ struct AddLetterSheet: View {
                 Text(words == 0 ? "Take your time." : "\(words) word\(words == 1 ? "" : "s")")
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(Palette.textTertiary)
                     .contentTransition(.numericText())
-                    .animation(.snappy(duration: 0.3), value: words)
+                    .animation(Motion.snappy, value: words)
                 Spacer()
                 Button("Cancel") { dismiss() }.buttonStyle(.glass)
                 Button("Save") { save() }.buttonStyle(.glassProminent).tint(Palette.indigo)

@@ -56,7 +56,7 @@ struct SheetEntrance: ViewModifier {
         content
             .scaleEffect(shown || reduceMotion ? 1 : 0.965)
             .opacity(shown || reduceMotion ? 1 : 0)
-            .onAppear { withAnimation(.spring(response: 0.42, dampingFraction: 0.84)) { shown = true } }
+            .onAppear { withAnimation(Motion.card) { shown = true } }
     }
 }
 
@@ -225,7 +225,7 @@ struct GlassDateField: View {
         }
         .buttonStyle(.plain)
         .insetRow(cornerRadius: Radii.field)
-        .animation(.snappy(duration: 0.18), value: open)
+        .animation(Motion.snappy, value: open)
         .popover(isPresented: $open, arrowEdge: .bottom) {
             GlassCalendar(date: $date) { open = false }
                 .padding(14).frame(width: 264)
@@ -290,7 +290,7 @@ struct GlassCalendar: View {
                 }
             }
         }
-        .animation(.snappy(duration: 0.2), value: month)
+        .animation(Motion.snappy, value: month)
     }
 
     private func monthNav(_ icon: String, _ delta: Int) -> some View {
@@ -348,7 +348,7 @@ struct GlassMenuPicker<T: Hashable>: View {
         }
         .buttonStyle(.plain)
         .insetRow(cornerRadius: Radii.field)
-        .animation(.snappy(duration: 0.18), value: open)
+        .animation(Motion.snappy, value: open)
         .popover(isPresented: $open, arrowEdge: .bottom) {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -395,7 +395,7 @@ struct IconPress: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.86 : (hover ? 1.08 : 1))
             .opacity(configuration.isPressed ? 0.7 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.6), value: configuration.isPressed)
+            .animation(Motion.press, value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: hover)
             .onHover { hover = $0 }
     }
@@ -432,7 +432,7 @@ struct GlassSegment<T: Hashable>: View {
                         if sel { Capsule().fill(Palette.acidLime).matchedGeometryEffect(id: "seg", in: ns) }
                     }
                     .contentShape(Capsule())
-                    .onTapGesture { withAnimation(.snappy(duration: 0.22)) { selection = opt } }
+                    .onTapGesture { withAnimation(Motion.snappy) { selection = opt } }
             }
         }
         .padding(4)
@@ -461,13 +461,17 @@ struct SearchField: View {
     }
 }
 
-/// A tactile button style for whole-card buttons: a subtle spring scale on press (like a
+/// A tactile button style for whole-card buttons: a gentle lift on hover (so tappable cards
+/// feel alive before you commit, like MiniWidget) and a subtle spring scale on press (like a
 /// physical key), no default chrome. Replaces `.buttonStyle(.plain)` on tappable cards.
 struct PressableCard: ButtonStyle {
+    @State private var hover = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.972 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.62), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.972 : (hover ? 1.012 : 1))
+            .animation(Motion.press, value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.16), value: hover)
+            .onHover { hover = $0 }
     }
 }
 extension ButtonStyle where Self == PressableCard {

@@ -3,6 +3,17 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.13
+
+Feel — the app responds to your hand now.
+
+- **Transaction rows are alive.** Spends, payments, transfers, and loan people now highlight under the cursor and open with a **click anywhere on the row** — no more hunting for the hidden ⋯ menu (it's still there for delete).
+- **Kanban that never drops the ball.** Miss a column and the card **springs back to its slot** instead of vanishing mid-air; a gentle pickup spring when the drag starts; dragging near the board's edge **auto-scrolls** toward off-screen columns; and the whole board no longer re-renders on every mouse move while dragging (only the floating card does).
+- **Sheets respond instantly.** The first field focuses the moment a sheet opens (there was a 0.3-second dead zone where typing went nowhere), and adding/removing payment rows and the "arrived together" panel now slide in instead of popping.
+- **Search (⌘F) got arrow keys.** ↑↓ move the highlight, ⏎ opens it — same as ⌘K, at last.
+- **One motion language.** Every animation in the app now comes from the same six named springs — page turns, card entrances, presses, toasts. Nothing bounces one way on one screen and another way on the next.
+- Tappable cards (wallets, clients) now lift slightly on hover, like the dashboard tiles always did.
+
 ## 0.12
 
 Coherence — the whole app now speaks one visual language.

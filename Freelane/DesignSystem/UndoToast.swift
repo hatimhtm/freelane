@@ -76,7 +76,7 @@ struct UndoToastOverlay: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.34, dampingFraction: 0.82), value: undo.toast?.id)
+        .animation(Motion.modal, value: undo.toast?.id)
         .allowsHitTesting(undo.toast != nil)
     }
 }

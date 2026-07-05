@@ -297,6 +297,8 @@ struct SpendingView: View {
                 .accessibilityLabel("More actions for \(r.label)")
         }
         .padding(.vertical, 9)
+        .hoverRow()
+        .onTapGesture { editingRecurring = r }
     }
 
     private func walletName(_ id: UUID?) -> String? { id.flatMap { i in wallets.first { $0.id == i }?.name } }
@@ -334,6 +336,8 @@ struct SpendingView: View {
                 .accessibilityLabel("More actions for \(title)")
         }
         .padding(.vertical, 9)
+        .hoverRow()
+        .onTapGesture { editingSpend = s }
     }
 }
 
@@ -528,7 +532,7 @@ struct AddSpendSheet: View {
                 currency = settings.first?.baseCurrency ?? "PHP"; applySuggestion()
             }
             // Land the cursor in the amount field once the sheet has settled.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { amountFocused = true }
+            DispatchQueue.main.async { amountFocused = true }
         }
         .onChange(of: tags) { _, _ in if existing == nil { applySuggestion() } }
         .onChange(of: amount) { _, _ in if existing == nil { applySuggestion() } }
@@ -800,7 +804,7 @@ struct PayRecurringSheet: View {
             guard !loaded else { return }; loaded = true
             walletId = recurring.walletId ?? holding.first?.id
             if !recurring.isVariableAmount, recurring.amount > 0 { amount = editAmountString(recurring.amount) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { amountFocused = true }
+            DispatchQueue.main.async { amountFocused = true }
         }
     }
 
@@ -956,7 +960,7 @@ struct AddRecurringSheet: View {
                 label = e.label; amount = e.amount > 0 ? editAmountString(e.amount) : ""; currency = e.currency
                 kind = e.kind; cadence = e.cadence; dayOfMonth = e.dayOfMonth ?? 1; isVariable = e.isVariableAmount
             } else { currency = base }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { labelFocused = true }
+            DispatchQueue.main.async { labelFocused = true }
         }
     }
 

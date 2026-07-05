@@ -11,16 +11,22 @@ final class KanbanDrag {
     var location: CGPoint = .zero
     var velocity: CGVector = .zero
     var hovered: ProjectStatus?
+    /// The ghost is springing back to its card after a missed drop — input is ignored until it lands.
+    var returning = false
     private var lastTime: CFTimeInterval?
     private var lastLocation: CGPoint = .zero
     private var targets: [ProjectStatus: CGRect] = [:]
+    private var homes: [UUID: CGPoint] = [:]   // each card's global center, for the spring-back
 
     func register(_ status: ProjectStatus, _ rect: CGRect) { targets[status] = rect }
+    func registerHome(_ id: UUID, _ center: CGPoint) { homes[id] = center }
 
     func begin(_ id: UUID, at p: CGPoint) {
+        returning = false
         dragged = id; location = p; lastLocation = p; lastTime = CACurrentMediaTime(); velocity = .zero
     }
     func update(to p: CGPoint) {
+        guard !returning else { return }
         let now = CACurrentMediaTime()
         if let last = lastTime {
             let dt = max(now - last, 1.0 / 240.0)
@@ -30,11 +36,47 @@ final class KanbanDrag {
         lastTime = now; lastLocation = p; location = p
         hovered = targets.first { $0.value.contains(p) }?.key
     }
-    /// The (project, destination column) to commit, or nil if dropped on no column. Resets state.
+    /// The (project, destination column) to commit, or nil if dropped on no column.
     func commit() -> (UUID, ProjectStatus)? {
-        defer { dragged = nil; hovered = nil; velocity = .zero; lastTime = nil }
-        guard let id = dragged, let h = hovered else { return nil }
+        guard let id = dragged, let h = hovered, !returning else { return nil }
+        reset()
         return (id, h)
+    }
+    /// Missed drop: spring the ghost back to its card's slot, then release it — instead of
+    /// vanishing mid-air. (Deck-style: the card always lands somewhere.)
+    func springHome() {
+        guard let id = dragged, !returning else { return }
+        returning = true
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+            location = homes[id] ?? location
+            velocity = .zero
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) { [weak self] in
+            guard let self, self.returning else { return }
+            withAnimation(Motion.snappy) { self.reset() }
+        }
+    }
+    private func reset() { dragged = nil; hovered = nil; velocity = .zero; lastTime = nil; returning = false }
+}
+
+/// The floating drag ghost, isolated in its own view so per-frame `location`/`velocity` updates
+/// re-render ONLY this layer — the columns and cards behind it don't re-evaluate on mouse move.
+private struct KanbanGhost<Content: View>: View {
+    var drag: KanbanDrag
+    var boardOrigin: CGPoint
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        let tilt = max(-10, min(10, drag.velocity.dx * 0.010))
+        let speed = min(1, hypot(drag.velocity.dx, drag.velocity.dy) / 2600)
+        content()
+            .frame(width: 240)
+            .scaleEffect(1.04 + speed * 0.03)
+            .rotationEffect(.degrees(tilt), anchor: .top)
+            .shadow(color: .black.opacity(0.4), radius: 16 + speed * 8, y: 7 + speed * 5)
+            .position(x: drag.location.x - boardOrigin.x, y: drag.location.y - boardOrigin.y)
+            .allowsHitTesting(false)
+            .animation(.spring(response: 0.26, dampingFraction: 0.82), value: drag.location)
     }
 }
 
@@ -60,9 +102,15 @@ struct ProjectsView: View {
     @State private var payProject: Project?
     @State private var query = ""
 
-    // Physics kanban drag (Deck-style): the controller + the board's global origin (to place the ghost).
+    // Physics kanban drag (Deck-style): the controller + the board's global frame (to place the
+    // ghost and detect the auto-scroll edge zones), plus live scroll state for edge auto-scroll.
     @State private var drag = KanbanDrag()
-    @State private var boardOrigin: CGPoint = .zero
+    @State private var boardFrame: CGRect = .zero
+    @State private var scrollPos = ScrollPosition()
+    @State private var scrollX: CGFloat = 0
+    @State private var scrollMaxX: CGFloat = 0
+    @State private var autoScroll: Timer?
+    @State private var autoScrollStep: CGFloat = 0   // signed pt/tick, updated as the cursor moves
     // Table collapse (Paid collapsed by default)
     @State private var collapsed: Set<String> = ["paid"]
 
@@ -126,15 +174,21 @@ struct ProjectsView: View {
                         }
                         .padding(4)
                     }
-                    // The floating physics ghost — follows the cursor, tilts by velocity.
+                    .scrollPosition($scrollPos)
+                    .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.x }) { _, n in scrollX = n }
+                    .onScrollGeometryChange(for: CGFloat.self, of: { max(0, $0.contentSize.width - $0.containerSize.width) }) { _, n in scrollMaxX = n }
+                    // The floating physics ghost — follows the cursor, tilts by velocity. Isolated
+                    // so per-frame drag updates don't re-render the whole board.
                     if let gid = drag.dragged, let p = projects.first(where: { $0.id == gid }) {
-                        ghost(p)
+                        KanbanGhost(drag: drag, boardOrigin: boardFrame.origin) { card(p) }
+                            .transition(.asymmetric(insertion: .scale(scale: 0.97).combined(with: .opacity),
+                                                    removal: .opacity))
                     }
                 }
                 .background(GeometryReader { g in
                     Color.clear
-                        .onAppear { boardOrigin = g.frame(in: .global).origin }
-                        .onChange(of: g.frame(in: .global)) { _, n in boardOrigin = n.origin }
+                        .onAppear { boardFrame = g.frame(in: .global) }
+                        .onChange(of: g.frame(in: .global)) { _, n in boardFrame = n }
                 })
             } else {
                 groupedTable
@@ -185,7 +239,7 @@ struct ProjectsView: View {
     @ViewBuilder private func tableGroup(_ title: String, _ items: [Project], _ accent: Color, _ status: ProjectStatus) -> some View {
         let isCollapsed = collapsed.contains(status.rawValue)
         VStack(spacing: 0) {
-            Button { withAnimation(.snappy(duration: 0.22)) { if isCollapsed { collapsed.remove(status.rawValue) } else { collapsed.insert(status.rawValue) } } } label: {
+            Button { withAnimation(Motion.snappy) { if isCollapsed { collapsed.remove(status.rawValue) } else { collapsed.insert(status.rawValue) } } } label: {
                 HStack(spacing: 8) {
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.textTertiary)
                     Circle().fill(accent).frame(width: 7, height: 7)
@@ -239,7 +293,7 @@ struct ProjectsView: View {
                 .strokeBorder(isTarget ? accent.opacity(0.7) : Palette.cardEdge, lineWidth: isTarget ? 1.8 : 0.8))
             .shadow(color: isTarget ? accent.opacity(0.35) : .clear, radius: 16)
             .scaleEffect(isTarget ? 1.01 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.66), value: isTarget)
+            .animation(Motion.snappy, value: isTarget)
     }
 
     /// Registers a column's global frame as a drop target for the drag controller.
@@ -271,13 +325,13 @@ struct ProjectsView: View {
         .frame(width: 264, alignment: .topLeading)
         .background(columnBackground(accent, status))
         .background(targetReader(status))
-        .animation(.snappy(duration: 0.3), value: items.count)
+        .animation(Motion.snappy, value: items.count)
     }
 
     // Paid column is COLLAPSED by default (paid projects pile up forever).
     private var paidColumn: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button { withAnimation(.snappy(duration: 0.2)) { paidOpen.toggle() } } label: {
+            Button { withAnimation(Motion.snappy) { paidOpen.toggle() } } label: {
                 HStack(spacing: 8) {
                     Image(systemName: paidOpen ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.textTertiary)
@@ -290,6 +344,7 @@ struct ProjectsView: View {
             }.buttonStyle(.plain)
             if paidOpen {
                 ForEach(paid) { p in draggableCard(p) }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
             Spacer(minLength: 0)
         }
@@ -297,6 +352,7 @@ struct ProjectsView: View {
         .frame(width: paidOpen ? 264 : 200, alignment: .topLeading)
         .background(columnBackground(Palette.positive, .paid))
         .background(targetReader(.paid))
+        .animation(Motion.snappy, value: paid.count)
     }
 
     /// A card you tap to edit and drag to move. A physics `DragGesture` (min 10pt so a click is
@@ -304,17 +360,29 @@ struct ProjectsView: View {
     private func draggableCard(_ p: Project) -> some View {
         card(p)
             .opacity(drag.dragged == p.id ? 0.25 : 1)
+            .animation(Motion.snappy, value: drag.dragged == p.id)
+            .background(GeometryReader { g in
+                // Remember the card's slot so a missed drop can spring the ghost back home.
+                let c = g.frame(in: .global)
+                Color.clear
+                    .onAppear { drag.registerHome(p.id, CGPoint(x: c.midX, y: c.midY)) }
+                    .onChange(of: c) { _, n in drag.registerHome(p.id, CGPoint(x: n.midX, y: n.midY)) }
+            })
             .contentShape(Rectangle())
             .onTapGesture { editing = p }
             .gesture(
                 DragGesture(minimumDistance: 10, coordinateSpace: .global)
                     .onChanged { v in
-                        if drag.dragged == nil { drag.begin(p.id, at: v.location) }
+                        if drag.dragged == nil { withAnimation(Motion.snappy) { drag.begin(p.id, at: v.location) } }
                         drag.update(to: v.location)
+                        updateAutoScroll(cursorX: v.location.x)
                     }
                     .onEnded { _ in
+                        stopAutoScroll()
                         if let (id, status) = drag.commit() {
-                            withAnimation(.snappy(duration: 0.25)) { move(id, to: status) }
+                            withAnimation(Motion.snappy) { move(id, to: status) }
+                        } else {
+                            drag.springHome()
                         }
                     }
             )
@@ -329,20 +397,28 @@ struct ProjectsView: View {
             }
     }
 
-    /// The floating ghost while dragging: tilts by horizontal velocity (±10°), scales/shadows by
-    /// speed, and springs to the cursor. Positioned in board-local space (global − board origin).
-    private func ghost(_ p: Project) -> some View {
-        let tilt = max(-10, min(10, drag.velocity.dx * 0.010))
-        let speed = min(1, hypot(drag.velocity.dx, drag.velocity.dy) / 2600)
-        return card(p)
-            .frame(width: 240)
-            .scaleEffect(1.04 + speed * 0.03)
-            .rotationEffect(.degrees(tilt), anchor: .top)
-            .shadow(color: .black.opacity(0.4), radius: 16 + speed * 8, y: 7 + speed * 5)
-            .position(x: drag.location.x - boardOrigin.x, y: drag.location.y - boardOrigin.y)
-            .allowsHitTesting(false)
-            .animation(.spring(response: 0.26, dampingFraction: 0.82), value: drag.location)
+    /// Edge auto-scroll: dragging a card within 56pt of the board's left/right edge scrolls the
+    /// board toward it (faster the closer you get), so off-screen columns are reachable mid-drag.
+    private func updateAutoScroll(cursorX: CGFloat) {
+        let zone: CGFloat = 56
+        let leftDepth = (boardFrame.minX + zone) - cursorX
+        let rightDepth = cursorX - (boardFrame.maxX - zone)
+        let depth = max(leftDepth, rightDepth)
+        guard scrollMaxX > 0, depth > 0, boardFrame.width > zone * 2 else { stopAutoScroll(); return }
+        let dir: CGFloat = leftDepth > 0 ? -1 : 1
+        autoScrollStep = dir * (4 + min(depth, zone) / zone * 10)   // 4–14pt per tick, deeper = faster
+        if autoScroll == nil {
+            autoScroll = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
+                MainActor.assumeIsolated {
+                    guard drag.dragged != nil, !drag.returning else { stopAutoScroll(); return }
+                    let next = min(max(scrollX + autoScrollStep, 0), scrollMaxX)
+                    if next == scrollX { stopAutoScroll(); return }
+                    scrollPos.scrollTo(x: next)
+                }
+            }
+        }
     }
+    private func stopAutoScroll() { autoScroll?.invalidate(); autoScroll = nil }
 
     /// Mark the work delivered (or clear it) — starts the "waiting to be paid"
     /// clock from now instead of from when the deal was created.

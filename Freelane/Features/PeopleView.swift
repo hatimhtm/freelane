@@ -69,7 +69,7 @@ struct PeopleView: View {
             VStack(spacing: 8) {
                 ForEach(dupes) { g in dupeRow(g) }
             }
-            .animation(.snappy(duration: 0.25), value: dupes.map(\.id))
+            .animation(Motion.snappy, value: dupes.map(\.id))
         }
     }
 
@@ -227,7 +227,7 @@ struct AddEntitySheet: View {
             LabeledField("Connection (optional)") { TextField("e.g. my lola, the vet, our car", text: $relationship).textFieldStyle(GlassFieldStyle()) }
             LabeledField("Notes (optional)") { TextField("Anything worth remembering", text: $notes, axis: .vertical).lineLimit(2...4).textFieldStyle(GlassFieldStyle()) }
         }
-        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { nameFocused = true } }
+        .onAppear { DispatchQueue.main.async { nameFocused = true } }
     }
 }
 
@@ -252,7 +252,7 @@ struct EditEntitySheet: View {
         .onAppear {
             guard !loaded else { return }; loaded = true
             name = entity.name; relationship = entity.relationship ?? ""; kind = entity.kind
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { nameFocused = true }
+            DispatchQueue.main.async { nameFocused = true }
         }
     }
 }

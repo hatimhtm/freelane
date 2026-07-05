@@ -10,6 +10,7 @@ struct SearchPalette: View {
     @Query(filter: #Predicate<Project> { $0.deletedAt == nil }) private var projects: [Project]
     @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }, sort: \Spend.spentAt, order: .reverse) private var spends: [Spend]
     @State private var query = ""
+    @State private var selected = 0
     @FocusState private var focused: Bool
 
     private struct Hit: Identifiable { let id = UUID(); let title: String; let sub: String; let icon: String; let color: Color; let feature: Feature }
@@ -43,36 +44,50 @@ struct SearchPalette: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.textTertiary)
                 TextField("Search clients, projects, spends…", text: $query)
                     .textFieldStyle(.plain).font(.system(size: 16)).focused($focused)
-                    .onSubmit { if let f = hits.first { onNavigate(f.feature); dismiss() } }
+                    .onSubmit {
+                        let list = hits
+                        guard !list.isEmpty else { return }
+                        onNavigate(list[min(selected, list.count - 1)].feature); dismiss()
+                    }
+                    .onChange(of: query) { _, _ in selected = 0 }
+                    .onKeyPress(.downArrow) { if !hits.isEmpty { selected = min(selected + 1, hits.count - 1) }; return .handled }
+                    .onKeyPress(.upArrow) { if !hits.isEmpty { selected = max(selected - 1, 0) }; return .handled }
                 Text("⌘F").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textTertiary)
                     .padding(.horizontal, 6).padding(.vertical, 3).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))
             }.padding(16)
             Divider().overlay(Palette.hairline)
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    if query.isEmpty {
-                        Text("Type to search across everything.").font(.system(size: 13)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 80)
-                    } else if hits.isEmpty {
-                        Text("No matches.").font(.system(size: 13)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 80)
-                    }
-                    ForEach(hits) { h in
-                        Button { onNavigate(h.feature); dismiss() } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: h.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(h.color)
-                                    .frame(width: 30, height: 30).background(h.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(h.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                                    Text(h.sub).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        if query.isEmpty {
+                            Text("Type to search across everything.").font(.system(size: 13)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 80)
+                        } else if hits.isEmpty {
+                            Text("No matches.").font(.system(size: 13)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 80)
+                        }
+                        ForEach(Array(hits.enumerated()), id: \.element.id) { idx, h in
+                            Button { onNavigate(h.feature); dismiss() } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: h.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(h.color)
+                                        .frame(width: 30, height: 30).background(h.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(h.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                                        Text(h.sub).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                                    }
+                                    Spacer()
+                                    if idx == selected { Text("return").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.textTertiary) }
                                 }
-                                Spacer()
-                            }
-                            .padding(.horizontal, 10).padding(.vertical, 8)
-                            .contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                        .insetRow(cornerRadius: Radii.row)
-                    }
-                }.padding(8)
-            }.frame(maxHeight: 420)
+                                .padding(.horizontal, 10).padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: Radii.row, style: .continuous)
+                                    .fill(idx == selected ? Palette.hairline : .clear))
+                                .contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                            .id(idx)
+                        }
+                    }.padding(8)
+                }
+                .frame(maxHeight: 420)
+                .onChange(of: selected) { _, s in withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(s, anchor: .center) } }
+            }
         }
         .frame(width: 560).flagshipSheet()
         .onAppear { focused = true }

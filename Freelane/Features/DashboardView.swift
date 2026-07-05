@@ -249,7 +249,7 @@ struct DashboardView: View {
             new.removeAll { $0 == from }
             let at = new.firstIndex(of: key) ?? new.count
             new.insert(from, at: at)
-            if new != order { withAnimation(.snappy(duration: 0.2)) { commit(new) } }
+            if new != order { withAnimation(Motion.snappy) { commit(new) } }
         }
         func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
         func performDrop(info: DropInfo) -> Bool { dragging = nil; return true }

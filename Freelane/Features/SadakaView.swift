@@ -271,7 +271,7 @@ struct GiveSadakaSheet: View {
         .onAppear {
             walletId = wallets.first { $0.isHolding && !$0.archived }?.id
             if suggested > 0 { amount = String(format: "%.0f", suggested) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { amountFocused = true }
+            DispatchQueue.main.async { amountFocused = true }
         }
     }
 
