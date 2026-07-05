@@ -150,7 +150,7 @@ struct WalletDetailSheet: View {
                         HStack {
                             tag("In", received, Palette.positive)
                             tag("Out", out, Palette.negative)
-                            if let a = anchor { Text("since \(a, format: .dateTime.month().day())").font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary) }
+                            if let a = anchor { Text("since \(a, format: .dateTime.month().day())").font(.system(size: 10)).foregroundStyle(Palette.textTertiary) }
                         }
                     }
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: Radii.tile, tint: Palette.teal)
@@ -162,13 +162,13 @@ struct WalletDetailSheet: View {
                             LazyVStack(spacing: 0) {
                                 ForEach(rows) { e in
                                     HStack {
-                                        Text(kindLabel(e)).font(.system(size: 9.5, weight: .semibold))
+                                        Text(kindLabel(e)).font(.system(size: 9, weight: .semibold))
                                             .foregroundStyle(Palette.textTertiary).padding(.horizontal, 6).padding(.vertical, 2)
                                             .background(Palette.hairline, in: Capsule())
                                         Text(e.note ?? "").font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1)
                                         Spacer()
                                         Text((e.amountBase >= 0 ? "+" : "") + CurrencyFormat.string(e.amountBase, base, compact: true))
-                                            .font(.system(size: 12.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                                            .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
                                             .foregroundStyle(e.amountBase >= 0 ? Palette.positive : Palette.textPrimary)
                                             .lineLimit(1)
                                         Text(e.eventAt, format: .dateTime.month().day()).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).frame(width: 44, alignment: .trailing)

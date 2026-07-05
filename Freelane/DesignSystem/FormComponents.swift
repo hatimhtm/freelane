@@ -275,7 +275,7 @@ struct GlassCalendar: View {
             }
             HStack(spacing: 0) {
                 ForEach(weekdaySymbols, id: \.self) { d in
-                    Text(d).font(.system(size: 9.5, weight: .semibold)).foregroundStyle(Palette.textTertiary)
+                    Text(d).font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -312,7 +312,7 @@ struct GlassCalendar: View {
             onPick()
         } label: {
             Text("\(cal.component(.day, from: d))")
-                .font(.system(size: 11.5, weight: selected ? .bold : .medium, design: .rounded))
+                .font(.system(size: 11, weight: selected ? .bold : .medium, design: .rounded))
                 .foregroundStyle(selected ? Palette.ink : (today ? Palette.acidLime : Palette.textSecondary))
                 .frame(maxWidth: .infinity).frame(height: 26)
                 .background {
@@ -371,7 +371,7 @@ struct GlassMenuPicker<T: Hashable>: View {
         Button { selection = o; open = false } label: {
             HStack(spacing: 8) {
                 Text(label(o))
-                    .font(.system(size: 12.5, weight: o == selection ? .semibold : .medium))
+                    .font(.system(size: 12, weight: o == selection ? .semibold : .medium))
                     .foregroundStyle(Palette.textPrimary).lineLimit(1)
                 Spacer(minLength: 0)
                 if o == selection {
@@ -397,6 +397,7 @@ struct IconPress: ButtonStyle {
             .opacity(configuration.isPressed ? 0.7 : 1)
             .animation(Motion.press, value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: hover)
+            .pointerStyle(.link)
             .onHover { hover = $0 }
     }
 }
@@ -425,13 +426,14 @@ struct GlassSegment<T: Hashable>: View {
             ForEach(options, id: \.self) { opt in
                 let sel = opt == selection
                 Text(label(opt))
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(sel ? Palette.ink : Palette.textSecondary)
                     .padding(.horizontal, 12).padding(.vertical, 7)
                     .background {
                         if sel { Capsule().fill(Palette.acidLime).matchedGeometryEffect(id: "seg", in: ns) }
                     }
                     .contentShape(Capsule())
+                    .pointerStyle(.link)
                     .onTapGesture { withAnimation(Motion.snappy) { selection = opt } }
             }
         }
@@ -471,6 +473,7 @@ struct PressableCard: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.972 : (hover ? 1.012 : 1))
             .animation(Motion.press, value: configuration.isPressed)
             .animation(.easeOut(duration: 0.16), value: hover)
+            .pointerStyle(.link)
             .onHover { hover = $0 }
     }
 }

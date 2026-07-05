@@ -58,7 +58,7 @@ struct QuranReaderSheet: View {
                                     Text("\(s.englishName) · \(s.englishTranslation) · \(s.ayahs) ayahs").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                                 }
                                 Spacer()
-                                Toggle(isOn: $showEnglish) { Text("English").font(.system(size: 11.5)) }
+                                Toggle(isOn: $showEnglish) { Text("English").font(.system(size: 11)) }
                                     .toggleStyle(.button).tint(Palette.teal).controlSize(.small)
                             }
                             if showEnglish {
@@ -96,7 +96,7 @@ struct QuranReaderSheet: View {
                                         .onTapGesture { QuranService.setPosition(surah: s.number, ayah: a.numberInSurah) }
                                 }
                                 Text("Tap any ayah to mark it as your position.")
-                                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                             }
                         }.padding(20)
                     }
@@ -123,7 +123,7 @@ struct QuranReaderSheet: View {
         return HStack(spacing: 10) {
             Text("\(s.number)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary).frame(width: 24)
             VStack(alignment: .leading, spacing: 1) {
-                Text(s.englishName).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                Text(s.englishName).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
                 Text("\(s.ayahs) ayahs").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             Spacer()

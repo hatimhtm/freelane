@@ -52,7 +52,7 @@ struct SafeToSpendIntent: AppIntent {
         let base = all(AppSettings.self).first?.baseCurrency ?? "PHP"
         let safe = SafeToSpend.compute(payments: all(Payment.self), spends: all(Spend.self),
                                        wallets: all(Wallet.self), ledger: all(LedgerEntry.self),
-                                       recurrings: all(Recurring.self))
+                                       recurrings: all(Recurring.self), plans: all(Plan.self))
         return .result(dialog: "You can spend about \(CurrencyFormat.string(safe.liveRemaining, base, compact: true)) today.")
     }
 }

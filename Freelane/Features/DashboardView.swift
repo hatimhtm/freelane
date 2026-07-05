@@ -22,6 +22,8 @@ struct DashboardView: View {
     @Query(filter: #Predicate<BodyLog> { $0.deletedAt == nil }) private var bodyLogs: [BodyLog]
     @Query private var prayerLogs: [PrayerLog]
     @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
+    @Query private var plans: [Plan]
+    @Query private var budgets: [CategoryBudget]
     @Query(sort: \InsightLog.createdAt, order: .reverse) private var insights: [InsightLog]
     @Environment(AIManager.self) private var ai
     @Environment(\.navigate) private var navigate
@@ -37,7 +39,7 @@ struct DashboardView: View {
                                  wallets: wallets, ledger: ledger, allocations: allocations, rates: rates)
     }
     private var safe: SafeBreakdown {
-        SafeToSpend.compute(payments: payments, spends: spends, wallets: wallets, ledger: ledger, recurrings: recurrings)
+        SafeToSpend.compute(payments: payments, spends: spends, wallets: wallets, ledger: ledger, recurrings: recurrings, plans: plans)
     }
 
     private var greeting: String {
@@ -56,17 +58,26 @@ struct DashboardView: View {
         let s = safe
         let signals = focusSignals(m, s)
         return Page(greeting, subtitle: signals.isEmpty ? "All clear — everything at a glance." : "A few things need you.") {
-            // Priority first: the few things actually worth a tap. When nothing needs you, the
-            // calm weather banner takes this slot instead of a wall of equal-weight tiles.
-            if signals.isEmpty {
-                CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
+            // First run: without a wallet nothing can be logged (every capture path needs one),
+            // so the landing screen leads with the one required setup step instead of ₱0 tiles.
+            if wallets.filter({ $0.isHolding && !$0.archived }).isEmpty {
+                EmptyStateCard(icon: "wallet.bifold",
+                               title: "Start with a wallet",
+                               message: "Add the places your money lives — a bank, GCash, cash. Everything you log flows through a wallet, so this one step unlocks spends, payments, and the rest of the app.",
+                               actionLabel: "Add your first wallet") { navigate(.wallets) }
             } else {
-                needsYouCard(signals)
+                // Priority first: the few things actually worth a tap. When nothing needs you, the
+                // calm weather banner takes this slot instead of a wall of equal-weight tiles.
+                if signals.isEmpty {
+                    CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
+                } else {
+                    needsYouCard(signals)
+                }
+                hero(m, s)
+                insightsCard
+                grid(m, s)
+                CashFlowCard(points: m.cashFlow, base: base)
             }
-            hero(m, s)
-            insightsCard
-            grid(m, s)
-            CashFlowCard(points: m.cashFlow, base: base)
         }
     }
 
@@ -80,6 +91,25 @@ struct DashboardView: View {
         let tint: Color
         let destination: Feature
         let severity: Int
+        /// Deep-link straight to a client's detail sheet (the overdue-money signal).
+        var clientId: UUID? = nil
+    }
+
+    /// The single biggest "someone owes you and it's been a while" — the #1 thing a freelancer
+    /// opens the app for, previously computed everywhere and surfaced nowhere.
+    private var topDebtor: (client: Client, outstanding: Double, days: Int)? {
+        let live = ProjectMath.liveAllocations(allocations, payments: payments)
+        var best: (Client, Double, Int)? = nil
+        for c in clients where !c.archived {
+            let owing = projects.filter { $0.clientId == c.id && ($0.status == .unpaid || $0.status == .partiallyPaid) }
+            guard !owing.isEmpty else { continue }
+            let out = owing.reduce(0.0) { $0 + rates.toBase(ProjectMath.outstandingNative(project: $1, allocations: live, rates: rates), $1.currency) }
+            guard out >= 1 else { continue }
+            let oldest = owing.map(\.agingAnchor).min() ?? .now
+            let days = PHT.calendar.dateComponents([.day], from: oldest, to: .now).day ?? 0
+            if days >= 21, out > (best?.1 ?? 0) { best = (c, out, days) }
+        }
+        return best.map { (client: $0.0, outstanding: $0.1, days: $0.2) }
     }
 
     /// What actually needs the user, derived only from already-computed money/life state — ranked.
@@ -101,6 +131,14 @@ struct DashboardView: View {
                 tint: Palette.negative, destination: .payments, severity: 100))
         }
 
+        // Someone owes you and it's been ≥3 weeks — taps straight into that client (where the
+        // AI nudge-drafter lives), not a generic list.
+        if let d = topDebtor {
+            out.append(.init(id: "debtor", icon: "person.crop.circle.badge.exclamationmark",
+                text: "\(d.client.name) owes \(CurrencyFormat.string(d.outstanding, base, compact: true)) · \(d.days) days",
+                tint: Palette.warning, destination: .clients, severity: 85, clientId: d.client.id))
+        }
+
         // Overdue projects.
         if overdueProjects > 0 {
             out.append(.init(id: "overdue", icon: "folder.badge.questionmark",
@@ -109,13 +147,26 @@ struct DashboardView: View {
         }
 
         // Spending past today's safe-to-spend.
-        if s.initialForToday > 0 && s.spentToday > s.initialForToday {
+        // Everyday spend only — a big one-off/investment was never part of the day's budget,
+        // so it can't fire this alarm (matches the allowance's own one-off exclusion).
+        if s.initialForToday > 0 && s.everydaySpentToday > s.initialForToday {
             out.append(.init(id: "overspent", icon: "cart.badge.minus",
-                text: "Over today's safe-to-spend by \(CurrencyFormat.abbreviated(s.spentToday - s.initialForToday, base))",
+                text: "Over today's safe-to-spend by \(CurrencyFormat.abbreviated(s.everydaySpentToday - s.initialForToday, base))",
                 tint: Palette.negative, destination: .spending, severity: 70))
         } else if s.liveRemaining <= 0 {
             out.append(.init(id: "nosafe", icon: "shield.slash",
                 text: "Nothing safe to spend left today", tint: Palette.warning, destination: .spending, severity: 55))
+        }
+
+        // A category blew through its monthly budget — surface the worst one.
+        let totals = CategoryBudget.monthTotals(spends)
+        if let worst = budgets.filter({ $0.capBase > 0 })
+            .map({ (b: $0, over: (totals[$0.tag.lowercased()] ?? 0) - $0.capBase) })
+            .filter({ $0.over >= 1 })
+            .max(by: { $0.over < $1.over }) {
+            out.append(.init(id: "budget", icon: "gauge.with.needle",
+                text: "\(worst.b.tag) is \(CurrencyFormat.abbreviated(worst.over, base)) over its monthly budget",
+                tint: Palette.warning, destination: .spending, severity: 60))
         }
 
         return out.sorted { $0.severity > $1.severity }
@@ -126,7 +177,17 @@ struct DashboardView: View {
                     accent: signals.first?.tint ?? Palette.warning) {
             VStack(spacing: 8) {
                 ForEach(signals.prefix(4)) { sig in
-                    Button { navigate(sig.destination) } label: { signalRow(sig) }
+                    Button {
+                        navigate(sig.destination)
+                        if let cid = sig.clientId {
+                            // Land on Clients with that client's detail already open. Posted a beat
+                            // later so the freshly-mounted ClientsView is subscribed before it fires.
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                NotificationCenter.default.post(name: .flOpenClient, object: nil,
+                                                                userInfo: ["clientId": cid.uuidString])
+                            }
+                        }
+                    } label: { signalRow(sig) }
                         .buttonStyle(.plain)
                 }
             }
@@ -159,7 +220,7 @@ struct DashboardView: View {
             spark: spark.isEmpty ? [0, 0] : spark,
             chips: [
                 ("Landed " + CurrencyFormat.abbreviated(m.landedMTD, base) + " MTD", "arrow.down", Palette.positive),
-                ("Safe " + CurrencyFormat.abbreviated(safe.liveRemaining, base) + " today", "shield.lefthalf.filled", Palette.cyan),
+                ("Safe " + CurrencyFormat.abbreviated(safe.liveRemaining, base) + " today", "shield.lefthalf.filled", Palette.azure),
                 ("\(m.activeProjects) open projects", "folder", Palette.textSecondary),
             ])
     }
@@ -168,35 +229,37 @@ struct DashboardView: View {
 
     /// Each dashboard tile keyed by a stable id, so the grid can be reordered + persisted.
     private func tileSpecs(_ m: DashboardMetrics, _ safe: SafeBreakdown) -> [(key: String, view: AnyView)] {
+        // Calm grid: tiles wear the section's ONE amber identity; color appears only when it
+        // MEANS something (a negative net, an overdue count, a vendor swing) — not as decor.
         var specs: [(String, AnyView)] = [
             ("safe", AnyView(MiniWidget(label: "Safe to spend", value: CurrencyFormat.abbreviated(safe.liveRemaining, base),
-                       systemImage: "shield.lefthalf.filled", accent: Palette.positive,
+                       systemImage: "shield.lefthalf.filled", accent: Palette.azure,
                        sub: "of " + CurrencyFormat.abbreviated(safe.initialForToday, base) + " today",
-                       tone: Palette.positive, destination: .spending, morphID: "w.safe"))),
+                       destination: .spending, morphID: "w.safe"))),
             ("spent", AnyView(MiniWidget(label: "Spent today", value: CurrencyFormat.abbreviated(safe.spentToday, base),
-                       systemImage: "cart", accent: Palette.warning, destination: .spending, morphID: "w.spent"))),
+                       systemImage: "cart", accent: Palette.azure, destination: .spending, morphID: "w.spent"))),
             ("landed", AnyView(MiniWidget(label: "Landed this month", value: CurrencyFormat.abbreviated(m.landedMTD, base),
-                       systemImage: "arrow.down.left", accent: Palette.positive,
+                       systemImage: "arrow.down.left", accent: Palette.azure,
                        sub: "YTD " + CurrencyFormat.abbreviated(m.landedYTD, base), destination: .payments, morphID: "w.landed"))),
             ("out", AnyView(MiniWidget(label: "Outstanding", value: CurrencyFormat.abbreviated(m.outstandingBase, base),
-                       systemImage: "hourglass", accent: Palette.warning,
-                       sub: "\(m.activeProjects) open", tone: Palette.warning, destination: .projects, morphID: "w.out"))),
+                       systemImage: "hourglass", accent: Palette.azure,
+                       sub: "\(m.activeProjects) open", destination: .projects, morphID: "w.out"))),
             ("net", AnyView(MiniWidget(label: "Net · 30 days", value: CurrencyFormat.abbreviated(net30, base),
                        systemImage: "chart.line.uptrend.xyaxis", accent: Palette.azure,
                        tone: net30 < 0 ? Palette.negative : Palette.textPrimary, destination: .stats, morphID: "w.net"))),
             ("fees", AnyView(MiniWidget(label: "Fees this month", value: CurrencyFormat.abbreviated(m.feesMTD, base),
-                       systemImage: "scissors", accent: Palette.negative, destination: .stats, morphID: "w.fees"))),
+                       systemImage: "scissors", accent: Palette.azure, destination: .stats, morphID: "w.fees"))),
             ("proj", AnyView(MiniWidget(label: "Active projects", value: "\(m.activeProjects)",
-                       systemImage: "folder", accent: overdueProjects > 0 ? Palette.warning : Palette.violet,
+                       systemImage: "folder", accent: overdueProjects > 0 ? Palette.warning : Palette.azure,
                        sub: overdueProjects > 0 ? "\(overdueProjects) overdue" : (paidThisMonth > 0 ? "\(paidThisMonth) paid this month" : nil),
                        destination: .projects, morphID: "w.proj"))),
             ("sadaka", AnyView(MiniWidget(label: "Sadaka given", value: CurrencyFormat.abbreviated(sadakaMTD, base),
-                       systemImage: "heart.fill", accent: Palette.negative,
+                       systemImage: "heart.fill", accent: Palette.azure,
                        sub: "this month", destination: .sadaka, morphID: "w.sadaka"))),
         ]
         if loanOutstanding > 0 {
             specs.append(("loans", AnyView(MiniWidget(label: "Loans out", value: CurrencyFormat.abbreviated(loanOutstanding, base),
-                       systemImage: "arrow.left.arrow.right", accent: Palette.teal,
+                       systemImage: "arrow.left.arrow.right", accent: Palette.azure,
                        sub: "\(openLoanCount) open", destination: .loans, morphID: "w.loans"))))
         }
         // Cross-link: the biggest month-over-month vendor swing (taps through to Vendors).
@@ -211,7 +274,7 @@ struct DashboardView: View {
                 destination: .spending, morphID: "w.vtrend"))))
         }
         specs.append(("sleep", AnyView(MiniWidget(label: "Sleep", value: lastSleep, systemImage: "bed.double.fill",
-                       accent: Palette.indigo, sub: "last logged", destination: .body, morphID: "w.sleep"))))
+                       accent: Palette.azure, sub: "last logged", destination: .body, morphID: "w.sleep"))))
         return specs
     }
 
@@ -280,7 +343,7 @@ struct DashboardView: View {
                     ForEach(shown) { ins in
                         HStack(alignment: .top, spacing: 9) {
                             Image(systemName: insightIcon(ins.category)).font(.system(size: 12)).foregroundStyle(insightColor(ins.category)).frame(width: 16).padding(.top, 1)
-                            Text(ins.text).font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary).fixedSize(horizontal: false, vertical: true)
+                            Text(ins.text).font(.system(size: 12)).foregroundStyle(Palette.textPrimary).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 4)
                             Menu {
                                 Button(ins.pinned ? "Unpin" : "Pin", systemImage: ins.pinned ? "pin.slash" : "pin") { ins.pinned.toggle(); ins.dirty = true; try? context.save() }

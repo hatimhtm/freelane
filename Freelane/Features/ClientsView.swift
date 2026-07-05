@@ -62,7 +62,7 @@ struct ClientsView: View {
                         .frame(width: 150)
                     Button { withAnimation { owesOnly.toggle() } } label: {
                         Text("Owes me")
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(owesOnly ? Palette.ink : Palette.textSecondary)
                             .padding(.horizontal, 12).padding(.vertical, 7)
                             .background(owesOnly ? AnyShapeStyle(Palette.warning) : AnyShapeStyle(Palette.hairline), in: Capsule())
@@ -88,6 +88,13 @@ struct ClientsView: View {
         }
         .sheet(isPresented: $showAdd) { AddClientSheet() }
         .sheet(item: $selected) { c in ClientDetailSheet(client: c) }
+        // Deep link from the Dashboard's "X owes you" signal — opens straight into the client.
+        .onReceive(NotificationCenter.default.publisher(for: .flOpenClient)) { note in
+            if let raw = note.userInfo?["clientId"] as? String, let id = UUID(uuidString: raw),
+               let c = clients.first(where: { $0.id == id }) {
+                selected = c
+            }
+        }
     }
 
     private var addButton: some View {
@@ -122,7 +129,7 @@ struct ClientsView: View {
                                 in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(c.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                    if let co = c.company { Text(co).font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
+                    if let co = c.company { Text(co).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
                 }
                 Spacer()
             }
@@ -169,7 +176,7 @@ struct ClientPills: View {
                     .background(lead ? Palette.cyan.opacity(0.18) : Palette.wellFillHover, in: Capsule())
             }
             if total > shown.count {
-                Text("+\(total - shown.count)").font(.system(size: 9.5, weight: .medium)).foregroundStyle(Palette.textTertiary)
+                Text("+\(total - shown.count)").font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.textTertiary)
             }
             Spacer(minLength: 0)
         }
@@ -183,11 +190,11 @@ struct FlowChips: View {
     var body: some View {
         HStack(spacing: 6) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, t in
-                Text(t).font(.system(size: 9.5, weight: .medium)).foregroundStyle(Palette.teal)
+                Text(t).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.teal)
                     .lineLimit(1).truncationMode(.tail).frame(maxWidth: 110, alignment: .leading)
                     .padding(.horizontal, 7).padding(.vertical, 3).background(Palette.teal.opacity(0.14), in: Capsule())
             }
-            if more > 0 { Text("+\(more)").font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary) }
+            if more > 0 { Text("+\(more)").font(.system(size: 9)).foregroundStyle(Palette.textTertiary) }
             Spacer(minLength: 0)
         }
     }
@@ -209,7 +216,7 @@ struct AddClientSheet: View {
             LabeledField("Default currency") {
                 CurrencyMenu(selection: $defaultCurrency)
                 Text("Used as the default when you log their projects & payments — you can still change it per transaction.")
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
         }
         .onAppear {
@@ -347,11 +354,11 @@ struct ClientDetailSheet: View {
                 if let c = client.company { Text(c).font(.system(size: 12)).foregroundStyle(Palette.textTertiary) }
                 HStack(spacing: 6) {
                     if let t = clientLocalTime {
-                        Label(t, systemImage: "clock").font(.system(size: 10.5, weight: .medium))
+                        Label(t, systemImage: "clock").font(.system(size: 10, weight: .medium))
                             .foregroundStyle(Palette.cyan).labelStyle(.titleAndIcon)
                     }
                     if client.isRetainer {
-                        Text("RETAINER").font(.system(size: 9.5, weight: .bold)).foregroundStyle(Palette.teal)
+                        Text("RETAINER").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.teal)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.teal.opacity(0.16), in: Capsule())
                     }
                 }
@@ -410,11 +417,11 @@ struct ClientDetailSheet: View {
                 Text("Nothing unusual right now.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
             }
             ForEach(signals, id: \.self) { s in
-                Label(s, systemImage: "bell.badge").font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+                Label(s, systemImage: "bell.badge").font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                     .labelStyle(.titleAndIcon)
             }
             ForEach(rateSignals, id: \.self) { s in
-                Label(s, systemImage: "dollarsign.circle").font(.system(size: 12.5)).foregroundStyle(Palette.warning)
+                Label(s, systemImage: "dollarsign.circle").font(.system(size: 12)).foregroundStyle(Palette.warning)
             }
             if ai.isReady {
                 Button {
@@ -464,11 +471,11 @@ struct ClientDetailSheet: View {
                 ForEach(clientPayments) { p in
                     HStack {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(projects.first { $0.id == p.projectId }?.title ?? "Payment").font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                            Text(p.paidAt, format: .dateTime.month().day().year()).font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                            Text(projects.first { $0.id == p.projectId }?.title ?? "Payment").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                            Text(p.paidAt, format: .dateTime.month().day().year()).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                         }
                         Spacer()
-                        Text(CurrencyFormat.string(p.netAmountBase ?? 0, base, compact: true)).font(.system(size: 12.5, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.positive)
+                        Text(CurrencyFormat.string(p.netAmountBase ?? 0, base, compact: true)).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.positive)
                     }.padding(.vertical, 6)
                 }
             }
@@ -482,7 +489,7 @@ struct ClientDetailSheet: View {
                 LazyVStack(spacing: 0) {
                     ForEach(ps) { p in
                         HStack {
-                            Text(p.title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                            Text(p.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                             Spacer()
                             Text(CurrencyFormat.string(p.amount, p.currency, compact: true)).font(.system(size: 11)).monospacedDigit().foregroundStyle(Palette.textTertiary)
                             StatusBadge(text: p.status.label, color: p.status.color)
@@ -597,7 +604,7 @@ struct EditClientSheet: View {
                         .toggleStyle(.switch).tint(Palette.cyan)
                     if isRetainer {
                         HStack {
-                            Text("Monthly").font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+                            Text("Monthly").font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                             Spacer()
                             TextField("0", value: $retainerBase, format: .number).textFieldStyle(GlassFieldStyle()).frame(width: 120).multilineTextAlignment(.trailing)
                         }

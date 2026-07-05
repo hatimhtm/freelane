@@ -19,6 +19,8 @@ struct SpendingView: View {
     @State private var sub = 0
     @State private var selMonth: Date?
     @State private var query = ""
+    @State private var showBudgets = false
+    @Query private var budgets: [CategoryBudget]
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
     /// Full-text filter over description / vendor / category / tags. Empty = everything.
@@ -50,17 +52,7 @@ struct SpendingView: View {
     var body: some View {
         Page("Spending", subtitle: "Where your money goes.", toolbar: AnyView(addButton),
              subtabs: ["Spends", "Trends", "Recurring"], selection: $sub) {
-            if sub != 2 {
-                HStack(spacing: 16) {
-                    StatTile(label: "Spent this month", value: monthTotal, code: base,
-                             systemImage: "cart", accent: Palette.warning,
-                             chip: ("\(monthSpends.count) entries", nil),
-                             chipColor: Palette.warning)
-                    StatTile(label: "Investments (work + home)", value: investMonth, code: base,
-                             systemImage: "arrow.up.forward.circle", accent: Palette.azure,
-                             chip: ("this month", nil), chipColor: Palette.azure)
-                }
-            }
+            if sub != 2 { spendHero }
             switch sub { case 0: spendsList; case 1: trends; default: recurringList }
         }
         .sheet(isPresented: $showAdd) { AddSpendSheet() }
@@ -79,6 +71,31 @@ struct SpendingView: View {
         } message: { s in Text("\(s.spendDescription ?? "Spend") · \(CurrencyFormat.string(s.amountBase, base))") }
     }
 
+    /// The screen's one hero: this month's burn, with the 6-month shape and a delta vs
+    /// last month — a real "how am I doing" moment instead of two equal-weight tiles.
+    private var spendHero: some View {
+        let bars = monthly
+        let spark = bars.map(\.total)
+        var chips: [(text: String, icon: String?, color: Color)] = [
+            ("\(monthSpends.count) entries", "cart", Palette.textSecondary),
+        ]
+        if bars.count >= 2 {
+            let cur = bars[bars.count - 1].total, prev = bars[bars.count - 2].total
+            if prev > 0 {
+                let pct = (cur - prev) / prev
+                // Pace vs a partial month is unfair — compare only when meaningful.
+                chips.append((String(format: "%+.0f%% vs last month", pct * 100),
+                              pct > 0 ? "arrow.up.right" : "arrow.down.right",
+                              pct > 0 ? Palette.negative : Palette.positive))
+            }
+        }
+        if investMonth > 0 {
+            chips.append(("Investments " + CurrencyFormat.abbreviated(investMonth, base), "arrow.up.forward.circle", Palette.textSecondary))
+        }
+        return HeroTile(label: "Spent this month", value: monthTotal, code: base,
+                        accent: Palette.azure, spark: spark.count > 1 ? spark : [0, 0], chips: chips)
+    }
+
     @ViewBuilder private var categoryCard: some View {
         SectionCard(title: "Spending by category", subtitle: "This month", accent: Palette.warning) {
             if catData.isEmpty {
@@ -91,7 +108,7 @@ struct SpendingView: View {
                         .cornerRadius(5)
                         .annotation(position: .trailing, alignment: .leading, spacing: 6) {
                             Text(CurrencyFormat.string(c.total, base, compact: true))
-                                .font(.system(size: 10.5, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                                .font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textSecondary)
                         }
                 }
                 .chartXScale(domain: 0...(maxC * 1.3))
@@ -104,6 +121,7 @@ struct SpendingView: View {
 
     @ViewBuilder private var spendsList: some View {
         categoryCard
+        budgetsCard
         let list = filteredSpends
         SectionCard(title: "Recent spending",
                     subtitle: query.isEmpty ? "\(spends.count) entries" : "\(list.count) of \(spends.count)",
@@ -123,6 +141,46 @@ struct SpendingView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: Budgets — gentle monthly caps per category
+
+    @ViewBuilder private var budgetsCard: some View {
+        let active = budgets.filter { $0.capBase > 0 }
+        SectionCard(title: "Budgets", subtitle: active.isEmpty ? "Gentle monthly caps per category" : "This month",
+                    trailing: AnyView(Button("Set budgets") { showBudgets = true }.buttonStyle(.glass).controlSize(.small))) {
+            if active.isEmpty {
+                Text("Give a category a monthly cap and its bar lives here — a quiet nudge, not an alarm.")
+                    .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+            } else {
+                let totals = CategoryBudget.monthTotals(spends)
+                VStack(spacing: 10) {
+                    ForEach(active.sorted { ($0.capBase > 0 ? (totals[$0.tag.lowercased()] ?? 0) / $0.capBase : 0) > ($1.capBase > 0 ? (totals[$1.tag.lowercased()] ?? 0) / $1.capBase : 0) }) { b in
+                        budgetRow(b, spent: totals[b.tag.lowercased()] ?? 0)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showBudgets) { BudgetsSheet() }
+    }
+
+    private func budgetRow(_ b: CategoryBudget, spent: Double) -> some View {
+        let frac = b.capBase > 0 ? spent / b.capBase : 0
+        let tint: Color = frac >= 1 ? Palette.negative : (frac >= 0.8 ? Palette.warning : Palette.positive)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(b.tag).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary)
+                Spacer()
+                Text("\(CurrencyFormat.string(spent, base, compact: true)) of \(CurrencyFormat.string(b.capBase, base, compact: true))")
+                    .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(frac >= 1 ? Palette.negative : Palette.textSecondary)
+                if frac >= 1 {
+                    Text("over").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.negative)
+                        .padding(.horizontal, 5).padding(.vertical, 1).background(Palette.negative.opacity(0.16), in: Capsule())
+                }
+            }
+            ProgressView(value: min(frac, 1)).tint(tint).scaleEffect(x: 1, y: 0.7, anchor: .center)
         }
     }
 
@@ -210,10 +268,10 @@ struct SpendingView: View {
                     ForEach(topCats, id: \.name) { c in
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
-                                Text(c.name).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                                Text(c.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                 Spacer()
                                 Text(CurrencyFormat.string(c.total, base, compact: true))
-                                    .font(.system(size: 12.5, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textSecondary)
                             }
                             GeometryReader { geo in
                                 Capsule().fill(Palette.warning.opacity(0.25))
@@ -449,7 +507,7 @@ struct AddSpendSheet: View {
                 }
                 .buttonStyle(.glass).controlSize(.large).disabled(scanning)
                 Text("On-device OCR fills in the amount and vendor — always editable below.")
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             LabeledField("From wallet") {
                 GlassMenuPicker(selection: Binding(get: { walletId },
@@ -516,7 +574,7 @@ struct AddSpendSheet: View {
                         .toggleStyle(.switch).tint(Palette.violet)
                     if isBusiness || isHouse {
                         Text("Counts in your total spending, but treated as an intentional investment — not your everyday pace.")
-                            .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                     }
                 }
             }
@@ -693,7 +751,7 @@ struct FlexTags: View {
             ForEach(all, id: \.self) { t in
                 let on = selected.contains(t)
                 Button { if on { selected.remove(t) } else { selected.insert(t) } } label: {
-                    Text(t).font(.system(size: 11.5, weight: on ? .semibold : .medium))
+                    Text(t).font(.system(size: 11, weight: on ? .semibold : .medium))
                         .foregroundStyle(on ? Palette.ink : Palette.textSecondary)
                         .padding(.horizontal, 10).padding(.vertical, 6)
                         .frame(maxWidth: .infinity)
@@ -740,10 +798,10 @@ struct PayRecurringSheet: View {
             if let due = nextDue {
                 HStack(spacing: 8) {
                     Image(systemName: "calendar").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.warning)
-                    Text("Due \(due.formatted(.dateTime.month().day()))").font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                    Text("Due \(due.formatted(.dateTime.month().day()))").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
                     if let d = daysUntilDue {
                         Text(d <= 0 ? "· due now" : "· in \(d) day\(d == 1 ? "" : "s")")
-                            .font(.system(size: 11.5)).foregroundStyle(d <= 2 ? Palette.negative : Palette.textTertiary)
+                            .font(.system(size: 11)).foregroundStyle(d <= 2 ? Palette.negative : Palette.textTertiary)
                     }
                     Spacer()
                 }.padding(11).glassCard(cornerRadius: Radii.field)
@@ -757,7 +815,7 @@ struct PayRecurringSheet: View {
             }
             if recurring.isVariableAmount, recurring.amount > 0 {
                 Text("Last time was about \(CurrencyFormat.string(recurring.amount, recurring.currency, compact: true)).")
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             LabeledField("From wallet") {
                 GlassMenuPicker(selection: $walletId,
@@ -790,9 +848,9 @@ struct PayRecurringSheet: View {
                     VStack(spacing: 6) {
                         ForEach(history) { s in
                             HStack {
-                                Text(s.spentAt, format: .dateTime.month().day().year()).font(.system(size: 11.5)).foregroundStyle(Palette.textTertiary)
+                                Text(s.spentAt, format: .dateTime.month().day().year()).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                                 Spacer()
-                                Text(CurrencyFormat.string(s.amountBase, base, compact: true)).font(.system(size: 11.5, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                                Text(CurrencyFormat.string(s.amountBase, base, compact: true)).font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textSecondary)
                             }
                         }
                     }
@@ -877,7 +935,7 @@ struct SpendHeatmap: View {
                 HStack(alignment: .top, spacing: gap) {
                     VStack(spacing: gap) {       // weekday labels
                         ForEach(0..<7, id: \.self) { row in
-                            Text(weekdayLabel(row, d)).font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                            Text(weekdayLabel(row, d)).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                                 .frame(width: 14, height: cell, alignment: .trailing)
                         }
                     }
@@ -932,7 +990,7 @@ struct AddRecurringSheet: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Amount varies (electricity, water…)").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                     Text("Enter the real amount when you pay. The app learns a typical figure to reserve, and flags it if it's creeping up.")
-                        .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 }
             }.toggleStyle(.switch).tint(Palette.azure)
             HStack(spacing: 12) {
@@ -991,4 +1049,82 @@ fileprivate func parseAmount(_ s: String) -> Double? {
 /// Clean editable string for a stored amount ("2500", "2500.5" — never "2500.0").
 fileprivate func editAmountString(_ v: Double) -> String {
     v.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", v) : String(v)
+}
+
+// MARK: - Budgets editor
+
+/// Set gentle monthly caps per category. Rows are the union of categories you actually
+/// spend in (last 90 days, biggest first) and any tags that already have a budget —
+/// leave a cap empty (or 0) to remove it.
+struct BudgetsSheet: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Query private var settings: [AppSettings]
+    @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }) private var spends: [Spend]
+    @Query private var budgets: [CategoryBudget]
+    @State private var caps: [String: String] = [:]   // display tag → cap text
+
+    private var base: String { settings.first?.baseCurrency ?? "PHP" }
+
+    /// Candidate categories: last 90 days of tag spend, biggest first, plus budgeted tags.
+    private var candidates: [String] {
+        let start = PHT.daysAgo(90)
+        var totals: [String: Double] = [:]
+        var display: [String: String] = [:]           // lowercased → first display spelling
+        for s in spends where s.spentAt >= start {
+            for t in (s.tags.isEmpty ? [s.category ?? "Untagged"] : s.tags) {
+                totals[t.lowercased(), default: 0] += s.amountBase
+                if display[t.lowercased()] == nil { display[t.lowercased()] = t }
+            }
+        }
+        for b in budgets where display[b.tag.lowercased()] == nil { display[b.tag.lowercased()] = b.tag }
+        let ranked = totals.sorted { $0.value > $1.value }.map { display[$0.key] ?? $0.key }
+        let extra = budgets.map(\.tag).filter { t in !ranked.contains { $0.lowercased() == t.lowercased() } }
+        return Array((ranked + extra).prefix(14))
+    }
+
+    var body: some View {
+        SheetScaffold(title: "Monthly budgets", accent: Palette.azure, icon: "gauge.with.needle",
+                      canSave: true, onSave: save) {
+            Text("A cap is a quiet marker, not a lock — the bar turns amber at 80% and red when you pass it.")
+                .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+            ForEach(candidates, id: \.self) { tag in
+                HStack(spacing: 10) {
+                    Text(tag).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(CurrencyFormat.symbol(base)).font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+                    TextField("no cap", text: Binding(
+                        get: { caps[tag] ?? "" },
+                        set: { caps[tag] = $0 }))
+                        .textFieldStyle(GlassFieldStyle()).frame(width: 110)
+                }
+            }
+        }
+        .onAppear {
+            for b in budgets where b.capBase > 0 {
+                let display = candidates.first { $0.lowercased() == b.tag.lowercased() } ?? b.tag
+                caps[display] = b.capBase.truncatingRemainder(dividingBy: 1) == 0
+                    ? String(format: "%.0f", b.capBase) : String(b.capBase)
+            }
+        }
+    }
+
+    private func save() {
+        for tag in candidates {
+            let raw = (caps[tag] ?? "").replacingOccurrences(of: ",", with: "").trimmingCharacters(in: .whitespaces)
+            let cap = Double(raw) ?? 0
+            let existing = budgets.first { $0.tag.lowercased() == tag.lowercased() }
+            if cap > 0 {
+                if let b = existing {
+                    if b.capBase != cap { b.capBase = cap; b.updatedAt = .now; b.dirty = true }
+                } else {
+                    context.insert(CategoryBudget(tag: tag, capBase: cap))
+                }
+            } else if let b = existing {
+                context.delete(b)
+            }
+        }
+        try? context.save()
+        dismiss()
+    }
 }

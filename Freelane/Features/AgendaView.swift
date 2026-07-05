@@ -19,13 +19,17 @@ struct AgendaView: View {
     @Query(filter: #Predicate<Entity> { $0.deletedAt == nil }) private var entities: [Entity]
     @Query(filter: #Predicate<Wallet> { $0.deletedAt == nil }) private var wallets: [Wallet]
     @Query private var ledger: [LedgerEntry]
+    @Query private var plans: [Plan]
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
     @AppStorage("agenda.horizon") private var horizon = 45
 
     @State private var showRecurring = false
     @State private var showLoan = false
+    @State private var showGoal = false
+    @State private var editingGoal: Plan?
     @State private var editingRecurring: Recurring?
+    @State private var payingRecurring: Recurring?
     @State private var editingProject: Project?
     @State private var editingEntity: Entity?
     @State private var confirmRemove: Item?
@@ -34,6 +38,7 @@ struct AgendaView: View {
         Menu {
             Button { showRecurring = true } label: { Label("Bill or income (recurring)", systemImage: "calendar.badge.clock") }
             Button { showLoan = true } label: { Label("Loan", systemImage: "arrow.left.arrow.right") }
+            Button { showGoal = true } label: { Label("Savings goal", systemImage: "target") }
         } label: { Label("Add", systemImage: "plus") }
             .buttonStyle(.glassProminent).tint(Palette.azure)
     }
@@ -46,6 +51,8 @@ struct AgendaView: View {
         var amount: Double? = nil
         var edit: (() -> Void)? = nil
         var remove: (() -> Void)? = nil
+        /// Settle-in-place (a due bill's Pay button) — the look-ahead screen can now act, not just look.
+        var pay: (() -> Void)? = nil
     }
 
     private var holdingTotal: Double {
@@ -63,7 +70,8 @@ struct AgendaView: View {
                 out.append(.init(date: d, title: r.label, detail: "Bill · \(cadenceLabel(r))",
                                  icon: "calendar.badge.clock", color: Palette.warning, warn: tight,
                                  amount: -r.amountBase,
-                                 edit: { editingRecurring = r }, remove: { undo.trashSimple(r, label: "recurring", context: context) }))
+                                 edit: { editingRecurring = r }, remove: { undo.trashSimple(r, label: "recurring", context: context) },
+                                 pay: { payingRecurring = r }))
             }
         }
         for r in recurrings where r.active && r.kind == .income {
@@ -164,7 +172,7 @@ struct AgendaView: View {
                 .frame(width: 26, height: 26)
                 .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.system(size: 9.5, weight: .semibold)).textCase(.uppercase).kerning(0.6)
+                Text(label).font(.system(size: 9, weight: .semibold)).textCase(.uppercase).kerning(0.6)
                     .foregroundStyle(Palette.textTertiary)
                 Text(text).font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(valueColor)
@@ -183,7 +191,7 @@ struct AgendaView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "calendar").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                Text("\(horizon) days").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Palette.textSecondary)
+                Text("\(horizon) days").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textSecondary)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(Palette.textTertiary)
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
@@ -341,8 +349,8 @@ struct AgendaView: View {
                 .frame(width: 28, height: 28)
                 .background(i.color.opacity(0.15), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
-                Text(i.title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                Text(i.detail).font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                Text(i.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                Text(i.detail).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }
             Spacer(minLength: 8)
             if i.warn {
@@ -350,8 +358,12 @@ struct AgendaView: View {
             }
             if let a = i.amount {
                 Text((a >= 0 ? "+" : "−") + CurrencyFormat.string(abs(a), base, compact: true))
-                    .font(.system(size: 12.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(a >= 0 ? Palette.positive : (i.warn ? Palette.negative : (tint ?? Palette.textPrimary)))
+            }
+            if let pay = i.pay {
+                Button("Pay") { pay() }.buttonStyle(.glass).controlSize(.small)
+                    .help("Log this bill as paid")
             }
             if i.edit != nil || i.remove != nil {
                 Menu {
@@ -370,6 +382,7 @@ struct AgendaView: View {
              toolbar: AnyView(addMenu)) {
             weekStrip
             if cashProjection.count > 2 { waterfallCard }
+            if !activeGoals.isEmpty { goalsCard }
             if items.isEmpty {
                 EmptyStateCard(icon: "calendar", title: "Nothing on the horizon",
                                message: "This is your forward view. Use + to add a recurring bill/income, a loan, or a plan — anything with a date (also project deadlines & birthdays) lines up here automatically.",
@@ -380,7 +393,10 @@ struct AgendaView: View {
         }
         .sheet(isPresented: $showRecurring) { AddRecurringSheet() }
         .sheet(isPresented: $showLoan) { AddLoanSheet() }
+        .sheet(isPresented: $showGoal) { GoalSheet() }
+        .sheet(item: $editingGoal) { GoalSheet(existing: $0) }
         .sheet(item: $editingRecurring) { AddRecurringSheet(existing: $0) }
+        .sheet(item: $payingRecurring) { PayRecurringSheet(recurring: $0) }
         .sheet(item: $editingProject) { EditProjectSheet(project: $0) }
         .sheet(item: $editingEntity) { EntityDetailSheet(entity: $0) }
         .confirmationDialog("Delete this item?", isPresented: Binding(get: { confirmRemove != nil }, set: { if !$0 { confirmRemove = nil } }), presenting: confirmRemove) { item in
@@ -401,5 +417,124 @@ struct AgendaView: View {
         var d = cal.date(from: comps) ?? today
         if d < today { d = cal.date(byAdding: .year, value: 1, to: d) ?? d }
         return d
+    }
+}
+
+// MARK: - Savings goals (Plans, revived 2026-07)
+
+extension AgendaView {
+    var activeGoals: [Plan] { plans.filter { !$0.archived }.sorted { $0.createdAt < $1.createdAt } }
+
+    var goalsCard: some View {
+        SectionCard(title: "Savings goals",
+                    subtitle: "Monthly set-asides are reserved out of safe-to-spend",
+                    trailing: AnyView(Button { showGoal = true } label: { Label("Add", systemImage: "plus") }
+                        .buttonStyle(.glass).controlSize(.small))) {
+            VStack(spacing: 12) {
+                ForEach(activeGoals) { p in goalRow(p) }
+            }
+        }
+    }
+
+    private func goalRow(_ p: Plan) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Text(p.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                if p.monthlySetAside > 0 {
+                    Text("+\(CurrencyFormat.string(p.monthlySetAside, base, compact: true))/mo")
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.azure)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Palette.azure.opacity(0.14), in: Capsule())
+                }
+                Spacer()
+                Text("\(CurrencyFormat.string(p.savedAmount, base, compact: true)) of \(CurrencyFormat.string(p.targetAmount, base, compact: true))")
+                    .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(Palette.textSecondary)
+                if p.remaining <= 0 {
+                    Text("reached").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.positive)
+                        .padding(.horizontal, 5).padding(.vertical, 1).background(Palette.positive.opacity(0.16), in: Capsule())
+                } else if p.monthlySetAside > 0 {
+                    let months = Int((p.remaining / p.monthlySetAside).rounded(.up))
+                    Text("≈\(months) mo left").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                }
+            }
+            ProgressView(value: p.progress).tint(p.remaining <= 0 ? Palette.positive : Palette.azure)
+                .scaleEffect(x: 1, y: 0.7, anchor: .center)
+        }
+        .padding(.vertical, 2)
+        .hoverRow()
+        .onTapGesture { editingGoal = p }
+    }
+}
+
+/// Add/edit one savings goal — target, saved-so-far, and the monthly set-aside that
+/// safe-to-spend reserves (like a bill) until the goal is reached.
+struct GoalSheet: View {
+    var existing: Plan? = nil
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Query private var settings: [AppSettings]
+
+    @State private var title = ""
+    @State private var target = ""
+    @State private var saved = ""
+    @State private var setAside = ""
+    @FocusState private var titleFocus: Bool
+
+    private var base: String { settings.first?.baseCurrency ?? "PHP" }
+    private func num(_ s: String) -> Double? { Double(s.replacingOccurrences(of: ",", with: "")) }
+
+    var body: some View {
+        SheetScaffold(title: existing == nil ? "New savings goal" : "Edit goal",
+                      accent: Palette.azure, icon: "target",
+                      canSave: !title.trimmingCharacters(in: .whitespaces).isEmpty && (num(target) ?? 0) > 0,
+                      onSave: save,
+                      deleteLabel: existing != nil ? "Delete goal" : nil,
+                      onDelete: existing != nil ? remove : nil) {
+            LabeledField("What are you saving for?") {
+                TextField("e.g. MacBook Pro", text: $title).textFieldStyle(GlassFieldStyle()).focused($titleFocus)
+            }
+            HStack(spacing: 12) {
+                LabeledField("Target (\(CurrencyFormat.symbol(base)))") {
+                    TextField("0", text: $target).textFieldStyle(GlassFieldStyle())
+                }
+                LabeledField("Saved so far") {
+                    TextField("0", text: $saved).textFieldStyle(GlassFieldStyle())
+                }
+            }
+            LabeledField("Set aside monthly") {
+                TextField("0", text: $setAside).textFieldStyle(GlassFieldStyle())
+                Text("Reserved out of safe-to-spend every month, like a bill — until the goal is reached.")
+                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+            }
+        }
+        .onAppear {
+            if let p = existing {
+                title = p.title
+                target = p.targetAmount > 0 ? String(format: "%.0f", p.targetAmount) : ""
+                saved = p.savedAmount > 0 ? String(format: "%.0f", p.savedAmount) : ""
+                setAside = p.monthlySetAside > 0 ? String(format: "%.0f", p.monthlySetAside) : ""
+            }
+            DispatchQueue.main.async { titleFocus = true }
+        }
+    }
+
+    private func save() {
+        guard let t = num(target), t > 0 else { return }
+        let p = existing ?? Plan(title: "", targetAmount: 0)
+        p.title = title.trimmingCharacters(in: .whitespaces)
+        p.targetAmount = t
+        p.savedAmount = max(0, num(saved) ?? 0)
+        p.monthlySetAside = max(0, num(setAside) ?? 0)
+        p.updatedAt = .now
+        p.dirty = true
+        if existing == nil { context.insert(p) }
+        try? context.save()
+        dismiss()
+    }
+
+    private func remove() {
+        if let p = existing { p.archived = true; p.updatedAt = .now; p.dirty = true; try? context.save() }
+        dismiss()
     }
 }

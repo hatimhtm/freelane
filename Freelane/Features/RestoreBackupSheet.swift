@@ -19,7 +19,7 @@ struct RestoreBackupSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Restore from backup").font(Typo.title(20)).foregroundStyle(Palette.textPrimary)
                     Text("Your current data is backed up first, so this is reversible.")
-                        .font(.system(size: 11.5)).foregroundStyle(Palette.textTertiary)
+                        .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }
@@ -85,7 +85,7 @@ struct RestoreBackupSheet: View {
                     Text(item.date.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
                     Text(item.name.replacingOccurrences(of: "Freelane-", with: "") + " · \(String(format: "%.1f", item.sizeMB)) MB")
-                        .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
                 if isSel && loadingPreview { ProgressView().controlSize(.small) }

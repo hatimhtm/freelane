@@ -21,10 +21,11 @@ struct SettingsView: View {
     @State private var baseError: String?
     @AppStorage("integ.reminders") private var remindersOn = false
     @AppStorage("integ.contacts") private var contactsOn = false
-    @AppStorage("hotkey.capture.enabled") private var captureHotkey = false
+    @AppStorage("hotkey.capture.enabled") private var captureHotkey = true   // matches HotkeyManager's on-by-default
     @AppStorage("redact.health") private var redactHealth = true
     @AppStorage("redact.intimate") private var redactIntimate = true
     @AppStorage("appearance") private var appearance = "dark"
+    @State private var city = UserDefaults.standard.string(forKey: "user.city") ?? ""
     @State private var backedUp = false
     @State private var showTrash = false
     @State private var showRestore = false
@@ -98,7 +99,7 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(w.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                 Text("now \(CurrencyFormat.string(currentNative, cur, compact: true))" + (cur != base ? " · \(CurrencyFormat.string(currentBase, base, compact: true))" : ""))
-                                    .font(.system(size: 10.5)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
+                                    .font(.system(size: 10)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
                             }
                             Spacer()
                         }
@@ -272,7 +273,7 @@ struct SettingsView: View {
                     Spacer()
                 }
                 Text("Back up = timestamped copies of your data on this Mac. Restore = roll back to one (current data saved first). Recently Deleted keeps anything you remove for 30 days. Export CSV = your payments, spends & transfers for Numbers/Excel.")
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
         }
         .sheet(isPresented: $showRestore) { RestoreBackupSheet() }
@@ -354,7 +355,7 @@ struct SettingsView: View {
         return HStack(spacing: 10) {
             Circle().fill(state).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 1) {
-                Text(BrainHealth.displayName(source)).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                Text(BrainHealth.displayName(source)).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
                 if let err = s.lastError, s.consecutive > 0 {
                     Text(err).font(.system(size: 10)).foregroundStyle(Palette.negative).lineLimit(2)
                 } else if let at = s.lastFailAt, s.fail > 0 {
@@ -366,7 +367,7 @@ struct SettingsView: View {
                 .font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
                 .foregroundStyle(s.fail == 0 ? Palette.positive : Palette.textSecondary)
             if s.consecutive >= 3 {
-                Text("FAILING").font(.system(size: 8.5, weight: .bold)).foregroundStyle(Palette.negative)
+                Text("FAILING").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.negative)
                     .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.negative.opacity(0.16), in: Capsule())
             }
         }
@@ -386,7 +387,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Use a local model when it's running").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                         Text("Loads while you use the app, unloads the moment you leave — it never competes with games or other work. When your Mac sits idle on power, it quietly catches up.")
-                            .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }.toggleStyle(.switch).tint(Palette.teal)
@@ -436,14 +437,14 @@ struct SettingsView: View {
                         Text(FoundationModelProvider.isAvailable
                              ? "Available — fast, private, works offline. Backs up your local model."
                              : "Not available on this Mac yet.")
-                            .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                     }
                 }.toggleStyle(.switch).tint(Palette.violet)
                 Toggle(isOn: Binding(get: { ai.allowCloudFallback }, set: { ai.allowCloudFallback = $0 })) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Use Gemini (cloud) at all").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                         Text("Off (recommended): everything — questions, tagging, summaries AND chat — runs on your local Gemma & Apple brains. Zero cloud tokens, fully private. On: Gemini assists where it's strongest.")
-                            .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                     }
                 }.toggleStyle(.switch).tint(Palette.violet)
                 LabeledField("Gemini API key") {
@@ -457,9 +458,9 @@ struct SettingsView: View {
                 if !usage.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "gauge.with.dots.needle.bottom.50percent").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                        Text("~\(AIUsage.totalThisWeek().formatted()) tokens this week").font(.system(size: 11.5, weight: .medium)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                        Text("~\(AIUsage.totalThisWeek().formatted()) tokens this week").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(Palette.textSecondary)
                         Text("(" + usage.map { "\($0.source) \($0.tokens.formatted())" }.joined(separator: " · ") + ")")
-                            .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                         Spacer()
                     }
                 }
@@ -472,12 +473,12 @@ struct SettingsView: View {
                     Spacer()
                 }
                 Divider().overlay(Palette.hairline)
-                Text("PRIVACY — redact before sending to the cloud").font(.system(size: 9.5, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
+                Text("PRIVACY — redact before sending to the cloud").font(.system(size: 9, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
                 Toggle(isOn: Binding(get: { redactHealth }, set: { redactHealth = $0 })) {
-                    Text("Hide health terms (doctor, therapy…)").font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary)
+                    Text("Hide health terms (doctor, therapy…)").font(.system(size: 12)).foregroundStyle(Palette.textPrimary)
                 }.toggleStyle(.switch).tint(Palette.teal)
                 Toggle(isOn: Binding(get: { redactIntimate }, set: { redactIntimate = $0 })) {
-                    Text("Hide sensitive terms (lawyer, divorce…)").font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary)
+                    Text("Hide sensitive terms (lawyer, divorce…)").font(.system(size: 12)).foregroundStyle(Palette.textPrimary)
                 }.toggleStyle(.switch).tint(Palette.teal)
                 Text("On-device prompts are never redacted — nothing leaves this Mac. Redaction only applies to Gemini (cloud) calls. Your key is stored locally; the assistant runs cache-first.")
                     .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
@@ -511,7 +512,7 @@ struct SettingsView: View {
                         Text("Every amount in your history will be recomputed into \(pendingBase ?? "") at the current exchange rate. Native currencies are unchanged.")
                     }
                 if let baseError {
-                    Text(baseError).font(.system(size: 10.5)).foregroundStyle(Palette.negative)
+                    Text(baseError).font(.system(size: 10)).foregroundStyle(Palette.negative)
                 }
             }
             LabeledField("Appearance") {
@@ -519,16 +520,33 @@ struct SettingsView: View {
                              selection: Binding(get: { appearance }, set: { appearance = $0 }),
                              label: { $0 == "light" ? "Light" : $0 == "dark" ? "Dark" : "System" })
                 Text("Warm light or warm dark — switches instantly, or follow the system.")
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+            }
+            LabeledField("Your city") {
+                TextField("e.g. Manila, Philippines", text: $city)
+                    .textFieldStyle(GlassFieldStyle())
+                    .onSubmit { saveCity() }
+                Text("Anchors safe-to-spend to your real local cost of living (refreshed by the AI). Was previously stuck on a default town — set yours once.")
+                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             Toggle(isOn: Binding(get: { captureHotkey }, set: { captureHotkey = $0; HotkeyManager.shared.apply() })) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Global capture hotkey (⌃⌥Space)").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                     Text("Pop up Log Spend from anywhere, even when Freelane is in the background.")
-                        .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 }
             }.toggleStyle(.switch).tint(Palette.teal)
         }
+    }
+
+    /// Persist the city and force the next cost-of-living refresh to re-anchor to it
+    /// (clearing `col.refreshedAt` skips the 2-week refresh cooldown).
+    private func saveCity() {
+        let trimmed = city.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        UserDefaults.standard.set(trimmed, forKey: "user.city")
+        UserDefaults.standard.removeObject(forKey: "col.refreshedAt")
+        Task { await Brain.refreshCostOfLiving(context, ai: ai) }
     }
 
     private var aboutCard: some View {

@@ -139,7 +139,7 @@ struct VendorsView: View {
             let up = d > 0
             HStack(spacing: 3) {
                 Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
-                Text("\(abs(Int((d * 100).rounded())))%").font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+                Text("\(abs(Int((d * 100).rounded())))%").font(.system(size: 10, weight: .semibold)).monospacedDigit()
             }
             .foregroundStyle(up ? Palette.negative : Palette.positive)
             .padding(.horizontal, 6).padding(.vertical, 3)

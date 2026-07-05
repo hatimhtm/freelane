@@ -13,7 +13,7 @@ enum StateSnapshot {
     static func fingerprint(_ context: ModelContext) -> String {
         let d = load(context)
         let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends,
-                                       wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings)
+                                       wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)
         let walletTotal = Int(safe.walletTotal.rounded())
         let landed = Int(d.metrics.landedMTD.rounded())
         let spent = Int(safe.spentToday.rounded())
@@ -28,7 +28,7 @@ enum StateSnapshot {
         func money(_ v: Double) -> String { CurrencyFormat.string(v, base, compact: true) }
 
         let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends,
-                                       wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings)
+                                       wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)
 
         var lines: [String] = []
         lines.append("FREELANE STATE — base currency \(base). All amounts in \(base) unless noted.")
@@ -171,6 +171,7 @@ enum StateSnapshot {
         var facts: [AIFact]
         var entities: [Entity]
         var recurrings: [Recurring]
+        var plans: [Plan]
         var bodyLogs: [BodyLog]
         var rates: Rates
         var metrics: DashboardMetrics
@@ -204,6 +205,6 @@ enum StateSnapshot {
                       ledger: ledger, allocations: allocations, withdrawals: withdrawals,
                       loans: all(Loan.self), facts: all(AIFact.self),
                       entities: all(Entity.self), recurrings: all(Recurring.self),
-                      bodyLogs: all(BodyLog.self), rates: rates, metrics: metrics)
+                      plans: all(Plan.self), bodyLogs: all(BodyLog.self), rates: rates, metrics: metrics)
     }
 }

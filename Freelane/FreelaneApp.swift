@@ -44,6 +44,7 @@ extension Notification.Name {
     static let flLogSpend = Notification.Name("freelane.logSpend")
     static let flLogPayment = Notification.Name("freelane.logPayment")
     static let flOpenFeature = Notification.Name("freelane.openFeature")   // userInfo["feature"] = Feature.rawValue
+    static let flOpenClient = Notification.Name("freelane.openClient")     // userInfo["clientId"] = UUID string — opens that client's detail
 }
 
 @main

@@ -221,10 +221,10 @@ struct LoanPersonSheet: View {
             .sorted { $0.eventAt > $1.eventAt }
     }
     private var givenOpen: [Loan] {
-        loans.filter { $0.direction == .given && $0.outstandingBase > 0.001 && $0.status != .returned && $0.status != .forgiven }
+        loans.filter { $0.direction == .given && $0.outstandingBase > 0.005 && $0.status != .returned && $0.status != .forgiven }
     }
     private var receivedOpen: [Loan] {
-        loans.filter { $0.direction == .received && $0.outstandingBase > 0.001 && $0.status != .returned && $0.status != .forgiven }
+        loans.filter { $0.direction == .received && $0.outstandingBase > 0.005 && $0.status != .returned && $0.status != .forgiven }
     }
     private var summaryLine: String {
         if lentOutstanding > 0.005 && borrowedOutstanding > 0.005 {
@@ -339,7 +339,7 @@ struct LoanPersonSheet: View {
             Text(l.startedAt.formatted(.dateTime.month().day().year()) + (open ? " · \(CurrencyFormat.string(l.outstandingBase, base, compact: true)) outstanding" : ""))
                 .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
             if let fb = l.forgivenBase, fb > 0 {
-                Text("Forgiven \(CurrencyFormat.string(fb, base, compact: true)) — counted as sadaka").font(.system(size: 10.5)).foregroundStyle(Palette.violet)
+                Text("Forgiven \(CurrencyFormat.string(fb, base, compact: true)) — counted as sadaka").font(.system(size: 10)).foregroundStyle(Palette.violet)
             }
             HStack(spacing: 8) {
                 if open && l.direction == .given {
@@ -412,7 +412,7 @@ struct EditLoanSheet: View {
             if hasDue { LabeledField("Return by") { GlassDateField(date: $due) } }
             LabeledField("Notes") { TextField("optional", text: $notes).textFieldStyle(GlassFieldStyle()) }
             Text("Amount, direction and wallet are locked once logged (they moved real money). Delete + re-add to change those.")
-                .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
         }
         .onAppear {
             guard !loaded else { return }; loaded = true
@@ -507,7 +507,7 @@ struct BodyView: View {
                 .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
             if let v = value, (1...5).contains(v) {
-                Text(words[v - 1]).font(.system(size: 11.5, weight: .medium)).foregroundStyle(color)
+                Text(words[v - 1]).font(.system(size: 11, weight: .medium)).foregroundStyle(color)
             }
             Spacer()
             TapScale(value: value, color: color, onTap: onTap)
@@ -563,7 +563,7 @@ struct BodyView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
                         .rotationEffect(.degrees(showDetails ? 90 : 0))
-                    Text(showDetails ? "Hide details" : detailsSummary).font(.system(size: 11.5, weight: .medium))
+                    Text(showDetails ? "Hide details" : detailsSummary).font(.system(size: 11, weight: .medium))
                 }
                 .foregroundStyle(Palette.textTertiary).contentShape(Rectangle())
             }.buttonStyle(.plain)
@@ -632,7 +632,7 @@ struct BodyView: View {
             if series.count >= 2 {
                 Sparkline(values: series, color: color).frame(width: 150, height: 28)
             } else {
-                Text("A few more days and a line appears").font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                Text("A few more days and a line appears").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(avg.map { String(format: "%.1f", $0) } ?? "—")
@@ -663,16 +663,16 @@ struct BodyView: View {
     private func recentCell(_ l: BodyLog) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(l.day, format: .dateTime.weekday(.abbreviated).month().day())
-                .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Palette.textSecondary)
+                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textSecondary)
             HStack(spacing: 8) {
                 if let e = l.energy { Text("⚡️\(e)") }
                 if let m = l.mood { Text("🙂\(m)") }
                 if let s = l.sleepHours { Text("😴\(String(format: "%g", s))h") }
             }
-            .font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary)
+            .font(.system(size: 12)).foregroundStyle(Palette.textPrimary)
             let extras = extrasLine(l)
             if !extras.isEmpty {
-                Text(extras).font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                Text(extras).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }
         }
         .padding(11)
@@ -890,7 +890,7 @@ struct LettersView: View {
                         ForEach(mindMoney, id: \.self) { line in
                             HStack(alignment: .top, spacing: 9) {
                                 Image(systemName: "waveform.path.ecg").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.teal).padding(.top, 2)
-                                Text(line).font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+                                Text(line).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
@@ -986,13 +986,13 @@ struct LettersView: View {
                 if g.entries.contains(where: { $0.pinned }) { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(Palette.indigo) }
                 Spacer()
             }
-            Text(dayDate(g.day)).font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+            Text(dayDate(g.day)).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
             Text(g.entries.first?.body ?? "").font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
                 .lineLimit(3).multilineTextAlignment(.leading)
             Spacer(minLength: 2)
             HStack(spacing: 5) {
-                Text("\(g.entries.count) \(g.entries.count == 1 ? "entry" : "entries")").font(.system(size: 9.5, weight: .semibold)).foregroundStyle(Palette.indigo)
-                if let s = g.entries.first?.sentiment { Text("· \(s)").font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
+                Text("\(g.entries.count) \(g.entries.count == 1 ? "entry" : "entries")").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.indigo)
+                if let s = g.entries.first?.sentiment { Text("· \(s)").font(.system(size: 9)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
                 Spacer()
             }
         }
@@ -1022,7 +1022,7 @@ struct LettersView: View {
                                 HStack {
                                     Text(l.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(2).multilineTextAlignment(.leading)
                                     Spacer()
-                                    Text(l.createdAt, format: .dateTime.hour().minute()).font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                                    Text(l.createdAt, format: .dateTime.hour().minute()).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                                 }
                                 Text(l.body).font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(3).multilineTextAlignment(.leading)
                             }.padding(.vertical, 11).contentShape(Rectangle())
@@ -1074,7 +1074,7 @@ struct LettersView: View {
                 HStack(spacing: 10) {
                     Image(systemName: promptIcon(p)).font(.system(size: 13)).foregroundStyle(Palette.indigo)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(p.text).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).multilineTextAlignment(.leading)
+                        Text(p.text).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).multilineTextAlignment(.leading)
                         if let badge = promptBadge(p) {
                             Text(badge).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                         }
@@ -1155,7 +1155,7 @@ struct AddLetterSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
                     Text(Date().formatted(.dateTime.weekday(.wide).month().day()))
-                        .font(.system(size: 10.5, weight: .semibold)).kerning(1.2).textCase(.uppercase)
+                        .font(.system(size: 10, weight: .semibold)).kerning(1.2).textCase(.uppercase)
                         .foregroundStyle(Palette.textTertiary)
                     Spacer()
                     Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
@@ -1291,7 +1291,7 @@ struct MonthCalendar: View {
                     .opacity(cal.isDate(month, equalTo: Date(), toGranularity: .month) ? 0.35 : 1)
                     .disabled(cal.isDate(month, equalTo: Date(), toGranularity: .month))
             }
-            HStack(spacing: 2) { ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { Text($0).font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity) } }
+            HStack(spacing: 2) { ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { Text($0).font(.system(size: 9)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity) } }
             let days = monthDays()
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7), spacing: 4) {
                 ForEach(days.indices, id: \.self) { i in
@@ -1301,7 +1301,7 @@ struct MonthCalendar: View {
                         let tile = ZStack {
                             RoundedRectangle(cornerRadius: 6, style: .continuous).fill(fill).frame(width: 28, height: 28)
                             if isSel { RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Palette.indigo, lineWidth: 2).frame(width: 28, height: 28) }
-                            Text("\(cal.component(.day, from: d))").font(.system(size: 10.5, weight: written || isSel ? .bold : .regular))
+                            Text("\(cal.component(.day, from: d))").font(.system(size: 10, weight: written || isSel ? .bold : .regular))
                                 .foregroundStyle(written ? .white : Palette.textSecondary)
                         }.frame(height: 30)
                         if let onSelect { Button { onSelect(d) } label: { tile }.buttonStyle(.plain) }
@@ -1366,7 +1366,7 @@ struct StreakMenu: View {
                         Label(JournalGame.isFrozenToday() ? "Today is frozen ✓" : "Freeze today · \(JournalGame.freezeCost) coins", systemImage: "snowflake").frame(maxWidth: .infinity)
                     }.buttonStyle(.glass).disabled(JournalGame.isFrozenToday() || JournalGame.coins < JournalGame.freezeCost)
                     Text("Coins come from answering questions — write more in a day to bank more. Spend them to freeze a day before you miss it, or to bridge a broken streak instantly.")
-                        .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
                 }.padding(16)
             }
         }
@@ -1381,7 +1381,7 @@ struct StreakMenu: View {
         let cost = missed * JournalGame.unbreakCostPerDay
         return VStack(alignment: .leading, spacing: 8) {
             Label("Streak broken — bring it back", systemImage: "exclamationmark.triangle.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.warning)
-            Text("You missed \(missed) day\(missed == 1 ? "" : "s"). Answer \(required) questions to restore it — \(done)/\(required) so far.").font(.system(size: 11.5)).foregroundStyle(Palette.textSecondary)
+            Text("You missed \(missed) day\(missed == 1 ? "" : "s"). Answer \(required) questions to restore it — \(done)/\(required) so far.").font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
             ProgressView(value: Double(done), total: Double(max(required, 1))).tint(Palette.warning)
             Button { _ = JournalGame.unbreakWithCoins(); tick += 1 } label: { Label("Bridge now · \(cost) coins", systemImage: "bolt.fill").frame(maxWidth: .infinity) }
                 .buttonStyle(.glass).controlSize(.small).disabled(JournalGame.coins < cost)
@@ -1569,7 +1569,7 @@ struct FaithView: View {
     }
     private func qadaRow(_ label: String, _ value: Binding<Int>) -> some View {
         HStack(spacing: 8) {
-            Text(label).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+            Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
             Spacer()
             Button { value.wrappedValue = max(0, value.wrappedValue - 1) } label: { Image(systemName: "minus.circle.fill") }
                 .buttonStyle(.iconPress).foregroundStyle(value.wrappedValue == 0 ? Palette.textTertiary : Palette.positive)
@@ -1589,7 +1589,7 @@ struct FaithView: View {
             HStack(spacing: 16) {
                 if let n = next {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(n.label.uppercased()).font(.system(size: 9.5, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
+                        Text(n.label.uppercased()).font(.system(size: 9, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
                         Text(n.target, style: .timer).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(Palette.indigo)
                         Text("at \(n.target.formatted(date: .omitted, time: .shortened))").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
@@ -1599,7 +1599,7 @@ struct FaithView: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("LAYLAT AL-QADR?").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                         Text("Night \(n) of 10").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.textPrimary)
-                        Text("Seek it in the odd nights").font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                        Text("Seek it in the odd nights").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                     }
                 }
             }
@@ -1662,9 +1662,9 @@ struct FaithView: View {
                 // Sunrise — informational, quiet, not loggable.
                 HStack(spacing: 10) {
                     Image(systemName: r.icon).font(.system(size: 12)).foregroundStyle(Palette.textTertiary).frame(width: 20)
-                    Text(r.name).font(.system(size: 12.5)).foregroundStyle(Palette.textTertiary)
+                    Text(r.name).font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                     Spacer()
-                    Text(r.time).font(.system(size: 12.5, weight: .medium, design: .rounded)).monospacedDigit()
+                    Text(r.time).font(.system(size: 12, weight: .medium, design: .rounded)).monospacedDigit()
                         .foregroundStyle(Palette.textTertiary)
                 }
                 .padding(.vertical, 4).padding(.horizontal, 11)

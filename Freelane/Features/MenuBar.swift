@@ -13,6 +13,7 @@ struct MenuBarView: View {
     @Query(filter: #Predicate<Wallet> { $0.deletedAt == nil }) private var wallets: [Wallet]
     @Query private var ledger: [LedgerEntry]
     @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
+    @Query private var plans: [Plan]
 
     @State private var capture = ""
     @State private var walletId: UUID?
@@ -26,7 +27,7 @@ struct MenuBarView: View {
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
     private var rates: Rates { Rates(base: base, rates: rateRows) }
     private var safe: SafeBreakdown {
-        SafeToSpend.compute(payments: payments, spends: spends, wallets: wallets, ledger: ledger, recurrings: recurrings)
+        SafeToSpend.compute(payments: payments, spends: spends, wallets: wallets, ledger: ledger, recurrings: recurrings, plans: plans)
     }
     private var holding: [Wallet] { wallets.filter { $0.isHolding && !$0.archived } }
     /// Default wallet: the one you last logged a spend into, else the first holding wallet.
@@ -50,7 +51,7 @@ struct MenuBarView: View {
 
     private var reminderSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("FROM REMINDERS").font(.system(size: 9.5, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
+            Text("FROM REMINDERS").font(.system(size: 9, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
             ForEach(reminderCandidates) { c in
                 HStack(spacing: 9) {
                     Image(systemName: "checklist").font(.system(size: 12)).foregroundStyle(Palette.azure).frame(width: 22)
@@ -58,7 +59,7 @@ struct MenuBarView: View {
                     Spacer()
                     if let d = c.draft, d.amount > 0 {
                         Text(CurrencyFormat.string(d.amount, d.currency, compact: true))
-                            .font(.system(size: 11.5, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textSecondary)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textSecondary)
                     }
                     Button("Log") { logReminder(c) }.buttonStyle(.glassProminent).tint(Palette.positive).controlSize(.mini)
                 }
@@ -78,10 +79,10 @@ struct MenuBarView: View {
 
     private var safeCard: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("SAFE TO SPEND TODAY").font(.system(size: 9.5, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
+            Text("SAFE TO SPEND TODAY").font(.system(size: 9, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
             MoneyText(amount: safe.liveRemaining, code: base, size: 30, color: Palette.positive)
             Text("of \(CurrencyFormat.string(safe.initialForToday, base, compact: true)) · \(CurrencyFormat.string(safe.walletTotal, base, compact: true)) across wallets")
-                .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.positive.opacity(0.10), in: RoundedRectangle(cornerRadius: Radii.field, style: .continuous))
@@ -90,10 +91,10 @@ struct MenuBarView: View {
     private var captureSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("QUICK CAPTURE").font(.system(size: 9.5, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
+                Text("QUICK CAPTURE").font(.system(size: 9, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
                 Spacer()
                 if let msg = justLogged {
-                    Label(msg, systemImage: "checkmark.circle.fill").font(.system(size: 10.5, weight: .medium))
+                    Label(msg, systemImage: "checkmark.circle.fill").font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.positive).transition(.opacity)
                 }
             }
@@ -124,14 +125,14 @@ struct MenuBarView: View {
 
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("RECENT").font(.system(size: 9.5, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
+            Text("RECENT").font(.system(size: 9, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
             ForEach(spends.prefix(5)) { s in
                 HStack(spacing: 9) {
                     VendorMark(name: s.vendorName ?? (s.spendDescription ?? "?"), size: 22)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(s.vendorName ?? s.spendDescription ?? "Spend").font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Palette.textPrimary).lineLimit(1)
-                        Text(s.spentAt.formatted(.relative(presentation: .named))).font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                        Text(s.spentAt.formatted(.relative(presentation: .named))).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                     }
                     Spacer()
                     Text(CurrencyFormat.string(s.amountBase, base, compact: true))

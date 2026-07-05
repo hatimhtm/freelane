@@ -20,7 +20,7 @@ struct EmptyStateCard: View {
             Text(title)
                 .font(Typo.title(17)).foregroundStyle(Palette.textPrimary)
             Text(message)
-                .font(.system(size: 12.5)).foregroundStyle(Palette.textTertiary)
+                .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 320)
             if let actionLabel, let action {

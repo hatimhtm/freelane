@@ -75,8 +75,10 @@ extension MoneyEngine {
             let smoothed = prior > 0 ? (prior + perPeriod) / 2 : perPeriod
             r.amount = (smoothed / 10).rounded() * 10            // a clean approximate figure
             r.amountBase = round2(rates.toBase(r.amount, r.currency))
+            r.dirty = true   // invariant: the learned amount must sync on its own, not ride resyncRecurring's flag
         } else if updateRule {
             r.amount = perPeriod; r.amountBase = round2(rates.toBase(perPeriod, r.currency))
+            r.dirty = true
         }
         // "Paid through" is DERIVED from the linked spends — never advanced from the payment
         // date — so a bill paid late settles the period it belongs to, and deleting the spend

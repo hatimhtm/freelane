@@ -319,8 +319,15 @@ struct MoneyEngine {
         payment.dirty = true
 
         if let firstStep = existing.first, let finalStep = existing.last {
-            if case let .some(newMethod) = methodId { finalStep.methodId = newMethod; finalStep.dirty = true }
+            if case let .some(newMethod) = methodId { finalStep.methodId = newMethod }
             if case let .some(newFrom) = fromMethodId { firstStep.fromMethodId = newFrom; firstStep.dirty = true }
+            // Keep the final step's amountOut in lockstep with the edited net. The canonical
+            // spec (MONEY-ENGINE.md §3.1) derives netBase FROM final.amountOut, and sync pushes
+            // amount_out — leaving the old value here made a fee correction locally right but
+            // silently wrong on any platform that re-derives from the chain.
+            finalStep.amountOut = round2(net)
+            finalStep.currencyOut = base
+            finalStep.dirty = true
         } else {
             let landing: UUID?
             if case let .some(m) = methodId { landing = m } else { landing = nil }

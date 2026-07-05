@@ -118,8 +118,10 @@ struct BellButton: View {
     var onOpenFeature: (Feature) -> Void
     @Environment(\.modelContext) private var context
     @Query private var all: [AppNotification]
+    @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
     @State private var open = false
     @State private var answering: AppNotification?
+    @State private var paying: Recurring?
     @AppStorage("notif.muted") private var mutedRaw = ""   // newline-joined notification kinds to suppress
 
     private var muted: Set<String> { Set(mutedRaw.split(separator: "\n").map(String.init)) }
@@ -151,9 +153,10 @@ struct BellButton: View {
         }
         .buttonStyle(.plain)
         .glassEffect(Glass.regular, in: .circle)
-        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+        .shadow(color: .black.opacity(0.20), radius: 9, y: 4)
         .popover(isPresented: $open, arrowEdge: .top) { popover }
         .sheet(item: $answering) { AnswerSheet(note: $0) }
+        .sheet(item: $paying) { PayRecurringSheet(recurring: $0) }
         .onChange(of: unread.count) { _, n in NSApplication.shared.dockTile.badgeLabel = n > 0 ? "\(n)" : nil }
         .onAppear { NSApplication.shared.dockTile.badgeLabel = unread.isEmpty ? nil : "\(unread.count)" }
     }
@@ -194,7 +197,7 @@ struct BellButton: View {
             HStack(alignment: .top, spacing: 10) {
                 Circle().fill(n.priority >= 1 ? Palette.warning : Palette.azure).frame(width: 7, height: 7).padding(.top, 5)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(n.subject).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Palette.textPrimary).multilineTextAlignment(.leading)
+                    Text(n.subject).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary).multilineTextAlignment(.leading)
                     if let b = n.body { Text(b).font(.system(size: 11)).foregroundStyle(Palette.textSecondary).lineLimit(3).multilineTextAlignment(.leading) }
                     if let a = n.answer, !a.isEmpty {
                         Label("You answered: \(a)", systemImage: "checkmark.circle.fill")
@@ -202,7 +205,12 @@ struct BellButton: View {
                     } else if n.isQuestion {
                         Text("Tap to answer").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.azure)
                     }
-                    Text(n.createdAt, format: .relative(presentation: .named)).font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                    Text(n.createdAt, format: .relative(presentation: .named)).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
+                    // A due bill is settleable right here — the notification carries its rule.
+                    if let r = billFor(n) {
+                        Button("Pay now") { open = false; paying = r }
+                            .buttonStyle(.glass).controlSize(.small).padding(.top, 2)
+                    }
                 }
                 Spacer()
                 VStack(spacing: 8) {
@@ -221,6 +229,15 @@ struct BellButton: View {
             }
             .padding(11).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: Radii.field, interactive: true)
         }.buttonStyle(.cardPress)
+    }
+
+    /// bill_due notifications encode their rule in the dedup key ("bill_due:<uuid>:<ts>") —
+    /// resolve it back to the live Recurring so the row can offer a one-tap Pay.
+    private func billFor(_ n: AppNotification) -> Recurring? {
+        guard n.kind == "bill_due", let key = n.dedupKey else { return nil }
+        let parts = key.split(separator: ":")
+        guard parts.count >= 2, let id = UUID(uuidString: String(parts[1])) else { return nil }
+        return recurrings.first { $0.id == id && $0.active }
     }
 
     private func snooze(_ n: AppNotification, days: Int) {

@@ -108,7 +108,7 @@ struct TrashView: View {
                 Text("Recently deleted")
                     .font(Typo.title(26)).foregroundStyle(Palette.textPrimary)
                 Text("Items stay here for 30 days, then delete permanently. Restore brings them — and their effect on your balances — back exactly.")
-                    .font(.system(size: 12.5)).foregroundStyle(Palette.textTertiary)
+                    .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
 
                 if items.isEmpty {
                     EmptyStateCard(icon: "trash", title: "Trash is empty",
@@ -136,10 +136,10 @@ struct TrashView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: icon(for: h.action)).font(.system(size: 10))
                                     .foregroundStyle(Palette.textTertiary).frame(width: 14)
-                                Text(h.summary).font(.system(size: 11.5)).foregroundStyle(Palette.textSecondary)
+                                Text(h.summary).font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
                                 Spacer()
                                 Text(h.at.formatted(.relative(presentation: .named)))
-                                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                             }
                         }
                     }
@@ -174,7 +174,7 @@ private struct TrashRow: View {
                 .background(row.tint.opacity(0.14), in: RoundedRectangle(cornerRadius: Radii.row, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                Text(row.sub).font(.system(size: 11.5)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                Text(row.sub).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }
             Spacer()
             Text(row.when.formatted(.relative(presentation: .named)))

@@ -99,7 +99,7 @@ enum Brain {
 
         let d = StateSnapshot.load(context)
         let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends, wallets: d.wallets,
-                                       ledger: d.ledger, recurrings: d.recurrings)
+                                       ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)
         func money(_ v: Double) -> String { CurrencyFormat.string(v, d.baseCurrency, compact: true) }
 
         var body = "Safe to spend \(money(safe.liveRemaining)) today · \(money(d.metrics.landedMTD)) landed this month · \(money(d.metrics.outstandingBase)) owed to you."
@@ -667,25 +667,41 @@ enum Brain {
             .filter { $0.deletedAt == nil && $0.spentAt >= cutoff }
         let pays = ((try? context.fetch(FetchDescriptor<Payment>())) ?? [])
             .filter { $0.deletedAt == nil && $0.paidAt >= cutoff }
-        var days: [Date: (moods: [String], out: Double, inn: Double)] = [:]
+        // The structured body check-ins — mood/energy/sleep were collected for months and never
+        // fed to this correlator; joining them in makes mind × money a real BODY × money read.
+        let bodyLogs = ((try? context.fetch(FetchDescriptor<BodyLog>())) ?? [])
+            .filter { $0.deletedAt == nil && $0.day >= cutoff }
+        var days: [Date: (moods: [String], out: Double, inn: Double, body: [String])] = [:]
         func key(_ d: Date) -> Date { cal.startOfDay(for: d) }
         for l in letters {
-            var r = days[key(l.createdAt)] ?? ([], 0, 0)
+            var r = days[key(l.createdAt)] ?? ([], 0, 0, [])
             if let s = l.sentiment, !s.isEmpty { r.moods.append(s) }
             days[key(l.createdAt)] = r
         }
         for s in spends {
-            var r = days[key(s.spentAt)] ?? ([], 0, 0); r.out += s.amountBase; days[key(s.spentAt)] = r
+            var r = days[key(s.spentAt)] ?? ([], 0, 0, []); r.out += s.amountBase; days[key(s.spentAt)] = r
         }
         for p in pays {
-            var r = days[key(p.paidAt)] ?? ([], 0, 0)
+            var r = days[key(p.paidAt)] ?? ([], 0, 0, [])
             r.inn += (p.grossAtMarketBase ?? p.netAmountBase ?? 0); days[key(p.paidAt)] = r
         }
-        let moodDays = days.values.filter { !$0.moods.isEmpty }.count
+        for b in bodyLogs {
+            var r = days[key(b.day)] ?? ([], 0, 0, [])
+            var bits: [String] = []
+            if let m = b.mood { bits.append("mood \(m)/5") }
+            if let e = b.energy { bits.append("energy \(e)/5") }
+            if let s = b.sleepHours { bits.append(String(format: "slept %.1fh", s)) }
+            if let w = b.workoutMinutes, w > 0 { bits.append("workout \(w)m") }
+            if !bits.isEmpty { r.body.append(bits.joined(separator: ", ")) }
+            days[key(b.day)] = r
+        }
+        // Body check-ins count as mood signal too — a 3/5 rating is as real as a journal's tone.
+        let moodDays = days.values.filter { !$0.moods.isEmpty || !$0.body.isEmpty }.count
         let rows = days.keys.sorted(by: >).map { d -> String in
             let r = days[d]!
             var bits: [String] = []
             if !r.moods.isEmpty { bits.append("mood: \(r.moods.joined(separator: "/"))") }
+            if !r.body.isEmpty { bits.append("body: \(r.body.joined(separator: " · "))") }
             if r.out > 0 { bits.append("spent \(Int(r.out)) \(base)") }
             if r.inn > 0 { bits.append("received \(Int(r.inn)) \(base)") }
             return "\(d.formatted(.dateTime.month(.twoDigits).day(.twoDigits))): \(bits.joined(separator: "; "))"

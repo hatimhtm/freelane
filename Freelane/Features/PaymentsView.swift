@@ -367,7 +367,7 @@ struct BulkPaymentSheet: View {
                         Toggle(isOn: $merge.animation(Motion.snappy)) {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("Arrived together").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
-                                Text("One transfer covering all of these — enter the single amount you received.").font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                                Text("One transfer covering all of these — enter the single amount you received.").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                             }
                         }.toggleStyle(.switch).tint(Palette.positive).padding(12).glassCard(cornerRadius: Radii.field)
                     }
@@ -422,7 +422,7 @@ struct BulkPaymentSheet: View {
     /// A tiny uppercase caption over a control — the row editor's labeling rhythm.
     private func field<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.system(size: 9.5, weight: .semibold)).kerning(0.6)
+            Text(label).font(.system(size: 9, weight: .semibold)).kerning(0.6)
                 .textCase(.uppercase).foregroundStyle(Palette.textTertiary)
             content()
         }

@@ -80,8 +80,8 @@ struct PeopleView: View {
             Image(systemName: "person.2.badge.gearshape").font(.system(size: 13)).foregroundStyle(Palette.warning)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(members.map { "“\($0.name)”" }.joined(separator: ", ")) → “\(keep?.name ?? "?")”")
-                    .font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
-                Text(g.why).font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                Text(g.why).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             Spacer()
             Button("Not the same") { rejectDupe(g) }
@@ -155,17 +155,17 @@ struct PeopleView: View {
                     .foregroundStyle(Palette.violet).frame(width: 30, height: 30)
                     .background(Palette.violet.opacity(0.16), in: RoundedRectangle(cornerRadius: Radii.row, style: .continuous))
                 Spacer()
-                Text(e.kind.label).font(.system(size: 9.5, weight: .semibold)).foregroundStyle(Palette.textTertiary)
+                Text(e.kind.label).font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                     .padding(.horizontal, 7).padding(.vertical, 3).background(Palette.hairline, in: Capsule())
             }
             Text(e.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
             Text((e.relationship?.isEmpty == false ? e.relationship! : "Tap to tell me more"))
-                .font(.system(size: 11.5)).foregroundStyle(Palette.textSecondary).lineLimit(1)
+                .font(.system(size: 11)).foregroundStyle(Palette.textSecondary).lineLimit(1)
             Spacer(minLength: 6)
             // Always present (placeholder when no money) so every card is the SAME height
             // and nothing clips.
             Text(flow > 0 ? CurrencyFormat.string(flow, "PHP", compact: true) + " flowed" : " ")
-                .font(.system(size: 10.5)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
+                .font(.system(size: 10)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
         }
         .padding(14).frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)   // equal, no clip
         .glassCard(cornerRadius: Radii.tile, interactive: true, morphID: "ent.\(e.id)")
@@ -350,7 +350,7 @@ struct EntityDetailSheet: View {
                                     .onChange(of: importantDate) { _, v in entity.importantDate = v; entity.dirty = true; try? context.save() }
                                 Spacer()
                             }
-                            Text("Shows on your Agenda and the AI can remind you.").font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                            Text("Shows on your Agenda and the AI can remind you.").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                         }
                     }
                     SectionCard(title: "Notes", accent: Palette.violet) {

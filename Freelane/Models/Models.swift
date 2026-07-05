@@ -517,5 +517,6 @@ enum FreelaneSchema {
         Recurring.self,
         ChangeRecord.self,
         InsightLog.self,
+        CategoryBudget.self,   // monthly per-category soft caps (2026-07)
     ]
 }

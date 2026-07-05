@@ -16,16 +16,34 @@ struct CommandPalette: View {
         let icon: String
         let accent: Color
         let feature: Feature
+        /// Quick actions DO the thing (open the sheet) instead of just navigating to the page.
+        var action: (() -> Void)? = nil
     }
 
     private var quickActions: [Row] {
         [
-            Row(title: "Log a spend", subtitle: "Quick action", icon: "cart.badge.plus", accent: Palette.warning, feature: .spending),
-            Row(title: "Log a payment", subtitle: "Quick action", icon: "plus.circle", accent: Palette.positive, feature: .payments),
+            Row(title: "Log a spend", subtitle: "Quick action", icon: "cart.badge.plus", accent: Palette.warning,
+                feature: .spending, action: { postAfterClose(.flLogSpend) }),
+            Row(title: "Log a payment", subtitle: "Quick action", icon: "plus.circle", accent: Palette.positive,
+                feature: .payments, action: { postAfterClose(.flLogPayment) }),
             Row(title: "Give sadaka", subtitle: "Quick action", icon: "heart.fill", accent: Palette.negative, feature: .sadaka),
             Row(title: "New project", subtitle: "Quick action", icon: "folder.badge.plus", accent: Palette.violet, feature: .projects),
             Row(title: "New loan", subtitle: "Quick action", icon: "arrow.left.arrow.right", accent: Palette.teal, feature: .loans),
         ]
+    }
+
+    /// Close the palette, then fire the app-wide quick-action once the sheet is gone
+    /// (posting immediately would collide with the palette's own sheet dismissal).
+    private func postAfterClose(_ name: Notification.Name) {
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+            NotificationCenter.default.post(name: name, object: nil)
+        }
+    }
+
+    /// Run a row: a quick action does its thing; a page row navigates.
+    private func fire(_ r: Row) {
+        if let a = r.action { a() } else { onSelect(r.feature) }
     }
     private var allRows: [Row] {
         Feature.allCases.filter { !$0.isRetired }.map { Row(title: $0.title, subtitle: $0.group.rawValue, icon: $0.icon, accent: $0.accent, feature: $0) }
@@ -64,7 +82,7 @@ struct CommandPalette: View {
                                 .frame(maxWidth: .infinity, minHeight: 80)
                         }
                         ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
-                            PaletteRow(row: r, isTop: idx == selected) { onSelect(r.feature) }
+                            PaletteRow(row: r, isTop: idx == selected) { fire(r) }
                                 .id(idx)
                         }
                     }
@@ -85,7 +103,7 @@ struct CommandPalette: View {
     /// Act on the highlighted row (↑↓ moves the highlight; ⏎ fires this).
     private func act() {
         guard !rows.isEmpty else { return }
-        onSelect(rows[min(selected, rows.count - 1)].feature)
+        fire(rows[min(selected, rows.count - 1)])
     }
 
     private struct PaletteRow: View {

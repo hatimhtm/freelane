@@ -11,9 +11,11 @@ final class HotkeyManager {
     private var hotKeyRef: EventHotKeyRef?
     private var handlerInstalled = false   // the app-level Carbon handler is installed exactly once
 
-    /// Whether the user has enabled the global hotkey (off by default).
+    /// Whether the global hotkey is enabled — ON by default (one keystroke from anywhere is the
+    /// whole point of a daily money logger; Carbon hotkeys need no permission prompt). The
+    /// Settings toggle still turns it off, persisted under the same key.
     static var enabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "hotkey.capture.enabled") }
+        get { UserDefaults.standard.object(forKey: "hotkey.capture.enabled") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "hotkey.capture.enabled") }
     }
 

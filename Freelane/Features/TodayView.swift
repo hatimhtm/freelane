@@ -11,6 +11,7 @@ struct TodayView: View {
     @Query(filter: #Predicate<Project> { $0.deletedAt == nil }) private var projects: [Project]
     @Query private var allocations: [PaymentAllocation]
     @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
+    @Query private var plans: [Plan]
 
     @State private var showPay = false
     @State private var showSpend = false
@@ -27,7 +28,7 @@ struct TodayView: View {
     }
 
     private var safe: SafeBreakdown {
-        SafeToSpend.compute(payments: payments, spends: spends, wallets: wallets, ledger: ledger, recurrings: recurrings)
+        SafeToSpend.compute(payments: payments, spends: spends, wallets: wallets, ledger: ledger, recurrings: recurrings, plans: plans)
     }
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
@@ -58,11 +59,11 @@ struct TodayView: View {
                     VStack(spacing: 8) {
                         ForEach(todaySpends.prefix(6)) { s in
                             HStack(spacing: 8) {
-                                Text(s.vendorName ?? s.spendDescription ?? "Spend").font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                                Text(s.vendorName ?? s.spendDescription ?? "Spend").font(.system(size: 12)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                 if s.isSadaka { Text("sadaka").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.teal) }
                                 Spacer()
                                 Text("−" + CurrencyFormat.string(s.amountBase, base, compact: true))
-                                    .font(.system(size: 12.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
                                     .foregroundStyle(Palette.textPrimary).lineLimit(1)
                             }
                         }
@@ -77,10 +78,10 @@ struct TodayView: View {
                     VStack(spacing: 8) {
                         ForEach(todayPayments.prefix(6)) { p in
                             HStack(spacing: 8) {
-                                Text(projectTitle(p)).font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                                Text(projectTitle(p)).font(.system(size: 12)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                 Spacer()
                                 Text("+" + CurrencyFormat.string(p.netAmountBase ?? 0, base, compact: true))
-                                    .font(.system(size: 12.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
                                     .foregroundStyle(Palette.positive).lineLimit(1)
                             }
                         }
@@ -224,10 +225,10 @@ struct TodayView: View {
                 VStack(spacing: 10) {
                     ForEach(Array(open.prefix(5))) { p in
                         HStack {
-                            Text(p.title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                            Text(p.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                             Spacer()
                             Text(CurrencyFormat.string(ProjectMath.outstandingNative(project: p, allocations: liveAllocs, rates: rates), p.currency, compact: true))
-                                .font(.system(size: 12.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                                .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
                                 .foregroundStyle(Palette.warning).lineLimit(1)
                         }
                     }
@@ -271,11 +272,11 @@ struct TodayView: View {
             Circle().fill(color.opacity(0.18)).frame(width: 30, height: 30)
                 .overlay(Image(systemName: icon).font(.system(size: 11, weight: .bold)).foregroundStyle(color))
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                 Text(date, format: .dateTime.month().day()).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             Spacer()
-            Text(amount).font(.system(size: 12.5, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(amount).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
                 .foregroundStyle(amountColor).lineLimit(1)
         }
         .padding(.vertical, 7)

@@ -92,9 +92,9 @@ struct CalmWeatherBanner: View {
                     .frame(width: 34, height: 34)
                     .background(band.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(band.label).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(band.color)
+                    Text(band.label).font(.system(size: 12, weight: .semibold)).foregroundStyle(band.color)
                     Text(CalmWeather.line(band, safe: safe, base: base, overdrawn: overdrawn, runwayDays: runwayDays))
-                        .font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary).lineLimit(2)
+                        .font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(2)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.textTertiary)
@@ -168,7 +168,7 @@ struct WeatherDetailSheet: View {
 
     private func row(_ label: String, _ value: String, _ color: Color) -> some View {
         HStack {
-            Text(label).font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+            Text(label).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
             Spacer()
             Text(value).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(color)
         }.padding(.vertical, 3)

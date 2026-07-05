@@ -204,6 +204,7 @@ struct InsetRowModifier: ViewModifier {
             .background(shape.fill(hoverable && hover ? Palette.wellFillHover : Palette.wellFill))
             .overlay(shape.strokeBorder(Palette.wellStroke, lineWidth: 0.8))
             .contentShape(shape)
+            .pointerStyle(hoverable ? .link : .default)
             .onHover { hover = $0 }
             .animation(.easeOut(duration: 0.14), value: hover)
     }
@@ -229,6 +230,7 @@ struct HoverRowModifier: ViewModifier {
                 .fill(hover ? Palette.wellFillHover : Color.clear))
             .padding(.horizontal, -10)
             .contentShape(Rectangle())
+            .pointerStyle(.link)
             .onHover { hover = $0 }
             .animation(.easeOut(duration: 0.14), value: hover)
     }
@@ -527,7 +529,7 @@ struct Sparkline: View {
                     Path { p in p.move(to: pts[0]); pts.dropFirst().forEach { p.addLine(to: $0) } }
                         .stroke(LinearGradient(colors: [color.opacity(0.7), color], startPoint: .leading, endPoint: .trailing),
                                 style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                        .shadow(color: color.opacity(0.6), radius: 6, y: 2)
+                        .shadow(color: color.opacity(0.35), radius: 5, y: 2)
                     if let last = pts.last {
                         Circle().fill(color).frame(width: 7, height: 7)
                             .shadow(color: color, radius: 5).position(last)
@@ -647,11 +649,13 @@ struct MiniWidget: View {
                     }
                 }
                 Spacer(minLength: 2)
-                Text(label).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Palette.textTertiary).lineLimit(1)
-                Text(value).font(.system(size: 19, weight: .semibold, design: .rounded))
-                    .foregroundStyle(tone ?? Palette.textPrimary).lineLimit(1).minimumScaleFactor(0.55)
+                Text(label).font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                // The most-glanced numbers in the app get the biggest type on the tile — values
+                // arrive pre-abbreviated, so the scale floor stays high instead of shrinking.
+                Text(value).font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .foregroundStyle(tone ?? Palette.textPrimary).lineLimit(1).minimumScaleFactor(0.75)
                     .contentTransition(.numericText()).animation(.snappy(duration: 0.4), value: value)
-                if let sub { Text(sub).font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
+                if let sub { Text(sub).font(.system(size: 9)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
             }
             .padding(13)
             .frame(maxWidth: .infinity, minHeight: 98, alignment: .leading)
@@ -661,6 +665,7 @@ struct MiniWidget: View {
         .buttonStyle(.plain)
         .scaleEffect(hover && destination != nil ? 1.012 : 1)   // whole tile lifts as ONE piece
         .animation(.easeOut(duration: 0.16), value: hover)
+        .pointerStyle(destination != nil ? .link : .default)
         .onHover { hover = $0 }
         .disabled(destination == nil)
     }
@@ -745,7 +750,7 @@ struct WalletGlyph: View {
                 BrandLogoImage(domain: d, size: size) { chip }
             } else { chip }
         }
-        .shadow(color: color.opacity(0.45), radius: 7, y: 3)
+        .shadow(color: color.opacity(0.28), radius: 5, y: 2)
     }
 
     private var chip: some View {

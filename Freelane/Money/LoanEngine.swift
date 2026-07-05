@@ -39,7 +39,10 @@ enum LoanEngine {
         entry.dirty = true   // invariant: every ledger row syncs — never left at the default false
         context.insert(entry)
         loan.outstandingBase = round2(loan.outstandingBase - amount)
-        loan.status = loan.outstandingBase <= 0.001 ? .returned : .partiallyReturned
+        // ONE settled tolerance app-wide (0.005 — see LoanGroup.isSettled): sub-cent FX/rounding
+        // dust is zeroed and closed, so a loan can never be "All settled" yet still open.
+        if loan.outstandingBase <= 0.005 { loan.outstandingBase = 0; loan.status = .returned }
+        else { loan.status = .partiallyReturned }
         loan.dirty = true
         try? context.save()
     }
@@ -52,11 +55,11 @@ enum LoanEngine {
         var remaining = round2(amountBase)
         guard remaining > 0 else { return 0 }
         let open = loans
-            .filter { $0.outstandingBase > 0.001 && $0.status != .returned && $0.status != .forgiven }
+            .filter { $0.outstandingBase > 0.005 && $0.status != .returned && $0.status != .forgiven }
             .sorted { $0.startedAt < $1.startedAt }   // oldest first
         var applied = 0.0
         for loan in open {
-            if remaining <= 0.001 { break }
+            if remaining <= 0.005 { break }
             let chunk = round2(min(remaining, loan.outstandingBase))
             recordReturn(context, loan: loan, amountBase: chunk, walletId: walletId)   // ledger + status + save
             remaining = round2(remaining - chunk)

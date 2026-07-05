@@ -4,9 +4,10 @@ import Foundation
 /// Always returns a number; cold-start is tagged `rough`, never blank.
 struct SafeBreakdown {
     var safeTodayBase: Double      // the day's baseline
-    var initialForToday: Double    // PHT-day snapshot (stable across the day)
-    var liveRemaining: Double      // initial − today's spend (decrements through the day)
-    var spentToday: Double
+    var initialForToday: Double    // PHT-day anchor, clamped to live cash (income can lift it)
+    var liveRemaining: Double      // initial − today's EVERYDAY spend (one-offs don't crater it)
+    var spentToday: Double         // raw total spent today (display only — includes one-offs)
+    var everydaySpentToday: Double // today's spend with one-offs/investments removed (drives the burn-down)
     var walletTotal: Double
     var confidence: String         // "rough" | "calibrating" | "steady"
     var isLearning: Bool
@@ -63,7 +64,8 @@ enum SafeToSpend {
     }
 
     static func compute(payments: [Payment], spends: [Spend], wallets: [Wallet],
-                        ledger: [LedgerEntry], recurrings: [Recurring] = []) -> SafeBreakdown {
+                        ledger: [LedgerEntry], recurrings: [Recurring] = [],
+                        plans: [Plan] = []) -> SafeBreakdown {
         let now = Date.now
         let d30 = PHT.daysAgo(30), d90 = PHT.daysAgo(90)
 
@@ -95,28 +97,34 @@ enum SafeToSpend {
             base = min(base * 1.15, colHigh)
         }
 
-        // Wallets are a CEILING only: low runway pulls the number DOWN, extra money
-        // never pushes it up.
+        // Wallet-dependent clamps are applied LIVE (below, at read time) — never frozen.
         let walletTotal = wallets.filter { $0.isHolding && !$0.archived && !$0.excludedFromTotals }
             .reduce(0.0) { $0 + WalletMath.balance(of: $1, ledger: ledger) }
         let walletBalances = max(0, walletTotal)
         let recurringForward = RecurringMath.expectedBase(recurrings, kind: .expense, days: Int(horizon))
         let fees30 = payments.filter { $0.deletedAt == nil && !$0.feeUnknown && $0.paidAt >= d30 }.reduce(0) { $0 + ($1.impliedFeeBase ?? 0) }
-        let committed = recurringForward + fees30 * horizon / 30
+        // Savings goals: each active plan's monthly set-aside is committed money — reserved out
+        // of safe-to-spend like a bill, until the goal is reached.
+        let setAside = plans.filter { !$0.archived && $0.monthlySetAside > 0 && $0.remaining > 0 }
+            .reduce(0) { $0 + $1.monthlySetAside }
+        let committed = recurringForward + fees30 * horizon / 30 + setAside
         let sustainablePerDay = (walletBalances - committed) / horizon
-        let ceiling = max(colLow, sustainablePerDay)
-        base = min(base, ceiling)
+        let liveCeiling = max(colLow, sustainablePerDay)
 
-        // Essentials (food/transport/bills) are always reserved, up to what's affordable.
+        // Essentials (food/transport/bills) are always reserved.
         let essDaily = essentialDailySpend(spends)
-        if essDaily > 0 { base = max(base, min(essDaily, ceiling)) }
+        if essDaily > 0 { base = max(base, essDaily) }
 
-        // Hard cash ceiling: the day's safe-spend can never exceed the money you
-        // actually hold. The COL floor (colLow) and everyday-pace anchor can sit
-        // above a near-empty wallet — but you can't safely spend cash you don't
-        // have, so clamp the headline to real wallet balance. (Fixes "shows 202
-        // while wallets hold 100".)
-        let safeTodayBase = round2(min(max(colLow, base), walletBalances))
+        // The PACE ANCHOR is the only thing frozen for the day: it's wallet-independent, so
+        // a low-cash morning can't lock the whole day low. Wallet reality is applied fresh
+        // on every read — spending pulls the number down through the ledger, and a payment
+        // landing at noon RAISES the day back up toward the anchor (it used to stay stuck
+        // at the dawn value). Extra money still never pushes the number ABOVE your pace.
+        let anchor = round2(min(max(colLow, base), colHigh))
+        let dataReady = !wallets.isEmpty || !payments.isEmpty || !spends.isEmpty
+        let frozenAnchor = snapshot(anchor, persist: dataReady)
+        let initial = round2(max(0, min(frozenAnchor, liveCeiling, walletBalances)))
+        let safeTodayBase = initial
 
         let oldest = (payments.map(\.paidAt) + spends.map(\.spentAt)).min() ?? now
         let observationDays = PHT.calendar.dateComponents([.day], from: oldest, to: now).day ?? 0
@@ -133,26 +141,26 @@ enum SafeToSpend {
             if overspend > 0 { note += " Trimmed a little while you recover from a heavier stretch." }
         }
 
-        // Only freeze the day's number once REAL data is loaded — otherwise a cold-launch
-        // compute (before @Query wallets/payments arrive) could lock in a wrong, low value
-        // for the whole day. Until then, show the live value without persisting.
-        let dataReady = !wallets.isEmpty || !payments.isEmpty || !spends.isEmpty
-        let initial = snapshot(safeTodayBase, persist: dataReady)
-        let spentToday = spends.filter { $0.deletedAt == nil && $0.spentAt >= PHT.startOfDay() }.reduce(0) { $0 + $1.amountBase }
-        // Cap the live number at CURRENT wallet cash too — so even a stale-high frozen
-        // daily value (e.g. one persisted by an older build before the clamp existed) can
-        // never display more than you actually hold right now.
-        let live = max(0, round2(min(initial - spentToday, walletBalances)))
+        // The burn-down counts EVERYDAY spending only — the same one-off/investment filter
+        // that shaped the allowance. A ₱30k laptop tagged as an investment was never part
+        // of the day's budget, so it must not crater "free to spend" or fire the overspent
+        // alarm (the raw total is still reported separately for the "Spent today" tile).
+        let today = spends.filter { $0.deletedAt == nil && $0.spentAt >= PHT.startOfDay() }
+        let spentToday = today.reduce(0) { $0 + $1.amountBase }
+        let rawDaily30 = spends.filter { $0.deletedAt == nil && $0.spentAt >= d30 }.reduce(0) { $0 + $1.amountBase } / horizon
+        let everydaySpentToday = today.filter { !isOneOff($0, rawDaily: rawDaily30) }.reduce(0) { $0 + $1.amountBase }
+        let live = max(0, round2(min(initial - everydaySpentToday, walletBalances)))
 
         return SafeBreakdown(safeTodayBase: safeTodayBase, initialForToday: initial, liveRemaining: live,
-                             spentToday: spentToday, walletTotal: walletTotal, confidence: confidence,
+                             spentToday: spentToday, everydaySpentToday: everydaySpentToday,
+                             walletTotal: walletTotal, confidence: confidence,
                              isLearning: isLearning, note: note)
     }
 
-    /// PHT-day snapshot: write the day's initial safe ONCE (only when data is ready), then
-    /// reuse it all day so the number is stable and only moves as you actually spend.
+    /// PHT-day snapshot of the PACE ANCHOR (wallet-independent): written ONCE per day (only
+    /// when data is ready) so the anchor is stable; wallet clamps are applied live on read.
     private static func snapshot(_ todayBase: Double, persist: Bool) -> Double {
-        let key = "safe.initial.v3." + dayKey()    // v3 = clamped to wallet cash (older v2 freezes ignored)
+        let key = "safe.initial.v4." + dayKey()    // v4 = unclamped anchor (v3 froze the wallet clamp too)
         let d = UserDefaults.standard
         if d.object(forKey: key) != nil { return d.double(forKey: key) }
         if persist { d.set(todayBase, forKey: key) }

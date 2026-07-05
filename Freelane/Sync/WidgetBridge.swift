@@ -26,7 +26,7 @@ enum WidgetBridge {
     static func update(_ context: ModelContext) {
         let d = StateSnapshot.load(context)
         let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends, wallets: d.wallets,
-                                       ledger: d.ledger, recurrings: d.recurrings)
+                                       ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)
         // The next 3 upcoming bills — for the large widget.
         let bills = d.recurrings.filter { $0.active && $0.kind == .expense }
             .compactMap { r -> (Date, WBill)? in

@@ -194,14 +194,14 @@ struct ActivityFeed: View {
                 .frame(width: 28, height: 28)
                 .background(s.tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
-                Text(s.title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                Text(s.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                 if let d = s.detail, !d.isEmpty {
-                    Text(d).font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                    Text(d).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 1) {
-                Text(s.amount).font(.system(size: 12.5, weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(s.amount).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(s.amountColor)
                 Text(e.date.formatted(.dateTime.hour().minute()))
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)

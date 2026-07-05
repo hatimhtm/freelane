@@ -78,7 +78,7 @@ enum Signals {
         // 3) Living sadaka suggestion — only when it's genuinely affordable and
         //    nothing's been given yet this month. The amount is computed dynamically.
         let monthStart = PHT.startOfMonth()
-        let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends, wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings)
+        let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends, wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)
         let givenMTD = Sadaka.given(spends: d.spends, loans: d.loans, since: monthStart)
         let spentMTD = d.spends.filter { $0.spentAt >= monthStart }.reduce(0) { $0 + $1.amountBase }
         let sug = Sadaka.suggest(safe: safe, landedMTD: d.metrics.landedMTD, spentMTD: spentMTD,

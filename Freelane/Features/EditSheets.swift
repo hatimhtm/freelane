@@ -274,7 +274,7 @@ struct EditWalletSheet: View {
                     }.buttonStyle(.glass).disabled(Double(reconcileTo.trimmingCharacters(in: .whitespaces)) == nil)
                 }
                 Text("Book balance is \(CurrencyFormat.string(currentBalance, base)). Enter what's really there and we'll add one balancing entry — your history stays intact.")
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             LabeledField("Notes") { TextField("optional", text: $notes).textFieldStyle(GlassFieldStyle()) }
             Toggle(isOn: $isHolding) { Text("Holding wallet (keeps a balance)").font(.system(size: 13)).foregroundStyle(Palette.textPrimary) }
@@ -283,7 +283,7 @@ struct EditWalletSheet: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Ignore in totals & alerts").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                     Text("Keeps the balance visible here, but leaves it out of your available total and stops overdrawn warnings.")
-                        .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 }
             }.toggleStyle(.switch).tint(Palette.warning)
             Toggle(isOn: $archived) { Text("Archived").font(.system(size: 13)).foregroundStyle(Palette.textPrimary) }

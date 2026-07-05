@@ -11,6 +11,7 @@ struct SadakaView: View {
     @Query private var ledger: [LedgerEntry]
     @Query(filter: #Predicate<Loan> { $0.deletedAt == nil }) private var loans: [Loan]
     @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
+    @Query private var plans: [Plan]
 
     @State private var giveOpen = false
     @State private var snoozed = false
@@ -22,7 +23,7 @@ struct SadakaView: View {
     private var anchorPct: Double { settings.first?.sadakaAnchorPct ?? 2.5 }
 
     private var safe: SafeBreakdown {
-        SafeToSpend.compute(payments: payments, spends: spends, wallets: wallets, ledger: ledger, recurrings: recurrings)
+        SafeToSpend.compute(payments: payments, spends: spends, wallets: wallets, ledger: ledger, recurrings: recurrings, plans: plans)
     }
     private var landedMTD: Double { payments.filter { $0.paidAt >= PHT.startOfMonth() }.reduce(0) { $0 + ($1.netAmountBase ?? 0) } }
     private var spentMTD: Double { spends.filter { $0.spentAt >= PHT.startOfMonth() }.reduce(0) { $0 + $1.amountBase } }
@@ -86,15 +87,15 @@ struct SadakaView: View {
     }
     private func zakatRow(_ label: String, _ value: Double, auto: Bool) -> some View {
         HStack {
-            Text(label).font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
-            if auto { Text("auto").font(.system(size: 8.5, weight: .semibold)).foregroundStyle(Palette.teal).padding(.horizontal, 5).padding(.vertical, 1).background(Palette.teal.opacity(0.16), in: Capsule()) }
+            Text(label).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
+            if auto { Text("auto").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.teal).padding(.horizontal, 5).padding(.vertical, 1).background(Palette.teal.opacity(0.16), in: Capsule()) }
             Spacer()
-            Text(CurrencyFormat.string(value, base, compact: true)).font(.system(size: 12.5, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+            Text(CurrencyFormat.string(value, base, compact: true)).font(.system(size: 12, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
         }
     }
     private func zakatField(_ label: String, _ value: Binding<Double>) -> some View {
         HStack {
-            Text(label).font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+            Text(label).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
             Spacer()
             TextField("0", value: value, format: .number).textFieldStyle(GlassFieldStyle()).frame(width: 120).multilineTextAlignment(.trailing)
         }
@@ -115,7 +116,7 @@ struct SadakaView: View {
             }
             if show {
                 MoneyText(amount: s.amount, code: base, size: 42, color: Palette.negative)
-                Text(s.reasoning).font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+                Text(s.reasoning).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                 HStack(spacing: 10) {
                     Button { giveOpen = true } label: { Label("Give now", systemImage: "heart.fill") }
                         .buttonStyle(.glassProminent).tint(Palette.negative)
@@ -124,7 +125,7 @@ struct SadakaView: View {
             } else {
                 MoneyText(amount: givenMonth, code: base, size: 36, color: Palette.textPrimary)
                 Text(givenMonth > 0 ? s.reasoning + " · given this month" : "Nothing given yet this month. " + s.reasoning)
-                    .font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+                    .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                 Button { giveOpen = true } label: { Label("Give anyway", systemImage: "heart") }.buttonStyle(.glass)
             }
         }

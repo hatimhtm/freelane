@@ -266,6 +266,8 @@ struct RootView: View {
             Task { await FXService.refreshIfStale(context) }
             // Weekly "what changed" review (once a week, surfaced as a notification).
             WeeklyReview.maybeRun(context)
+            // The month-end ritual — first open in a new month closes out the last one.
+            MonthlyReview.maybeRun(context)
             // Refresh the desktop widget snapshot.
             WidgetBridge.update(context)
             // Launch work is done — lift the splash now (instead of a blind fixed timer that could
@@ -440,6 +442,7 @@ private struct NavRow: View {
             .modifier(SelectedGlass(active: selected, shape: shape, tint: item.accent))
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .padding(.horizontal, 10).padding(.vertical, 1)
         .onHover { hovering = $0 }
     }
@@ -499,7 +502,7 @@ struct Page<Content: View>: View {
             }
             .padding(.horizontal, 26).padding(.top, 22).padding(.bottom, 14)
             .frame(maxWidth: 1000, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)   // …but the COLUMN centers in wide windows (no dead right gutter)
 
             // Scrolling content with edge-fade. Each top-level section CASCADES in (staggered
             // spring) instead of the whole page appearing as one block.
@@ -514,7 +517,7 @@ struct Page<Content: View>: View {
                 }
                 .padding(.horizontal, 26).padding(.top, 4).padding(.bottom, 64)
                 .frame(maxWidth: 1000, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)   // …but the COLUMN centers in wide windows (no dead right gutter)
             }
             .mask(
                 VStack(spacing: 0) {
@@ -569,7 +572,7 @@ struct SubtabBar: View {
         HStack(spacing: 4) {
             ForEach(Array(tabs.enumerated()), id: \.offset) { i, t in
                 Text(t)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(selection == i ? Palette.ink : (hovered == i ? Palette.textPrimary : Palette.textSecondary))
                     .padding(.horizontal, 13).padding(.vertical, 7)
                     .background {
@@ -582,6 +585,7 @@ struct SubtabBar: View {
                         }
                     }
                     .contentShape(Capsule())
+                    .pointerStyle(.link)
                     .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
                     .onTapGesture {
                         withAnimation(Motion.page) { selection = i }

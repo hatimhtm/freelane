@@ -73,7 +73,7 @@ private struct KanbanGhost<Content: View>: View {
             .frame(width: 240)
             .scaleEffect(1.04 + speed * 0.03)
             .rotationEffect(.degrees(tilt), anchor: .top)
-            .shadow(color: .black.opacity(0.4), radius: 16 + speed * 8, y: 7 + speed * 5)
+            .shadow(color: .black.opacity(0.30), radius: 16 + speed * 8, y: 7 + speed * 5)
             .position(x: drag.location.x - boardOrigin.x, y: drag.location.y - boardOrigin.y)
             .allowsHitTesting(false)
             .animation(.spring(response: 0.26, dampingFraction: 0.82), value: drag.location)
@@ -232,7 +232,7 @@ struct ProjectsView: View {
             Text("OUTSTANDING").frame(width: 100, alignment: .trailing)
             Text("DUE").frame(width: 84, alignment: .trailing)
         }
-        .font(.system(size: 9.5, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
+        .font(.system(size: 9, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
         .padding(.horizontal, 14)
     }
 
@@ -243,7 +243,7 @@ struct ProjectsView: View {
                 HStack(spacing: 8) {
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.textTertiary)
                     Circle().fill(accent).frame(width: 7, height: 7)
-                    Text(title).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Palette.textPrimary)
+                    Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                     Text("\(items.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                         .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.hairline, in: Capsule())
                     Spacer()
@@ -251,7 +251,7 @@ struct ProjectsView: View {
             }.buttonStyle(.plain)
             if !isCollapsed {
                 if items.isEmpty {
-                    Text("None").font(.system(size: 11.5)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 8)
+                    Text("None").font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 8)
                 } else {
                     ForEach(items) { p in
                         tableRow(p)
@@ -267,11 +267,11 @@ struct ProjectsView: View {
         let out = ProjectMath.outstandingNative(project: p, allocations: allocations, rates: rates)
         return Button { editing = p } label: {
             HStack(spacing: 10) {
-                Text(p.title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(p.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                 Text(clientName(p)).font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1).frame(width: 140, alignment: .leading)
                 Text(CurrencyFormat.string(p.amount, p.currency, compact: true)).font(.system(size: 12, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary).lineLimit(1).frame(width: 90, alignment: .trailing)
                 Text(out > 0 ? CurrencyFormat.string(out, p.currency, compact: true) : "—").font(.system(size: 12, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(out > 0 ? Palette.warning : Palette.textTertiary).lineLimit(1).frame(width: 100, alignment: .trailing)
-                Text(p.dueDate.map { $0.formatted(.dateTime.month().day()) } ?? "—").font(.system(size: 11.5)).foregroundStyle(Palette.textTertiary).frame(width: 84, alignment: .trailing)
+                Text(p.dueDate.map { $0.formatted(.dateTime.month().day()) } ?? "—").font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(width: 84, alignment: .trailing)
             }.padding(.horizontal, 14).padding(.vertical, 9).contentShape(Rectangle())
         }.buttonStyle(.plain)
         .contextMenu {
@@ -448,7 +448,7 @@ struct ProjectsView: View {
                 }
                 Spacer()
                 if overdue {
-                    Text("OVERDUE").font(.system(size: 9.5, weight: .bold)).foregroundStyle(Palette.negative)
+                    Text("OVERDUE").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.negative)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Palette.negative.opacity(0.16), in: Capsule())
                 }

@@ -65,7 +65,7 @@ struct ProjectionTool: AITool {
         let d = StateSnapshot.load(context)
         let base = d.baseCurrency
         func money(_ v: Double) -> String { CurrencyFormat.string(v, base, compact: true) }
-        let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends, wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings)
+        let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends, wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)
         let income = RecurringMath.expectedBase(d.recurrings, kind: .income, days: days)
         let bills = RecurringMath.expectedBase(d.recurrings, kind: .expense, days: days)
         let recent = d.spends.filter { $0.spentAt >= PHT.daysAgo(30) }.reduce(0.0) { $0 + $1.amountBase }

@@ -14,7 +14,7 @@ struct FloatingAIButton: View {
         }
         .buttonStyle(.iconPress)
         .glassEffect(Glass.regular.tint(Palette.azure.opacity(0.28)), in: .circle)
-        .shadow(color: .black.opacity(0.4), radius: 16, y: 7)
+        .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
         .sheet(isPresented: $open) { AIChatSheet(page: page) }
         .help("Ask the assistant about \(page.title)")
     }

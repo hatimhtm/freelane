@@ -3,6 +3,27 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.15
+
+The big one — five real money-logic fixes, and the app finally acts on what it knows.
+
+**The number you trust is now honest:**
+- **A big purchase no longer wrecks your day.** Safe-to-spend excluded one-offs and investments from your allowance but still counted them against it — log a ₱30k laptop and the app screamed "overspent." Now only everyday spending burns the day down (the "Spent today" tile still shows the real total).
+- **Money landing today counts today.** The day's allowance used to freeze at dawn clamped to your morning wallet cash — a ₱50k payment at noon changed nothing. Now the frozen part is only your spending pace; wallet reality applies live, so income lifts the day back up (never above your pace).
+- Fixed a silent drift where editing a payment's net didn't update its chain step (would have made the future Android app disagree with the Mac by the corrected amount), a missing sync flag on learned bill amounts, and loans that could read "All settled" while showing an open loan you couldn't close.
+
+**The app now helps you act:**
+- **"Acme owes ₱40k · 34 days" on the Dashboard.** The #1 thing a freelancer opens the app for is now a Needs-you signal that opens straight into that client — where the AI nudge-drafter lives.
+- **Pay bills where you see them.** Due bills now have a Pay button on the Agenda and right inside the bell notification — no more "go to Spending → Recurring."
+- **Budgets.** Give any category a monthly cap: a quiet progress bar in Spending (amber at 80%, red when over) and a Dashboard signal when one blows through.
+- **Savings goals are back.** Set a target and a monthly set-aside on the Agenda; the set-aside is reserved out of safe-to-spend like a bill, with months-to-go estimated.
+- **A month-end ritual.** On your first open of a new month: "June, closed — landed X, spent Y, net +Z, income +12% vs May, most on food, fees took ₱800."
+- **Capture in one keystroke.** ⌃⌥Space (quick spend from anywhere) is now on by default, and ⌘K's "Log a spend / payment" opens the sheet directly instead of just navigating.
+- The AI's mind × money read now includes your body check-ins — mood, energy, sleep, and workouts against your spending. Your city is now settable in Settings, so cost-of-living anchoring is actually yours. First launch now leads with "add your first wallet" instead of ₱0 tiles you can't do anything with.
+
+**And the polish:**
+- Content centers in wide windows (no more dead right gutter), the cursor becomes a pointer over everything clickable, dashboard tiles dropped the 7-color rainbow for the one amber identity (color now only means something), warning-orange is reserved for actual warnings, heavy shadows and glows are tuned for light mode, key numbers on tiles got bigger, Spending got a real hero ("spent this month" + 6-month shape + delta), and the last stray half-point font sizes are gone.
+
 ## 0.14
 
 Structure — a tighter map and real keyboard muscle memory.

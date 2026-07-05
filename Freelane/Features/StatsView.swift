@@ -184,19 +184,19 @@ struct StatsView: View {
         let cols = [GridItem(.adaptive(minimum: 170), spacing: 12)]
         return LazyVGrid(columns: cols, spacing: 12) {
             MiniWidget(label: "Fees paid", value: CurrencyFormat.abbreviated(fees, base),
-                       systemImage: "scissors", accent: Palette.negative,
+                       systemImage: "scissors", accent: Palette.azure,
                        sub: String(format: "%.1f%% of gross", feePct * 100),
                        tone: Palette.negative, destination: .payments)
             MiniWidget(label: "Avg payment", value: CurrencyFormat.abbreviated(avg, base),
-                       systemImage: "equal.circle", accent: Palette.indigo,
+                       systemImage: "equal.circle", accent: Palette.azure,
                        sub: "across \(scopedPayments.count) payments")
             MiniWidget(label: "Top client share",
                        value: topShare.map { "\(Int($0.pct * 100))%" } ?? "—",
-                       systemImage: "crown", accent: Palette.violet,
+                       systemImage: "crown", accent: Palette.azure,
                        sub: topShare?.name ?? "No earnings yet",
                        destination: .clients)
             MiniWidget(label: "Clients earning", value: "\(clientEarnings.count)",
-                       systemImage: "person.2", accent: Palette.cyan,
+                       systemImage: "person.2", accent: Palette.azure,
                        sub: "of \(clients.count) total", destination: .clients)
         }
     }
@@ -276,12 +276,12 @@ struct StatsView: View {
                             rank(i)
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack(spacing: 8) {
-                                    Text(c.name).font(.system(size: 12.5, weight: .medium))
+                                    Text(c.name).font(.system(size: 12, weight: .medium))
                                         .foregroundStyle(Palette.textPrimary).lineLimit(1)
                                     Spacer()
                                     if clientTotal > 0 {
                                         Text("\(Int(c.earned / clientTotal * 100))%")
-                                            .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                                     }
                                     Text(CurrencyFormat.string(c.earned, base, compact: true))
                                         .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -319,11 +319,11 @@ struct StatsView: View {
                                 rank(i)
                                 VStack(alignment: .leading, spacing: 5) {
                                     HStack(spacing: 8) {
-                                        Text(r.currency).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Palette.textPrimary)
+                                        Text(r.currency).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                                         Text("keeps \(Int(r.netPct * 100))%").font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
                                         Spacer()
                                         Text("−\(CurrencyFormat.string(r.feeBase, base, compact: true))")
-                                            .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
                                             .foregroundStyle(Palette.negative)
                                         Text("\(r.count) pmts").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                                     }
@@ -355,13 +355,13 @@ struct StatsView: View {
                                 rank(i)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(payerName(row.payment))
-                                        .font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                                        .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                     Text(row.payment.paidAt.formatted(.dateTime.month().day().year()))
                                         .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                                 }
                                 Spacer()
                                 Text("−\(CurrencyFormat.string(row.payment.impliedFeeBase ?? 0, base, compact: true))")
-                                    .font(.system(size: 12.5, weight: .semibold, design: .rounded)).foregroundStyle(Palette.negative)
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(Palette.negative)
                                 Text(String(format: "%.1f%%", row.pct * 100))
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
                                     .foregroundStyle(row.pct > 0.05 ? Palette.negative : Palette.warning)
@@ -384,8 +384,8 @@ struct StatsView: View {
                         ForEach(Array(paymentLatency.enumerated()), id: \.element.id) { i, r in
                             HStack(spacing: 10) {
                                 rank(i)
-                                Text(r.name).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                                Text("\(r.n) paid").font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                                Text(r.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                                Text("\(r.n) paid").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                                 Spacer()
                                 Text("\(r.avgDays)d").font(.system(size: 13, weight: .semibold, design: .rounded))
                                     .foregroundStyle(r.avgDays >= 30 ? Palette.negative : (r.avgDays >= 14 ? Palette.warning : Palette.positive))
