@@ -987,8 +987,14 @@ enum Brain {
         """ : ""
         let prompt = """
         Read this private journal entry (written in answer to: “\(letter.title)”). Reply with ONLY a JSON object:
-        {"sentiment":"<one lowercase word for the mood>","themes":["<theme>","<theme>","<theme>"],"memory":"<one durable fact about the writer worth remembering, or empty string>"\(followUpKey)}
-        Up to 3 short themes (1-2 words each). The "memory" is optional — only a lasting preference/goal/situation, not a passing mood. No commentary.\(followUpRules)
+        {"sentiment":"<one lowercase word for the mood>","themes":["<theme>","<theme>","<theme>"],"memory":"<one durable fact about the writer worth remembering, or empty string>","dont_ask":<true or false>,"correction":"<see below, or empty string>"\(followUpKey)}
+        Up to 3 short themes (1-2 words each). The "memory" is optional — only a lasting preference/goal/situation, not a passing mood.
+        "dont_ask" is true when the writer pushes back on the QUESTION itself: asks to stop asking,
+        says they're not interested in the topic, or says the question's premise is false ("I never
+        did this", "what competition??"). Venting about hard life stuff is NOT dont_ask.
+        "correction" is for when they correct the app's knowledge of them — "actually I…", "no, that's
+        wrong — I…", "I never had a…", "I don't X anymore" — restate the CORRECTED fact plainly in one
+        sentence (e.g. "Sold the motorbike in May"). Empty when nothing was corrected. No commentary.\(followUpRules)
         Entry: \(safe)
         """
         // Plain tagging (no follow-up) is a fast-tier extract — on-device when available, so the
@@ -1008,6 +1014,34 @@ enum Brain {
             if let mem = (obj["memory"] as? String)?.trimmingCharacters(in: .whitespaces), mem.count >= 8 {
                 let key = "journal_\(Int(letter.createdAt.timeIntervalSince1970))"
                 upsertFact(context, key: key, value: mem, confidence: 0.6, source: "inferred")
+            }
+            // "Don't ask about this again" said IN the answer → treat it like the ✕/👎 buttons:
+            // the answered question becomes a hard-no taste signal, so its topic is burned.
+            // The explicit phrases are matched IN CODE (a literal command must never depend on
+            // model judgment — it missed one in testing); the model flag covers softer pushback.
+            let lowered = text.lowercased()
+            let explicit = ["don't ask", "dont ask", "do not ask", "stop asking", "never ask",
+                            "not interested in this", "why do you keep asking"].contains { lowered.contains($0) }
+            let dontAsk = explicit
+                || (obj["dont_ask"] as? Bool) ?? ((obj["dont_ask"] as? String) == "true")
+            if dontAsk {
+                let prompts = (try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? []
+                if let p = prompts.first(where: { $0.answeredLetterId == letter.id }) {
+                    p.feedback = "down"; p.dirty = true
+                }
+            }
+            // Corrections in their own words outrank anything inferred: store the corrected fact
+            // at near-certainty, and archive inferred beliefs it contradicts (token overlap).
+            if let corr = (obj["correction"] as? String)?.trimmingCharacters(in: .whitespaces),
+               AIJSON.isRealText(corr) {
+                upsertFact(context, key: "corrected_\(Int(letter.createdAt.timeIntervalSince1970))",
+                           value: String(corr.prefix(160)), confidence: 0.95, source: "user_answered")
+                let corrTokens = promptTokens(corr)
+                let facts = ((try? context.fetch(FetchDescriptor<AIFact>())) ?? [])
+                    .filter { $0.subjectKind == "user" && $0.archivedAt == nil && $0.source == "inferred" }
+                for f in facts where jaccard(promptTokens(f.value), corrTokens) >= 0.45 {
+                    f.archivedAt = .now; f.updatedAt = .now   // superseded by their own words
+                }
             }
             if followUp, let f = (obj["followup"] as? String)?.trimmingCharacters(in: .whitespaces), isHumanQuestion(f) {
                 // Carry the answer this follow-up grew out of, so it's never shown context-free.

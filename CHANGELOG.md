@@ -3,6 +3,13 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.20
+
+Talk back to it — your answers now teach it directly.
+
+- **Say "don't ask about this again" inside an answer and it listens.** Writing "stop asking", "I'm not interested in this", or "I never did this" in a journal answer now burns that topic exactly like the ✕/👎 buttons — the explicit phrases are matched directly (never left to the model's judgment), and softer pushback is picked up by the analysis.
+- **Correct it, and its memory updates.** Write "actually, I live in Manila now" or "I never had a motorbike" in any answer and the corrected fact is stored in your own words at near-certainty — while old inferred beliefs it contradicts are archived. Your words always outrank what it guessed.
+
 ## 0.19
 
 Questions that are actually about you — two real bugs, fixed at the root.
