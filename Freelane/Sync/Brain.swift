@@ -481,7 +481,9 @@ enum Brain {
         CRITICAL: each insight is ONE punchy sentence, 18 words MAX — the kind I'll actually read. No preamble,
         no "you might want to", no hedging, no explaining the obvious. Lead with the finding. Cut every word
         that isn't load-bearing.
-        Reply with ONLY a JSON object: {"insights":[{"text":"…","category":"money|spending|life|pattern"}]}.
+        Reply with ONLY a JSON object shaped like {"insights": [array of objects]} where each object
+        has "text" (the insight sentence itself) and "category" (exactly one word: money, spending,
+        life, or pattern). Never echo this format description — every value must be real content.
 
         === MONEY, SPENDING & BODY ===
         \(money)
@@ -499,12 +501,15 @@ enum Brain {
         let existing = prior.map { $0.lowercased() }
         await MainActor.run {
             for o in arr {
-                guard let text = (o["text"] as? String)?.trimmingCharacters(in: .whitespaces), text.count >= 12 else { continue }
+                guard let text = (o["text"] as? String)?.trimmingCharacters(in: .whitespaces),
+                      AIJSON.isRealText(text, minLetters: 10) else { continue }
                 // Backstop on brevity: if the model ignores the 18-word cap and rambles, drop it.
                 if text.split(whereSeparator: { $0 == " " || $0 == "\n" }).count > 30 { continue }
                 // Skip near-duplicates of what we already said.
                 if existing.contains(where: { $0.contains(text.prefix(24).lowercased()) }) { continue }
-                let cat = (o["category"] as? String) ?? "pattern"
+                // Clamp to the vocabulary — the model has been seen echoing the whole enum string.
+                let rawCat = (o["category"] as? String)?.lowercased() ?? ""
+                let cat = ["money", "spending", "life", "pattern"].contains(rawCat) ? rawCat : "pattern"
                 let i = InsightLog(text: text, category: cat); i.dirty = true
                 context.insert(i); added += 1
             }
@@ -569,26 +574,58 @@ enum Brain {
 
     /// Personalized open-ended journaling prompts. The model sees the FULL ask-history so it never
     /// repeats or rephrases a question it already asked. Returns up to `count` new prompts.
+    /// The question territories. Each batch draws DIFFERENT ones than the last batch (rotation is
+    /// enforced in code, not begged from the model) — so consecutive batches can't keep orbiting
+    /// the same two topics even when the recent entries are all about them.
+    private static let journalTerritories = [
+        "how they're feeling", "their work", "their money", "someone in their life",
+        "their faith", "the near future", "their body & energy", "something small they enjoyed",
+    ]
+
+    /// Pick `count` territories, skipping the ones used in the previous batch.
+    private static func rotateTerritories(_ count: Int) -> [String] {
+        let lastRaw = UserDefaults.standard.string(forKey: "journal.lastTerritories") ?? ""
+        let last = Set(lastRaw.split(separator: "|").map(String.init))
+        var pool = journalTerritories.filter { !last.contains($0) }
+        if pool.count < count { pool = journalTerritories }   // small pool → allow reuse
+        let chosen = Array(pool.shuffled().prefix(count))
+        UserDefaults.standard.set(chosen.joined(separator: "|"), forKey: "journal.lastTerritories")
+        return chosen
+    }
+
+    /// A question a human would actually want to answer: short, single-idea, plain-spoken.
+    /// Rejects the model's purple-prose failure modes (em-dash poetry, chained clauses, essays).
+    private static func isHumanQuestion(_ s: String) -> Bool {
+        guard AIJSON.isRealText(s), s.hasSuffix("?"), s.count <= 110 else { return false }
+        guard !s.contains("—") && !s.contains(";") else { return false }          // poetry / chained clauses
+        guard s.filter({ $0 == "?" }).count == 1 else { return false }            // one ask, not two
+        guard s.split(separator: ",").count <= 2 else { return false }            // no clause trains
+        return true
+    }
+
     static func journalPrompts(_ context: ModelContext, ai: AIManager, count: Int = 3) async -> [String] {
         guard ai.isReady else { return [] }
         let mem = await journalMemory(context)
+        let territories = rotateTerritories(count)
         let prompt = """
-        You are the journaling companion inside a private life-OS. Generate \(count) SHORT, open-ended
-        journaling questions personalized to this person — each inviting a long, honest paragraph
-        (never yes/no, never prying or clinical). Warm, specific, grounded in what they've actually
-        written. Vary the territory: feelings, work, money, people, faith, the future.
+        Write \(count) journaling questions for this person — exactly one for each territory, in
+        order: \(territories.joined(separator: " · ")).
 
-        HARD RULES:
-        - NEVER repeat, rephrase, or circle back to ANY question in the ask-history below. If a topic
-          was already asked about (even once), it is BURNED unless their recent writing reopened it.
-        - Don't ask things their entries already answered. Build on what they said instead.
-        - No generic filler ("how was your day"). Every question should feel like it could only be
-          asked of THIS person.
-        - MATCH THEIR MOOD: read the mood trail below. If they've been heavy, drained, or anxious,
-          ask gentler, restorative questions — nothing that demands ambition. If they've been bright,
-          it's safe to be forward-looking and bold.
+        STYLE — every rule is hard:
+        - UNDER 15 WORDS. One idea per question. One question mark. Never chain two asks.
+        - Plain, spoken words — how a close friend texts. NO poetry, NO metaphors, NO em-dashes,
+          NO therapy-speak ("hold space", "what does X say about Y", "what part of you").
+        - Personal: name a real, specific thing from their entries or facts below when it fits the
+          territory. If nothing fits, a simple direct question beats a forced connection.
+        - Open-ended (never yes/no), but light — something they'd WANT to answer, not homework.
+        - If their mood trail reads heavy or drained, keep every question gentle.
+        - NEVER repeat or rephrase anything in the ask-history. A used topic is burned.
 
-        Reply with ONLY a JSON object: {"prompts":["…","…","…"]}.
+        Good examples of the register (do not copy them): "What's been eating most of your energy
+        this week?" · "Who did you feel closest to today?" · "What would make tomorrow feel easy?"
+
+        Reply with ONLY a JSON object shaped like {"prompts": [array of \(count) strings]}, one real
+        question per territory. Never echo this format description — no placeholders, no ellipses.
 
         Ask-history (burned topics):
         \(mem.asked.isEmpty ? "(none yet)" : mem.asked.joined(separator: "\n"))
@@ -607,7 +644,8 @@ enum Brain {
               let data = jsonStr.data(using: .utf8),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let arr = obj["prompts"] as? [Any] else { return [] }
-        return arr.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.prefix(count).map { $0 }
+        return arr.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }
+            .filter { isHumanQuestion($0) }.prefix(count).map { $0 }
     }
 
     // MARK: - Mind × money
@@ -641,7 +679,8 @@ enum Brain {
         Each insight: ONE sentence, concrete, citing actual days/amounts from the data below. Warm,
         plain words — no therapy-speak, no percentages pulled from thin air.
         If the data is too thin for a real pattern, return fewer insights — or none. NEVER invent.
-        Reply with ONLY a JSON object: {"insights":["…","…"]}
+        Reply with ONLY a JSON object shaped like {"insights": [array of strings]}, each string one
+        complete insight sentence. Never echo this format description — no placeholders, no ellipses.
         Data (newest first, one line per day that had mood or money):
         \(dataset)
         """
@@ -650,7 +689,8 @@ enum Brain {
               let data = jsonStr.data(using: .utf8),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let arr = obj["insights"] as? [Any] else { return await mindMoneyLines(context) }
-        let lines = arr.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.prefix(3).map { $0 }
+        let lines = arr.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }
+            .filter { AIJSON.isRealText($0) }.prefix(3).map { $0 }
         await MainActor.run {
             if let d = try? JSONSerialization.data(withJSONObject: Array(lines)), let s = String(data: d, encoding: .utf8) {
                 store(context, key: "mind_money", payload: s, ttl: 3 * 24 * 3600)
@@ -823,6 +863,22 @@ enum Brain {
     }
 
     @MainActor @discardableResult
+    /// Self-heal at launch: delete stored questions (and dismiss insights) that are echoed
+    /// placeholders — the macOS 27 model copied a "{"prompts":["…","…"]}" example literally in
+    /// v0.16 and a batch of "…" questions reached the Journal. Cheap; also mops up any future junk.
+    static func purgePlaceholderJunk(_ context: ModelContext) {
+        var changed = false
+        for p in ((try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? [])
+        where p.status == "open" && !AIJSON.isRealText(p.text) {
+            context.delete(p); changed = true
+        }
+        for i in ((try? context.fetch(FetchDescriptor<InsightLog>())) ?? [])
+        where i.dismissedAt == nil && !AIJSON.isRealText(i.text, minLetters: 10) {
+            i.dismissedAt = .now; i.dirty = true; changed = true
+        }
+        if changed { try? context.save() }
+    }
+
     static func storeJournalPrompts(_ context: ModelContext, texts: [String], source: String = "ai",
                                     sourceLetterId: UUID? = nil, sourceExcerpt: String? = nil) -> Int {
         let all = ((try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? [])
@@ -833,7 +889,9 @@ enum Brain {
         var added = 0
         for t in texts {
             let key = t.lowercased().trimmingCharacters(in: .whitespaces)
-            guard !key.isEmpty, !existing.contains(key) else { continue }
+            // Chokepoint guard: nothing placeholder-shaped ever becomes a stored question,
+            // no matter which path produced it (ai / followup / project).
+            guard AIJSON.isRealText(t), !existing.contains(key) else { continue }
             let toks = promptTokens(t)
             if seenTokens.contains(where: { jaccard($0, toks) >= 0.6 }) { continue }
             let p = JournalPrompt(text: t, source: source); p.dirty = true
@@ -883,6 +941,8 @@ enum Brain {
         pulling on another day — something they're sitting with, deciding, or feeling their way through.
         Anchor it in something CONCRETE they wrote in THIS entry (a phrase, a decision, a person, a feeling)
         so it's unmistakably about what they just said — never a generic prompt.
+        Style: under 15 words, plain spoken language like a friend texting, one idea, one question mark —
+        no poetry, no metaphors, no em-dashes, no therapy-speak.
         Match its emotional weight to their recent mood trail (\(mem.moodTrail.isEmpty ? "unknown" : mem.moodTrail)):
         gentler when they're heavy, bolder when they're bright.
         It must NOT repeat or rephrase anything in this ask-history:
@@ -913,7 +973,7 @@ enum Brain {
                 let key = "journal_\(Int(letter.createdAt.timeIntervalSince1970))"
                 upsertFact(context, key: key, value: mem, confidence: 0.6, source: "inferred")
             }
-            if followUp, let f = (obj["followup"] as? String)?.trimmingCharacters(in: .whitespaces), f.count >= 12 {
+            if followUp, let f = (obj["followup"] as? String)?.trimmingCharacters(in: .whitespaces), isHumanQuestion(f) {
                 // Carry the answer this follow-up grew out of, so it's never shown context-free.
                 let excerpt = text.count > 150 ? String(text.prefix(150)) + "…" : text
                 storeJournalPrompts(context, texts: [f], source: "followup",

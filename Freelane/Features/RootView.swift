@@ -262,6 +262,8 @@ struct RootView: View {
             WeeklyReview.maybeRun(context)
             // The month-end ritual — first open in a new month closes out the last one.
             MonthlyReview.maybeRun(context)
+            // Mop up any placeholder junk the AI parsers rejected too late (see Brain).
+            Brain.purgePlaceholderJunk(context)
             // Refresh the desktop widget snapshot.
             WidgetBridge.update(context)
             // Launch work is done — lift the splash now (instead of a blind fixed timer that could

@@ -26,6 +26,25 @@ enum AIJSON {
         }
         return nil   // unbalanced → no usable object
     }
+
+    /// True when a model-returned string is real content — not an echoed placeholder. The macOS 27
+    /// on-device model can copy an example shape literally ("…", "...", "question 1"), which is
+    /// valid JSON and non-empty, so shape checks alone don't catch it. Rule: enough actual letters
+    /// to be a sentence. Every parser that STORES model text must pass through this.
+    static func isRealText(_ s: String, minLetters: Int = 8) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count >= 10 else { return false }
+        // An echoed schema description ("<one question or empty string>") is not content.
+        guard !t.hasPrefix("<"), !t.hasPrefix("[") else { return false }
+        let letters = t.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
+        guard letters >= minLetters else { return false }
+        // An echoed template artifact, not content ("question 1", "insight 2", "text", "prompt 3").
+        let lowered = t.lowercased()
+        let artifacts = ["question", "insight", "prompt", "text", "string", "example"]
+        if artifacts.contains(where: { lowered == $0 }) { return false }
+        if artifacts.contains(where: { a in lowered.hasPrefix(a) && t.count <= a.count + 3 }) { return false }
+        return true
+    }
 }
 
 /// The structured result of `understandSpend` — what the model returns about one logged spend.

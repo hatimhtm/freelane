@@ -3,6 +3,14 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.17
+
+Journal questions, fixed and rethought.
+
+- **The "…" questions are gone — and can't come back.** The new on-device model copied the example format from our instructions literally, so three questions whose entire text was "…" reached your Journal. Every AI reply that gets stored now passes a real-content check, the instruction templates no longer contain copyable placeholders, and the app cleans out any junk that slipped in (your "…" rows disappear on first launch).
+- **Questions are simple and human now.** The generator was rebuilt: every question is under 15 words, one idea, plain spoken language — "What's been weighing on your wallet this month?" instead of a two-clause poem about what your kitchen says about your soul. Poetic or double-barreled output is rejected before you ever see it.
+- **Less repetition, by design.** Each batch draws from different territories (feelings, work, money, people, faith, the future, body, small joys) than the last batch — rotation is enforced in code, so it can't keep circling the same two topics no matter what you wrote about. Follow-up questions obey the same style rules.
+
 ## 0.16
 
 Built for macOS 27 "Golden Gate" — and one brain instead of three.
