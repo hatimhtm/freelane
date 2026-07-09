@@ -181,16 +181,12 @@ struct RootView: View {
                 // Re-scan money state on every focus (dedup keeps it quiet) so new
                 // overdrafts / due bills surface immediately, not on the next calendar day.
                 Signals.sweep(context)
-                // Daily AI refresh on app open — once per PHT day, ANY hour, local model.
+                // Daily AI refresh on app open — once per PHT day, ANY hour, on-device model.
+                // (No warm-up needed: macOS 27's system model is residency-managed by the OS.)
                 NightShift.maybeRunOnOpen(context, ai: ai)
-                // Warm the local model while you're here; instant AI when you log things.
-                LocalLLM.shared.appActive()
                 // Dormant until the Android companion (SyncManager.cloudSyncEnabled).
                 if SyncManager.cloudSyncEnabled { Task { await sync.autoSync() } }
             } else {
-                // Closing the app frees the local model's RAM immediately (gaming-safe);
-                // a brief focus-switch just lets its keep-alive lapse on its own.
-                LocalLLM.shared.appBackgrounded(context: context, ai: ai, fullyClosed: phase == .background)
                 WidgetBridge.update(context)   // keep the desktop widget fresh
             }
         }
@@ -208,8 +204,6 @@ struct RootView: View {
                 Task { await sync.restoreSession(); await sync.autoSync() }
             }
             SampleData.seedIfEmpty(context)
-            // First launch lands in .active before onChange can fire — warm the local model now.
-            LocalLLM.shared.appActive()
             if !UserDefaults.standard.bool(forKey: "notif.seeded") {
                 UserDefaults.standard.set(true, forKey: "notif.seeded")
                 Notify.post(context, kind: "info", subject: "Welcome to Freelane",

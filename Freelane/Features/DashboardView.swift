@@ -29,7 +29,6 @@ struct DashboardView: View {
     @Environment(\.navigate) private var navigate
     @State private var generatingInsights = false
     @AppStorage("dash.tileOrder") private var tileOrderRaw = ""
-    @State private var draggingTile: String?
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
     private var rates: Rates { Rates(base: base, rates: rateRows) }
@@ -285,37 +284,32 @@ struct DashboardView: View {
         // Stored order, then any new tiles appended in their natural order.
         let stored = tileOrderRaw.split(separator: ",").map(String.init)
         let order = stored.filter { byKey[$0] != nil } + specs.map { $0.key }.filter { !stored.contains($0) }
+        let tiles = order.compactMap { key in byKey[key].map { Tile(id: key, view: $0) } }
+        // macOS 27's native reorder API — replaces the old onDrag/DropDelegate machinery, and
+        // gets the system pickup/settle animation + Golden Gate drop styling for free.
         return GlassGroup(spacing: 14) {
             LazyVGrid(columns: cols, spacing: 14) {
-                ForEach(order, id: \.self) { key in
-                    if let view = byKey[key] {
-                        view
-                            .opacity(draggingTile == key ? 0.35 : 1)
-                            .onDrag { draggingTile = key; return NSItemProvider(object: key as NSString) }
-                            .onDrop(of: [.text], delegate: TileDrop(key: key, order: order,
-                                    dragging: $draggingTile, commit: { tileOrderRaw = $0.joined(separator: ",") }))
-                    }
+                ForEach(tiles) { $0.view }
+                    .reorderable()
+            }
+            .reorderContainer(for: Tile.self) { diff in
+                var new = order.filter { !diff.sources.contains($0) }
+                switch diff.destination.position {
+                case .before(let target):
+                    let at = new.firstIndex(of: target) ?? new.count
+                    new.insert(contentsOf: diff.sources, at: at)
+                case .end:
+                    new.append(contentsOf: diff.sources)
                 }
+                withAnimation(Motion.snappy) { tileOrderRaw = new.joined(separator: ",") }
             }
         }
     }
 
-    /// Reorders dashboard tiles as you drag one over another; persists the new order.
-    private struct TileDrop: DropDelegate {
-        let key: String
-        let order: [String]
-        @Binding var dragging: String?
-        let commit: ([String]) -> Void
-        func dropEntered(info: DropInfo) {
-            guard let from = dragging, from != key else { return }
-            var new = order
-            new.removeAll { $0 == from }
-            let at = new.firstIndex(of: key) ?? new.count
-            new.insert(from, at: at)
-            if new != order { withAnimation(Motion.snappy) { commit(new) } }
-        }
-        func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-        func performDrop(info: DropInfo) -> Bool { dragging = nil; return true }
+    /// One dashboard tile keyed for the reorder container.
+    private struct Tile: Identifiable {
+        let id: String
+        let view: AnyView
     }
 
     // MARK: AI insights (the accountant brain — accumulates over time)
@@ -332,10 +326,10 @@ struct DashboardView: View {
                         }.buttonStyle(.plain).foregroundStyle(Palette.violet)
                             .disabled(generatingInsights || !ai.isReady)
                             .opacity(generatingInsights || !ai.isReady ? 0.45 : 1)
-                            .help(!ai.isReady ? "Add a brain in Settings → AI (local model or Gemini key) to enable insights" : "Regenerate insights from your latest data"))) {
+                            .help(!ai.isReady ? "Enable Apple Intelligence (or add a Gemini key) in Settings → AI to enable insights" : "Regenerate insights from your latest data"))) {
             if shown.isEmpty {
                 Text(!ai.isReady
-                     ? "Add a brain in Settings → AI (local model or Gemini key), then I'll study your spending, journals, and habits and surface real insights here."
+                     ? "Enable Apple Intelligence (or add a Gemini key) in Settings → AI, then I'll study your spending, journals, and habits and surface real insights here."
                      : "Tap Refresh and I'll read everything — your spending, journals, and patterns — and tell you what I notice. It gets sharper the more you log.")
                     .font(.system(size: 12)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
             } else {

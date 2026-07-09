@@ -3,6 +3,16 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.16
+
+Built for macOS 27 "Golden Gate" — and one brain instead of three.
+
+- **Apple's new on-device model is now the app's main brain.** macOS 27's rebuilt foundation model tested faster (1–3s) and smarter than the local Gemma it replaces — so the whole Ollama/Gemma layer is gone: no separate install, no 10GB model on disk, no RAM governor, one less thing in Settings. Everything — tagging, insights, questions, chat — runs on-device, private, offline. Gemini remains strictly opt-in, as before.
+- Two hardenings from actually testing the new model with the app's real prompts: JSON replies that come back malformed are retried once with strict instructions (so insights never silently fail), and the "who is this person?" question can never be triggered by a relationship word — the model once answered "wife" as a person's name; the app now knows better.
+- **The app now requires macOS 27** and is built against the new SDK, so it wears Golden Gate's refined Liquid Glass automatically — better content diffusion, the new edge treatment, and it respects the system-wide transparency slider on the nav layer.
+- **Dashboard tile reordering is native now** — rebuilt on macOS 27's new reorder API, so dragging tiles gets the system's pickup and settle animations instead of our old hand-rolled drop logic.
+- Updates are back: this release is on GitHub again, so "Check for Updates…" works from here on.
+
 ## 0.15
 
 The big one — five real money-logic fixes, and the app finally acts on what it knows.

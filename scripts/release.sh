@@ -12,13 +12,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 DEV="/Applications/Xcode.app/Contents/Developer"
+[ -d "$DEV" ] || DEV="/Applications/Xcode-beta.app/Contents/Developer"   # macOS 27 beta setup
 DIST="$ROOT/dist"
 
 echo "→ Building Release (universal)…"
 DEVELOPER_DIR="$DEV" xcodebuild -project Freelane.xcodeproj -scheme Freelane \
   -configuration Release -derivedDataPath build \
   -clonedSourcePackagesDirPath build/SourcePackages \
-  ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build >/dev/null
+  ARCHS="arm64" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build >/dev/null
 
 APP_SRC="build/Build/Products/Release/Freelane.app"
 [ -d "$APP_SRC" ] || { echo "error: build product missing" >&2; exit 1; }

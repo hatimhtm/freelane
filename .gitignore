@@ -21,3 +21,4 @@ Freelane.xcodeproj/xcuserdata/
 *.store-wal
 *.profraw
 .DS_Store
+build27/

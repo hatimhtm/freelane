@@ -325,7 +325,6 @@ struct SettingsView: View {
 
     private var aiCard: some View {
         VStack(spacing: 18) {
-            localModelCard
             brainHealthCard
             cloudAICard
         }
@@ -335,7 +334,7 @@ struct SettingsView: View {
 
     private var brainHealthCard: some View {
         let health = BrainHealth.shared
-        let known = ["local", "on-device", "cloud"].filter { health.stats[$0] != nil }
+        let known = ["on-device", "cloud"].filter { health.stats[$0] != nil }
         return Group {
             if !known.isEmpty {
                 SectionCard(title: "Brain health", subtitle: "Every AI call is tracked — a failing brain can't hide", accent: Palette.indigo) {
@@ -375,59 +374,6 @@ struct SettingsView: View {
         .insetRow(cornerRadius: Radii.field, hoverable: false)
     }
 
-    // MARK: Local model (Ollama) — the always-yours brain
-
-    private var localModelCard: some View {
-        let llm = LocalLLM.shared
-        return SectionCard(title: "Local model",
-                           subtitle: "Your own model via Ollama — free, private, works offline",
-                           accent: Palette.teal) {
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle(isOn: Binding(get: { llm.enabled }, set: { llm.enabled = $0 })) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Use a local model when it's running").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
-                        Text("Loads while you use the app, unloads the moment you leave — it never competes with games or other work. When your Mac sits idle on power, it quietly catches up.")
-                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }.toggleStyle(.switch).tint(Palette.teal)
-
-                if llm.enabled {
-                    HStack(spacing: 8) {
-                        Circle().fill(llm.ready ? Palette.positive : (llm.serverUp ? Palette.warning : Palette.negative))
-                            .frame(width: 7, height: 7)
-                        Text(llm.ready
-                             ? "Ollama detected — \(llm.model) loads on demand"
-                             : (llm.serverUp ? "Ollama is running, but \(llm.model) isn't pulled yet"
-                                             : "Ollama not running — falling back to Apple/Gemini until it's back"))
-                            .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
-                        Spacer()
-                        Button { Task { await llm.probe(force: true) } } label: {
-                            Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 11, weight: .semibold))
-                        }.buttonStyle(.iconPress).foregroundStyle(Palette.textTertiary)
-                            .help("Check again").accessibilityLabel("Re-check Ollama")
-                    }
-                    if llm.serverUp, !llm.installedModels.isEmpty {
-                        LabeledField("Model") {
-                            GlassMenuPicker(selection: Binding(get: { llm.model }, set: { llm.model = $0 }),
-                                            options: llm.installedModels, label: { $0 })
-                                .frame(maxWidth: 280)
-                        }
-                    }
-                    if !llm.ready {
-                        Text(llm.serverUp
-                             ? "Run  ollama pull gemma4:e4b  in Terminal, then check again. Gemma 4 E4B (~4 GB) is the sweet spot for this Mac."
-                             : "Two-minute setup: install Ollama from ollama.com, then run  ollama pull gemma4:e4b  in Terminal. Gemma 4 E4B (~4 GB) is the sweet spot for this Mac.")
-                            .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
-                }
-            }
-        }
-        .task { await llm.probe(force: true) }
-    }
-
     private var cloudAICard: some View {
         SectionCard(title: "AI", subtitle: "Your brains, your tokens — cloud only when you say so", accent: Palette.violet) {
             VStack(alignment: .leading, spacing: 12) {
@@ -435,7 +381,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Use Apple Intelligence on-device").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                         Text(FoundationModelProvider.isAvailable
-                             ? "Available — fast, private, works offline. Backs up your local model."
+                             ? "Available — macOS 27's rebuilt on-device model: fast, private, works offline. This is the app's main brain."
                              : "Not available on this Mac yet.")
                             .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                     }
@@ -443,7 +389,7 @@ struct SettingsView: View {
                 Toggle(isOn: Binding(get: { ai.allowCloudFallback }, set: { ai.allowCloudFallback = $0 })) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Use Gemini (cloud) at all").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
-                        Text("Off (recommended): everything — questions, tagging, summaries AND chat — runs on your local Gemma & Apple brains. Zero cloud tokens, fully private. On: Gemini assists where it's strongest.")
+                        Text("Off (recommended): everything — questions, tagging, summaries AND chat — runs on Apple's on-device model. Zero cloud tokens, fully private. On: Gemini assists where it's strongest.")
                             .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                     }
                 }.toggleStyle(.switch).tint(Palette.violet)

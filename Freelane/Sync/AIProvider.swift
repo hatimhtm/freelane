@@ -42,10 +42,6 @@ struct FailoverProvider: AIProvider {
                 // "No key set" isn't a brain failing — don't count it, don't alert on it.
                 if case AIError.notConfigured = error { continue }
                 await BrainHealth.shared.failure(link.source, error: error)
-                if link.source == "local", (error as? URLError) != nil {
-                    // Transport failure = server's gone, not a bad request → stand down until re-probe.
-                    await MainActor.run { LocalLLM.shared.noteTransportFailure() }
-                }
             }
         }
         throw lastError
@@ -201,37 +197,35 @@ final class AIManager {
 
     /// Could a BACKGROUND prompt actually reach Google's cloud? Only if the user opted into
     /// cloud fallback AND a key is set. Drives redaction: text is scrubbed of sensitive terms
-    /// exactly when it might leave the machine — local Ollama and Apple's on-device model are
-    /// both on-device and need no scrubbing. (The explicit chat path gates cloud separately.)
+    /// exactly when it might leave the machine — Apple's on-device model needs no scrubbing.
+    /// (The explicit chat path gates cloud separately.)
     var cloudReachable: Bool { allowCloudFallback && !apiKey.isEmpty }
 
     /// True if SOME provider can run a background task. Cloud counts only when the user has
     /// explicitly allowed background fallback.
     var isReady: Bool {
-        LocalLLM.shared.ready || (preferOnDevice && FoundationModelProvider.isAvailable)
+        (preferOnDevice && FoundationModelProvider.isAvailable)
             || (allowCloudFallback && !apiKey.isEmpty)
     }
 
-    /// Fast tier (most calls: classify / extract / short summary): a FAILOVER CHAIN —
-    /// local Gemma first (free, private, no context cap, no guardrail refusals), then Apple's
-    /// on-device model. Gemini joins the chain ONLY if background fallback is enabled.
-    /// A job logged before the local brain wakes up — or while it's down — simply lands on
-    /// the next brain; an empty chain throws .notConfigured and the job skips cleanly.
+    /// Fast tier (most calls: classify / extract / short summary): Apple's on-device model
+    /// (macOS 27's rebuilt foundation model — fast, private, free, offline; the old local
+    /// Ollama/Gemma leg was retired 2026-07 because this model now covers it). Gemini joins
+    /// the chain ONLY if background fallback is enabled. An empty chain throws .notConfigured
+    /// and the job skips cleanly.
     var provider: AIProvider {
         var chain: [(String, AIProvider)] = []
-        if LocalLLM.shared.ready { chain.append(("local", OllamaProvider())) }
         if preferOnDevice, FoundationModelProvider.isAvailable { chain.append(("on-device", FoundationModelProvider())) }
         if allowCloudFallback, !apiKey.isEmpty { chain.append(("cloud", GeminiProvider(apiKey: apiKey, tier: .fast))) }
         return FailoverProvider(chain: chain)
     }
     var fast: AIProvider { provider }
 
-    /// Heavy tier (reasoning / narrative): local first here too — slower than Gemini, but
-    /// free and private; "slow is better than burning tokens". On-device backs it up, and
-    /// Gemini only joins by explicit opt-in.
+    /// Heavy tier (reasoning / narrative): on-device first here too — private and free;
+    /// Gemini only joins by explicit opt-in. (Heavy ignores `preferOnDevice` on purpose:
+    /// with no cloud opt-in it's the only brain, so a mis-toggle can't kill AI entirely.)
     var heavy: AIProvider {
         var chain: [(String, AIProvider)] = []
-        if LocalLLM.shared.ready { chain.append(("local", OllamaProvider())) }
         if FoundationModelProvider.isAvailable { chain.append(("on-device", FoundationModelProvider())) }
         if allowCloudFallback, !apiKey.isEmpty { chain.append(("cloud", GeminiProvider(apiKey: apiKey, tier: .heavy))) }
         return FailoverProvider(chain: chain)

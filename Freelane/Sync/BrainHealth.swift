@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-/// Per-brain reliability ledger — local (Ollama), on-device (Apple), cloud (Gemini).
+/// Per-brain reliability ledger — on-device (Apple), cloud (Gemini).
 /// Every AI attempt is recorded, so a silently-failing brain becomes VISIBLE:
 ///   · Settings → AI shows each brain's success/failure counts and its last error.
 ///   · Three consecutive failures raise ONE notification (and re-arm only after a recovery),
@@ -64,7 +64,7 @@ final class BrainHealth {
 
     static func displayName(_ source: String) -> String {
         switch source {
-        case "local": return "Your local model"
+        case "local": return "Your local model (retired)"
         case "on-device": return "Apple's on-device model"
         default: return "Gemini (cloud)"
         }

@@ -30,8 +30,7 @@ enum NightShift {
     }
 
     /// Single owner of the once-per-day gate. `anyHour: true` is the idle-window path
-    /// (the Mac is unattended on AC, so "overnight" can happen at 2pm) — used by LocalLLM's
-    /// governor; the classic path still waits for 02:00.
+    /// (kept for flexibility; the on-app-open path is what actually fires day to day).
     @MainActor
     static func runIfDue(_ context: ModelContext, ai: AIManager, anyHour: Bool) async {
         guard enabled, ai.isReady else { return }

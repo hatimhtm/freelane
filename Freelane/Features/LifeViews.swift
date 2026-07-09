@@ -859,7 +859,7 @@ struct LettersView: View {
             // what you write (follow-ups) or on demand; never random, never re-pasted daily.
             SectionCard(title: "Open questions",
                         subtitle: openPromptRows.isEmpty
-                            ? (!ai.isReady ? "Add a local model or AI key in Settings — or just write." : "All answered. Ask for new ones, or just write.")
+                            ? (!ai.isReady ? "Enable Apple Intelligence or add an AI key in Settings — or just write." : "All answered. Ask for new ones, or just write.")
                             : "Saved until you answer them — answering may spark a follow-up",
                         accent: Palette.indigo,
                         trailing: AnyView(

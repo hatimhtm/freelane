@@ -3,9 +3,9 @@ import Foundation
 import FoundationModels
 #endif
 
-/// On-device Apple Intelligence provider (macOS 26 FoundationModels). Used FIRST for fast,
-/// private, offline tasks — classification, intent, short summaries, JSON-shape extraction —
-/// falling back to Gemini for heavy reasoning or when the on-device model isn't available.
+/// On-device Apple Intelligence provider (FoundationModels; macOS 27's rebuilt system model).
+/// The app's PRIMARY brain since the Ollama/Gemma leg was retired (2026-07) — fast, private,
+/// offline; Gemini backs it up only by explicit opt-in.
 struct FoundationModelProvider: AIProvider {
     var displayName: String { "Apple Intelligence (on-device)" }
 
@@ -27,7 +27,18 @@ struct FoundationModelProvider: AIProvider {
         if #available(macOS 26.0, *), Self.isAvailable {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt)
-            return response.content
+            var out = response.content
+            // JSON reliability guard (observed on the macOS 27 model): a freeform prompt that
+            // asks for JSON can occasionally come back malformed or fenced-and-truncated. One
+            // strict retry in a fresh session fixes the bulk of those — callers treat a still-
+            // bad reply as "no answer", so this never invents data, it only reduces misses.
+            if prompt.contains("JSON"), AIJSON.firstObject(in: out) == nil {
+                let retry = LanguageModelSession()
+                out = try await retry.respond(
+                    to: prompt + "\n\nIMPORTANT: Respond with ONLY the JSON object itself — start with { and end with }, no code fences, no prose, every key exactly once."
+                ).content
+            }
+            return out
         }
         #endif
         throw AIError.onDeviceUnavailable

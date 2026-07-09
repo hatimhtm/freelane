@@ -61,7 +61,7 @@ enum Brain {
     /// the pre-built snapshot; without a key it falls back to the on-device model + snapshot.
     static func answer(_ context: ModelContext, ai: AIManager, page: String, question: String,
                        history: [(mine: Bool, text: String)] = []) async -> String {
-        guard ai.isReady else { return "Add a local model or a Gemini API key in Settings → AI to enable answers." }
+        guard ai.isReady else { return "Enable Apple Intelligence or add a Gemini API key in Settings → AI to enable answers." }
 
         var persona = "You are the assistant inside Freelane, a private single-user money + life app for one freelancer in the Philippines (base currency PHP, timezone PHT). You are on the \(page) page. Answer in 1–4 short sentences, concretely, using REAL numbers. Never invent figures. Don't coach or moralize — mirror what's true. If you can't answer, say so plainly."
         // Core memory rides along (Hermes-style): the chat knows the user from turn one
@@ -243,10 +243,15 @@ enum Brain {
     static func considerPerson(_ context: ModelContext, name: String) {
         let clean = name.trimmingCharacters(in: .whitespaces)
         guard clean.count >= 2 else { return }
-        // Defensive backstop: a ride is not a person. Even if the cloud LLM mislabels a
-        // Filipino transport mode as a person_name, never pester "who is tricycle?".
+        // Defensive backstop: a ride is not a person, and neither is a relationship word.
+        // The macOS 27 on-device model was observed returning "wife" as person_name despite
+        // the prompt's rule — never pester "who is wife?" (or "who is tricycle?").
         let notPeople: Set<String> = ["tricycle", "trike", "tricy", "jeepney", "jeep", "habal",
-                                      "habal-habal", "pedicab", "kuliglig", "taxi", "angkas", "bus"]
+                                      "habal-habal", "pedicab", "kuliglig", "taxi", "angkas", "bus",
+                                      "wife", "husband", "mom", "mother", "dad", "father", "brother",
+                                      "sister", "son", "daughter", "friend", "family", "kids", "baby",
+                                      "girlfriend", "boyfriend", "partner", "cousin", "uncle", "aunt",
+                                      "grandma", "grandpa", "lola", "lolo", "nanay", "tatay", "kuya", "ate"]
         if notPeople.contains(clean.lowercased()) { Curiosity.deny(clean); return }
         let entities = (try? context.fetch(FetchDescriptor<Entity>())) ?? []
         if entities.contains(where: { $0.name.lowercased() == clean.lowercased() }) {
@@ -1004,7 +1009,7 @@ enum Brain {
     //  every clarifying question is now AI-generated from the user's actual state.)
 
     /// ONE AI-generated clarifying question for the bell — born from THIS user's actual money
-    /// state, known facts, and the FULL ask-history. Local models (Gemma / Apple) are weak at
+    /// state, known facts, and the FULL ask-history. On-device models are weak at
     /// honoring "don't repeat", so repetition is blocked in CODE, not just asked for: a candidate
     /// is rejected if its fact_key was already asked or is already known, or if its wording is
     /// too similar to any past question. Up to 2 attempts, then silence (better than a repeat).
