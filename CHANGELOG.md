@@ -3,6 +3,15 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.19
+
+Questions that are actually about you — two real bugs, fixed at the root.
+
+- **Why "New questions" kept failing:** the app was feeding the model your entire ask-history — over a hundred past questions — plus everything else, which blew past the on-device model's context limit, so generation simply died. The prompt now carries only the recent history (deep-archive repetition was already blocked mechanically), and if a batch still fails, a slimmer retry runs before the button ever gives up. When nothing can be added, the button now says *why* instead of doing nothing.
+- **Why it invented things like a "singing contest":** the personal-context digest treated things you'd *read about* in Safari as things you *do* — one stray article became "practicing for a singing competition." The digest was rebuilt: what you did (messages, calendar, reminders) and what you merely looked at are now separate, browsing can never be asserted as your life, junk "search terms" from non-search sites are ignored (that's where the phantom topics came from), and garbage contact fragments can't be recorded as people.
+- **You can now see what it thinks.** Settings → Integrations → Personal context shows the current digest — life threads, reading topics, people — with a "Refresh now" button. If a question ever feels off, you can see exactly where it came from.
+- The old bad digest is discarded automatically on update.
+
 ## 0.18
 
 The AI now knows your life, and Siri now knows Freelane.

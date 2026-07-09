@@ -778,6 +778,7 @@ struct LettersView: View {
     @State private var loadingPrompts = false
     @State private var searchQuery = ""
     @State private var refillExhausted = false   // local model produced no NEW question last try — wait for a slot to open
+    @State private var promptStatus: String?     // why the last "New questions" produced nothing (honest button)
     private let promptTarget = 5                  // always keep this many open questions ahead so journaling never stalls
     @State private var searchDate: Date?
     @State private var showCalendar = false
@@ -868,6 +869,11 @@ struct LettersView: View {
                             }.buttonStyle(.plain).foregroundStyle(Palette.indigo).disabled(loadingPrompts || !ai.isReady))) {
                 VStack(spacing: 8) {
                     ForEach(openPromptRows) { p in promptRow(p) }
+                    if let promptStatus {
+                        Label(promptStatus, systemImage: "info.circle")
+                            .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     Button { activeEntry = JournalEntryPrompt(text: "") } label: {
                         Label("Just write — no prompt", systemImage: "pencil").frame(maxWidth: .infinity)
                     }.buttonStyle(.glass).controlSize(.small)
@@ -1127,7 +1133,15 @@ struct LettersView: View {
             let ps = await Brain.journalPrompts(ctx, ai: mgr, count: need + 2)
             await MainActor.run {
                 let added = Brain.storeJournalPrompts(ctx, texts: ps, source: "ai")
-                if added == 0 { refillExhausted = true }   // nothing new — wait for a slot to open before retrying
+                if added == 0 {
+                    refillExhausted = true   // nothing new — wait for a slot to open before retrying
+                    // Say WHY instead of silently doing nothing (the old "button does nothing" feel).
+                    promptStatus = ps.isEmpty
+                        ? "The model couldn't produce questions just now — try once more."
+                        : "Its ideas were all too close to past questions — answer or dismiss one and try again."
+                } else {
+                    promptStatus = nil
+                }
                 loadingPrompts = false
             }
         }

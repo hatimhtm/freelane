@@ -25,16 +25,20 @@ enum LifeSignals {
 
     // MARK: - The digest (what the rest of the app reads)
 
+    /// v2 (the v1 digest conflated reading with living — "browsed a singing-contest article"
+    /// became "practicing for a singing competition"). `doing` may only come from their OWN
+    /// activity (messages, calendar, reminders); `reading` is what they merely looked at.
     struct Digest: Codable {
-        var themes: [String] = []   // "apartment hunting", "planning Cebu trip"
-        var people: [String] = []   // most-contacted names
-        var notes: [String] = []    // what a thoughtful friend would remember this week
+        var doing: [String] = []     // real life threads ("apartment hunting", "trip on the 24th")
+        var reading: [String] = []   // browsing interests — NOT things they did
+        var people: [String] = []    // most-contacted real names
+        var notes: [String] = []     // what a thoughtful friend would remember this week
     }
 
     /// The freshest stored digest — display/prompt read, never hits AI or the raw sources.
     @MainActor
     static func digest(_ context: ModelContext) -> Digest? {
-        guard anyOn, let raw = Brain.cachedStable(context, key: "life_signals"),
+        guard anyOn, let raw = Brain.cachedStable(context, key: "life_signals.v2"),
               let data = raw.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(Digest.self, from: data)
     }
@@ -42,11 +46,17 @@ enum LifeSignals {
     /// The formatted prompt section. Callers MUST gate on `!ai.cloudReachable` — see privacy rules.
     @MainActor
     static func contextSection(_ context: ModelContext) -> String? {
-        guard let d = digest(context), !(d.themes.isEmpty && d.people.isEmpty && d.notes.isEmpty) else { return nil }
-        var lines = ["WHAT'S GOING ON IN THEIR LIFE RIGHT NOW (from their Mac, on-device only)"]
-        if !d.themes.isEmpty { lines.append("- Current threads: " + d.themes.joined(separator: "; ")) }
+        guard let d = digest(context),
+              !(d.doing.isEmpty && d.reading.isEmpty && d.people.isEmpty && d.notes.isEmpty) else { return nil }
+        var lines = ["WHAT'S GOING ON IN THEIR LIFE (on-device digest — treat carefully)"]
+        if !d.doing.isEmpty { lines.append("- Life threads (from their real activity): " + d.doing.joined(separator: "; ")) }
+        if !d.reading.isEmpty {
+            lines.append("- Reading/researching lately — things they LOOKED AT, not things they did or plan: "
+                         + d.reading.joined(separator: "; "))
+        }
         if !d.people.isEmpty { lines.append("- In touch with most: " + d.people.joined(separator: ", ")) }
         if !d.notes.isEmpty { lines.append(contentsOf: d.notes.map { "- \($0)" }) }
+        lines.append("RULE: never assert anything here as an event or plan in their life unless it's a Life thread — and even those, mention lightly. When unsure, ignore this section entirely.")
         return lines.joined(separator: "\n")
     }
 
@@ -58,47 +68,74 @@ enum LifeSignals {
         if !force, Date.now.timeIntervalSince1970 - last < 20 * 3600 { return }
         guard FoundationModelProvider.isAvailable else { return }   // on-device ONLY, by design
 
-        var sections: [String] = []
-        if messagesOn, let m = messagesSource() { sections.append(m) }
-        if safariOn, let s = safariSource() { sections.append(s) }
-        if calendarOn, let c = await calendarSource() { sections.append(c) }
+        // Sources are split by EPISTEMIC WEIGHT: what they DID (messages/calendar/reminders)
+        // vs what they merely LOOKED AT (browsing). v1 mixed them and the model asserted news
+        // articles as the user's own plans.
+        var lived: [String] = []
+        var looked: [String] = []
+        if messagesOn, let m = messagesSource() { lived.append(m) }
+        if calendarOn, let c = await calendarSource() { lived.append(c) }
         if Integrations.remindersOn {
             let rems = await EventBridge.incompleteReminders().prefix(10)
             if !rems.isEmpty {
-                sections.append("OPEN REMINDERS:\n" + rems.map { r in
+                lived.append("OPEN REMINDERS:\n" + rems.map { r in
                     "- \(r.title)" + (r.due.map { " (due \($0.formatted(.dateTime.month().day())))" } ?? "")
                 }.joined(separator: "\n"))
             }
         }
-        guard !sections.isEmpty else { return }
+        if safariOn, let s = safariSource() { looked.append(s) }
+        guard !(lived.isEmpty && looked.isEmpty) else { return }
 
         let prompt = """
         You are building a compact, private context sheet about one person from raw signals off
-        their own computer. Reply with ONLY a JSON object shaped like {"themes": [array of up to 8
-        short strings], "people": [array of up to 5 names], "notes": [array of up to 4 short strings]}.
-        - themes: what's currently going on in their life ("apartment hunting", "planning a Cebu trip",
-          "busy stretch at work") — plain words, 2-5 words each.
-        - people: who they're actually in touch with most, names only.
-        - notes: what a thoughtful friend would remember this week (an upcoming event, a decision
-          they seem to be weighing) — one short sentence each.
-        Only what the data clearly supports — never invent, never moralize. NEVER quote message text
-        verbatim. Never echo this format description.
+        their own computer. Reply with ONLY a JSON object shaped like {"doing": [array of up to 5
+        short strings], "reading": [array of up to 5 short strings], "people": [array of up to 5
+        names], "notes": [array of up to 3 short strings]}.
 
-        RAW SIGNALS:
-        \(sections.joined(separator: "\n\n"))
+        HARD RULES — this sheet must be trustworthy, a wrong guess is worse than an empty field:
+        - "doing" comes ONLY from the THEIR OWN LIFE section (their messages, calendar, reminders).
+          Each entry needs at least TWO supporting signals. Never place browsing here.
+        - "reading" comes from the BROWSING section: topics they're looking into. Reading about a
+          thing is NOT doing it — a news story, a show, a sports event they read about belongs
+          here or nowhere. Skip one-off visits, news-of-the-day, and entertainment headlines.
+        - "people" = real person NAMES they exchange messages with. Never service or app names,
+          never abbreviations or fragments. If you only see a phone number or a fragment, omit it.
+        - "notes" = one-sentence reminders a thoughtful friend would keep (an upcoming event they
+          are ATTENDING per calendar, a decision they're weighing in their own words).
+        - Never invent, never embellish, never quote message text verbatim. Fewer, surer entries
+          always beat more. Never echo this format description.
+
+        === THEIR OWN LIFE (messages / calendar / reminders) ===
+        \(lived.isEmpty ? "(no sources enabled)" : lived.joined(separator: "\n\n"))
+
+        === BROWSING (things they looked at — weakest signal) ===
+        \(looked.isEmpty ? "(no sources enabled)" : looked.joined(separator: "\n\n"))
         """
         guard let raw = try? await FoundationModelProvider().generate(prompt: prompt),
               let jsonStr = AIJSON.firstObject(in: raw),
               let data = jsonStr.data(using: .utf8),
               var d = try? JSONDecoder().decode(Digest.self, from: data) else { return }
-        d.themes = d.themes.filter { AIJSON.isRealText($0, minLetters: 4) }.map { String($0.prefix(60)) }
-        d.people = d.people.map { $0.trimmingCharacters(in: .whitespaces) }.filter { $0.count >= 2 && $0.count <= 40 }
+        d.doing = d.doing.filter { AIJSON.isRealText($0, minLetters: 4) }.map { String($0.prefix(60)) }
+        d.reading = d.reading.filter { AIJSON.isRealText($0, minLetters: 4) }.map { String($0.prefix(60)) }
+        d.people = d.people.map { $0.trimmingCharacters(in: .whitespaces) }.filter { plausiblePersonName($0) }
         d.notes = d.notes.filter { AIJSON.isRealText($0) }.map { String($0.prefix(120)) }
         guard let out = try? JSONEncoder().encode(d), let payload = String(data: out, encoding: .utf8) else { return }
         await MainActor.run {
-            Brain.store(context, key: "life_signals", payload: payload, ttl: 2 * 86400)
+            Brain.store(context, key: "life_signals.v2", payload: payload, ttl: 2 * 86400)
         }
         UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: "signals.refreshedAt")
+    }
+
+    /// Code-level backstop for the "people" list — v1 stored handle fragments ("Att", "Dm") and
+    /// even "Claude" as people. A name needs to look like one, and never an AI/app/service.
+    private static func plausiblePersonName(_ s: String) -> Bool {
+        guard s.count >= 4, s.count <= 40 else { return false }
+        guard s.rangeOfCharacter(from: .decimalDigits) == nil else { return false }
+        let lower = s.lowercased()
+        let services: Set<String> = ["claude", "chatgpt", "gemini", "siri", "gcash", "wise", "maya",
+                                     "grab", "shopee", "lazada", "apple", "google", "globe", "smart", "dito"]
+        guard !services.contains(lower) else { return false }
+        return s.rangeOfCharacter(from: CharacterSet(charactersIn: "aeiouAEIOU")) != nil
     }
 
     // MARK: - Sources (raw extracts; never leave this file)
@@ -158,9 +195,21 @@ enum LifeSignals {
         var searches: [String] = []
         for r in rows {
             guard let raw = r[0], let url = URL(string: raw) else { continue }
-            if let host = url.host()?.replacingOccurrences(of: "www.", with: "") { domains[host, default: 0] += 1 }
-            if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-               let q = comps.queryItems?.first(where: { ["q", "query", "search_query", "p"].contains($0.name) })?.value,
+            guard let host = url.host()?.replacingOccurrences(of: "www.", with: "") else { continue }
+            domains[host, default: 0] += 1
+            // Search terms ONLY from actual search engines — a bare `?q=`/`?p=` on a random site
+            // is a pagination/tracking param, and v1's harvest of those junk params is exactly
+            // where the phantom themes ("singing competition") came from.
+            let param: String? =
+                host.contains("google.") ? "q"
+                : host.contains("bing.com") ? "q"
+                : host.contains("duckduckgo.com") ? "q"
+                : host.contains("youtube.com") ? "search_query"
+                : host.contains("search.yahoo.") ? "p"
+                : nil
+            if let param,
+               let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let q = comps.queryItems?.first(where: { $0.name == param })?.value,
                q.count > 2, searches.count < 40, !searches.contains(q) {
                 searches.append(q)
             }

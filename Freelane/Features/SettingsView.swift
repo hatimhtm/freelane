@@ -269,7 +269,48 @@ struct SettingsView: View {
                         }.buttonStyle(.glass).controlSize(.small)
                     }
                 }
+                // TRANSPARENCY: show exactly what the digest currently believes, so a wrong guess
+                // is visible (and correctable by refreshing) instead of silently haunting questions.
+                if LifeSignals.anyOn {
+                    Divider().overlay(Palette.hairline)
+                    HStack {
+                        Text("What it currently thinks").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary)
+                        Spacer()
+                        Button {
+                            digestRefreshing = true
+                            Task { await LifeSignals.refresh(context, force: true); await MainActor.run { digestRefreshing = false; digestTick += 1 } }
+                        } label: {
+                            Label(digestRefreshing ? "Reading…" : "Refresh now", systemImage: "arrow.triangle.2.circlepath").font(.system(size: 11))
+                        }.buttonStyle(.plain).foregroundStyle(Palette.cyan).disabled(digestRefreshing)
+                    }
+                    Group {
+                        if let d = LifeSignals.digest(context) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                if !d.doing.isEmpty { digestLine("Life", d.doing.joined(separator: " · ")) }
+                                if !d.reading.isEmpty { digestLine("Reading about", d.reading.joined(separator: " · ")) }
+                                if !d.people.isEmpty { digestLine("In touch with", d.people.joined(separator: ", ")) }
+                                ForEach(d.notes, id: \.self) { digestLine("Note", $0) }
+                            }
+                        } else {
+                            Text("No digest yet — it builds once a day, or tap Refresh now.")
+                                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                        }
+                    }
+                    .id(digestTick)   // re-read after a manual refresh
+                }
             }
+        }
+    }
+
+    @State private var digestRefreshing = false
+    @State private var digestTick = 0
+
+    private func digestLine(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(label.uppercased()).font(.system(size: 9, weight: .bold)).kerning(0.4)
+                .foregroundStyle(Palette.textTertiary).frame(width: 88, alignment: .leading).padding(.top, 1)
+            Text(value).font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

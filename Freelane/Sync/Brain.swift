@@ -538,12 +538,14 @@ enum Brain {
         var m = JournalMemory()
         let askedRows = ((try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? [])
             .sorted { $0.createdAt > $1.createdAt }
-        // Always keep explicit "skip / not for me" signals (never silently age them out);
-        // cap only the softer history at the most-recent 80. The old flat 60-row window
-        // let old topics fall off and get re-asked — this stops that.
-        let hardNo = askedRows.filter { $0.status == "dismissed" || $0.feedback == "down" }
-        let softer = askedRows.filter { !($0.status == "dismissed" || $0.feedback == "down") }.prefix(80)
-        m.asked = (hardNo + Array(softer)).map { "- \($0.text)\($0.status == "dismissed" ? " (they chose to skip this — drop the topic)" : "")" }
+        // PROMPT-SIZED history, not the full archive: the on-device model's context window is
+        // small, and shipping all 100+ past questions made generation THROW on real data (the
+        // "New questions fails 90% of the time" bug). Repetition against the deep archive is
+        // enforced mechanically in storeJournalPrompts (token-overlap dedup) — the model only
+        // needs the recent asks + the taste signals.
+        let hardNo = askedRows.filter { $0.status == "dismissed" || $0.feedback == "down" }.prefix(12)
+        let softer = askedRows.filter { !($0.status == "dismissed" || $0.feedback == "down") }.prefix(30)
+        m.asked = (Array(hardNo) + Array(softer)).map { "- \($0.text)\($0.status == "dismissed" ? " (they chose to skip this — drop the topic)" : "")" }
         m.liked = askedRows.filter { $0.feedback == "up" }.prefix(10).map(\.text)
         m.noped = askedRows.filter { $0.feedback == "down" }.prefix(12).map(\.text)
         let letters = ((try? context.fetch(FetchDescriptor<Letter>())) ?? [])
@@ -560,12 +562,13 @@ enum Brain {
             .sorted { $0.updatedAt > $1.updatedAt }.prefix(6)
             .map { "\($0.key): \($0.value)" }.joined(separator: "; ")
         let digest = MemoryCompactor.digest
-        m.facts = digest.isEmpty
+        m.facts = String((digest.isEmpty
             ? ((try? context.fetch(FetchDescriptor<AIFact>())) ?? [])
                 .filter { $0.subjectKind == "user" && $0.archivedAt == nil }
                 .sorted { $0.updatedAt > $1.updatedAt }.prefix(14)
                 .map { "\($0.key): \($0.value)" }.joined(separator: "; ")
             : digest + (freshFacts.isEmpty ? "" : "\nFreshest facts: \(freshFacts)")
+        ).prefix(900))   // context-window discipline — the digest can grow unboundedly over time
         m.recent = letters.prefix(3).map { l in
             "[\(l.createdAt.formatted(.dateTime.month().day()))] Q: \(l.title) — they wrote: \(String(l.body.prefix(280)))"
         }.joined(separator: "\n")
@@ -622,6 +625,10 @@ enum Brain {
         - Open-ended (never yes/no), but light — something they'd WANT to answer, not homework.
         - If their mood trail reads heavy or drained, keep every question gentle.
         - NEVER repeat or rephrase anything in the ask-history. A used topic is burned.
+        - Their OWN entries and facts outrank everything else. Never assert an event, plan, or
+          activity that isn't in their own words — if a life-context line is just something they
+          read about, either skip it or ask about the interest ("been reading about X?"), never
+          the doing. A wrong guess about their life destroys trust instantly.
 
         Good examples of the register (do not copy them): "What's been eating most of your energy
         this week?" · "Who did you feel closest to today?" · "What would make tomorrow feel easy?"
@@ -641,13 +648,40 @@ enum Brain {
         \(life.map { $0 + "\n" } ?? "")Their most recent entries:
         \(mem.recent.isEmpty ? "(nothing yet)" : mem.recent)
         """
+        if let qs = await generateQuestions(prompt: prompt, ai: ai, count: count), !qs.isEmpty { return qs }
+
+        // DEGRADE, DON'T DIE: if the full prompt failed (context overflow, guardrail, filtered
+        // to nothing), one minimal retry — just territories + mood + taste + the last few asks.
+        // "New questions" failing 90% of the time came from having no fallback here.
+        let minimal = """
+        Write \(count) short journaling questions — one each for: \(territories.joined(separator: " · ")).
+        Rules: under 15 words, one idea, one question mark, plain spoken words like a friend texting —
+        no poetry, no metaphors, no em-dashes, no therapy-speak. Open-ended, light, gentle.
+        Reply with ONLY a JSON object shaped like {"prompts": [array of \(count) strings]} — real
+        questions, no placeholders.
+        Never repeat these recent questions:
+        \(mem.asked.prefix(10).joined(separator: "\n"))
+        Their mood lately: \(mem.moodTrail.isEmpty ? "unknown" : mem.moodTrail)
+        About them: \(String(mem.facts.prefix(300)))
+        """
+        return await generateQuestions(prompt: minimal, ai: ai, count: count) ?? []
+    }
+
+    /// Generate + parse + filter one batch. Strict human-question gate first; if the model's whole
+    /// batch fails style (but is real content), fall back to a lenient gate — a slightly wordy
+    /// question beats a dead button.
+    private static func generateQuestions(prompt: String, ai: AIManager, count: Int) async -> [String]? {
         guard let raw = try? await ai.heavy.generate(prompt: prompt),
               let jsonStr = AIJSON.firstObject(in: raw),
               let data = jsonStr.data(using: .utf8),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let arr = obj["prompts"] as? [Any] else { return [] }
-        return arr.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }
-            .filter { isHumanQuestion($0) }.prefix(count).map { $0 }
+              let arr = obj["prompts"] as? [Any] else { return nil }
+        let cands = arr.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }
+        let strict = cands.filter { isHumanQuestion($0) }
+        let pool = strict.isEmpty
+            ? cands.filter { AIJSON.isRealText($0) && $0.hasSuffix("?") && $0.count <= 150 && !$0.contains("—") }
+            : strict
+        return Array(pool.prefix(count))
     }
 
     // MARK: - Mind × money
