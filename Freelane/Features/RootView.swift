@@ -184,6 +184,11 @@ struct RootView: View {
                 // Daily AI refresh on app open — once per PHT day, ANY hour, on-device model.
                 // (No warm-up needed: macOS 27's system model is residency-managed by the OS.)
                 NightShift.maybeRunOnOpen(context, ai: ai)
+                // Personal-context digest (Messages/Safari/Calendar → themes) — throttled inside.
+                Task(priority: .background) { await LifeSignals.refresh(context) }
+                // Keep Freelane's nouns (projects/clients/wallets) in the system semantic index
+                // so the new Siri can reference and open them by name.
+                Task(priority: .background) { await SiriIndex.reindex() }
                 // Dormant until the Android companion (SyncManager.cloudSyncEnabled).
                 if SyncManager.cloudSyncEnabled { Task { await sync.autoSync() } }
             } else {

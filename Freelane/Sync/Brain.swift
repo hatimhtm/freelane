@@ -82,7 +82,7 @@ enum Brain {
             }
         }
         // Fallback: snapshot-grounded single prompt (local / on-device, or cloud if enabled).
-        let snapshot = StateSnapshot.text(context)
+        let snapshot = StateSnapshot.text(context, includePersonal: !ai.cloudReachable)
         let prompt = "\(persona)\n\n=== CURRENT STATE ===\n\(snapshot)\n=== END STATE ===\n\n\(threaded)"
         let reply = (try? await ai.provider.generate(prompt: prompt)) ?? ""
         return reply.isEmpty ? "Sorry, I couldn't reach the model." : reply.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -107,7 +107,7 @@ enum Brain {
             let prompt = """
             Write ONE calm, factual sentence (max 22 words) summarizing this person's money today. Use real numbers, no advice, no "you should". Plain and warm.
 
-            \(StateSnapshot.text(context))
+            \(StateSnapshot.text(context, includePersonal: !ai.cloudReachable))
             """
             if let r = try? await ai.provider.generate(prompt: prompt), !r.isEmpty {
                 body = r.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -127,7 +127,7 @@ enum Brain {
         guard ai.isReady else { return "" }
         let prompt = """
         Here is the person's money state right now:
-        \(StateSnapshot.text(context))
+        \(StateSnapshot.text(context, includePersonal: !ai.cloudReachable))
 
         In 2–4 short sentences, explain plainly what's going on with their money today and what — if anything — they should do about it. Use their real numbers. Warm and direct, no preaching, no "you should". If things are fine, say so clearly. Note: wallets marked ignored and one-off/investment purchases are already excluded from the everyday picture.
         """
@@ -418,7 +418,7 @@ enum Brain {
     @discardableResult
     static func generateLetter(_ context: ModelContext, ai: AIManager, kind: String) async -> Bool {
         guard ai.isReady else { return false }
-        let snapshot = StateSnapshot.text(context)
+        let snapshot = StateSnapshot.text(context, includePersonal: !ai.cloudReachable)
         let prompt = """
         Write me a short, warm editorial "letter" reflecting on my \(kind) — money and life together.
         Use REAL numbers and names from the state below; be specific and human, not generic. Two short
@@ -464,7 +464,7 @@ enum Brain {
     static func generateInsights(_ context: ModelContext, ai: AIManager) async -> Int {
         guard ai.isReady else { return 0 }
         let onDevice = !ai.cloudReachable   // scrub only if this could actually reach Gemini
-        let money = StateSnapshot.text(context)
+        let money = StateSnapshot.text(context, includePersonal: !ai.cloudReachable)
         let letters = ((try? context.fetch(FetchDescriptor<Letter>())) ?? [])
             .filter { $0.deletedAt == nil }.sorted { $0.createdAt > $1.createdAt }.prefix(8)
         let journal = letters.map { "[\($0.createdAt.formatted(.dateTime.month().day()))] \($0.body.prefix(400))" }.joined(separator: "\n")
@@ -606,6 +606,8 @@ enum Brain {
     static func journalPrompts(_ context: ModelContext, ai: AIManager, count: Int = 3) async -> [String] {
         guard ai.isReady else { return [] }
         let mem = await journalMemory(context)
+        // Personal context (Messages/Safari/Calendar awareness) — rides on-device prompts only.
+        let life = await MainActor.run { ai.cloudReachable ? nil : LifeSignals.contextSection(context) }
         let territories = rotateTerritories(count)
         let prompt = """
         Write \(count) journaling questions for this person — exactly one for each territory, in
@@ -636,7 +638,7 @@ enum Brain {
         Their recent mood trail (newest first): \(mem.moodTrail.isEmpty ? "unknown" : mem.moodTrail)
         Recent themes they've written about: \(mem.themes.isEmpty ? "none yet" : mem.themes)
         What I know about them: \(mem.facts.isEmpty ? "not much yet" : mem.facts)
-        Their most recent entries:
+        \(life.map { $0 + "\n" } ?? "")Their most recent entries:
         \(mem.recent.isEmpty ? "(nothing yet)" : mem.recent)
         """
         guard let raw = try? await ai.heavy.generate(prompt: prompt),
@@ -1077,7 +1079,7 @@ enum Brain {
         guard ai.isReady else { return nil }
         let ctx = await MainActor.run { () -> (snapshot: String, facts: String, askedBlock: String,
                                                askedTokens: [Set<String>], askedKeys: Set<String>, knownKeys: Set<String>) in
-            let snap = StateSnapshot.text(context)
+            let snap = StateSnapshot.text(context, includePersonal: !ai.cloudReachable)
             // Digest-led context (Hermes-style): curated core memory + a few fresh raw facts.
             let liveFacts = ((try? context.fetch(FetchDescriptor<AIFact>())) ?? []).filter { $0.archivedAt == nil }
             let fresh = liveFacts.sorted { $0.updatedAt > $1.updatedAt }

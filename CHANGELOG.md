@@ -3,6 +3,14 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 0.18
+
+The AI now knows your life, and Siri now knows Freelane.
+
+- **Personal context (opt-in).** Settings → Integrations grew a "Personal context" card: let the AI read your **Messages**, **Safari history & searches**, and **Calendar** (plus Reminders if already on). Once a day, the on-device model digests them into themes — "apartment hunting", "in touch with Sarah a lot", "flight on the 24th" — and journal questions, insights, and chat quietly become aware of your actual life. Signals, not quotes: message text is never stored and never quoted back at you.
+- **Privacy, hard-gated.** Every source is off by default. The digest is produced by the on-device model directly and can only ever ride on-device prompts — even if you enable the Gemini cloud fallback, this content is excluded from anything that could leave the Mac. Messages and Safari need Full Disk Access (the card walks you there).
+- **Siri can drive the app.** Freelane's projects, clients, and wallets are now registered in the system's semantic index, so the new Siri can find and open them by name — "open Acme in Freelane" lands directly on that client — alongside the existing voice actions (log a spend, safe-to-spend, log a payment, and more).
+
 ## 0.17
 
 Journal questions, fixed and rethought.

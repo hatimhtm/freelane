@@ -21,8 +21,10 @@ enum StateSnapshot {
     }
 
     /// The full grounding text block. Stable section order so the model reads it
-    /// the same way every turn.
-    static func text(_ context: ModelContext) -> String {
+    /// the same way every turn. `includePersonal` appends the LifeSignals digest (Messages/
+    /// Safari/Calendar awareness) — callers MUST pass `!ai.cloudReachable` so that content
+    /// can only ever ride an on-device prompt.
+    static func text(_ context: ModelContext, includePersonal: Bool = false) -> String {
         let d = load(context)
         let base = d.baseCurrency
         func money(_ v: Double) -> String { CurrencyFormat.string(v, base, compact: true) }
@@ -150,6 +152,12 @@ enum StateSnapshot {
             for f in facts.sorted(by: { $0.confidence > $1.confidence }).prefix(20) {
                 lines.append("- \(f.prettyKey): \(f.value)")
             }
+        }
+
+        // Personal context (Messages/Safari/Calendar digest) — on-device prompts only.
+        if includePersonal, let personal = LifeSignals.contextSection(context) {
+            lines.append("")
+            lines.append(personal)
         }
 
         return lines.joined(separator: "\n")

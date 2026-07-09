@@ -214,19 +214,79 @@ struct SettingsView: View {
     // MARK: Integrations
 
     private var integrationsCard: some View {
-        SectionCard(title: "Apple integrations", subtitle: "All off until you turn them on — access is requested here", accent: Palette.cyan) {
+        VStack(spacing: 18) {
+            SectionCard(title: "Apple integrations", subtitle: "All off until you turn them on — access is requested here", accent: Palette.cyan) {
+                VStack(alignment: .leading, spacing: 14) {
+                    integToggle($remindersOn, "Reminders", "See and complete your Apple Reminders alongside Tasks. Also feeds the AI's awareness below.", "checklist") {
+                        await EventBridge.requestReminders()
+                    }
+                    Divider().overlay(Palette.hairline)
+                    integToggle($contactsOn, "Contacts", "Match people in your spends (a name the AI spots) to your address book.", "person.crop.circle") {
+                        await ContactsBridge.request()
+                    }
+                    Text("Granted in macOS System Settings → Privacy. Everything stays on this Mac; nothing is uploaded.")
+                        .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            personalContextCard
+        }
+    }
+
+    // MARK: Personal context — the AI's awareness of life outside the app
+
+    @AppStorage("signals.messages") private var sigMessages = false
+    @AppStorage("signals.safari") private var sigSafari = false
+    @AppStorage("signals.calendar") private var sigCalendar = false
+
+    private var needsFullDisk: Bool {
+        (sigMessages && !LifeSignals.canRead(LifeSignals.messagesDBPath))
+        || (sigSafari && !LifeSignals.canRead(LifeSignals.safariDBPath))
+    }
+
+    private var personalContextCard: some View {
+        SectionCard(title: "Personal context",
+                    subtitle: "Make the AI aware of your life outside the app — on-device only, always") {
             VStack(alignment: .leading, spacing: 14) {
-                integToggle($remindersOn, "Reminders", "See and complete your Apple Reminders alongside Tasks.", "checklist") {
-                    await EventBridge.requestReminders()
-                }
-                Divider().overlay(Palette.hairline)
-                integToggle($contactsOn, "Contacts", "Match people in your spends (a name the AI spots) to your address book.", "person.crop.circle") {
-                    await ContactsBridge.request()
-                }
-                Text("Granted in macOS System Settings → Privacy. Everything stays on this Mac; nothing is uploaded.")
+                Text("Once a day, the on-device model reads the enabled sources and keeps only THEMES — \"apartment hunting\", \"in touch with Sarah a lot\" — never quotes. Those themes make journal questions, insights, and chat aware of your actual life. This digest is hard-gated to the on-device model: it can never be included in a prompt that could reach Gemini.")
                     .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
+                signalToggle($sigMessages, "Messages", "Who you're in touch with and what's going on — from your iMessage history.", "message")
+                Divider().overlay(Palette.hairline)
+                signalToggle($sigSafari, "Safari", "Your recent sites and searches — what you're figuring out lately.", "safari")
+                Divider().overlay(Palette.hairline)
+                integToggle($sigCalendar, "Calendar", "What's coming up in the next two weeks.", "calendar") {
+                    (try? await EventBridge.store.requestFullAccessToEvents()) ?? false
+                }
+                if needsFullDisk {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(Palette.warning)
+                        Text("Messages and Safari need **Full Disk Access**: System Settings → Privacy & Security → Full Disk Access → add Freelane, then relaunch.")
+                            .font(.system(size: 11)).foregroundStyle(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Open Settings") {
+                            if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                                NSWorkspace.shared.open(u)
+                            }
+                        }.buttonStyle(.glass).controlSize(.small)
+                    }
+                }
             }
         }
+    }
+
+    /// Toggle for the file-based sources (no TCC prompt to await — Full Disk Access is manual).
+    private func signalToggle(_ flag: Binding<Bool>, _ title: String, _ desc: String, _ icon: String) -> some View {
+        Toggle(isOn: Binding(get: { flag.wrappedValue }, set: { on in
+            flag.wrappedValue = on
+            if on { Task { await LifeSignals.refresh(context, force: true) } }
+        })) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 14)).foregroundStyle(Palette.cyan).frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                    Text(desc).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }.toggleStyle(.switch).tint(Palette.cyan)
     }
 
     private func integToggle(_ flag: Binding<Bool>, _ title: String, _ desc: String, _ icon: String, request: @escaping () async -> Bool) -> some View {
