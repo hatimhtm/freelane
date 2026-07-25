@@ -709,7 +709,7 @@ struct AddSpendSheet: View {
                     Button { checkDeals() } label: { Label(checkingDeals ? "Checking…" : "Ask AI: good deals?", systemImage: "sparkles") }
                         .buttonStyle(.glass).controlSize(.small)
                         .disabled(checkingDeals || !ai.isReady || lines.allSatisfy { parseAmount($0.price) == nil })
-                        .help("Needs a brain (Settings → AI) and at least one priced line")
+                        .help("Needs a brain (Settings → Intelligence) and at least one priced line")
                 }
             }
         }

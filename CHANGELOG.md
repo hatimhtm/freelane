@@ -3,6 +3,14 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.6
+
+Dead code and dead-end instructions.
+
+- **The bell was asking "who is Got?" again.** A guard in the curiosity engine read *"only guess at names naively when there's no Gemini API key"* — and Gemini was removed in 1.0, which made that condition permanently true. So the naive capitalized-word guesser ran on every sweep even with a good local model loaded: exactly the behaviour the code's own comment claimed it prevented. It now checks whether a brain is actually available.
+- **Three places told you to do something impossible** — "add your Gemini API key in Settings → AI" — a key the app no longer uses, in a tab that no longer exists. A dead-end instruction is worse than none.
+- Removed the leftover Gemini key store, and the Personal-context explanation no longer names a threat model that isn't there any more.
+
 ## 1.5
 
 Wallets, Loans, Projects and every sheet.

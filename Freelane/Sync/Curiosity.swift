@@ -136,11 +136,16 @@ enum Curiosity {
             return
         }
 
-        // 3) Discover a new name we keep seeing — ONLY as a fallback when AI is off. With a
-        //    key, real people are extracted by Brain.understandSpend (it knows a verb like
-        //    "Got" isn't a name and a store like "Greenwich" isn't a person), so this naive
-        //    capitalized-word guess never fires and can't ask "who is Got?".
-        if KeyStore.get() == nil,
+        // 3) Discover a new name we keep seeing — ONLY as a fallback when NO brain is available.
+        //    With one, real people are extracted by Brain.understandSpend, which knows a verb like
+        //    "Got" isn't a name and a store like "Greenwich" isn't a person. This naive
+        //    capitalized-word guess is the last resort and asks "who is Got?" when it fires.
+        //
+        //    The condition used to be `KeyStore.get() == nil` — "is there a Gemini API key?" — and
+        //    Gemini was removed in v1.0. That made it permanently true, so the naive guesser ran on
+        //    every sweep even with a perfectly good local model loaded: exactly the behaviour the
+        //    comment above claims it avoids.
+        if !AIManager().isReady,
            let cand = candidateEntities(context).first(where: { $0.count >= 2 })?.name {
             Notify.askQuestion(context, subject: "Who or what is “\(cand)”?",
                                body: "It keeps showing up in your spending — tell me so I can track it.",

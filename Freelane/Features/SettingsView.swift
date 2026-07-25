@@ -244,7 +244,7 @@ struct SettingsView: View {
         SectionCard(title: "Personal context",
                     subtitle: "Make the AI aware of your life outside the app — on-device only, always") {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Once a day, the on-device model reads the enabled sources and keeps only THEMES — \"apartment hunting\", \"in touch with Sarah a lot\" — never quotes. Those themes make journal questions, insights, and chat aware of your actual life. This digest is hard-gated to the on-device model: it can never be included in a prompt that could reach Gemini.")
+                Text("Once a day, the on-device model reads the enabled sources and keeps only THEMES — \"apartment hunting\", \"in touch with Sarah a lot\" — never quotes. Those themes make journal questions, insights, and chat aware of your actual life. This digest is produced by the on-device model and never leaves this Mac — not even to the local model.")
                     .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
                 signalToggle($sigMessages, "Messages", "Who you're in touch with and what's going on — from your iMessage history.", "message")
                 Divider().overlay(Palette.hairline)

@@ -115,7 +115,7 @@ struct AIChatSheet: View {
         messages.append(ChatMsg(mine: true, text: q))
         input = ""
         if !ai.isReady {
-            messages.append(ChatMsg(mine: false, text: "Turn on Apple Intelligence or add your Gemini API key in Settings → AI to enable answers."))
+            messages.append(ChatMsg(mine: false, text: "No brain is available yet — download the local model in Settings → Intelligence, or turn on Apple Intelligence."))
             return
         }
         busy = true
