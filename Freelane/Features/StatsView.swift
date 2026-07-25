@@ -164,25 +164,14 @@ struct StatsView: View {
                         pulseRail
                     }
                 }
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 18) {
-                        clientsCard
-                        railsCard
-                    }
-                    VStack(alignment: .leading, spacing: 18) {
-                        clientsCard
-                        railsCard
-                    }
-                }
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 18) {
-                        feeLeaderCard
-                        latencyCard
-                    }
-                    VStack(alignment: .leading, spacing: 18) {
-                        feeLeaderCard
-                        latencyCard
-                    }
+                // SMALL MULTIPLES. Four analyses at equal size in a grid, so you compare them by
+                // scanning rather than by scrolling — which is the entire point of an analytics
+                // page and impossible when each one is a full-width card stacked on the last.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 18)], spacing: 18) {
+                    clientsCard.riseIn(0)
+                    railsCard.riseIn(1)
+                    feeLeaderCard.riseIn(2)
+                    latencyCard.riseIn(3)
                 }
             }
         }

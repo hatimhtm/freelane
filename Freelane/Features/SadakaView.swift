@@ -14,7 +14,6 @@ struct SadakaView: View {
     @Query private var plans: [Plan]
 
     @State private var giveOpen = false
-    @State private var snoozed = false
     @AppStorage("zakat.gold") private var zakatGold = 0.0      // value of gold/silver/investments
     @AppStorage("zakat.debts") private var zakatDebts = 0.0    // immediate debts you owe
     @AppStorage("zakat.nisab") private var zakatNisab = 0.0    // nisab threshold (value of 595g silver)
@@ -39,15 +38,14 @@ struct SadakaView: View {
     }
 
     var body: some View {
-        Page("Sadaka", subtitle: "A quiet, living suggestion — never required.") {
+        Page("Sadaka", subtitle: "What you give, kept quietly. Never a target.") {
             suggestionHero
             tiles
             anchorCard
             zakatCard
             recentCard
         }
-        .sheet(isPresented: $giveOpen) { GiveSadakaSheet(suggested: suggestion.amount) }
-        .onAppear { snoozed = UserDefaults.standard.string(forKey: "sadaka.snooze") == Brain.phtDay() }
+        .sheet(isPresented: $giveOpen) { GiveSadakaSheet(suggested: 0) }
     }
 
     // MARK: Zakat calculator
@@ -103,51 +101,36 @@ struct SadakaView: View {
 
     // MARK: Suggestion hero
 
+    /// What you've given this month — and a way to give. No suggested figure.
+    ///
+    /// This used to compute an amount and put it on screen as "give this". A number you didn't
+    /// choose, arriving unprompted on a page about charity, is pressure dressed as help — and the
+    /// one thing this page says at the top is "never required". The suggestion contradicted its own
+    /// premise, so it's gone. What's left is the fact (what you've given) and the door (give).
     private var suggestionHero: some View {
-        let s = suggestion
-        let show = s.surface && !snoozed
-        // CENTRED, AND QUIET.
-        //
-        // Every other page in this app is left-aligned and dense because every other page is about
-        // performance. Giving is not, and a giving page that looks like a KPI card gets the tone
-        // exactly wrong. This one centres, breathes, drops the borders, and lets a lot of space sit
-        // around a single figure — the visual equivalent of not being asked twice.
-        return VStack(spacing: 0) {
-            Text(show ? "A suggestion" : "Given this month")
+        VStack(spacing: 0) {
+            Text("Given this month")
                 .font(.system(size: 9.5, weight: .semibold))
                 .textCase(.uppercase).kerning(1.4)
                 .foregroundStyle(Palette.textTertiary)
-            if show {
-                CountUpMoney(amount: s.amount, code: base, size: 54, color: Palette.violet)
-                    .padding(.top, 14)
-                Text(s.reasoning)
+
+            CountUpMoney(amount: givenMonth, code: base, size: 52,
+                         color: givenMonth > 0 ? Palette.violet : Palette.textSecondary)
+                .padding(.top, 14)
+
+            if let last = daysSinceLast {
+                Text(last == 0 ? "You gave today." : "Last time was \(last) \(last == 1 ? "day" : "days") ago.")
                     .font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 420)
                     .padding(.top, 10)
-                HStack(spacing: 10) {
-                    Button { giveOpen = true } label: { Label("Give now", systemImage: "heart.fill") }
-                        .buttonStyle(.glassProminent).tint(Palette.violet)
-                    Button("Not now") { snooze() }.buttonStyle(.glass)
-                }
-                .padding(.top, 20)
-            } else {
-                CountUpMoney(amount: givenMonth, code: base, size: 48, color: Palette.textPrimary)
-                    .padding(.top, 14)
-                Text(givenMonth > 0 ? s.reasoning : "Nothing given yet this month. " + s.reasoning)
-                    .font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 420)
-                    .padding(.top, 10)
-                Button { giveOpen = true } label: { Label("Give anyway", systemImage: "heart") }
-                    .buttonStyle(.glass).padding(.top, 20)
             }
+
+            Button { giveOpen = true } label: { Label("Give", systemImage: "heart.fill") }
+                .buttonStyle(.glassProminent).tint(Palette.violet)
+                .padding(.top, 22)
         }
-        .padding(.horizontal, 24).padding(.top, 42).padding(.bottom, 44)
+        .padding(.horizontal, 24).padding(.top, 44).padding(.bottom, 46)
         .frame(maxWidth: .infinity)
         .background {
-            // A soft pool of light behind the figure instead of a card edge — the page's one
-            // warm gesture, and the reason it reads as calm rather than as another panel.
             RadialGradient(colors: [Palette.violet.opacity(0.10), .clear],
                            center: .center, startRadius: 0, endRadius: 300)
         }
@@ -190,7 +173,7 @@ struct SadakaView: View {
                         s.sadakaAnchorPct = max(0, min(20, v)); s.dirty = true; try? context.save()
                     }
                 ), in: 0...20, step: 0.5).labelsHidden()
-                Text("The suggestion still moves with your income, spending, and wallet room — this is just the lean.")
+                Text("Used only to work out zakat below — nothing on this page nudges you.")
                     .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 Spacer()
             }
@@ -258,10 +241,6 @@ struct SadakaView: View {
         .hoverRow()
     }
 
-    private func snooze() {
-        UserDefaults.standard.set(Brain.phtDay(), forKey: "sadaka.snooze")
-        withAnimation { snoozed = true }
-    }
 }
 
 struct GiveSadakaSheet: View {

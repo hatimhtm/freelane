@@ -483,8 +483,10 @@ private struct WalletCardFace: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(.white.opacity(0.16), lineWidth: 0.8))
-            .shadow(color: tint.opacity(hovering ? 0.42 : 0.26),
-                    radius: hovering ? 20 : 12, y: hovering ? 9 : 5)
+            // A neutral shadow, not a coloured halo. The brand-tinted glow made five cards look
+            // like they were lit from inside and turned a page of accounts into a light show.
+            .shadow(color: .black.opacity(hovering ? 0.34 : 0.22),
+                    radius: hovering ? 16 : 10, y: hovering ? 7 : 4)
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)

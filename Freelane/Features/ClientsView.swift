@@ -102,6 +102,15 @@ struct ClientsView: View {
             .buttonStyle(.glassProminent).tint(Palette.azure)
     }
 
+    /// A stable colour per client: their own accent if they've set one, otherwise derived from a
+    /// hash of the name so it never changes between launches (`hashValue` is randomised per run —
+    /// using it here would repaint every client on every start).
+    private func clientTint(_ c: Client) -> Color {
+        if let hex = c.accentColor, let col = Color(hex: hex) { return col }
+        let palette: [Color] = [Palette.indigo, Palette.violet, Palette.cyan, Palette.teal, Palette.warning]
+        return palette[Int(StableHash.of(c.name.lowercased()).prefix(6), radix: 16).map { $0 % palette.count } ?? 0]
+    }
+
     private func clientProjects(_ c: Client) -> [Project] { projects.filter { $0.clientId == c.id } }
 
     /// Rank a learned fact by importance, so the few visible pills are the meaningful ones —
@@ -127,13 +136,20 @@ struct ClientsView: View {
         let owes = outstanding > 0.005
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 11) {
+                // Each client gets a stable colour derived from their name, so the same person is
+                // the same colour every time you open the page and you learn to find them by it.
+                // A grid of identical grey initials taught you nothing and had to be read.
                 Text(String(c.name.prefix(1)).uppercased())
-                    .font(Typo.title(15))
-                    .foregroundStyle(Palette.textSecondary)
-                    .frame(width: 34, height: 34)
-                    .background(Palette.wellFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(Palette.wellStroke, lineWidth: 0.8))
+                    .font(Typo.title(16))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(
+                        LinearGradient(colors: [clientTint(c), clientTint(c).opacity(0.62)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.white.opacity(0.18), lineWidth: 0.8))
+                    .shadow(color: clientTint(c).opacity(0.30), radius: 6, y: 2)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(c.name).font(Typo.title(15)).foregroundStyle(Palette.textPrimary)

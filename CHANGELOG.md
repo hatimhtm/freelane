@@ -3,6 +3,18 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.8
+
+The rest of the pages, and two things taken away.
+
+- **Sadaka no longer suggests an amount.** It computed a figure and put it on screen as "give this". A number you didn't choose, arriving unprompted on a page about charity, is pressure dressed as help — and the line at the top of that page says *never required*. The suggestion contradicted its own premise. What's left is the fact and the door: what you've given, and a way to give.
+- **Wallet cards lost the glow.** A brand-coloured halo on five cards made the page look lit from inside. Neutral shadow now — they read as cards.
+- **Payments is a statement.** Every row carries the **balance it left behind**, walked backwards from your real wallet total. You could already see that ₱24,630 landed in July; now you can see what you were sitting on when it did, which is usually the thing you're trying to remember.
+- **Agenda has a real spine** — a continuous rule with a node on each date, so the dates and the entries are one timeline read downward instead of two columns sitting near each other.
+- **Insights is small multiples.** Four analyses at equal size in a grid, compared by scanning rather than by scrolling. That's the whole point of an analytics page and it's impossible when each one is a full-width card stacked on the last.
+- **Journal reads like writing.** Your own prose is now set in the editorial serif at 15.5pt with real line spacing and a measure that stops around 62 characters. It was 14pt system grey running the full sheet width — the same treatment as a table cell, for the one content in this app that is actually prose.
+- **Clients have identity.** Each gets a stable colour derived from their name, so the same person is the same colour every time and you find them by sight instead of reading a grid of identical grey initials.
+
 ## 1.7
 
 Pages that stop looking like each other.

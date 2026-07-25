@@ -97,8 +97,10 @@ struct PaymentsView: View {
                     // A flat run of 51 rows gives you no sense of period at all — you can't tell
                     // where June ended without reading dates, and "how did last month go" needs
                     // arithmetic. The heading answers it.
+                    let priced = withRunningBalance(list)
+                    let groups = monthGroups(list)
                     LazyVStack(spacing: 0) {
-                        ForEach(monthGroups(list), id: \.key) { group in
+                        ForEach(Array(groups.enumerated()), id: \.element.key) { gi, group in
                             HStack(spacing: 9) {
                                 Text(group.title)
                                     .font(.system(size: 9.5, weight: .semibold))
@@ -109,15 +111,12 @@ struct PaymentsView: View {
                                     .font(Typo.rowFigure(11)).monospacedDigit()
                                     .foregroundStyle(Palette.textTertiary)
                             }
-                            .padding(.top, group.key == monthGroups(list).first?.key ? 2 : 18)
-                            .padding(.bottom, 4)
+                            .padding(.top, gi == 0 ? 2 : 18).padding(.bottom, 4)
 
-                            ForEach(group.rows) { row in
-                                switch row {
-                                case .payment(let p): paymentRow(p)
-                                case .withdrawal(let w): withdrawalRow(w)
-                                }
-                                if row.id != group.rows.last?.id { Divider().overlay(Palette.hairline) }
+                            let inMonth = priced.filter { monthKey($0.row.date) == group.key }
+                            ForEach(Array(inMonth.enumerated()), id: \.element.row.id) { i, entry in
+                                statementRow(entry.row, balance: entry.balance)
+                                if i < inMonth.count - 1 { Divider().overlay(Palette.hairline) }
                             }
                         }
                     }
@@ -196,8 +195,35 @@ struct PaymentsView: View {
         }
     }
 
-    /// History split into months, newest first, each with its net for the period.
-    private struct MonthGroup { let key: String; let title: String; let net: String; let rows: [Row] }
+    /// History split into months, newest first, each with its net for the period, and each row
+    /// carrying the balance as it stood immediately after it happened.
+    private struct MonthGroup { let key: String; let title: String; let net: String; let rows: [(row: Row, balance: Double)] }
+
+    /// The signed effect of one row on the money you hold.
+    private func delta(_ row: Row) -> Double {
+        switch row {
+        case .payment(let p): return p.netAmountBase ?? 0
+        case .withdrawal(let w): return -w.grossBase
+        }
+    }
+
+    /// A RUNNING BALANCE, which is what makes this a statement rather than a list.
+    ///
+    /// Walked backwards from today's actual wallet total: the newest row's balance is the total
+    /// now, and each older row's is the total minus everything that happened after it. Without this
+    /// column you can see that ₱24,630 landed in July but not what you were sitting on when it did,
+    /// which is usually the thing you're actually trying to remember.
+    private func withRunningBalance(_ rows: [Row]) -> [(row: Row, balance: Double)] {
+        let start = wallets.filter { $0.isHolding && !$0.archived }
+            .reduce(0.0) { $0 + WalletMath.balance(of: $1, ledger: ledger) }
+        var running = start
+        var out: [(Row, Double)] = []
+        for r in rows {                    // rows are newest-first
+            out.append((r, running))
+            running -= delta(r)
+        }
+        return out
+    }
 
     private func monthGroups(_ rows: [Row]) -> [MonthGroup] {
         let cal = PHT.calendar
@@ -207,12 +233,7 @@ struct PaymentsView: View {
         let thisMonth = cal.date(from: cal.dateComponents([.year, .month], from: .now))
         return grouped.keys.sorted(by: >).map { month in
             let rows = grouped[month]!.sorted { $0.date > $1.date }
-            let net = rows.reduce(0.0) { sum, row in
-                switch row {
-                case .payment(let p): return sum + (p.netAmountBase ?? 0)
-                case .withdrawal(let w): return sum - w.grossBase
-                }
-            }
+            let net = rows.reduce(0.0) { $0 + delta($1) }
             let title = month == thisMonth
                 ? "This month"
                 : month.formatted(.dateTime.month(.wide).year())
@@ -220,7 +241,30 @@ struct PaymentsView: View {
                 key: ISO8601DateFormatter().string(from: month),
                 title: title,
                 net: (net >= 0 ? "+" : "−") + CurrencyFormat.string(abs(net), base, compact: true),
-                rows: rows)
+                rows: [])
+        }
+    }
+
+    private func monthKey(_ d: Date) -> String {
+        let cal = PHT.calendar
+        let m = cal.date(from: cal.dateComponents([.year, .month], from: d)) ?? d
+        return ISO8601DateFormatter().string(from: m)
+    }
+
+    /// A statement line: the entry on the left, what it moved in the middle, and the balance it
+    /// left behind on the right.
+    @ViewBuilder
+    private func statementRow(_ row: Row, balance: Double) -> some View {
+        HStack(spacing: 0) {
+            switch row {
+            case .payment(let p): paymentRow(p)
+            case .withdrawal(let w): withdrawalRow(w)
+            }
+            Text(CurrencyFormat.string(balance, base, compact: true))
+                .font(.system(size: 11)).monospacedDigit()
+                .foregroundStyle(Palette.textTertiary)
+                .frame(width: 92, alignment: .trailing)
+                .padding(.leading, 8)
         }
     }
 

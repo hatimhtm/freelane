@@ -971,7 +971,19 @@ struct LettersView: View {
                         }
                     }.padding(.horizontal, 22).padding(.top, 8)
                 }
-                ScrollView { Text(l.body).font(.system(size: 14)).foregroundStyle(Palette.textSecondary).frame(maxWidth: .infinity, alignment: .leading).padding(22) }
+                // Your own writing, set as writing: the editorial serif at a readable size with real
+            // line spacing and a measure that stops around 62 characters. It was 14pt system text
+            // in a secondary grey running the full width of the sheet — the same treatment as a
+            // table cell, for the one content in this app that is actually prose.
+            ScrollView {
+                Text(l.body)
+                    .font(.system(size: 15.5, design: .serif))
+                    .lineSpacing(7)
+                    .foregroundStyle(Palette.textPrimary)
+                    .frame(maxWidth: 560, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 26).padding(.vertical, 24)
+            }
                 Divider().overlay(Palette.hairline)
                 HStack {
                     Button { analyze(l) } label: {
@@ -994,7 +1006,10 @@ struct LettersView: View {
                 Spacer()
             }
             Text(dayDate(g.day)).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
-            Text(g.entries.first?.body ?? "").font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
+            Text(g.entries.first?.body ?? "")
+                .font(.system(size: 11.5, design: .serif))
+                .lineSpacing(2)
+                .foregroundStyle(Palette.textSecondary)
                 .lineLimit(3).multilineTextAlignment(.leading)
             Spacer(minLength: 2)
             HStack(spacing: 5) {

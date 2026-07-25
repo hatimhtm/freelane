@@ -328,7 +328,7 @@ struct AgendaView: View {
                     ForEach(Array(period.days.enumerated()), id: \.element.day) { idx, group in
                         dayRow(group)
                         if idx < period.days.count - 1 {
-                            Divider().overlay(Palette.hairline).padding(.leading, 58)
+                            Divider().overlay(Palette.hairline).padding(.leading, 78)
                         }
                     }
                 }
@@ -373,11 +373,24 @@ struct AgendaView: View {
 
     private func dayRow(_ group: (day: Date, items: [Item])) -> some View {
         let tint = urgencyTint(group.day)
-        return HStack(alignment: .top, spacing: 14) {
+        // A REAL SPINE. The date column and the entries were two things sitting near each other;
+        // a continuous rule with a node on each date turns them into one timeline you read
+        // downward, which is the only reason to lay a schedule out this way.
+        return HStack(alignment: .top, spacing: 0) {
             dateColumn(group.day, tint: tint)
+            ZStack(alignment: .top) {
+                Rectangle().fill(Palette.hairline).frame(width: 1)
+                Circle()
+                    .fill(tint ?? Palette.textTertiary)
+                    .frame(width: 7, height: 7)
+                    .overlay(Circle().strokeBorder(Palette.card, lineWidth: 2))
+                    .padding(.top, 12)
+            }
+            .frame(width: 18)
             VStack(spacing: 6) {
                 ForEach(group.items) { entryRow($0, tint: tint) }
             }
+            .padding(.leading, 8)
         }
         .padding(.vertical, 9)
     }
