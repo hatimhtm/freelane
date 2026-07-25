@@ -32,7 +32,7 @@ struct LoansView: View {
     }
 
     var body: some View {
-        Page("Loans", subtitle: "Money lent and borrowed.", toolbar: AnyView(
+        Page("Loans", subtitle: "Who owes you, and who you owe.", toolbar: AnyView(
             Button { showAdd = true } label: { Label("New loan", systemImage: "plus") }
                 .buttonStyle(.glassProminent).tint(Palette.azure))) {
             HStack(spacing: 16) {
@@ -829,7 +829,7 @@ struct LettersView: View {
                     Button("This week") { write("week") }
                     Button("This year") { write("year") }
                 } label: { Label(writing ? "Writing…" : "AI reflection", systemImage: "sparkles") }
-                    .menuStyle(.borderlessButton).disabled(writing || !ai.isReady)
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).disabled(writing || !ai.isReady)
                 Button { activeEntry = JournalEntryPrompt(text: "") } label: { Image(systemName: "plus") }.buttonStyle(.glass)
             })) {
             // Your open questions — saved until you answer or dismiss them. New ones are born from

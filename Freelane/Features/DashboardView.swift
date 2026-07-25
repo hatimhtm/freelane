@@ -434,7 +434,7 @@ struct DashboardView: View {
                                 Button(ins.pinned ? "Unpin" : "Pin", systemImage: ins.pinned ? "pin.slash" : "pin") { ins.pinned.toggle(); ins.dirty = true; try? context.save() }
                                 Button("Dismiss", systemImage: "xmark") { ins.dismissedAt = .now; ins.dirty = true; try? context.save() }
                             } label: { Image(systemName: "ellipsis").font(.system(size: 11)).foregroundStyle(Palette.textTertiary) }
-                                .menuStyle(.borderlessButton).frame(width: 14)
+                                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 14)
                                 .help("Pin or dismiss this insight")
                                 .accessibilityLabel("Insight options")
                         }

@@ -11,6 +11,7 @@
 		5EA0000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 5EA0000000000000000002 /* Sparkle */; };
 		5EB0000000000000000001 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 5EB0000000000000000002 /* MLXLLM */; };
 		5EB0000000000000000003 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 5EB0000000000000000004 /* MLXLMCommon */; };
+		5EC0000000000000000002 /* Freelane.icns in Resources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000001 /* Freelane.icns */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,6 +42,7 @@
 		AA0000000000000000000001 /* Freelane.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Freelane.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000010 /* FreelaneWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FreelaneWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2276D242FD33B5A00A9CA65 /* FreelaneWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FreelaneWidgetExtension.entitlements; sourceTree = "<group>"; };
+		5EC0000000000000000001 /* Freelane.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Freelane.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -94,6 +96,7 @@
 			isa = PBXGroup;
 			children = (
 				C2276D242FD33B5A00A9CA65 /* FreelaneWidgetExtension.entitlements */,
+				5EC0000000000000000001 /* Freelane.icns */,
 				AA0000000000000000000002 /* Freelane */,
 				AA0000000000000000000011 /* FreelaneWidget */,
 				AA0000000000000000000005 /* Products */,
@@ -208,6 +211,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5EC0000000000000000002 /* Freelane.icns in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -302,7 +306,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = MB62UV7Z9W;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -320,7 +324,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -338,7 +342,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = MB62UV7Z9W;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -356,7 +360,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -372,7 +376,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = MB62UV7Z9W;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -384,7 +388,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac.FreelaneWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -404,7 +408,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = MB62UV7Z9W;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -416,7 +420,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac.FreelaneWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

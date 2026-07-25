@@ -383,11 +383,13 @@ struct ClientDetailSheet: View {
             Button { showEdit = true } label: { Image(systemName: "pencil").font(.system(size: 14)) }.buttonStyle(.glass)
                 .help("Edit client")
                 .accessibilityLabel("Edit client")
-            Menu {
-                Button("Delete client", systemImage: "trash", role: .destructive) { confirmDelete = true }
-            } label: { Image(systemName: "ellipsis").font(.system(size: 14)) }.buttonStyle(.glass).frame(width: 30)
-                .help("More actions")
-                .accessibilityLabel("More actions")
+            // A menu holding a single item is a button wearing a disguise: two clicks, an
+            // extra popup, and a "⋯" that promises options it doesn't have.
+            Button(role: .destructive) { confirmDelete = true } label: {
+                Image(systemName: "trash").font(.system(size: 13))
+            }.buttonStyle(.glass)
+                .help("Delete client")
+                .accessibilityLabel("Delete client")
             Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
                 .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
                 .help("Close (Esc)")

@@ -246,7 +246,7 @@ struct BellButton: View {
                         Divider()
                         Button("Mute “\(n.kind)” alerts", systemImage: "bell.slash") { toggleMute(n.kind); try? context.save() }
                     } label: { Image(systemName: "ellipsis").font(.system(size: 10)).foregroundStyle(Palette.textTertiary) }
-                        .menuStyle(.borderlessButton).frame(width: 16)
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 16)
                 }
             }
             .padding(11).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: Radii.field, interactive: true)

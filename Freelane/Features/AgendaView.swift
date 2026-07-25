@@ -36,9 +36,9 @@ struct AgendaView: View {
 
     private var addMenu: some View {
         Menu {
-            Button { showRecurring = true } label: { Label("Bill or income (recurring)", systemImage: "calendar.badge.clock") }
-            Button { showLoan = true } label: { Label("Loan", systemImage: "arrow.left.arrow.right") }
-            Button { showGoal = true } label: { Label("Savings goal", systemImage: "target") }
+            Button("Bill or income", systemImage: "calendar.badge.clock") { showRecurring = true }
+            Button("Money lent or borrowed", systemImage: "arrow.left.arrow.right") { showLoan = true }
+            Button("Savings goal", systemImage: "target") { showGoal = true }
         } label: { Label("Add", systemImage: "plus") }
             .buttonStyle(.glassProminent).tint(Palette.azure)
     }
@@ -200,7 +200,7 @@ struct AgendaView: View {
             .overlay(Capsule().strokeBorder(Palette.wellStroke, lineWidth: 0.8))
             .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton).fixedSize()
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
     }
 
     // MARK: Cash-flow projection (waterfall)
@@ -429,7 +429,7 @@ struct AgendaView: View {
                     if let edit = i.edit { Button("Edit", systemImage: "pencil") { edit() } }
                     if i.remove != nil { Button("Delete", systemImage: "trash", role: .destructive) { confirmRemove = i } }
                 } label: { Image(systemName: "ellipsis").foregroundStyle(Palette.textTertiary).frame(width: 22, height: 22) }
-                    .menuStyle(.borderlessButton).frame(width: 22)
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 22)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
@@ -437,7 +437,7 @@ struct AgendaView: View {
     }
 
     var body: some View {
-        Page("Agenda", subtitle: "Your upcoming timeline — bills, income, loan returns, project deadlines & birthdays.",
+        Page("Agenda", subtitle: "What's due, what's coming in, and when.",
              toolbar: AnyView(addMenu)) {
             weekStrip
             if cashProjection.count > 2 { waterfallCard }

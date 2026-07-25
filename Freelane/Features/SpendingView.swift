@@ -50,7 +50,7 @@ struct SpendingView: View {
     }
 
     var body: some View {
-        Page("Spending", subtitle: "Where your money goes.", toolbar: AnyView(addButton),
+        Page("Spending", subtitle: "Day to day, and what it adds up to.", toolbar: AnyView(addButton),
              subtabs: ["Spends", "Trends", "Recurring"], selection: $sub) {
             if sub != 2 { spendHero }
             switch sub { case 0: spendsList; case 1: trends; default: recurringList }

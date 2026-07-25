@@ -136,7 +136,7 @@ struct StatsView: View {
     // MARK: Body
 
     var body: some View {
-        Page("Insights", subtitle: "How the business is actually doing.",
+        Page("Insights", subtitle: "The longer view — where the money actually goes.",
              subtabs: ["This month", "This year", "Lifetime", "Activity"], selection: $sub) {
             if sub == 3 {
                 ActivityFeed()

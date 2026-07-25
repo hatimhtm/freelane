@@ -12,7 +12,6 @@ struct WalletsView: View {
     @State private var showWithdraw = false
     @State private var editing: Wallet?
     @State private var selected: Wallet?
-    @AppStorage("wallet.density") private var density = 104   // card height: 64 compact / 88 regular / 116 tall
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
     // Single source of truth: holding wallets only — identical to the Dashboard's
@@ -22,7 +21,7 @@ struct WalletsView: View {
     private var total: Double { holding.filter { !$0.excludedFromTotals }.reduce(0) { $0 + WalletMath.balance(of: $1, ledger: ledger) } }
 
     var body: some View {
-        Page("Wallets", subtitle: "Balances are derived from your ledger.",
+        Page("Wallets", subtitle: "Where your money sits right now.",
              toolbar: AnyView(toolbarButtons)) {
             if holding.isEmpty {
                 EmptyStateCard(icon: "wallet.bifold", title: "No wallets yet",
@@ -52,13 +51,8 @@ struct WalletsView: View {
 
     private var toolbarButtons: some View {
         HStack(spacing: 10) {
-            Menu {
-                Button("Compact cards") { density = 64 }
-                Button("Regular cards") { density = 88 }
-                Button("Tall cards") { density = 116 }
-            } label: { Label("Density", systemImage: "rectangle.grid.1x2") }.buttonStyle(.glass)
             Button { showWithdraw = true } label: {
-                Label("Withdraw", systemImage: "arrow.up.right")
+                Label("Move money", systemImage: "arrow.left.arrow.right")
             }.buttonStyle(.glass)
             Button { showAdd = true } label: {
                 Label("Add wallet", systemImage: "plus")
@@ -86,7 +80,7 @@ struct WalletsView: View {
                 .lineLimit(1).minimumScaleFactor(0.6)
         }
         .padding(13)
-        .frame(minHeight: CGFloat(density), alignment: .topLeading)
+        .frame(minHeight: 104, alignment: .topLeading)
         .glassCard(cornerRadius: Radii.tile, tint: low ? Palette.negative : nil, interactive: true, morphID: "wallet.\(w.id)")
     }
 }

@@ -10,5 +10,14 @@
 	<string>WC5lwvOF89DNNoaqkTAcEXpmVGgOsjNATYKj17s90aY=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<false/>
+
+	<!-- The app icon, shipped as a real .icns alongside the asset catalog.
+	     The catalog's generated AppIconV2.icns carried only four representations, topping out
+	     at 256px (66 KB) — so on a Retina Dock, which asks for 512 and 1024, macOS had nothing
+	     to draw and fell back to whatever it had cached from an older build. That's why the Dock
+	     kept showing the previous icon after the new one shipped. This file carries all ten
+	     representations (1.15 MB) and CFBundleIconFile makes macOS prefer it. -->
+	<key>CFBundleIconFile</key>
+	<string>Freelane</string>
 </dict>
 </plist>

@@ -76,7 +76,7 @@ struct PaymentsView: View {
     }
 
     var body: some View {
-        Page("Payments", subtitle: "Money in and out, ledger-accurate.",
+        Page("Payments", subtitle: "Everything that landed, and everything that left.",
              toolbar: AnyView(toolbarButtons),
              subtabs: ["All", "Money in", "Money out"], selection: $sub) {
             walletStrip
@@ -183,14 +183,14 @@ struct PaymentsView: View {
     private var toolbarButtons: some View {
         HStack(spacing: 10) {
             Menu {
-                Button { showAddWallet = true } label: { Label("Add wallet", systemImage: "wallet.bifold") }
-                Button { showWithdraw = true } label: { Label("Transfer / withdraw", systemImage: "arrow.left.arrow.right") }
+                Button("Add a wallet", systemImage: "wallet.bifold") { showAddWallet = true }
+                Button("Move money between wallets", systemImage: "arrow.left.arrow.right") { showWithdraw = true }
             } label: { Label("Wallet", systemImage: "wallet.bifold") }
                 .buttonStyle(.glass)
             // One unified entry — a simple/bulk payment, or a routed multi-hop chain.
             Menu {
-                Button { showBulk = true } label: { Label("Log payment", systemImage: "arrow.down.left.circle") }
-                Button { showRouted = true } label: { Label("Routed payment (multi-hop)", systemImage: "arrow.triangle.branch") }
+                Button("A payment that landed", systemImage: "arrow.down.left.circle") { showBulk = true }
+                Button("One that passed through several wallets", systemImage: "arrow.triangle.branch") { showRouted = true }
             } label: { Label("Log payment", systemImage: "plus") }
                 .buttonStyle(.glassProminent).tint(Palette.azure).menuStyle(.button)
         }

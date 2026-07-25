@@ -151,7 +151,7 @@ struct ProjectsView: View {
     }
 
     var body: some View {
-        Page("Projects", subtitle: "Drag cards between columns. Switch to Table for a spreadsheet view.",
+        Page("Projects", subtitle: "What you're working on, and what it's owed.",
              toolbar: AnyView(addButton)) {
             HStack(spacing: 12) {
                 GlassSegment(options: ["Board", "Table"], selection: $mode) { $0 }

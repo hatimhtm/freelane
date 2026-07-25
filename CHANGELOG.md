@@ -3,6 +3,17 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.2
+
+Menus, copy, and the Dock icon — the details.
+
+- **Menu items had no text.** Every menu built as `Button { … } label: { Label(…) }` rendered inside a macOS menu as a bare icon with no title, so "Add", "Wallet" and "Log payment" opened onto a column of unlabelled glyphs. That form is the culprit; all menu items now use the initializer that actually renders a title.
+- **The stray chevron is gone.** `.borderlessButton` draws its own disclosure arrow, so every row's ⋯ was rendering as "⋯⌄" — an ellipsis wearing a second control.
+- **The Dock icon finally updates.** The asset catalog was generating an .icns with only four representations, stopping at 256px. A Retina Dock asks for 512 and 1024, found nothing, and fell back to whatever it had cached — which is why the new icon never appeared no matter how many times it shipped. The app now carries a complete ten-representation icon file.
+- **Menus say what things are.** "Routed payment (multi-hop)" → "One that passed through several wallets". "Bill or income (recurring)" → "Bill or income". "Loan" → "Money lent or borrowed".
+- **Removed what nobody uses.** The card-density picker is gone from Wallets. The Clients "⋯" menu held exactly one item, so it's a button now — a menu with one item is two clicks for one action.
+- **Page subtitles say what the page is for** rather than describing the implementation: "Money in and out, ledger-accurate" → "Everything that landed, and everything that left"; "Balances are derived from your ledger" → "Where your money sits right now".
+
 ## 1.1
 
 Every screen, gone through one at a time.
