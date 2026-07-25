@@ -3,6 +3,16 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.7
+
+Pages that stop looking like each other.
+
+The fair criticism of 1.5 was that every page had become the same shape — a lead figure and a stack of cards — so the app felt repetitive even where the structure was right. A page should take the form of what it actually is.
+
+- **Wallets look like wallets.** Each one is now a real payment card carrying its brand's colour and logo: coin.ph orange, GCash blue, Wise blue, cash green. You recognise an account the way you recognise it in your pocket, before reading a word. They lift and tilt very slightly toward you on hover — enough to feel physical, far short of the novelty flip that would make a money app feel like a toy.
+- **Loans is a balance, drawn as one.** Lending is the one genuinely two-sided page here, and a single figure can only ever show one side. A beam split by real proportion — what's out to your left, what you owe to your right, with a pivot that slides — answers "which way am I leaning" in the geometry, before you read either number.
+- **Sadaka stopped looking like a KPI card.** Every other page is left-aligned and dense because every other page is about performance. Giving isn't, and a giving page that looks like a dashboard gets the tone exactly wrong. It centres now, drops its borders, and sits one figure in a soft pool of light with room around it.
+
 ## 1.6
 
 Dead code and dead-end instructions.

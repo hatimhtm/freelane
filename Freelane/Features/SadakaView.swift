@@ -106,45 +106,76 @@ struct SadakaView: View {
     private var suggestionHero: some View {
         let s = suggestion
         let show = s.surface && !snoozed
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "heart.fill").font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Palette.violet)
-                Text(show ? "Suggested now" : "Sadaka")
-                    .font(.system(size: 10, weight: .semibold)).textCase(.uppercase).kerning(0.7)
-                    .foregroundStyle(Palette.textTertiary)
-                Spacer()
-                if daysSinceLast == nil { MetricChip(text: "no gifts yet", color: Palette.textTertiary) }
-                else if let d = daysSinceLast { MetricChip(text: d == 0 ? "gave today" : "\(d)d since last", systemImage: "clock", color: Palette.textTertiary) }
-            }
+        // CENTRED, AND QUIET.
+        //
+        // Every other page in this app is left-aligned and dense because every other page is about
+        // performance. Giving is not, and a giving page that looks like a KPI card gets the tone
+        // exactly wrong. This one centres, breathes, drops the borders, and lets a lot of space sit
+        // around a single figure — the visual equivalent of not being asked twice.
+        return VStack(spacing: 0) {
+            Text(show ? "A suggestion" : "Given this month")
+                .font(.system(size: 9.5, weight: .semibold))
+                .textCase(.uppercase).kerning(1.4)
+                .foregroundStyle(Palette.textTertiary)
             if show {
-                MoneyText(amount: s.amount, code: base, size: 44, color: Palette.violet)
-                Text(s.reasoning).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
+                CountUpMoney(amount: s.amount, code: base, size: 54, color: Palette.violet)
+                    .padding(.top, 14)
+                Text(s.reasoning)
+                    .font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+                    .padding(.top, 10)
                 HStack(spacing: 10) {
                     Button { giveOpen = true } label: { Label("Give now", systemImage: "heart.fill") }
-                        .buttonStyle(.glassProminent).tint(Palette.azure)
+                        .buttonStyle(.glassProminent).tint(Palette.violet)
                     Button("Not now") { snooze() }.buttonStyle(.glass)
                 }
+                .padding(.top, 20)
             } else {
-                MoneyText(amount: givenMonth, code: base, size: 36, color: Palette.textPrimary)
-                Text(givenMonth > 0 ? s.reasoning + " · given this month" : "Nothing given yet this month. " + s.reasoning)
-                    .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
-                Button { giveOpen = true } label: { Label("Give anyway", systemImage: "heart") }.buttonStyle(.glass)
+                CountUpMoney(amount: givenMonth, code: base, size: 48, color: Palette.textPrimary)
+                    .padding(.top, 14)
+                Text(givenMonth > 0 ? s.reasoning : "Nothing given yet this month. " + s.reasoning)
+                    .font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+                    .padding(.top, 10)
+                Button { giveOpen = true } label: { Label("Give anyway", systemImage: "heart") }
+                    .buttonStyle(.glass).padding(.top, 20)
             }
         }
-        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: Radii.card, elevated: true)
+        .padding(.horizontal, 24).padding(.top, 42).padding(.bottom, 44)
+        .frame(maxWidth: .infinity)
+        .background {
+            // A soft pool of light behind the figure instead of a card edge — the page's one
+            // warm gesture, and the reason it reads as calm rather than as another panel.
+            RadialGradient(colors: [Palette.violet.opacity(0.10), .clear],
+                           center: .center, startRadius: 0, endRadius: 300)
+        }
     }
 
     private var tiles: some View {
-        HStack(spacing: 14) {
-            StatTile(label: "Given this month", value: givenMonth, code: base, systemImage: "heart.fill",
-                     accent: Palette.negative,
-                     chip: suggestion.target > 0 ? ("target " + CurrencyFormat.abbreviated(suggestion.target, base), nil) : nil,
-                     chipColor: Palette.negative)
-            StatTile(label: "This year", value: givenYear, code: base, systemImage: "calendar", accent: Palette.violet, chip: nil)
-            StatTile(label: "All-time", value: givenLife, code: base, systemImage: "infinity", accent: Palette.cyan, chip: nil)
+        HStack(spacing: 0) {
+            givenStat("This month", givenMonth, tone: Palette.violet)
+            Rectangle().fill(Palette.hairline).frame(width: 1, height: 34)
+            givenStat("This year", givenYear, tone: Palette.textPrimary)
+            Rectangle().fill(Palette.hairline).frame(width: 1, height: 34)
+            givenStat("All-time", givenLife, tone: Palette.textPrimary)
         }
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity)
+        .glassCard(cornerRadius: Radii.card)
+    }
+
+    private func givenStat(_ label: String, _ value: Double, tone: Color) -> some View {
+        VStack(spacing: 5) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold)).textCase(.uppercase).kerning(0.9)
+                .foregroundStyle(Palette.textTertiary)
+            Text(CurrencyFormat.string(value, base, compact: true))
+                .font(Typo.figure(20)).monospacedDigit().foregroundStyle(tone)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var anchorCard: some View {

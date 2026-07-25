@@ -46,20 +46,24 @@ struct WalletsView: View {
                     }(),
                     spark: [])
 
-                SectionCard(title: "Where it sits", subtitle: "Biggest first", accent: Palette.indigo) {
-                    VStack(spacing: 0) {
-                        let sorted = holding.sorted { WalletMath.balance(of: $0, ledger: ledger) > WalletMath.balance(of: $1, ledger: ledger) }
-                        let maxAbs = sorted.map { abs(WalletMath.balance(of: $0, ledger: ledger)) }.max() ?? 1
-                        ForEach(Array(sorted.enumerated()), id: \.element.id) { i, w in
-                            if i > 0 { Divider().overlay(Palette.hairline) }
-                            WalletBalanceRow(
-                                wallet: w,
-                                balance: WalletMath.balance(of: w, ledger: ledger),
-                                share: maxAbs > 0 ? abs(WalletMath.balance(of: w, ledger: ledger)) / maxAbs : 0,
-                                base: base,
-                                onTap: { selected = w })
-                            .riseIn(i)
-                        }
+                // WALLETS THAT LOOK LIKE WALLETS.
+                //
+                // A balance sheet was the right structure and the wrong FORM. Every other page in
+                // this app is already rows-in-a-card, and a page about the physical places your
+                // money lives has an obvious visual language that nothing else here can borrow: the
+                // card itself. Each wallet is now a real card carrying its brand's colour, its
+                // logo, and its balance — GCash green, Wise lime, coin.ph orange — so you recognise
+                // one the way you recognise it in your pocket, before reading a word.
+                let sorted = holding.sorted { WalletMath.balance(of: $0, ledger: ledger) > WalletMath.balance(of: $1, ledger: ledger) }
+                let cols = [GridItem(.adaptive(minimum: 268), spacing: 16)]
+                LazyVGrid(columns: cols, spacing: 16) {
+                    ForEach(Array(sorted.enumerated()), id: \.element.id) { i, w in
+                        WalletCardFace(
+                            wallet: w,
+                            balance: WalletMath.balance(of: w, ledger: ledger),
+                            base: base,
+                            onTap: { selected = w })
+                        .riseIn(i)
                     }
                 }
             }
@@ -389,5 +393,107 @@ private struct WalletBalanceRow: View {
         .hoverRow()
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// A wallet, drawn as a payment card.
+///
+/// The 16:10 proportion, the brand colour bled across the face, the logo bottom-right and the
+/// balance set large in the middle are all borrowed from the object this represents — and that's
+/// the point. A page of these is instantly identifiable as "my accounts" in a way that a page of
+/// grey rows never is, and it costs nothing in information: name, kind, balance and overdrawn
+/// state are all still here, just carried by something you already know how to read.
+private struct WalletCardFace: View {
+    let wallet: Wallet
+    let balance: Double
+    let base: String
+    let onTap: () -> Void
+
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    private var brand: Brand.Info? { Brand.match(wallet.brandKey) ?? Brand.match(wallet.name) }
+    private var tint: Color {
+        if let hex = wallet.customBrandColor, let c = Color(hex: hex) { return c }
+        return brand?.color ?? Palette.indigo
+    }
+    private var overdrawn: Bool { balance < -wallet.overdraftToleranceBase - 0.005 }
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(wallet.name)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text(wallet.kind.label.uppercased())
+                            .font(.system(size: 8.5, weight: .semibold)).kerning(0.9)
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                    Spacer(minLength: 8)
+                    if overdrawn {
+                        Text("OVERDRAWN")
+                            .font(.system(size: 8, weight: .bold)).kerning(0.6)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(Palette.negative, in: Capsule())
+                    }
+                }
+
+                Spacer(minLength: 10)
+
+                Text(CurrencyFormat.string(balance, base))
+                    .font(Typo.figure(27))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+
+                HStack(alignment: .bottom) {
+                    // The four dots of a card number — pure affordance, and the thing that makes
+                    // the shape read as a card rather than a coloured tile.
+                    HStack(spacing: 4) {
+                        ForEach(0..<4, id: \.self) { _ in
+                            Circle().fill(.white.opacity(0.32)).frame(width: 3.5, height: 3.5)
+                        }
+                    }
+                    Spacer()
+                    WalletGlyph(wallet: wallet, size: 26)
+                }
+                .padding(.top, 10)
+            }
+            .padding(16)
+            .frame(height: 158, alignment: .topLeading)
+            .frame(maxWidth: .infinity)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+                ZStack {
+                    shape.fill(tint)
+                    // Depth: a diagonal wash plus a soft sheen sweeping the top-left, so the face
+                    // catches light instead of reading as flat fill.
+                    shape.fill(LinearGradient(
+                        colors: [.white.opacity(0.20), .clear, .black.opacity(0.34)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                    shape.fill(RadialGradient(
+                        colors: [.white.opacity(0.16), .clear],
+                        center: UnitPoint(x: 0.15, y: 0.05), startRadius: 0, endRadius: 190))
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(.white.opacity(0.16), lineWidth: 0.8))
+            .shadow(color: tint.opacity(hovering ? 0.42 : 0.26),
+                    radius: hovering ? 20 : 12, y: hovering ? 9 : 5)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        // The card lifts and tilts very slightly toward you — enough to feel physical, far short
+        // of the novelty 3-D flip that would make a money app feel like a toy.
+        .rotation3DEffect(.degrees(hovering ? -1.6 : 0), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+        .scaleEffect(hovering ? 1.018 : 1)
+        .onHover { hovering = $0 }
+        .animation(.spring(response: 0.32, dampingFraction: 0.75), value: hovering)
     }
 }

@@ -39,16 +39,14 @@ struct LoansView: View {
             // or down overall? The page now leads with the NET position and shows the two sides as
             // context beneath it, then splits people into who owes you and who you owe — because
             // those are two different feelings and one alphabetical list buried both.
-            LeadFigure(
-                label: net >= 0 ? "Owed to you, on balance" : "You owe, on balance",
-                amount: abs(net), code: base,
-                context: [
-                    CurrencyFormat.abbreviated(lentOut, base) + " out",
-                    CurrencyFormat.abbreviated(borrowed, base) + " in",
-                    "\(groups.filter { !$0.isSettled }.count) still open",
-                ],
-                spark: [],
-                accent: net >= 0 ? Palette.positive : Palette.warning)
+            // A BALANCE, drawn as one.
+            //
+            // Lending is the one page in this app that is genuinely two-sided, and a lead figure
+            // can only ever show one side at a time. A single beam split proportionally — what's
+            // out to your left, what's owed by you to your right — answers "which way am I
+            // leaning" in the shape itself, before you read either number.
+            LoanBalanceBeam(lentOut: lentOut, borrowed: borrowed, base: base,
+                            openCount: groups.filter { !$0.isSettled }.count)
 
             if !owedToYou.isEmpty { peopleCard("They owe you", owedToYou, tone: Palette.positive) }
             if !youOwe.isEmpty { peopleCard("You owe them", youOwe, tone: Palette.warning) }
@@ -1755,5 +1753,93 @@ struct FaithView: View {
             failed = true
         }
         loading = false
+    }
+}
+
+/// The two sides of lending, as one beam.
+///
+/// The bar is split by real proportion, so a small debt against a large loan looks small. The net
+/// figure sits above the pivot and the pivot itself slides — when you're owed more than you owe it
+/// sits right of centre, and you can read your position from the geometry alone.
+private struct LoanBalanceBeam: View {
+    let lentOut: Double
+    let borrowed: Double
+    let base: String
+    let openCount: Int
+
+    @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var total: Double { max(lentOut + borrowed, 0.0001) }
+    private var net: Double { lentOut - borrowed }
+    private var leftShare: CGFloat { CGFloat(lentOut / total) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(net >= 0 ? "You're owed, on balance" : "You owe, on balance")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .textCase(.uppercase).kerning(1.1)
+                    .foregroundStyle(Palette.textTertiary)
+                Spacer()
+                Text("\(openCount) still open")
+                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+            }
+
+            CountUpMoney(amount: abs(net), code: base, size: 44,
+                         color: net >= 0 ? Palette.positive : Palette.warning)
+                .padding(.top, 6)
+
+            // The beam.
+            GeometryReader { geo in
+                let w = geo.size.width
+                let leftW = max(0, w * (appeared || reduceMotion ? leftShare : 0.5))
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Palette.wellFill).frame(height: 10)
+                    HStack(spacing: 2) {
+                        Capsule().fill(
+                            LinearGradient(colors: [Palette.positive, Palette.positive.opacity(0.65)],
+                                           startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(0, leftW - 1), height: 10)
+                        Capsule().fill(
+                            LinearGradient(colors: [Palette.warning.opacity(0.65), Palette.warning],
+                                           startPoint: .leading, endPoint: .trailing))
+                            .frame(height: 10)
+                    }
+                    // The pivot: where the two sides meet.
+                    Rectangle().fill(Palette.textPrimary.opacity(0.9))
+                        .frame(width: 1.5, height: 20)
+                        .offset(x: min(max(leftW - 0.75, 0), w - 1.5))
+                        .shadow(color: .black.opacity(0.35), radius: 3)
+                }
+            }
+            .frame(height: 20)
+            .padding(.top, 18)
+
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("OUT TO OTHERS").font(.system(size: 8.5, weight: .semibold)).kerning(0.7)
+                        .foregroundStyle(Palette.positive)
+                    Text(CurrencyFormat.string(lentOut, base, compact: true))
+                        .font(Typo.rowFigure(14)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("YOU OWE").font(.system(size: 8.5, weight: .semibold)).kerning(0.7)
+                        .foregroundStyle(Palette.warning)
+                    Text(CurrencyFormat.string(borrowed, base, compact: true))
+                        .font(Typo.rowFigure(14)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                }
+            }
+            .padding(.top, 10)
+        }
+        .padding(.horizontal, 22).padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(cornerRadius: Radii.card, elevated: true)
+        .pointerLight(net >= 0 ? Palette.positive : Palette.warning, radius: 340)
+        .onAppear {
+            guard !reduceMotion else { appeared = true; return }
+            withAnimation(.spring(response: 0.85, dampingFraction: 0.78).delay(0.1)) { appeared = true }
+        }
     }
 }
