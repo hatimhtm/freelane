@@ -795,6 +795,13 @@ enum Brain {
         guard t.split(separator: ",").count <= 2 else { return false }           // no clause trains
         // A question naming an internal identifier is a leak, not a question.
         guard !t.contains(where: { $0.isNumber }) || !looksLikeIdentifier(t) else { return false }
+        // The bolted-on detail. Told to ground questions in real specifics, this model reaches for
+        // a comparative graft — "…, like the fridge?", "…, like the wife whose account you use?" —
+        // where the detail is decoration rather than the subject. The prompt forbids it; this is
+        // the guarantee, because a style rule the model merely agrees with is not a rule.
+        let lower = t.lowercased()
+        guard !lower.contains(", like the "), !lower.contains(", like your "),
+              !lower.contains(", like that "), !lower.contains(", such as ") else { return false }
         return true
     }
 
@@ -861,14 +868,25 @@ enum Brain {
         You write ONE journalling question for this person.
 
         Hard rules, all of them:
-        · Under 15 words. One idea. Exactly one question mark.
-        · Plain spoken words, the way a close friend texts. No metaphors, no therapy-speak, no \
-          em-dashes, no "what does that say about".
+        · Under 13 words. One idea. Exactly one question mark.
+        · The voice is a close friend texting, not a form and not a counsellor. "What's been the \
+          best part of today?" is right. "How does your current emotional state feel when balancing \
+          financial pressures?" is wrong — that's a survey question, and nobody answers those.
+        · No metaphors, no therapy-speak, no em-dashes, no "what does that say about".
+        · Never describe a situation they haven't written about. If you find yourself referring to \
+          their team, their office, their commute or anything you were not told, stop and ask \
+          something simpler instead.
         · Open-ended, but light — something they would want to answer, not homework.
-        · You may name a real, specific thing from their own entries when it fits. Their own words \
-          outrank everything else you were told.
         · Never assert that something happened unless they wrote it themselves.
         · If their mood reads heavy, keep it gentle.
+
+        On using what you know about them: a detail belongs in the question only when the question \
+        is genuinely ABOUT it. Do not bolt a fact onto the end as a comparison. "What would make \
+        the new phone feel like an upgrade, like the fridge?" and "Who do you feel closest to \
+        today, like the wife whose account you use?" are both wrong — the detail is decoration, and \
+        it makes the question read like it was assembled rather than asked. Either the question is \
+        about the phone, or it doesn't mention the phone. A plain question with no detail at all is \
+        always better than a forced one.
         """
 
         // Fire all territories at once. A slow brain costs one round trip, not N.
@@ -907,13 +925,49 @@ enum Brain {
         \(avoid.isEmpty ? "(none yet)" : avoid)\(liked)\(refused)
         """
 
+        // What is actually KNOWN about them — beliefs, their own recent entries, their mood trail.
+        //
+        // Deliberately excludes the ask-history. Past questions were in this set at first, and it
+        // defeated the whole check: one fabricated question mentioning "your team" became evidence
+        // that a team exists, so every later question about the team passed. Fiction can't be
+        // allowed to bootstrap itself into the evidence set.
+        let material = [ctx.beliefs, ctx.recent, ctx.mood].joined(separator: " ")
+
         for pass in 0..<2 {
-            let req = AIRequest(pass == 0 ? prompt : prompt + "\n\nYour last attempt broke the rules. Keep it under 15 words, one question mark, plain words.",
-                                instructions: instructions, temperature: pass == 0 ? 0.9 : 0.5)
+            let req = AIRequest(pass == 0 ? prompt : prompt + "\n\nYour last attempt broke the rules or described a situation they never mentioned. Keep it under 15 words, plain words, and only about things written above.",
+                                instructions: instructions, temperature: pass == 0 ? 0.75 : 0.4)
             guard let r = try? await ai.smart.object(AIJournalQuestion.self, req,
                                                      jsonShape: AIJournalQuestion.jsonShape) else { continue }
             let q = r.question.trimmingCharacters(in: .whitespacesAndNewlines)
-            if isHumanQuestion(q) { return q }
+            guard isHumanQuestion(q) else { continue }
+            if let invented = inventsCircumstance(q, material: material) {
+                moneyLog.notice("Journal question rejected — invented circumstance '\(invented, privacy: .public)'.")
+                continue
+            }
+            return q
+        }
+        return nil
+    }
+
+    /// Does this question assert a life circumstance the user has never mentioned?
+    ///
+    /// The local model, handed a page of client and project data, wrote *"How do you handle payment
+    /// delays while managing your team?"* — he has no team. That is the same failure as the old
+    /// build's phantom singing competition: a plausible completion presented as a fact about
+    /// someone's life, and it destroys trust in one line.
+    ///
+    /// Style rules in the prompt don't prevent it, so this checks. Each word below implies a
+    /// specific situation; if the question uses one and the material the model was shown never
+    /// does, the question is fiction and gets thrown away. Returns the offending word.
+    static func inventsCircumstance(_ question: String, material: String) -> String? {
+        let claims = ["team", "staff", "employee", "employees", "colleague", "colleagues",
+                      "coworker", "co-worker", "office", "boss", "manager", "commute",
+                      "meeting", "deadline", "client call", "school", "class", "gym",
+                      "landlord", "roommate", "flatmate", "neighbour", "neighbor"]
+        let q = " " + question.lowercased() + " "
+        let m = " " + material.lowercased() + " "
+        for c in claims where q.contains(" \(c) ") || q.contains(" \(c)?") || q.contains(" \(c),") {
+            if !m.contains(c) { return c }
         }
         return nil
     }
@@ -956,7 +1010,7 @@ enum Brain {
         // ones from "guilt-driven gifting" with another blocklist — the approach that already
         // failed twice — the whole set is retired and rebuilt from arithmetic. Nothing of value is
         // lost: the real findings recompute in milliseconds.
-        let purgeFlag = "insights.modelEraPurged.v1"
+        let purgeFlag = "insights.modelEraPurged.v2"
         if !UserDefaults.standard.bool(forKey: purgeFlag) {
             UserDefaults.standard.set(true, forKey: purgeFlag)
             for i in ((try? context.fetch(FetchDescriptor<InsightLog>())) ?? []) where i.dismissedAt == nil {

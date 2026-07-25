@@ -218,6 +218,40 @@ final class LocalModelStore {
 
 #if canImport(MLXLMCommon) && canImport(FoundationModels)
 
+/// One generation at a time, process-wide.
+///
+/// MLX drives a single Metal command queue. Two generations in flight at once race on the command
+/// buffer's active encoder and Metal *aborts the process* — `MTLReleaseAssertionFailure` inside
+/// `setCurrentCommandEncoder`, SIGABRT, no catchable error. It took a real crash to find, and the
+/// trigger was ordinary-looking code: the journal generates its questions with a `TaskGroup`, one
+/// per territory, which is exactly right for Apple's brains and fatal for this one.
+///
+/// A plain `actor` is NOT sufficient here — actors are reentrant, so an `await` inside the critical
+/// section lets the next caller straight in, which is precisely the window that crashes. This is a
+/// real mutual-exclusion gate with a FIFO queue of continuations.
+actor LocalGenerationGate {
+    static let shared = LocalGenerationGate()
+    private var busy = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    private func acquire() async {
+        if !busy { busy = true; return }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    private func release() {
+        if waiting.isEmpty { busy = false }
+        else { waiting.removeFirst().resume() }   // hand the lock straight to the next in line
+    }
+
+    /// Run `body` with exclusive access to the GPU. Releases on throw as well as on return.
+    func run<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
+        await acquire()
+        defer { release() }
+        return try await body()
+    }
+}
+
 @available(macOS 26.0, *)
 struct LocalBrain: AIBrain {
     let id = AIBrainID.local
@@ -231,9 +265,14 @@ struct LocalBrain: AIBrain {
     }
 
     func text(_ req: AIRequest) async throws -> String {
-        let session = ChatSession(container, instructions: req.instructions,
-                                  generateParameters: params(req))
-        return try await session.respond(to: req.prompt)
+        let container = self.container
+        let p = params(req)
+        let instructions = req.instructions
+        let prompt = req.prompt
+        return try await LocalGenerationGate.shared.run {
+            let session = ChatSession(container, instructions: instructions, generateParameters: p)
+            return try await session.respond(to: prompt)
+        }
     }
 
     /// Structured output without guided decoding: describe the shape in words, then parse the
