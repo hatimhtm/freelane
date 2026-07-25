@@ -28,16 +28,37 @@ struct WalletsView: View {
                                message: "Add the places your money lives — banks, e-wallets, cash. Every payment, spend, and transfer flows through them, and balances are derived from the ledger automatically.",
                                actionLabel: "Add wallet") { showAdd = true }
             } else {
-                StatTile(label: "Total across wallets", value: total, code: base,
-                         systemImage: "wallet.bifold", accent: Palette.teal,
-                         chip: ("\(holding.count) wallets", nil), chipColor: Palette.teal)
-                .frame(maxWidth: 300, alignment: .leading)
+                // A BALANCE SHEET, not a card grid.
+                //
+                // Wallets were a grid of equal boxes, which is the worst possible shape for this
+                // page: the only question it answers is "how much is where", and a grid makes you
+                // compare figures that are deliberately not aligned. Sorted biggest first, in one
+                // column, with each balance in a tabular figure and a share bar underneath, the
+                // answer is the shape of the page.
+                LeadFigure(
+                    label: "Total across wallets",
+                    amount: total, code: base,
+                    context: {
+                        var bits = ["\(holding.count) \(holding.count == 1 ? "wallet" : "wallets")"]
+                        let neg = holding.filter { WalletMath.balance(of: $0, ledger: ledger) < -$0.overdraftToleranceBase - 0.005 }
+                        if !neg.isEmpty { bits.append("\(neg.count) overdrawn") }
+                        return bits
+                    }(),
+                    spark: [])
 
-                let cols = [GridItem(.adaptive(minimum: 188), spacing: 12)]
-                GlassGroup(spacing: 16) {
-                    LazyVGrid(columns: cols, spacing: 16) {
-                        ForEach(holding) { w in
-                            Button { selected = w } label: { walletCard(w) }.buttonStyle(.cardPress)
+                SectionCard(title: "Where it sits", subtitle: "Biggest first", accent: Palette.indigo) {
+                    VStack(spacing: 0) {
+                        let sorted = holding.sorted { WalletMath.balance(of: $0, ledger: ledger) > WalletMath.balance(of: $1, ledger: ledger) }
+                        let maxAbs = sorted.map { abs(WalletMath.balance(of: $0, ledger: ledger)) }.max() ?? 1
+                        ForEach(Array(sorted.enumerated()), id: \.element.id) { i, w in
+                            if i > 0 { Divider().overlay(Palette.hairline) }
+                            WalletBalanceRow(
+                                wallet: w,
+                                balance: WalletMath.balance(of: w, ledger: ledger),
+                                share: maxAbs > 0 ? abs(WalletMath.balance(of: w, ledger: ledger)) / maxAbs : 0,
+                                base: base,
+                                onTap: { selected = w })
+                            .riseIn(i)
                         }
                     }
                 }
@@ -60,29 +81,6 @@ struct WalletsView: View {
         }
     }
 
-    private func walletCard(_ w: Wallet) -> some View {
-        let bal = WalletMath.balance(of: w, ledger: ledger)
-        let low = bal < -w.overdraftToleranceBase - 0.005
-        return VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 9) {
-                WalletGlyph(wallet: w, size: 30)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(w.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                    Text(w.kind.label).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                }
-                Spacer()
-            }
-            Spacer(minLength: 2)
-            Text(CurrencyFormat.string(bal, base))
-                .font(Typo.rowFigure(21))
-                .monospacedDigit()
-                .foregroundStyle(low ? Palette.negative : Palette.textPrimary)
-                .lineLimit(1).minimumScaleFactor(0.6)
-        }
-        .padding(13)
-        .frame(minHeight: 104, alignment: .topLeading)
-        .glassCard(cornerRadius: Radii.tile, tint: low ? Palette.negative : nil, interactive: true, morphID: "wallet.\(w.id)")
-    }
 }
 
 // MARK: - Wallet detail (ledger history + 30-day trend)
@@ -335,5 +333,61 @@ struct WithdrawalSheet: View {
             }
             dismiss()
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+/// One wallet on the balance sheet: brand mark, name, balance, and a bar showing its share of the
+/// largest holding — so "most of my money is in coin.ph" is visible without reading four figures.
+private struct WalletBalanceRow: View {
+    let wallet: Wallet
+    let balance: Double
+    let share: Double
+    let base: String
+    let onTap: () -> Void
+    @State private var hovering = false
+
+    private var overdrawn: Bool { balance < -wallet.overdraftToleranceBase - 0.005 }
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 11) {
+                    WalletGlyph(wallet: wallet, size: 30)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(wallet.name)
+                            .font(.system(size: 13.5, weight: .medium))
+                            .foregroundStyle(Palette.textPrimary).lineLimit(1)
+                        Text(wallet.kind.label)
+                            .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                    }
+                    Spacer(minLength: 10)
+                    if overdrawn { StatusBadge(text: "Overdrawn", color: Palette.negative) }
+                    Text(CurrencyFormat.string(balance, base))
+                        .font(Typo.figure(19)).monospacedDigit()
+                        .foregroundStyle(overdrawn ? Palette.negative : Palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Palette.textTertiary)
+                        .opacity(hovering ? 1 : 0.25)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Palette.wellFill).frame(height: 3)
+                        Capsule().fill(overdrawn ? Palette.negative : Palette.indigo)
+                            .frame(width: max(2, geo.size.width * CGFloat(min(1, share))), height: 3)
+                    }
+                }
+                .frame(height: 3)
+                .padding(.leading, 41)
+            }
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .hoverRow()
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }

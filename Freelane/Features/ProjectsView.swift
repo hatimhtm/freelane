@@ -285,6 +285,17 @@ struct ProjectsView: View {
             .buttonStyle(.glassProminent).tint(Palette.azure)
     }
 
+    /// What a column is worth: outstanding for the open columns, earned for Paid — the figure you
+    /// actually want from each, rather than the same measure everywhere.
+    private func columnTotal(_ items: [Project]) -> Double {
+        items.reduce(0.0) { sum, p in
+            if p.status == .paid {
+                return sum + ProjectMath.paidBase(project: p, allocations: allocations)
+            }
+            return sum + rates.toBase(ProjectMath.outstandingNative(project: p, allocations: allocations, rates: rates), p.currency)
+        }
+    }
+
     private func columnBackground(_ accent: Color, _ status: ProjectStatus) -> some View {
         let isTarget = drag.dragged != nil && drag.hovered == status
         return RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -307,15 +318,32 @@ struct ProjectsView: View {
 
     private func column(_ title: String, _ items: [Project], _ accent: Color, _ status: ProjectStatus) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Circle().fill(accent).frame(width: 7, height: 7).shadow(color: accent, radius: 3)
-                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary)
-                Text("\(items.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                    .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.hairline, in: Capsule())
-                Spacer()
+            // A column header that carries its MONEY, not just a count.
+            //
+            // "Unpaid 2" tells you nothing you care about — two unpaid projects could be ₱200 or
+            // ₱200,000, and the whole reason to look at this board is to know which. The total for
+            // the column now sits under the title, and the glowing dot is gone: a board of three
+            // columns doesn't need three glowing lights to tell them apart, it needs three numbers.
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    Text(title)
+                        .font(.system(size: 10, weight: .semibold))
+                        .textCase(.uppercase).kerning(0.8)
+                        .foregroundStyle(accent)
+                    Text("\(items.count)")
+                        .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                        .foregroundStyle(Palette.textTertiary)
+                    Spacer(minLength: 0)
+                }
+                Text(CurrencyFormat.string(columnTotal(items), base, compact: true))
+                    .font(Typo.figure(20)).monospacedDigit()
+                    .foregroundStyle(items.isEmpty ? Palette.textTertiary : Palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
+            .padding(.bottom, 2)
             if items.isEmpty {
-                Text("Drop here").font(.system(size: 11)).foregroundStyle(Palette.textTertiary).padding(.vertical, 8)
+                Text("Nothing here").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 14)
             } else {
                 ForEach(items) { p in draggableCard(p) }
             }

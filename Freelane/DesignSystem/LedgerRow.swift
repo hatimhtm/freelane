@@ -285,7 +285,9 @@ struct LeadFigure: View {
             }
             .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 26)
         }
-        .frame(maxWidth: .infinity, minHeight: 208, alignment: .topLeading)
+        // Only reserve chart height when there IS a chart — Loans and Wallets pass no series, and
+        // the panel was holding 208pt open for a line that never arrives.
+        .frame(maxWidth: .infinity, minHeight: spark.count > 1 ? 208 : 132, alignment: .topLeading)
         .background {
             let shape = RoundedRectangle(cornerRadius: Radii.card, style: .continuous)
             ZStack {

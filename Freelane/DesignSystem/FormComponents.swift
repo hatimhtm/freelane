@@ -107,21 +107,32 @@ struct SheetScaffold<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Glass header
-            HStack(spacing: 11) {
-                if let icon { GlyphChip(systemImage: icon, color: accent, size: 30) }
-                Text(title).font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
-                Spacer()
+            // The sheet header, set like a page masthead so a modal is recognisably part of the
+            // same app as the screen behind it.
+            //
+            // It was a tinted glyph square, a title, and a filled ✕ button on a grey bar — the last
+            // surviving piece of the old visual language, and the busiest 60 points in the app: two
+            // filled shapes competing before you'd read a word. Now: an accent rule, the title in
+            // the editorial serif, and a plain glyph for close.
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(accent)
+                    .frame(width: 3, height: 22)
+                Text(title).font(Typo.title(19)).foregroundStyle(Palette.textPrimary)
+                Spacer(minLength: 8)
                 Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.textTertiary)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
                 }.buttonStyle(.iconPress).keyboardShortcut(.cancelAction).help("Close (Esc)")
             }
-            .padding(.horizontal, 18).padding(.vertical, 14)
-            .background(Palette.wellFill)
-            .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
+            .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 16)
+            .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 1) }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18, content: content).padding(24)
+                VStack(alignment: .leading, spacing: 20, content: content).padding(.horizontal, 22).padding(.vertical, 22)
             }
             .mask(
                 VStack(spacing: 0) {
@@ -492,10 +503,13 @@ struct LabeledField<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // Field labels match the small-caps rule used above every figure elsewhere in the
+            // app, one step quieter than the value they describe — they were the same weight and
+            // nearly the same size as the content, so a form read as a wall of equal text.
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .textCase(.uppercase).kerning(0.5)
-                .foregroundStyle(Palette.textSecondary)
+                .font(.system(size: 9.5, weight: .semibold))
+                .textCase(.uppercase).kerning(0.8)
+                .foregroundStyle(Palette.textTertiary)
             content()
         }
     }

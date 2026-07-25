@@ -3,6 +3,15 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.5
+
+Wallets, Loans, Projects and every sheet.
+
+- **Wallets is a balance sheet.** It was a grid of equal boxes, which is the worst shape for a page whose only question is "how much is where" — a grid makes you compare figures that aren't aligned. Now one column sorted biggest first, each balance in a tabular figure with a share bar beneath it, led by the total.
+- **Loans answers the actual question.** Two figures side by side never told you whether you're up or down overall. The page leads with your **net position**, then splits people into *They owe you* / *You owe them* / *Settled* — three different feelings that one alphabetical list buried.
+- **Project columns carry money.** "Unpaid 2" tells you nothing: two unpaid projects could be ₱200 or ₱200,000, and knowing which is the entire reason to look at the board. Each column now shows its total — outstanding for the open columns, earned for Paid.
+- **Every sheet got its header rebuilt.** A tinted glyph square, a title, and a filled ✕ on a grey bar was the last of the old visual language and the busiest 60 points in the app — two filled shapes competing before you'd read a word. Now an accent rule, the title in the editorial serif, and a plain close glyph. Field labels dropped a step so a form stops reading as a wall of equal text.
+
 ## 1.4
 
 Spending and Insights actually restructured, not restyled.

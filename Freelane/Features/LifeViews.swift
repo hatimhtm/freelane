@@ -35,43 +35,70 @@ struct LoansView: View {
         Page("Loans", subtitle: "Who owes you, and who you owe.", toolbar: AnyView(
             Button { showAdd = true } label: { Label("New loan", systemImage: "plus") }
                 .buttonStyle(.glassProminent).tint(Palette.azure))) {
-            HStack(spacing: 16) {
-                StatTile(label: "Owed to you", value: lentOut, code: base, systemImage: "arrow.down.left", accent: Palette.positive, chip: nil)
-                StatTile(label: "You owe", value: borrowed, code: base, systemImage: "arrow.up.right", accent: Palette.negative, chip: nil)
-            }
-            SectionCard(title: "People", subtitle: "\(groups.count) \(groups.count == 1 ? "person" : "people")", accent: Palette.teal) {
-                if groups.isEmpty {
-                    EmptyStateCard(icon: "arrow.left.arrow.right", title: "No loans tracked yet",
-                                   message: "Log money you've lent or borrowed and Freelane keeps the outstanding balance straight.")
-                }
-                else {
-                    VStack(spacing: 0) {
-                        ForEach(groups) { g in
-                            Button { selectedPerson = LoanPersonRef(id: g.id, name: g.name) } label: {
-                                HStack(spacing: 12) {
-                                    LedgerMark(tone: g.tint)
-                                    LedgerLabel(title: g.name, meta: g.subtitle)
-                                    Spacer(minLength: 10)
-                                    if g.isSettled {
-                                        StatusBadge(text: "Settled", color: Palette.positive)
-                                    } else {
-                                        LedgerAmount(amount: CurrencyFormat.string(abs(g.netOutstanding), base, compact: true),
-                                                     tone: g.tint)
-                                    }
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(Palette.textTertiary)
-                                }
-                                .padding(.vertical, 9).hoverRow()
-                            }.buttonStyle(.plain)
-                            if g.id != groups.last?.id { Divider().overlay(Palette.hairline) }
-                        }
-                    }
-                }
+            // Two figures side by side never answered the only question that matters here: am I up
+            // or down overall? The page now leads with the NET position and shows the two sides as
+            // context beneath it, then splits people into who owes you and who you owe — because
+            // those are two different feelings and one alphabetical list buried both.
+            LeadFigure(
+                label: net >= 0 ? "Owed to you, on balance" : "You owe, on balance",
+                amount: abs(net), code: base,
+                context: [
+                    CurrencyFormat.abbreviated(lentOut, base) + " out",
+                    CurrencyFormat.abbreviated(borrowed, base) + " in",
+                    "\(groups.filter { !$0.isSettled }.count) still open",
+                ],
+                spark: [],
+                accent: net >= 0 ? Palette.positive : Palette.warning)
+
+            if !owedToYou.isEmpty { peopleCard("They owe you", owedToYou, tone: Palette.positive) }
+            if !youOwe.isEmpty { peopleCard("You owe them", youOwe, tone: Palette.warning) }
+            if !settled.isEmpty { peopleCard("Settled", settled, tone: Palette.textTertiary) }
+            if groups.isEmpty {
+                EmptyStateCard(icon: "arrow.left.arrow.right", title: "No loans tracked yet",
+                               message: "Log money you've lent or borrowed and Freelane keeps the outstanding balance straight.")
             }
         }
         .sheet(isPresented: $showAdd) { AddLoanSheet() }
         .sheet(item: $selectedPerson) { LoanPersonSheet(person: $0) }
+    }
+
+    /// Net position: positive means more is owed to you than you owe.
+    private var net: Double { lentOut - borrowed }
+    private var owedToYou: [LoanGroup] { groups.filter { !$0.isSettled && $0.netOutstanding > 0 } }
+    private var youOwe: [LoanGroup] { groups.filter { !$0.isSettled && $0.netOutstanding < 0 } }
+    private var settled: [LoanGroup] { groups.filter { $0.isSettled } }
+
+    private func peopleCard(_ title: String, _ list: [LoanGroup], tone: Color) -> some View {
+        SectionCard(title: title,
+                    subtitle: "\(list.count) \(list.count == 1 ? "person" : "people")",
+                    accent: tone) {
+            VStack(spacing: 0) {
+                ForEach(Array(list.enumerated()), id: \.element.id) { i, g in
+                    if i > 0 { Divider().overlay(Palette.hairline) }
+                    Button { selectedPerson = LoanPersonRef(id: g.id, name: g.name) } label: {
+                        HStack(spacing: 12) {
+                            LedgerMark(tone: g.tint)
+                            LedgerLabel(title: g.name, meta: g.subtitle)
+                            Spacer(minLength: 10)
+                            if g.isSettled {
+                                StatusBadge(text: "Settled", color: Palette.positive)
+                            } else {
+                                LedgerAmount(amount: CurrencyFormat.string(abs(g.netOutstanding), base, compact: true), tone: g.tint)
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Palette.textTertiary)
+                        }
+                        .padding(.vertical, 11)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .pointerStyle(.link)
+                    .hoverRow()
+                    .riseIn(i)
+                }
+            }
+        }
     }
 }
 
