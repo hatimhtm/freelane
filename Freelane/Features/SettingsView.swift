@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var sub = 0
     @State private var pendingBase: String?
     @State private var baseError: String?
+    @FocusState private var cityFocused: Bool
     @AppStorage("integ.reminders") private var remindersOn = false
     @AppStorage("integ.contacts") private var contactsOn = false
     @AppStorage("hotkey.capture.enabled") private var captureHotkey = true   // matches HotkeyManager's on-by-default
@@ -515,6 +516,23 @@ struct SettingsView: View {
                 case .unavailable(let why):
                     Text(why).font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
 
+                case .onDisk:
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle.fill").foregroundStyle(Palette.textSecondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("\(LocalModelSpec.displayName) is downloaded")
+                                .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                            Text("Not in memory right now — it loads itself the next time the app needs it.")
+                                .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                        }
+                        Spacer()
+                    }
+                    HStack(spacing: 10) {
+                        Button("Load it now") { local.install() }.buttonStyle(.glass)
+                        Button("Delete download", role: .destructive) { local.remove() }.buttonStyle(.glass)
+                        Spacer()
+                    }
+
                 case .notInstalled:
                     Text("\(LocalModelSpec.displayName) — about \(LocalModelSpec.approxSizeLabel), downloaded once and then yours. It runs inside Freelane on the GPU; there's no separate app or server to keep alive.")
                         .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
@@ -533,7 +551,7 @@ struct SettingsView: View {
                 case .loading:
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("Loading the weights onto the GPU…").font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
+                        Text("Getting the local model ready…").font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                     }
 
                 case .ready:
@@ -547,7 +565,7 @@ struct SettingsView: View {
                         Spacer()
                     }
                     HStack(spacing: 10) {
-                        Button("Unload from memory") { local.unload() }.buttonStyle(.glass)
+                        Button("Free up memory") { local.unload() }.buttonStyle(.glass)
                         Button("Delete download", role: .destructive) { local.remove() }.buttonStyle(.glass)
                         Spacer()
                     }
@@ -674,8 +692,14 @@ struct SettingsView: View {
                     .frame(width: 120)
                     .confirmationDialog("Switch base currency to \(pendingBase ?? "")?",
                                         isPresented: Binding(get: { pendingBase != nil }, set: { if !$0 { pendingBase = nil } })) {
-                        Button("Convert everything to \(pendingBase ?? "")") {
+                        // Destructive role, because it is: this rewrites `amountBase` on every
+                        // spend, recurring, ledger entry, allocation and withdrawal in the store,
+                        // with no undo. As a default button it fired on ⏎.
+                        Button("Convert everything to \(pendingBase ?? "")", role: .destructive) {
                             if let nb = pendingBase {
+                                // Back up FIRST. A full-database rewrite with a one-click restore
+                                // sitting two tabs away and never being taken was the real problem.
+                                _ = DataBackup.backupNow(stamp: "before-base-\(nb)")
                                 do { try MoneyEngine(context: context).changeBaseCurrency(to: nb) }
                                 catch { baseError = error.localizedDescription }
                             }
@@ -683,7 +707,7 @@ struct SettingsView: View {
                         }
                         Button("Cancel", role: .cancel) { pendingBase = nil }
                     } message: {
-                        Text("Every amount in your history will be recomputed into \(pendingBase ?? "") at the current exchange rate. Native currencies are unchanged.")
+                        Text("Every amount in your history is recomputed into \(pendingBase ?? "") at today's rate. Native currencies are unchanged. A backup is saved first — Storage → Restore backup rolls this back.")
                     }
                 if let baseError {
                     Text(baseError).font(.system(size: 10)).foregroundStyle(Palette.negative)
@@ -700,6 +724,13 @@ struct SettingsView: View {
                 TextField("e.g. Manila, Philippines", text: $city)
                     .textFieldStyle(GlassFieldStyle())
                     .onSubmit { saveCity() }
+                        .focused($cityFocused)
+                        // `onSubmit` alone meant typing a city and then clicking anywhere else —
+                        // another subtab, the sidebar, the close button — showed the new text while
+                        // UserDefaults kept the old one. This is the value safe-to-spend anchors
+                        // its cost-of-living to, so a silently-dropped edit corrupts a headline
+                        // number on the Dashboard.
+                        .onChange(of: cityFocused) { _, focused in if !focused { saveCity() } }
                 Text("Anchors safe-to-spend to your real local cost of living (refreshed by the AI). Was previously stuck on a default town — set yours once.")
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }

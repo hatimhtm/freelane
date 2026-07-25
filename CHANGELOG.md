@@ -3,6 +3,28 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.9
+
+Three independent reviewers read the code cold. They found things I'd missed.
+
+### Broken, now fixed
+
+- **"Mark work finished" could never be opened.** The card carried its own right-click menu covering its whole surface, which shadowed the outer one holding the delivered toggle. SwiftUI resolves to the innermost. That field sets the board's sort order, so the board sorted by an age you had no way to record.
+- **Muting a notification showed you a database key and could never be undone.** The menu read *Mute "ai_clarifying_question" alerts*. It was written in one place, read in one place, and surfaced nowhere else — one accidental click on bill reminders silently suppressed every bill notification forever, in an app whose whole point is not missing a payment. Kinds now have human names, and the inbox shows a permanent "N types hidden · Show all again" row whenever anything is muted.
+- **The chat never scrolled to a new message.** No scroll anchor, on a 580pt sheet — you asked, waited twenty seconds, and the screen appeared not to change because the answer landed below the fold.
+- **A stray click outside the chat wiped the conversation.** It used the shared sheet chrome, which closes on any outside click, on the one sheet in the app holding unsaved text.
+- **The assistant's replies were effectively invisible** — the bubble was `card` at 90% over `ink`, about 1.05:1 contrast. Every answer the product exists to give sat in a bubble you couldn't see.
+- **"Free up memory" claimed it had deleted your model.** Both branches of a ternary in my own code returned the same state, so the card offered a Download button for weights already on disk.
+- **Your city was discarded unless you pressed Return.** The only save path was `onSubmit`; clicking anywhere else showed the new text while the old value stayed. That value anchors safe-to-spend to local cost of living.
+- **Switching base currency rewrote every amount in the database from a default button** — ⏎ fired it — with no backup. It now backs up first, is marked destructive, and names the way back.
+
+### Better
+
+- Chat: focus on open, multi-line composer, selectable and copyable answers, a thinking indicator that becomes "Still thinking… / Stop" after four seconds, and failures rendered as errors rather than as things the assistant said.
+- Notifications: flat hairline-separated rows instead of eight shadowed cards stacked inside a card, a larger popover (7–8 rows visible instead of 3), a real **Answer** button in place of the grey hint "Tap to answer", and "Ignore" renamed to **"Don't ask again"** — which is what it actually does, permanently.
+- Project cards show **how long a project has been sitting**, the thing you're actually chasing, and use the app's own progress bar instead of the stock system-blue one.
+- Drag: the ghost only follows the card that owns the drag, drop targets resolve to the nearest column instead of an arbitrary dictionary order, dropping a card back in its own column is a no-op instead of re-running the whole status-change path, and the spring-back outlasts its own animation.
+
 ## 1.8
 
 The rest of the pages, and two things taken away.

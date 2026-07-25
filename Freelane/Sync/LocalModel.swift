@@ -51,6 +51,11 @@ final class LocalModelStore {
     enum State: Equatable {
         case unavailable(String)     // MLX not compiled in
         case notInstalled
+        /// Downloaded but not resident. Distinct from `notInstalled` on purpose: without it,
+        /// "Free up memory" left the card saying "about 4.6 GB, downloaded once and then yours"
+        /// beside a Download button, for weights already sitting on disk — so the honest reading
+        /// was that the button had just deleted a multi-gigabyte download.
+        case onDisk
         case downloading(Double)     // 0...1
         case loading                 // weights on disk, moving onto the GPU
         case ready
@@ -68,7 +73,7 @@ final class LocalModelStore {
 
     private init() {
         #if canImport(MLXLMCommon)
-        state = Self.weightsOnDisk ? .notInstalled : .notInstalled
+        state = Self.weightsOnDisk ? .onDisk : .notInstalled
         // Weights already downloaded from a previous run → bring them up quietly in the background
         // so the first AI call of the session doesn't pay the load cost.
         if Self.weightsOnDisk, autoLoad { install() }
@@ -199,7 +204,7 @@ final class LocalModelStore {
     func unload() {
         loadTask?.cancel(); loadTask = nil
         brain = nil
-        state = Self.weightsOnDisk ? .notInstalled : .notInstalled
+        state = Self.weightsOnDisk ? .onDisk : .notInstalled
         #if canImport(MLXLMCommon)
         MLX.GPU.clearCache()
         #endif

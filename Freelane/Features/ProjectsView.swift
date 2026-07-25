@@ -25,8 +25,14 @@ final class KanbanDrag {
         returning = false
         dragged = id; location = p; lastLocation = p; lastTime = CACurrentMediaTime(); velocity = .zero
     }
-    func update(to p: CGPoint) {
-        guard !returning else { return }
+
+    /// Only the card that OWNS the drag may move the ghost.
+    ///
+    /// Without the id check, a second card's `onChanged` (easy to trigger — the pointer passes over
+    /// neighbouring cards constantly while dragging) fed its own location into the same controller
+    /// and the ghost teleported to whatever the cursor was over. This is the drag "feeling broken".
+    func update(_ id: UUID, to p: CGPoint) {
+        guard !returning, dragged == id else { return }
         let now = CACurrentMediaTime()
         if let last = lastTime {
             let dt = max(now - last, 1.0 / 240.0)
@@ -34,13 +40,39 @@ final class KanbanDrag {
             velocity = CGVector(dx: velocity.dx * 0.4 + vx * 0.6, dy: velocity.dy * 0.4 + vy * 0.6)  // 60% new, smoothed
         }
         lastTime = now; lastLocation = p; location = p
-        hovered = targets.first { $0.value.contains(p) }?.key
+        hovered = bestTarget(for: p)
     }
-    /// The (project, destination column) to commit, or nil if dropped on no column.
-    func commit() -> (UUID, ProjectStatus)? {
-        guard let id = dragged, let h = hovered, !returning else { return nil }
+
+    /// The column under the point — nearest centre wins when frames overlap.
+    ///
+    /// This was `targets.first { $0.value.contains(p) }`, and `Dictionary.first` has no defined
+    /// order: with adjacent or overlapping column frames the highlighted column was arbitrary and
+    /// could differ between frames, which is why the drop target sometimes flickered between two
+    /// columns along a boundary.
+    private func bestTarget(for p: CGPoint) -> ProjectStatus? {
+        let hits = targets.filter { $0.value.contains(p) }
+        guard !hits.isEmpty else { return nil }
+        return hits.min { a, b in
+            hypot(a.value.midX - p.x, a.value.midY - p.y) < hypot(b.value.midX - p.x, b.value.midY - p.y)
+        }?.key
+    }
+
+    /// The (project, destination column) to commit — nil when dropped on no column, or back on the
+    /// column it started in.
+    ///
+    /// `from` is required precisely so a same-column drop is a no-op. It used to commit, which ran
+    /// the full status-change path: re-deriving allocations and, for a drop onto Paid, queuing a
+    /// journal post-mortem — for a card the user had simply picked up and put down again.
+    func commit(from: ProjectStatus) -> (UUID, ProjectStatus)? {
+        guard let id = dragged, let h = hovered, !returning, h != from else { return nil }
         reset()
         return (id, h)
+    }
+
+    /// Forget cards that no longer exist, so the spring-home table can't grow forever or send a
+    /// ghost back to where a deleted card used to be.
+    func pruneHomes(keeping ids: Set<UUID>) {
+        homes = homes.filter { ids.contains($0.key) }
     }
     /// Missed drop: spring the ghost back to its card's slot, then release it — instead of
     /// vanishing mid-air. (Deck-style: the card always lands somewhere.)
@@ -51,7 +83,9 @@ final class KanbanDrag {
             location = homes[id] ?? location
             velocity = .zero
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) { [weak self] in
+        // Must outlast the 0.34s spring above — at 0.30 the ghost was released mid-flight and
+        // popped out of existence about 40ms before it reached the card.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) { [weak self] in
             guard let self, self.returning else { return }
             withAnimation(Motion.snappy) { self.reset() }
         }
@@ -275,6 +309,18 @@ struct ProjectsView: View {
             }.padding(.horizontal, 14).padding(.vertical, 9).contentShape(Rectangle())
         }.buttonStyle(.plain)
         .contextMenu {
+            // NOTE: merged with the delivered-toggle that used to live on `draggableCard`. Two
+            // nested `.contextMenu`s resolve to the innermost, so that one could never open —
+            // "Mark work finished" was unreachable from the board, and it is what sets
+            // `workCompletedAt`, which drives `agingAnchor` and therefore the column ordering.
+            if p.status != .paid {
+                if p.workCompletedAt == nil {
+                    Button("Mark work finished", systemImage: "checkmark.seal") { markDelivered(p, true) }
+                } else {
+                    Button("Reopen — clear delivered", systemImage: "arrow.uturn.backward") { markDelivered(p, false) }
+                }
+                Divider()
+            }
             Button("Edit", systemImage: "pencil") { editing = p }
             Button("Delete project", systemImage: "trash", role: .destructive) { pendingDeleteProject = p }
         }
@@ -402,27 +448,22 @@ struct ProjectsView: View {
                 DragGesture(minimumDistance: 10, coordinateSpace: .global)
                     .onChanged { v in
                         if drag.dragged == nil { withAnimation(Motion.snappy) { drag.begin(p.id, at: v.location) } }
-                        drag.update(to: v.location)
+                        drag.update(p.id, to: v.location)
                         updateAutoScroll(cursorX: v.location.x)
                     }
                     .onEnded { _ in
                         stopAutoScroll()
-                        if let (id, status) = drag.commit() {
+                        if let (id, status) = drag.commit(from: p.status) {
                             withAnimation(Motion.snappy) { move(id, to: status) }
                         } else {
+                            // Covers both "dropped on no column" and "dropped back where it
+                            // started" — the card visibly returns to its lane instead of the ghost
+                            // being deleted where it stands.
                             drag.springHome()
                         }
                     }
             )
-            .contextMenu {
-                if p.status != .paid {
-                    if p.workCompletedAt == nil {
-                        Button { markDelivered(p, true) } label: { Label("Mark work finished", systemImage: "checkmark.seal") }
-                    } else {
-                        Button { markDelivered(p, false) } label: { Label("Reopen — clear delivered", systemImage: "arrow.uturn.backward") }
-                    }
-                }
-            }
+            .onDisappear { drag.pruneHomes(keeping: Set(projects.map(\.id))) }
     }
 
     /// Edge auto-scroll: dragging a card within 56pt of the board's left/right edge scrolls the
@@ -495,27 +536,68 @@ struct ProjectsView: View {
                         .foregroundStyle(Palette.warning).lineLimit(1)
                 }
             }
-            ProgressView(value: prog).tint(p.status.color).scaleEffect(x: 1, y: 0.7, anchor: .center)
-            HStack {
+            // The app's own bar, not the stock ProgressView — which draws a system-blue capsule
+            // ignoring the palette entirely, and was the last piece of un-themed AppKit on screen.
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Palette.wellFill).frame(height: 4)
+                    Capsule().fill(p.status.color)
+                        .frame(width: max(2, geo.size.width * CGFloat(min(1, max(0, prog)))), height: 4)
+                }
+            }
+            .frame(height: 4)
+
+            HStack(spacing: 6) {
                 Text("\(CurrencyFormat.string(paid, p.currency, compact: true)) received")
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
-                Spacer()
+                Spacer(minLength: 4)
                 let ms = milestones.filter { $0.projectId == p.id && $0.deletedAt == nil }
                 if !ms.isEmpty {
-                    Label("\(ms.filter { $0.done }.count)/\(ms.count) phases", systemImage: "checklist")
+                    Text("\(ms.filter { $0.done }.count)/\(ms.count) phases")
                         .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.violet)
                 }
             }
-            if let w = p.workCompletedAt {
-                let days = PHT.calendar.dateComponents([.day], from: w, to: .now).day ?? 0
-                Label("Delivered · waiting \(days)d", systemImage: "checkmark.seal.fill")
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.positive)
+
+            // HOW LONG THIS HAS BEEN SITTING — the thing a freelancer is actually chasing, and the
+            // one fact the card never showed. A board that tells you what you're owed but not how
+            // stale it is can't tell you who to email today.
+            if p.status != .paid {
+                let age = PHT.calendar.dateComponents([.day], from: p.agingAnchor, to: .now).day ?? 0
+                let delivered = p.workCompletedAt != nil
+                let tone: Color = age >= 30 ? Palette.negative : (age >= 14 ? Palette.warning : Palette.textTertiary)
+                HStack(spacing: 5) {
+                    Image(systemName: delivered ? "checkmark.seal.fill" : "clock")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(delivered ? Palette.positive : tone)
+                    Text(delivered ? "Delivered · waiting \(age)d" : "Open \(age)d")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(delivered ? Palette.positive : tone)
+                    if let due = p.dueDate {
+                        Text("· due \(due.formatted(.dateTime.month().day()))")
+                            .font(.system(size: 10))
+                            .foregroundStyle(overdue ? Palette.negative : Palette.textTertiary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 1)
             }
         }
         .padding(16)
         .frame(minHeight: 150, alignment: .topLeading)
         .glassCard(cornerRadius: Radii.card, interactive: true)
         .contextMenu {
+            // NOTE: merged with the delivered-toggle that used to live on `draggableCard`. Two
+            // nested `.contextMenu`s resolve to the innermost, so that one could never open —
+            // "Mark work finished" was unreachable from the board, and it is what sets
+            // `workCompletedAt`, which drives `agingAnchor` and therefore the column ordering.
+            if p.status != .paid {
+                if p.workCompletedAt == nil {
+                    Button("Mark work finished", systemImage: "checkmark.seal") { markDelivered(p, true) }
+                } else {
+                    Button("Reopen — clear delivered", systemImage: "arrow.uturn.backward") { markDelivered(p, false) }
+                }
+                Divider()
+            }
             Button("Edit", systemImage: "pencil") { editing = p }
             Button("Delete project", systemImage: "trash", role: .destructive) { pendingDeleteProject = p }
         }

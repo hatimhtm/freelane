@@ -125,6 +125,23 @@ struct BellButton: View {
     @AppStorage("notif.muted") private var mutedRaw = ""   // newline-joined notification kinds to suppress
 
     private var muted: Set<String> { Set(mutedRaw.split(separator: "\n").map(String.init)) }
+    /// A human name for a notification kind. The menu used to read `Mute "ai_clarifying_question"
+    /// alerts` — a raw schema string, in smart quotes, offered as a permanent action.
+    static func kindLabel(_ kind: String) -> String {
+        switch kind {
+        case "bill_due":                 return "bill reminders"
+        case "ai_clarifying_question":   return "questions from the assistant"
+        case "daily_read":               return "the daily read"
+        case "receipt":                  return "spending receipts"
+        case "bill_up":                  return "bill increases"
+        case "sadaka_nudge":             return "sadaka nudges"
+        case "merge_people":             return "duplicate-people suggestions"
+        case "warning":                  return "warnings"
+        case "info":                     return "announcements"
+        default: return kind.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
     private func toggleMute(_ kind: String) {
         var m = muted; if m.contains(kind) { m.remove(kind) } else { m.insert(kind) }
         mutedRaw = m.sorted().joined(separator: "\n")
@@ -201,8 +218,29 @@ struct BellButton: View {
                     Text(tab == 0 ? "You're all caught up." : "Nothing read yet.")
                         .font(.system(size: 12)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 80)
                 } else {
-                    VStack(spacing: 8) { ForEach(rows) { row($0) } }.padding(12)
+                    VStack(spacing: 0) {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { i, n in
+                            if i > 0 { Rectangle().fill(Palette.hairline).frame(height: 1) }
+                            row(n)
+                        }
+                    }
                 }
+            }
+            // Muting was a one-way trapdoor: written here, read here, surfaced nowhere. One
+            // accidental click on "stop showing bill reminders" silently suppressed every bill
+            // notification forever, in an app whose whole point is not missing a payment. There is
+            // now always a way back, visible whenever anything is muted.
+            if !muted.isEmpty {
+                Divider().overlay(Palette.hairline)
+                HStack(spacing: 8) {
+                    Image(systemName: "bell.slash.fill").font(.system(size: 10)).foregroundStyle(Palette.warning)
+                    Text("\(muted.count) \(muted.count == 1 ? "type" : "types") hidden")
+                        .font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
+                    Spacer()
+                    Button("Show all again") { mutedRaw = "" }
+                        .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Palette.azure)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 9)
             }
             if tab == 1 && !read.isEmpty {
                 Divider().overlay(Palette.hairline)
@@ -210,7 +248,7 @@ struct BellButton: View {
                     .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Palette.textTertiary).padding(10)
             }
         }
-        .frame(width: 340, height: 420)
+        .frame(width: 384, height: 486)
         .flagshipSheet()
     }
 
@@ -222,12 +260,17 @@ struct BellButton: View {
                     Text(n.subject).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary).multilineTextAlignment(.leading)
                     if let b = n.body { Text(b).font(.system(size: 11)).foregroundStyle(Palette.textSecondary).lineLimit(3).multilineTextAlignment(.leading) }
                     if let a = n.answer, !a.isEmpty {
-                        Label("You answered: \(a)", systemImage: "checkmark.circle.fill")
-                            .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.positive)
+                        Label(a, systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Palette.positive)
                     } else if n.isQuestion {
-                        Text("Tap to answer").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.azure)
+                        // Was the grey hint "Tap to answer" — wrong verb for macOS, redundant on an
+                        // already-tappable row, and describing a mechanic rather than naming an
+                        // action, while a real "Pay now" button sat two lines below it.
+                        Button("Answer") { answering = n }
+                            .buttonStyle(.glass).controlSize(.small)
                     }
-                    Text(n.createdAt, format: .relative(presentation: .named)).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
+                    Text(n.createdAt, format: .relative(presentation: .named))
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                     // A due bill is settleable right here — the notification carries its rule.
                     if let r = billFor(n) {
                         Button("Pay now") { open = false; paying = r }
@@ -244,12 +287,12 @@ struct BellButton: View {
                         Button("Snooze to tomorrow", systemImage: "clock") { snooze(n, days: 1) }
                         Button("Snooze a week", systemImage: "clock") { snooze(n, days: 7) }
                         Divider()
-                        Button("Mute “\(n.kind)” alerts", systemImage: "bell.slash") { toggleMute(n.kind); try? context.save() }
+                        Button("Stop showing \(Self.kindLabel(n.kind))", systemImage: "bell.slash") { toggleMute(n.kind); try? context.save() }
                     } label: { Image(systemName: "ellipsis").font(.system(size: 10)).foregroundStyle(Palette.textTertiary) }
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 16)
                 }
             }
-            .padding(11).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: Radii.field, interactive: true)
+            .padding(.horizontal, 14).padding(.vertical, 11).frame(maxWidth: .infinity, alignment: .leading).hoverRow()
         }.buttonStyle(.cardPress)
     }
 
@@ -297,7 +340,7 @@ struct AnswerSheet: View {
                     ForEach(note.choices, id: \.self) { c in
                         Button { submit(c) } label: {
                             HStack { Text(c).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary); Spacer(); Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(Palette.textTertiary) }
-                                .padding(12).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: Radii.field, interactive: true)
+                                .padding(12).frame(maxWidth: .infinity, alignment: .leading).hoverRow()
                         }.buttonStyle(.cardPress)
                     }
                     if note.freeText {
@@ -308,7 +351,7 @@ struct AnswerSheet: View {
                 }.padding(18)
             }
             Divider().overlay(Palette.hairline)
-            HStack { Spacer(); Button("Ignore") { Curiosity.dismissQuestion(context, note: note); dismiss() }.buttonStyle(.glass) }.padding(14)
+            HStack { Spacer(); Button("Don't ask again") { Curiosity.dismissQuestion(context, note: note); dismiss() }.buttonStyle(.glass) }.padding(14)
         }
         .frame(width: 440, height: 480).flagshipSheet()
     }
