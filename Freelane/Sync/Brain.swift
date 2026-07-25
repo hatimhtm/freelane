@@ -1,10 +1,26 @@
 import Foundation
 import SwiftData
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
-/// The native "brain" layer: cache-first AI, grounded chat, a daily read, and a
-/// clarifying-question loop that folds answers into the fact store. Faithful in
-/// spirit to the web app's `lib/ai/*` — best-effort, never blocks paint, never
-/// runs on every load.
+/// The app's intelligence layer: cache-first, structured, and grounded.
+///
+/// Everything here follows four rules learned the hard way from the previous version, whose output
+/// the user summarised as "it looks bad, and it breaks":
+///
+///  1. **Structure is enforced, not requested.** Every call that needs a shape asks for a
+///     `@Generable` type. There is no "Reply with ONLY a JSON object" prompt left in this file,
+///     because that phrasing is what produced silently-empty features when a small model added a
+///     code fence or truncated an object.
+///  2. **Never show the model an example value.** This model family copies literal placeholders
+///     out of a prompt and returns them as content — that's where a Journal full of "…" came from.
+///     Shapes are described in words; the schema does the rest.
+///  3. **Prompts are budgeted.** Every block that grows without bound — ask history, beliefs,
+///     entries — is capped in characters. Shipping the full history once made generation *throw*,
+///     which `try?` turned into "New questions does nothing".
+///  4. **Claims must be sourced.** Anything asserted about the user's life traces to a row they
+///     wrote or a figure the app computed. No motives, no diagnoses, no narration of feelings.
 @MainActor
 enum Brain {
 
@@ -18,8 +34,8 @@ enum Brain {
 
     // MARK: - Brain cache
 
-    /// Returns a cached payload only when it's still fresh: same PHT day, not past
-    /// `staleAt`, and the input fingerprint still matches. Otherwise nil → regenerate.
+    /// Returns a cached payload only when it's still fresh: same PHT day, not past `staleAt`, and
+    /// the input fingerprint still matches. Otherwise nil → regenerate.
     static func cached(_ context: ModelContext, key: String, fingerprint: String?) -> String? {
         guard let row = fetchCache(context, key: key) else { return nil }
         if phtDay(row.generatedAt) != phtDay() { return nil }
@@ -53,46 +69,74 @@ enum Brain {
         return (try? context.fetch(d))?.first
     }
 
+    // MARK: - The standing voice
+    //
+    // One role, shared by every prose call, so the app sounds like one thing. The prohibitions are
+    // specific on purpose: each line corresponds to something the previous version actually said
+    // to this user and got wrong.
+    static let voice = """
+    You are the assistant inside Freelane, a private life and money app used by exactly one person: \
+    a freelancer living in the Philippines. Base currency PHP, timezone PHT.
+
+    How you speak: plain, warm, direct. Short sentences. The register of a close friend who is good \
+    with numbers — not a coach, not a therapist, not a brand.
+
+    What you must never do:
+    · Never invent a figure, a date, a name, or an event. If it is not in what you were given, it \
+      did not happen.
+    · Never explain WHY they did something. You cannot see motives. "Guilt-driven", "emotional \
+      void", "a ritual to restore balance" — this kind of sentence is forbidden even when it \
+      sounds insightful.
+    · Never diagnose, moralise, or tell them what they should do.
+    · Never use therapy language, metaphors, em-dashes, or rhetorical questions.
+    · Never assert something listed as NOT true about them.
+    """
+
     // MARK: - Grounded chat
 
     /// A grounded answer. `history` is a short ring buffer of prior turns (newest last) so the
-    /// assistant remembers the thread within a session. With a Gemini key it can CALL TOOLS
-    /// (search spends, wallet balances, projections) for exact figures instead of relying only on
-    /// the pre-built snapshot; without a key it falls back to the on-device model + snapshot.
+    /// assistant remembers the thread within a session.
+    ///
+    /// The model can CALL TOOLS for exact figures instead of trusting a pre-built summary — and
+    /// unlike the previous version, that now works on every brain including offline, because tool
+    /// calling is native to the on-device model rather than a cloud-only feature.
     static func answer(_ context: ModelContext, ai: AIManager, page: String, question: String,
                        history: [(mine: Bool, text: String)] = []) async -> String {
-        guard ai.isReady else { return "Enable Apple Intelligence or add a Gemini API key in Settings → AI to enable answers." }
+        guard ai.isReady else { return ai.unavailableReason }
 
-        var persona = "You are the assistant inside Freelane, a private single-user money + life app for one freelancer in the Philippines (base currency PHP, timezone PHT). You are on the \(page) page. Answer in 1–4 short sentences, concretely, using REAL numbers. Never invent figures. Don't coach or moralize — mirror what's true. If you can't answer, say so plainly."
-        // Core memory rides along (Hermes-style): the chat knows the user from turn one
-        // without re-fetching facts — and it's ~100 words, not a fact dump.
-        let core = MemoryCompactor.digest
-        if !core.isEmpty { persona += "\nWhat you already know about them: \(core)" }
-        let convo = history.suffix(5).map { ($0.mine ? "User: " : "You: ") + $0.text }.joined(separator: "\n")
-        let threaded = convo.isEmpty ? question : "Conversation so far:\n\(convo)\n\nUser question: \(question)"
+        let beliefs = Memory.brief(context, maxChars: 500)
+        let instructions = """
+        \(voice)
 
-        // Gemini's tool-calling path (retrieval over recall) is used ONLY when the user has
-        // opted into cloud (`cloudReachable`). With cloud off, even chat stays fully on the
-        // local / on-device brains — no Gemini anywhere — using the snapshot-grounded fallback.
-        if ai.cloudReachable {
-            if let toolReply = await ToolRunner.answer(threaded, system: persona, context: context, apiKey: ai.apiKey),
-               !toolReply.isEmpty {
-                AIUsage.record(source: "cloud", promptChars: persona.count + threaded.count, responseChars: toolReply.count)
-                return toolReply.trimmingCharacters(in: .whitespacesAndNewlines)
+        You are on the \(page) page. Answer in one to four short sentences using their real numbers. \
+        Prefer calling a tool to look something up over estimating from the summary below. If you \
+        cannot answer, say so plainly.
+
+        What you know about them:
+        \(beliefs.isEmpty ? "Not much yet." : beliefs)
+        """
+
+        let convo = history.suffix(5).map { ($0.mine ? "Them: " : "You: ") + $0.text }.joined(separator: "\n")
+        let threaded = convo.isEmpty ? question : "Conversation so far:\n\(convo)\n\nTheir question: \(question)"
+        let snapshot = String(StateSnapshot.text(context, includePersonal: true).prefix(3_000))
+        let prompt = "Current state:\n\(snapshot)\n\n\(threaded)"
+
+        let toolData = AIToolData.load(context)
+        do {
+            if #available(macOS 26.0, *) {
+                return try await ai.smart.text(AIRequest(prompt, instructions: instructions),
+                                               tools: AIToolbox.tools(toolData))
             }
+        } catch {
+            moneyLog.error("Brain.answer failed: \(error.localizedDescription, privacy: .public)")
         }
-        // Fallback: snapshot-grounded single prompt (local / on-device, or cloud if enabled).
-        let snapshot = StateSnapshot.text(context, includePersonal: !ai.cloudReachable)
-        let prompt = "\(persona)\n\n=== CURRENT STATE ===\n\(snapshot)\n=== END STATE ===\n\n\(threaded)"
-        let reply = (try? await ai.provider.generate(prompt: prompt)) ?? ""
-        return reply.isEmpty ? "Sorry, I couldn't reach the model." : reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "I couldn't reach a model just now. Try again in a moment."
     }
 
     // MARK: - Daily calm read (cache-first; posts at most once per PHT day)
 
-    /// Generates a one-line read of where the money stands today and drops it in
-    /// the inbox — but only once per PHT day, and only when the state actually
-    /// changed (fingerprint). Cheap deterministic fallback when AI is off.
+    /// One factual line about where money stands today, dropped in the inbox once per PHT day and
+    /// only when the state actually changed. Falls back to a computed sentence with no AI at all.
     static func dailyCalmRead(_ context: ModelContext, ai: AIManager) async {
         let fp = StateSnapshot.fingerprint(context)
         if cached(context, key: "daily_calm", fingerprint: fp) != nil { return }   // already done today
@@ -102,52 +146,56 @@ enum Brain {
                                        ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)
         func money(_ v: Double) -> String { CurrencyFormat.string(v, d.baseCurrency, compact: true) }
 
+        // The deterministic version is genuinely good, so it's the default rather than a sad
+        // fallback — the model only gets to replace it if it produces something valid.
         var body = "Safe to spend \(money(safe.liveRemaining)) today · \(money(d.metrics.landedMTD)) landed this month · \(money(d.metrics.outstandingBase)) owed to you."
         if ai.isReady {
             let prompt = """
-            Write ONE calm, factual sentence (max 22 words) summarizing this person's money today. Use real numbers, no advice, no "you should". Plain and warm.
+            Summarise this person's money today in ONE sentence of at most 22 words. Use their real \
+            numbers. State the position; give no advice.
 
-            \(StateSnapshot.text(context, includePersonal: !ai.cloudReachable))
+            \(String(StateSnapshot.text(context, includePersonal: false).prefix(2_000)))
             """
-            if let r = try? await ai.provider.generate(prompt: prompt), !r.isEmpty {
-                body = r.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let r = try? await ai.fast.object(AISentence.self, AIRequest(prompt, instructions: voice),
+                                                 jsonShape: AISentence.jsonShape),
+               AIJSON.isRealText(r.sentence) {
+                body = r.sentence.trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
 
-        // Cache first so we never double-post, then post.
         store(context, key: "daily_calm", payload: body, fingerprint: fp)
         Notify.post(context, kind: "daily_read", subject: "Today's read", body: body, priority: 0, feature: .dashboard)
     }
 
-    /// A deeper, AI-generated read of the current money "weather" — shown when the user
-    /// taps the calm-weather banner. Cached per state fingerprint so repeat taps are free.
+    /// A deeper read of the money "weather", shown when the calm banner is tapped. Cached per
+    /// state fingerprint so repeat taps are free.
     static func weatherDetail(_ context: ModelContext, ai: AIManager) async -> String {
         let fp = StateSnapshot.fingerprint(context)
         if let c = cached(context, key: "weather_detail", fingerprint: fp) { return c }
         guard ai.isReady else { return "" }
         let prompt = """
-        Here is the person's money state right now:
-        \(StateSnapshot.text(context, includePersonal: !ai.cloudReachable))
+        Here is their money state right now:
+        \(String(StateSnapshot.text(context, includePersonal: false).prefix(2_500)))
 
-        In 2–4 short sentences, explain plainly what's going on with their money today and what — if anything — they should do about it. Use their real numbers. Warm and direct, no preaching, no "you should". If things are fine, say so clearly. Note: wallets marked ignored and one-off/investment purchases are already excluded from the everyday picture.
+        In two to four short sentences, say plainly what is going on with their money today, using \
+        their real numbers. If things are fine, say so clearly and stop. Note that wallets marked \
+        ignored and one-off purchases are already excluded from the everyday picture.
         """
-        let r = ((try? await ai.heavy.generate(prompt: prompt)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let r = (try? await ai.smart.text(AIRequest(prompt, instructions: voice))) ?? ""
         if !r.isEmpty { store(context, key: "weather_detail", payload: r, fingerprint: fp) }
         return r
     }
 
-    // MARK: - Spending intelligence (auto-categorize + anomaly whisper)
+    // MARK: - Spending intelligence
 
-    static let spendCategories = ["Food", "Eating out", "Groceries", "Transport", "Bills",
-                                  "Health", "Cigarettes", "Pet", "Gifts", "Tech", "Sadaka", "Other"]
+    static let spendCategories = AIVocab.spendCategories
 
     static func fetchSpend(_ context: ModelContext, _ id: UUID) -> Spend? {
         let d = FetchDescriptor<Spend>(predicate: #Predicate { $0.id == id })
         return (try? context.fetch(d))?.first
     }
 
-    /// After a spend is logged: understand it (category + who/what it involved) and
-    /// whisper if it's unusual. Best-effort, never blocks.
+    /// After a spend is logged: understand it and whisper if it's unusual. Never blocks.
     static func onSpendLogged(_ context: ModelContext, ai: AIManager, spendId: UUID) async {
         guard let s = fetchSpend(context, spendId) else { return }
         await understandSpend(context, ai: ai, spend: s)
@@ -155,97 +203,99 @@ enum Brain {
         receiptWhisper(context, spend: s)
     }
 
-    /// ONE structured pass that actually understands a spend, so the app stops asking
-    /// dumb questions: it categorizes, classifies the MERCHANT (a store is never mistaken
-    /// for a person), and separates a real PERSON name from a beneficiary relationship or
-    /// a verb. "Greenwich" → restaurant (never "is this a family member?"); "Got pizza for
-    /// my wife" → beneficiary=wife, no "who is Got". Falls back to the simple ask with no key.
+    /// ONE structured pass that actually understands a spend: category, what KIND of place the
+    /// merchant is (so a store is never mistaken for a person), and whether a real person was
+    /// named. The category and merchant kind are constrained by the schema, so an out-of-vocabulary
+    /// answer — which used to fall through to a pointless "what was this for?" question — cannot
+    /// happen any more.
     static func understandSpend(_ context: ModelContext, ai: AIManager, spend: Spend) async {
         let text = [spend.vendorName, spend.spendDescription, spend.notes].compactMap { $0 }
             .joined(separator: " ").trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
-        guard ai.isReady else {   // on-device OR a Gemini key
+        guard ai.isReady else {
             if spend.tags.isEmpty { await autoCategorize(context, ai: ai, spend: spend) }
             return
         }
 
-        // Cache by a STABLE key (text + amount): re-logging the same thing skips the AI call.
+        // Cache by a STABLE key (text + amount): re-logging the same thing skips the model.
         let cacheKey = "understand:" + slug(text) + ":" + String(Int(spend.amountBase.rounded()))
-        let onDevice = !ai.cloudReachable   // scrub only if this could actually reach Gemini
-        var raw = cachedStable(context, key: cacheKey)
-        if raw == nil {
-            let safeText = Redactor.forCloud(text, onDevice: onDevice)   // never send health terms to the cloud
+        var reading: AISpendReading?
+
+        if let raw = cachedStable(context, key: cacheKey),
+           let data = raw.data(using: .utf8),
+           let cachedContent = try? GeneratedContent(json: String(data: data, encoding: .utf8) ?? ""),
+           let value = try? AISpendReading(cachedContent) {
+            reading = value
+        } else {
             let prompt = """
-            Parse this single personal expense (Philippines). Spend: "\(safeText)" for \(CurrencyFormat.string(spend.amountBase, "PHP", compact: true)).
-            Return ONLY compact JSON, no prose:
-            {"category":"<one label from: \(spendCategories.joined(separator: ", "))>",
-             "merchant":"<the store/business/brand name if any, corrected for typos, else empty>",
-             "merchant_type":"store|restaurant|online|service|transport|utility|grocery|person|unknown",
-             "domain":"<the merchant's official website domain, e.g. jollibee.com.ph — infer it even if the name was misspelled; empty if not a known business>",
-             "person_name":"<a real PROPER NAME of a person mentioned (e.g. Ahmed), else empty>",
-             "confidence":<0..1>}
-            Rules: A merchant is a place/business (Greenwich, Jollibee, Grab). A verb like got/bought/paid/sent is NEVER a name. "person_name" is only an actual given name, not a relationship word and not a store. Filipino ride types (tricycle, trike, jeepney, jeep, habal-habal, pedicab, kuliglig, taxi, angkas) are "transport" — NEVER a person and never person_name. If unsure, use "unknown"/empty and a low confidence.\(Corrections.fewShot())
+            Read this single personal expense from the Philippines.
+            Spend: "\(text)" for \(CurrencyFormat.string(spend.amountBase, "PHP", compact: true)).
+            \(Corrections.fewShot())
             """
-            raw = try? await ai.provider.generate(prompt: prompt)
-            if let raw, AIJSON.firstObject(in: raw) != nil {
-                store(context, key: cacheKey, payload: raw, ttl: 90 * 86400)   // cache valid JSON ~90 days
+            reading = try? await ai.fast.object(AISpendReading.self,
+                                                AIRequest(prompt, instructions: voice, temperature: 0.2),
+                                                jsonShape: AISpendReading.jsonShape)
+            if let reading, let json = try? GeneratedContent(reading).jsonString {
+                store(context, key: cacheKey, payload: json, ttl: 90 * 86400)
             }
         }
-        guard let raw, let u = AIJSON.decode(UnderstoodSpend.self, from: raw) else {
+
+        guard let u = reading else {
             if spend.tags.isEmpty { await autoCategorize(context, ai: ai, spend: spend) }
             return
         }
-        let category = u.safeCategory
-        let merchant = u.safeMerchant
-        let merchantType = u.safeMerchantType
-        let domain = u.safeDomain
-        let personName = u.safePerson
-        let confidence = u.safeConfidence
 
-        // Category — only trust a confident, in-vocabulary label; else ask once.
+        // Category — the schema guarantees it's in vocabulary, so only confidence is in question.
         if spend.tags.isEmpty {
-            if spendCategories.contains(category), confidence >= 0.45 {
-                spend.tags = [category]; spend.category = category; spend.dirty = true
+            if u.confidence >= 0.45 {
+                spend.tags = [u.category]; spend.category = u.category; spend.dirty = true
             } else {
                 await autoCategorize(context, ai: ai, spend: spend)
             }
         }
 
-        // Merchant — record what KIND of place it is, so the curiosity engine never asks
-        // "is <store> a person" and the vendor-identify question skips it for good. Key it
-        // off the spend's own vendorName when present (that's what topUnidentifiedVendor
-        // looks up), and also under the detected merchant name.
-        if merchantType != "person", merchantType != "unknown" {
+        // Merchant — record what KIND of place it is, so the curiosity engine never asks "is
+        // <store> a person" and the vendor-identify question skips it for good.
+        if u.merchantKind != "person", u.merchantKind != "unknown" {
             if let vn = spend.vendorName?.trimmingCharacters(in: .whitespaces), !vn.isEmpty {
-                upsertFact(context, key: "vendor_" + slug(vn), value: merchantType, confidence: confidence, source: "inferred")
-                // Real logo: remember the AI-assigned domain for THIS spelling, so the
-                // vendor's actual logo shows even if the user typed the name oddly.
-                if !domain.isEmpty { VendorLogo.remember(name: vn, domain: domain) }
+                setVendorKind(context, name: vn, kind: u.merchantKind, confidence: u.confidence)
+                if !u.domain.isEmpty { VendorLogo.remember(name: vn, domain: u.domain) }
             }
-            if !merchant.isEmpty {
-                upsertFact(context, key: "vendor_" + slug(merchant), value: merchantType, confidence: confidence, source: "inferred")
-                if !domain.isEmpty { VendorLogo.remember(name: merchant, domain: domain) }
+            if !u.merchant.isEmpty {
+                setVendorKind(context, name: u.merchant, kind: u.merchantKind, confidence: u.confidence)
+                if !u.domain.isEmpty { VendorLogo.remember(name: u.merchant, domain: u.domain) }
             }
         }
 
-        // A named person in the spend → ASK before tracking them (don't silently create
-        // entities the user then has to go delete). If they're already known, just link.
-        if !personName.isEmpty, personName.lowercased() != merchant.lowercased() {
-            // If Contacts is connected, ask about the full name ("Ahmed" → "Ahmed Rahmani").
-            considerPerson(context, name: ContactsBridge.resolveFullName(personName) ?? personName)
+        // A named person → ASK before tracking them. Never auto-create an entity the user then has
+        // to go and delete.
+        if !u.personName.isEmpty, u.personName.lowercased() != u.merchant.lowercased() {
+            considerPerson(context, name: ContactsBridge.resolveFullName(u.personName) ?? u.personName)
         }
         try? context.save()
     }
 
-    /// Known person → link (bump lastEventAt). Unknown → post ONE clarifying question so
-    /// the user decides whether to track them; "Not important" denylists it forever. Never
-    /// auto-creates an entity (the user disliked having to delete auto-added people).
+    /// Vendor identifications are app knowledge, not beliefs about the user — they live under
+    /// their own subject so they never appear in the "what I know about them" brief.
+    static func setVendorKind(_ context: ModelContext, name: String, kind: String, confidence: Double) {
+        Memory.remember(context, topic: slug(name), fact: kind, confidence: confidence,
+                        source: .inferred, subjectKind: "vendor", subjectId: slug(name))
+    }
+
+    static func vendorIsIdentified(_ context: ModelContext, name: String) -> Bool {
+        let id = "vendor:\(slug(name)):\(slug(name))"
+        var d = FetchDescriptor<AIFact>(predicate: #Predicate { $0.id == id && $0.archivedAt == nil })
+        d.fetchLimit = 1
+        return ((try? context.fetch(d))?.isEmpty == false)
+    }
+
+    /// Known person → link. Unknown → post ONE clarifying question so the user decides whether to
+    /// track them; "Not important" denylists it forever.
     static func considerPerson(_ context: ModelContext, name: String) {
         let clean = name.trimmingCharacters(in: .whitespaces)
         guard clean.count >= 2 else { return }
-        // Defensive backstop: a ride is not a person, and neither is a relationship word.
-        // The macOS 27 on-device model was observed returning "wife" as person_name despite
-        // the prompt's rule — never pester "who is wife?" (or "who is tricycle?").
+        // Backstop: a ride is not a person, and neither is a relationship word. The schema tells
+        // the model this, but a literal rule must never depend on model compliance.
         let notPeople: Set<String> = ["tricycle", "trike", "tricy", "jeepney", "jeep", "habal",
                                       "habal-habal", "pedicab", "kuliglig", "taxi", "angkas", "bus",
                                       "wife", "husband", "mom", "mother", "dad", "father", "brother",
@@ -255,11 +305,10 @@ enum Brain {
         if notPeople.contains(clean.lowercased()) { Curiosity.deny(clean); return }
         let entities = (try? context.fetch(FetchDescriptor<Entity>())) ?? []
         if entities.contains(where: { $0.name.lowercased() == clean.lowercased() }) {
-            ensurePerson(context, name: clean, relationship: nil)   // known → just link
+            ensurePerson(context, name: clean, relationship: nil)
             return
         }
         if Curiosity.denylist().contains(clean.lowercased()) { return }
-        // Don't re-ask while a question about this name is still open.
         let open = (try? context.fetch(FetchDescriptor<AppNotification>()))?.contains {
             $0.isQuestion && $0.answer == nil && ($0.candidateName?.lowercased() == clean.lowercased())
         } ?? false
@@ -270,16 +319,13 @@ enum Brain {
                            freeText: true, questionKind: "entity_discovery", candidateName: clean)
     }
 
-    /// Link an existing person (or create one when the user confirms via a question). Bumps
-    /// lastEventAt so "money flow" attributes to them.
+    /// Link an existing person (or create one when the user confirms via a question).
     static func ensurePerson(_ context: ModelContext, name: String, relationship: String?) {
         let clean = name.trimmingCharacters(in: .whitespaces)
         guard clean.count >= 2 else { return }
         let rel = relationship?.replacingOccurrences(of: "my ", with: "").trimmingCharacters(in: .whitespaces)
         let entities = (try? context.fetch(FetchDescriptor<Entity>())) ?? []
-        // Match by NAME only. (Matching by relationship would merge two different "friend"s
-        // into one person.) Relationship-only beneficiaries are named by the relationship
-        // word, so they still dedupe correctly by name on the next occurrence.
+        // Match by NAME only — matching by relationship would merge two different "friend"s.
         if let existing = entities.first(where: { $0.name.lowercased() == clean.lowercased() }) {
             existing.lastEventAt = .now
             if (existing.relationship ?? "").isEmpty, let rel, !rel.isEmpty { existing.relationship = rel }
@@ -293,7 +339,6 @@ enum Brain {
     }
 
     /// A quiet one-line "receipt" only when meaningful (a repeat vendor this week).
-    /// Inbox-only (priority 0, no banner) and dismissible.
     static func receiptWhisper(_ context: ModelContext, spend: Spend) {
         guard let v = spend.vendorName, !v.isEmpty else { return }
         let all = (try? context.fetch(FetchDescriptor<Spend>())) ?? []
@@ -306,22 +351,23 @@ enum Brain {
                           body: "Just noticing — no judgment.", priority: 0, feature: .spending)
     }
 
-    /// Recognize what a spend is from its text and tag it; if it can't, ask.
+    /// Recognize what a spend is and tag it; if it can't, ask.
     static func autoCategorize(_ context: ModelContext, ai: AIManager, spend: Spend) async {
         let text = [spend.vendorName, spend.spendDescription, spend.notes].compactMap { $0 }
             .joined(separator: " ").trimmingCharacters(in: .whitespaces)
         if ai.isReady, !text.isEmpty {
             let prompt = """
-            Tag this spend with 1–2 labels strictly from this list: \(spendCategories.joined(separator: ", ")).
+            Tag this spend from the Philippines.
             Spend: "\(text)" for \(CurrencyFormat.string(spend.amountBase, "PHP", compact: true)).
-            Reply ONLY a JSON array of the chosen labels, e.g. ["Groceries"].
             """
-            if let r = try? await ai.provider.generate(prompt: prompt) {
-                let tags = parseStringArray(r).filter { spendCategories.contains($0) }
-                if !tags.isEmpty { spend.tags = tags; spend.category = tags.first; spend.dirty = true; try? context.save(); return }
+            if let r = try? await ai.fast.object(AISpendTags.self,
+                                                 AIRequest(prompt, instructions: voice, temperature: 0.2),
+                                                 jsonShape: AISpendTags.jsonShape),
+               !r.tags.isEmpty {
+                spend.tags = r.tags; spend.category = r.tags.first; spend.dirty = true
+                try? context.save(); return
             }
         }
-        // Couldn't recognize it → ask (one open question at a time is enforced by the queue).
         let label = text.isEmpty ? CurrencyFormat.string(spend.amountBase, "PHP", compact: true) + " spend" : text
         Notify.askQuestion(context, subject: "What was “\(label)” for?",
                            body: "Tag it so I can track and budget it right.",
@@ -334,7 +380,6 @@ enum Brain {
         let all = (try? context.fetch(FetchDescriptor<Spend>())) ?? []
         let typical = SafeToSpend.typicalDailySpend(all)
         guard typical > 0, spend.amountBase > typical * 3, spend.amountBase <= typical * 5 else { return }
-        // (≥5× is treated as a one-off and excluded; 3–5× is the "bigger one" zone.)
         let mult = Int((spend.amountBase / typical).rounded())
         let what = spend.vendorName ?? spend.spendDescription ?? "that"
         Notify.askQuestion(context,
@@ -344,17 +389,22 @@ enum Brain {
                            questionKind: "anomaly_spend", entityId: spend.id.uuidString)
     }
 
-    /// When a variable bill rises notably, post a heads-up — with an AI guess at why.
+    /// When a variable bill rises notably, post a heads-up.
     static func flagBillIncrease(_ context: ModelContext, ai: AIManager, label: String,
                                  prior: Double, now: Double, currency: String) async {
         guard prior > 0, now > prior * 1.2 else { return }
         let pct = Int(((now - prior) / prior) * 100)
         var body = "Up ~\(pct)% — \(CurrencyFormat.string(prior, currency, compact: true)) → \(CurrencyFormat.string(now, currency, compact: true))."
         if ai.isReady {
-            let p = "A recurring bill called \"\(label)\" went from \(Int(prior)) to \(Int(now)) \(currency). In ONE short, warm sentence, suggest the most likely everyday reasons (more usage, a new appliance, seasonal rates). No preaching, no lists."
-            if let r = try? await ai.fast.generate(prompt: p) {
-                let t = r.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !t.isEmpty { body += " " + t }
+            let p = """
+            A recurring bill called "\(label)" went from \(Int(prior)) to \(Int(now)) \(currency). \
+            In ONE short sentence, name the most likely everyday reasons — more usage, a new \
+            appliance, seasonal rates. No lists, no advice.
+            """
+            if let r = try? await ai.fast.object(AISentence.self, AIRequest(p, instructions: voice),
+                                                 jsonShape: AISentence.jsonShape),
+               AIJSON.isRealText(r.sentence) {
+                body += " " + r.sentence.trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
         Notify.post(context, kind: "bill_up", subject: "\(label) went up", body: body, priority: 1, feature: .spending)
@@ -362,72 +412,46 @@ enum Brain {
 
     // MARK: - Cost of living (makes safe-to-spend location-aware)
 
-    /// Asks the model what a realistic typical DAILY discretionary spend is in the
-    /// user's city, and stores it so safe-to-spend anchors to real local cost of
-    /// living (not wallet ÷ days). Refreshes ~every 2 weeks.
+    /// Asks what a realistic typical DAILY discretionary spend is in the user's city, so
+    /// safe-to-spend anchors to real local cost of living. Refreshes ~every 2 weeks.
     static func refreshCostOfLiving(_ context: ModelContext, ai: AIManager) async {
         guard ai.isReady else { return }
         let last = UserDefaults.standard.double(forKey: "col.refreshedAt")
         if Date.now.timeIntervalSince1970 - last < 14 * 86400 { return }
         let city = UserDefaults.standard.string(forKey: "user.city") ?? "San Pablo, Laguna, Philippines"
-        let prompt = """
-        For someone living in \(city), what is a realistic TYPICAL daily personal discretionary spend
-        — food, transport, small everyday needs, NOT rent or big monthly bills — in Philippine pesos in 2026?
-        Reply with ONLY a single number (pesos per day), no words.
-        """
-        guard let r = try? await ai.provider.generate(prompt: prompt),
-              let n = firstNumber(r.replacingOccurrences(of: ",", with: "")), n > 100, n < 5000 else { return }
-        // Self-tuning: blend the AI's city estimate with YOUR observed everyday pace,
-        // so over time the anchor becomes truly yours.
+        let prompt = "For someone living in \(city) in 2026, what is a realistic typical daily personal discretionary spend?"
+        guard let r = try? await ai.fast.object(AIDailyCost.self, AIRequest(prompt, instructions: voice, temperature: 0.2),
+                                                jsonShape: AIDailyCost.jsonShape) else { return }
+        let n = Double(r.pesosPerDay)
+        // Self-tuning: blend the model's city estimate with the OBSERVED everyday pace, so the
+        // anchor becomes theirs over time rather than a generic city average.
         let observed = SafeToSpend.typicalDailySpend((try? context.fetch(FetchDescriptor<Spend>())) ?? [])
         let blended = observed > 100 ? (0.6 * n + 0.4 * observed).rounded() : n
         UserDefaults.standard.set(blended, forKey: "col.dailyBase")
         UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: "col.refreshedAt")
     }
 
-    private static func firstNumber(_ s: String) -> Double? {
-        var num = ""; var seen = false
-        for ch in s { if ch.isNumber || ch == "." { num.append(ch); seen = true } else if seen { break } }
-        return Double(num)
-    }
-
-    // Tiny JSON helpers for loosely-formatted model output.
-    private static func jsonNumber(_ s: String, _ key: String) -> Double? {
-        guard let r = s.range(of: "\"\(key)\"") else { return nil }
-        let tail = s[r.upperBound...]
-        var num = ""; var seenDigit = false
-        for ch in tail {
-            if ch.isNumber || ch == "." { num.append(ch); seenDigit = true }
-            else if ch == "-" && num.isEmpty { num.append(ch) }
-            else if seenDigit { break }
-        }
-        return Double(num)
-    }
-    private static func jsonString(_ s: String, _ key: String) -> String? {
-        guard let r = s.range(of: "\"\(key)\"") else { return nil }
-        let tail = s[r.upperBound...]
-        guard let open = tail.range(of: "\"")?.upperBound else { return nil }
-        let rest = tail[open...]
-        guard let close = rest.range(of: "\"")?.lowerBound else { return nil }
-        return String(rest[..<close])
-    }
-    private static func scrub(_ s: String) -> String { s.replacingOccurrences(of: "you should ", with: "", options: .caseInsensitive) }
-
-    // MARK: - Letters (AI editorial reflections from your real activity)
+    // MARK: - Letters (editorial reflections from real activity)
 
     @discardableResult
     static func generateLetter(_ context: ModelContext, ai: AIManager, kind: String) async -> Bool {
         guard ai.isReady else { return false }
-        let snapshot = StateSnapshot.text(context, includePersonal: !ai.cloudReachable)
+        let snapshot = String(StateSnapshot.text(context, includePersonal: true).prefix(3_000))
+        let beliefs = Memory.brief(context, maxChars: 400)
         let prompt = """
-        Write me a short, warm editorial "letter" reflecting on my \(kind) — money and life together.
-        Use REAL numbers and names from the state below; be specific and human, not generic. Two short
-        paragraphs. No advice, no "you should", no moralizing — just notice what's true and mirror it back.
-        Format EXACTLY: first line is a short evocative headline, then a blank line, then the body.
+        Write a short reflection on their \(kind) — money and life together — using the real numbers \
+        and names below. Two short paragraphs. Notice what is true and say it back to them; draw no \
+        conclusions about why.
+
+        Format exactly: a short evocative headline on the first line, then a blank line, then the body.
+
+        What you know about them:
+        \(beliefs.isEmpty ? "Not much yet." : beliefs)
 
         \(snapshot)
         """
-        guard let r = try? await ai.heavy.generate(prompt: prompt), !r.isEmpty else { return false }
+        guard let r = try? await ai.smart.text(AIRequest(prompt, instructions: voice, temperature: 0.8)),
+              !r.isEmpty else { return false }
         let parts = r.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
         let headline = parts.first?.trimmingCharacters(in: .whitespaces) ?? "A letter"
         let body = parts.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -438,256 +462,162 @@ enum Brain {
         return true
     }
 
-    // MARK: - Clients (notes → living memory, tone-matched nudge)
+    // MARK: - Structured knowledge (entities, vendors, answered questions)
+    //
+    // These are keyed, app-owned records — "this entity's birthday", "this vendor is a grocery" —
+    // not free-text beliefs about the user, so they keep a real key/value shape. They are stored
+    // under their own subject and never appear in `Memory.brief`, which is what feeds prompts.
 
-    /// Distill durable facts from a client's notes into the fact store (subject = client).
+    static func upsertFact(_ context: ModelContext, subjectKind: String = "user", subjectId: String? = nil,
+                           key: String, value: String, confidence: Double = 1.0, source: String = "user_answered") {
+        Memory.remember(context, topic: key, fact: value, confidence: confidence,
+                        source: Memory.Source(rawValue: source) ?? .userAnswered,
+                        subjectKind: subjectKind, subjectId: subjectId)
+    }
+
+    static func hasFact(_ context: ModelContext, subjectKind: String = "user", subjectId: String? = nil, key: String) -> Bool {
+        let id = "\(subjectKind):\(subjectId ?? "_"):\(key)"
+        var d = FetchDescriptor<AIFact>(predicate: #Predicate { $0.id == id && $0.archivedAt == nil })
+        d.fetchLimit = 1
+        return ((try? context.fetch(d))?.isEmpty == false)
+    }
+
+    // MARK: - Clients
+
+    /// Distill durable facts from a client's notes into the knowledge store (subject = client).
     static func extractClientFacts(_ context: ModelContext, ai: AIManager, clientId: String, name: String, notes: String) async {
         guard ai.isReady, notes.trimmingCharacters(in: .whitespaces).count >= 8 else { return }
         let prompt = """
-        From these notes about a freelance client named "\(name)", extract durable facts worth remembering.
-        Reply with ONLY a JSON array of objects, no prose: [{"key":"snake_case_key","value":"short value"}]
-        Keep keys short (pays_late, prefers_email, budget_tier…). Max 10. Notes:
-        \(notes)
+        From these notes about a freelance client named "\(name)", pull out the durable facts worth \
+        remembering — how they pay, how they communicate, what they care about. Only things the \
+        notes actually say.
+
+        \(String(notes.prefix(2_500)))
         """
-        guard let r = try? await ai.provider.generate(prompt: prompt) else { return }
-        for f in parseFactArray(r).prefix(10) {
-            upsertFact(context, subjectKind: "client", subjectId: clientId, key: f.key, value: f.value,
-                       confidence: 0.8, source: "inferred")
+        guard let r = try? await ai.fast.object(AIClientFacts.self,
+                                                AIRequest(prompt, instructions: voice, temperature: 0.3),
+                                                jsonShape: AIClientFacts.jsonShape) else { return }
+        for f in r.facts.prefix(10) {
+            let key = f.key.lowercased().replacingOccurrences(of: " ", with: "_")
+                .filter { $0.isLetter || $0.isNumber || $0 == "_" }
+            guard !key.isEmpty, !f.value.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+            Memory.remember(context, topic: key, fact: f.value, confidence: 0.8, source: .inferred,
+                            subjectKind: "client", subjectId: clientId)
         }
+    }
+
+    // MARK: - Receipts
+
+    /// Given items bought and what was paid per unit, judge each against typical Philippine retail.
+    /// Knowledge-based estimate — approximate, but it never breaks the way live scraping would.
+    static func receiptDealCheck(_ ai: AIManager, items: [(name: String, unitPrice: Double)], base: String) async -> [String: String] {
+        guard ai.isReady, !items.isEmpty else { return [:] }
+        let list = items.prefix(24)
+            .map { "- \($0.name): paid \(String(format: "%.0f", $0.unitPrice)) \(base)/unit" }
+            .joined(separator: "\n")
+        let prompt = """
+        These are retail items bought in the Philippines and what was paid per unit. For each one, \
+        recognise the brand if you can, compare against the typical Philippine retail price, and give \
+        a short verdict — a good deal, a fair price, or over the odds. Copy each item name exactly.
+
+        \(list)
+        """
+        guard let r = try? await ai.smart.object(AIPriceVerdicts.self,
+                                                 AIRequest(prompt, instructions: voice, temperature: 0.4),
+                                                 jsonShape: AIPriceVerdicts.jsonShape) else { return [:] }
+        var out: [String: String] = [:]
+        for v in r.verdicts where AIJSON.isRealText(v.verdict, minLetters: 4) {
+            out[v.item.trimmingCharacters(in: .whitespaces)] = v.verdict.trimmingCharacters(in: .whitespaces)
+        }
+        return out
     }
 
     /// A short, tone-matched follow-up message for an outstanding balance.
-    /// The accountant brain: read EVERYTHING (money, spending with your own words, journals, body,
-    /// what it already knows) and produce genuine insights you couldn't get by comparing two numbers.
-    /// Builds on prior insights (so it accumulates), stores new ones in InsightLog. Returns # added.
-    @discardableResult
-    static func generateInsights(_ context: ModelContext, ai: AIManager) async -> Int {
-        guard ai.isReady else { return 0 }
-        let onDevice = !ai.cloudReachable   // scrub only if this could actually reach Gemini
-        let money = StateSnapshot.text(context, includePersonal: !ai.cloudReachable)
-        let letters = ((try? context.fetch(FetchDescriptor<Letter>())) ?? [])
-            .filter { $0.deletedAt == nil }.sorted { $0.createdAt > $1.createdAt }.prefix(8)
-        let journal = letters.map { "[\($0.createdAt.formatted(.dateTime.month().day()))] \($0.body.prefix(400))" }.joined(separator: "\n")
-        let prior = ((try? context.fetch(FetchDescriptor<InsightLog>())) ?? [])
-            .filter { $0.dismissedAt == nil }.sorted { $0.createdAt > $1.createdAt }.prefix(15).map { $0.text }
-        let safeJournal = Redactor.forCloud(journal, onDevice: onDevice)
-        let prompt = """
-        You are my sharp, caring financial + life analyst — an accountant who also knows me as a person.
-        Below is my REAL money data (with my own words on spends) and my recent journal entries. Give me
-        2-4 GENUINE insights I could NOT get by comparing two numbers myself: patterns over time, cause-and-
-        effect between my life and my money, blind spots, things worth my attention. Specific and grounded
-        in the data — never generic advice. BUILD ON (never repeat) what you've already observed. If there's
-        nothing genuinely new worth saying, return fewer (even zero).
-        CRITICAL: each insight is ONE punchy sentence, 18 words MAX — the kind I'll actually read. No preamble,
-        no "you might want to", no hedging, no explaining the obvious. Lead with the finding. Cut every word
-        that isn't load-bearing.
-        Reply with ONLY a JSON object shaped like {"insights": [array of objects]} where each object
-        has "text" (the insight sentence itself) and "category" (exactly one word: money, spending,
-        life, or pattern). Never echo this format description — every value must be real content.
-
-        === MONEY, SPENDING & BODY ===
-        \(money)
-        === RECENT JOURNAL ===
-        \(safeJournal.isEmpty ? "none yet" : safeJournal)
-        === WHAT YOU'VE ALREADY TOLD ME (don't repeat these) ===
-        \(prior.isEmpty ? "nothing yet" : "- " + prior.joined(separator: "\n- "))
-        """
-        guard let raw = try? await ai.heavy.generate(prompt: prompt),
-              let jsonStr = AIJSON.firstObject(in: raw),
-              let data = jsonStr.data(using: .utf8),
-              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let arr = obj["insights"] as? [[String: Any]] else { return 0 }
-        var added = 0
-        let existing = prior.map { $0.lowercased() }
-        await MainActor.run {
-            for o in arr {
-                guard let text = (o["text"] as? String)?.trimmingCharacters(in: .whitespaces),
-                      AIJSON.isRealText(text, minLetters: 10) else { continue }
-                // Backstop on brevity: if the model ignores the 18-word cap and rambles, drop it.
-                if text.split(whereSeparator: { $0 == " " || $0 == "\n" }).count > 30 { continue }
-                // Skip near-duplicates of what we already said.
-                if existing.contains(where: { $0.contains(text.prefix(24).lowercased()) }) { continue }
-                // Clamp to the vocabulary — the model has been seen echoing the whole enum string.
-                let rawCat = (o["category"] as? String)?.lowercased() ?? ""
-                let cat = ["money", "spending", "life", "pattern"].contains(rawCat) ? rawCat : "pattern"
-                let i = InsightLog(text: text, category: cat); i.dirty = true
-                context.insert(i); added += 1
-            }
-            UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: "insights.lastAt")
-            try? context.save()
+    static func draftNudge(_ ai: AIManager, name: String, outstanding: String, facts: [String], tone: String = "warm") async -> String {
+        let fallback = "Hi \(name), just following up on the outstanding balance of \(outstanding) when you get a chance — thanks!"
+        guard ai.isReady else { return fallback }
+        let context = facts.isEmpty ? "" : "\nWhat I know about them: " + facts.prefix(6).joined(separator: "; ")
+        let toneLine: String
+        switch tone {
+        case "firm":   toneLine = "Direct and firm but still polite — this balance is overdue and they want it settled."
+        case "formal": toneLine = "Formal and professional, business-letter register."
+        default:       toneLine = "Warm and friendly, like a freelancer who values the relationship."
         }
-        return added
-    }
-
-    /// Everything the journal AI should remember before opening its mouth: every question it has
-    /// EVER asked (open, answered, dismissed) + taste signals + mood trail + recent themes +
-    /// durable user facts + fresh entry excerpts. This is what stops it asking about the same
-    /// phone three days in a row — and teaches it which questions land.
-    struct JournalMemory {
-        var asked: [String] = []      // full ask-history (burned topics)
-        var liked: [String] = []      // marked "good question"
-        var noped: [String] = []      // marked "not for me" or dismissed
-        var moodTrail = ""            // recent sentiments, newest first
-        var themes = ""
-        var facts = ""
-        var recent = ""               // last few entries, excerpted
-    }
-
-    @MainActor
-    static func journalMemory(_ context: ModelContext) -> JournalMemory {
-        var m = JournalMemory()
-        let askedRows = ((try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? [])
-            .sorted { $0.createdAt > $1.createdAt }
-        // PROMPT-SIZED history, not the full archive: the on-device model's context window is
-        // small, and shipping all 100+ past questions made generation THROW on real data (the
-        // "New questions fails 90% of the time" bug). Repetition against the deep archive is
-        // enforced mechanically in storeJournalPrompts (token-overlap dedup) — the model only
-        // needs the recent asks + the taste signals.
-        let hardNo = askedRows.filter { $0.status == "dismissed" || $0.feedback == "down" }.prefix(12)
-        let softer = askedRows.filter { !($0.status == "dismissed" || $0.feedback == "down") }.prefix(30)
-        m.asked = (Array(hardNo) + Array(softer)).map { "- \($0.text)\($0.status == "dismissed" ? " (they chose to skip this — drop the topic)" : "")" }
-        m.liked = askedRows.filter { $0.feedback == "up" }.prefix(10).map(\.text)
-        m.noped = askedRows.filter { $0.feedback == "down" }.prefix(12).map(\.text)
-        let letters = ((try? context.fetch(FetchDescriptor<Letter>())) ?? [])
-            .filter { $0.deletedAt == nil }.sorted { $0.createdAt > $1.createdAt }
-        m.moodTrail = letters.prefix(8).compactMap { l in
-            l.sentiment.map { "\(l.createdAt.formatted(.dateTime.month().day())): \($0)" }
-        }.joined(separator: ", ")
-        m.themes = Array(Set(letters.prefix(10).flatMap { $0.themes })).prefix(8).joined(separator: ", ")
-        // Multi-resolution memory (Hermes-style): the compact core digest carries the durable
-        // knowledge; only a handful of FRESH facts ride along raw. Cheaper per call than the
-        // old 14-fact dump, and the digest is curated so nothing important is missing.
-        let freshFacts = ((try? context.fetch(FetchDescriptor<AIFact>())) ?? [])
-            .filter { $0.subjectKind == "user" && $0.archivedAt == nil }
-            .sorted { $0.updatedAt > $1.updatedAt }.prefix(6)
-            .map { "\($0.key): \($0.value)" }.joined(separator: "; ")
-        let digest = MemoryCompactor.digest
-        m.facts = String((digest.isEmpty
-            ? ((try? context.fetch(FetchDescriptor<AIFact>())) ?? [])
-                .filter { $0.subjectKind == "user" && $0.archivedAt == nil }
-                .sorted { $0.updatedAt > $1.updatedAt }.prefix(14)
-                .map { "\($0.key): \($0.value)" }.joined(separator: "; ")
-            : digest + (freshFacts.isEmpty ? "" : "\nFreshest facts: \(freshFacts)")
-        ).prefix(900))   // context-window discipline — the digest can grow unboundedly over time
-        m.recent = letters.prefix(3).map { l in
-            "[\(l.createdAt.formatted(.dateTime.month().day()))] Q: \(l.title) — they wrote: \(String(l.body.prefix(280)))"
-        }.joined(separator: "\n")
-        return m
-    }
-
-    /// Personalized open-ended journaling prompts. The model sees the FULL ask-history so it never
-    /// repeats or rephrases a question it already asked. Returns up to `count` new prompts.
-    /// The question territories. Each batch draws DIFFERENT ones than the last batch (rotation is
-    /// enforced in code, not begged from the model) — so consecutive batches can't keep orbiting
-    /// the same two topics even when the recent entries are all about them.
-    private static let journalTerritories = [
-        "how they're feeling", "their work", "their money", "someone in their life",
-        "their faith", "the near future", "their body & energy", "something small they enjoyed",
-    ]
-
-    /// Pick `count` territories, skipping the ones used in the previous batch.
-    private static func rotateTerritories(_ count: Int) -> [String] {
-        let lastRaw = UserDefaults.standard.string(forKey: "journal.lastTerritories") ?? ""
-        let last = Set(lastRaw.split(separator: "|").map(String.init))
-        var pool = journalTerritories.filter { !last.contains($0) }
-        if pool.count < count { pool = journalTerritories }   // small pool → allow reuse
-        let chosen = Array(pool.shuffled().prefix(count))
-        UserDefaults.standard.set(chosen.joined(separator: "|"), forKey: "journal.lastTerritories")
-        return chosen
-    }
-
-    /// A question a human would actually want to answer: short, single-idea, plain-spoken.
-    /// Rejects the model's purple-prose failure modes (em-dash poetry, chained clauses, essays).
-    private static func isHumanQuestion(_ s: String) -> Bool {
-        guard AIJSON.isRealText(s), s.hasSuffix("?"), s.count <= 110 else { return false }
-        guard !s.contains("—") && !s.contains(";") else { return false }          // poetry / chained clauses
-        guard s.filter({ $0 == "?" }).count == 1 else { return false }            // one ask, not two
-        guard s.split(separator: ",").count <= 2 else { return false }            // no clause trains
-        return true
-    }
-
-    static func journalPrompts(_ context: ModelContext, ai: AIManager, count: Int = 3) async -> [String] {
-        guard ai.isReady else { return [] }
-        let mem = await journalMemory(context)
-        // Personal context (Messages/Safari/Calendar awareness) — rides on-device prompts only.
-        let life = await MainActor.run { ai.cloudReachable ? nil : LifeSignals.contextSection(context) }
-        let territories = rotateTerritories(count)
         let prompt = """
-        Write \(count) journaling questions for this person — exactly one for each territory, in
-        order: \(territories.joined(separator: " · ")).
-
-        STYLE — every rule is hard:
-        - UNDER 15 WORDS. One idea per question. One question mark. Never chain two asks.
-        - Plain, spoken words — how a close friend texts. NO poetry, NO metaphors, NO em-dashes,
-          NO therapy-speak ("hold space", "what does X say about Y", "what part of you").
-        - Personal: name a real, specific thing from their entries or facts below when it fits the
-          territory. If nothing fits, a simple direct question beats a forced connection.
-        - Open-ended (never yes/no), but light — something they'd WANT to answer, not homework.
-        - If their mood trail reads heavy or drained, keep every question gentle.
-        - NEVER repeat or rephrase anything in the ask-history. A used topic is burned.
-        - Their OWN entries and facts outrank everything else. Never assert an event, plan, or
-          activity that isn't in their own words — if a life-context line is just something they
-          read about, either skip it or ask about the interest ("been reading about X?"), never
-          the doing. A wrong guess about their life destroys trust instantly.
-
-        Good examples of the register (do not copy them): "What's been eating most of your energy
-        this week?" · "Who did you feel closest to today?" · "What would make tomorrow feel easy?"
-
-        Reply with ONLY a JSON object shaped like {"prompts": [array of \(count) strings]}, one real
-        question per territory. Never echo this format description — no placeholders, no ellipses.
-
-        Ask-history (burned topics):
-        \(mem.asked.isEmpty ? "(none yet)" : mem.asked.joined(separator: "\n"))
-        Questions they marked as GOOD — write more in this spirit:
-        \(mem.liked.isEmpty ? "(no signal yet)" : mem.liked.map { "- \($0)" }.joined(separator: "\n"))
-        Questions they marked NOT FOR ME — learn what to avoid (tone, topic, framing):
-        \(mem.noped.isEmpty ? "(no signal yet)" : mem.noped.map { "- \($0)" }.joined(separator: "\n"))
-        Their recent mood trail (newest first): \(mem.moodTrail.isEmpty ? "unknown" : mem.moodTrail)
-        Recent themes they've written about: \(mem.themes.isEmpty ? "none yet" : mem.themes)
-        What I know about them: \(mem.facts.isEmpty ? "not much yet" : mem.facts)
-        \(life.map { $0 + "\n" } ?? "")Their most recent entries:
-        \(mem.recent.isEmpty ? "(nothing yet)" : mem.recent)
+        Draft a short follow-up message to their client \(name) about an outstanding balance of \(outstanding).
+        Under four sentences. No placeholders, no bracketed names — ready to send.
+        Tone: \(toneLine)\(context)
         """
-        if let qs = await generateQuestions(prompt: prompt, ai: ai, count: count), !qs.isEmpty { return qs }
-
-        // DEGRADE, DON'T DIE: if the full prompt failed (context overflow, guardrail, filtered
-        // to nothing), one minimal retry — just territories + mood + taste + the last few asks.
-        // "New questions" failing 90% of the time came from having no fallback here.
-        let minimal = """
-        Write \(count) short journaling questions — one each for: \(territories.joined(separator: " · ")).
-        Rules: under 15 words, one idea, one question mark, plain spoken words like a friend texting —
-        no poetry, no metaphors, no em-dashes, no therapy-speak. Open-ended, light, gentle.
-        Reply with ONLY a JSON object shaped like {"prompts": [array of \(count) strings]} — real
-        questions, no placeholders.
-        Never repeat these recent questions:
-        \(mem.asked.prefix(10).joined(separator: "\n"))
-        Their mood lately: \(mem.moodTrail.isEmpty ? "unknown" : mem.moodTrail)
-        About them: \(String(mem.facts.prefix(300)))
-        """
-        return await generateQuestions(prompt: minimal, ai: ai, count: count) ?? []
+        let r = (try? await ai.smart.text(AIRequest(prompt, instructions: voice))) ?? ""
+        return r.isEmpty ? fallback : r.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Generate + parse + filter one batch. Strict human-question gate first; if the model's whole
-    /// batch fails style (but is real content), fall back to a lenient gate — a slightly wordy
-    /// question beats a dead button.
-    private static func generateQuestions(prompt: String, ai: AIManager, count: Int) async -> [String]? {
-        guard let raw = try? await ai.heavy.generate(prompt: prompt),
-              let jsonStr = AIJSON.firstObject(in: raw),
-              let data = jsonStr.data(using: .utf8),
-              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let arr = obj["prompts"] as? [Any] else { return nil }
-        let cands = arr.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }
-        let strict = cands.filter { isHumanQuestion($0) }
-        let pool = strict.isEmpty
-            ? cands.filter { AIJSON.isRealText($0) && $0.hasSuffix("?") && $0.count <= 150 && !$0.contains("—") }
-            : strict
-        return Array(pool.prefix(count))
+    /// Read a client's notes + project history for friction signals.
+    static func rateSignals(_ ai: AIManager, name: String, material: String) async -> [String] {
+        guard ai.isReady, material.trimmingCharacters(in: .whitespaces).count >= 12 else { return [] }
+        let prompt = """
+        Read these notes and project history about their freelance client "\(name)". Name up to three \
+        SHORT friction signals you can actually see in the material — scope creep, revision burden, \
+        rate lag, slow to pay. One terse sentence each. If nothing stands out, say "Nothing stands out."
+        Observations only, no advice.
+
+        \(String(material.prefix(2_000)))
+        """
+        guard let r = try? await ai.smart.text(AIRequest(prompt, instructions: voice)) else { return [] }
+        return r.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "-•· ").union(.whitespaces)) }
+            .filter { AIJSON.isRealText($0) && !$0.lowercased().hasPrefix("nothing stands out") }
+            .prefix(3).map { $0 }
+    }
+
+    // MARK: - Observations (what "insights" became)
+
+    /// Observations are COMPUTED, not generated — see `ObservationEngine`.
+    ///
+    /// This used to be a prompt asking a model to "find genuine insights", hardened over two rounds
+    /// with an evidence field and a blocklist of speculative phrasings. Both rounds shipped, and
+    /// both were defeated by the next batch: the blocklist caught "driven by" and missed "designed
+    /// to", caught "suggests" and missed "suggesting". That is the signature of a wrong approach
+    /// rather than an under-tuned one, so the model was taken off factual claims entirely.
+    ///
+    /// Kept as a function because callers (NightShift, the Dashboard refresh button) don't need to
+    /// care that there is no longer any AI behind it — and it now works with no brain available.
+    @discardableResult
+    static func generateObservations(_ context: ModelContext, ai: AIManager) async -> Int {
+        ObservationEngine.refresh(context)
+    }
+
+    /// Catches the sentence shapes that assert a CAUSE, a MOTIVE or an INNER STATE, as a backstop
+    /// to the evidence gate. Every phrase in this list was produced by the previous version on this
+    /// user's real data — including the ones that read as sober financial analysis:
+    ///
+    ///   "Camel buys surge during work delays, DRAINING funds MEANT FOR a new phone"
+    ///   "Weekly Grab food spends rise when your energy dips, LINKING mood to micro-purchases"
+    ///
+    /// Both look like observations. Neither is: "meant for" invents an intention, "draining" and
+    /// "linking" assert a mechanism the rows cannot show. Correlation may be reported — "X rose in
+    /// the same week Y fell" — but the moment a sentence explains, it is speculation.
+    static func readsAsSpeculation(_ text: String) -> Bool {
+        let t = text.lowercased()
+        let tells = [
+            // explicit causation
+            "because", "causes", "caused", "leads to", "drives", "driven", "triggers", "fuels",
+            "linking", "links ", "tied to", "results in", "due to", "so that",
+            // implied mechanism / intent
+            "draining", "drains", "bleeding", "bleeds", "meant for", "instead of", "in order to",
+            "acts as", "ritual", "coping", "avoidance", "compensat", "substitut",
+            "fills", "filling", "replaces", "replacing", "mirrors", "mirroring",
+            // interpretation of the person
+            "reveal", "shows that", "showing that", "suggests", "signals that", "really about",
+            "root problem", "deep down", "subconscious", "guilt", "emotional", "loneliness",
+            "self-", "your need", "you tend to", "you struggle",
+        ]
+        return tells.contains { t.contains($0) }
     }
 
     // MARK: - Mind × money
 
-    /// The freshest stored mind×money insights (may be empty) — display-only read, never hits AI.
-    @MainActor
+    /// The freshest stored mind×money observations — display-only read, never hits a model.
     static func mindMoneyLines(_ context: ModelContext) -> [String] {
         guard let raw = cachedStable(context, key: "mind_money"),
               let data = raw.data(using: .utf8),
@@ -695,49 +625,26 @@ enum Brain {
         return arr
     }
 
-    /// Cross-domain synthesis nobody else has: how their mood (journal sentiment) tracks against
-    /// their money (spends out, income in) over the last 8 weeks. Grounded in real days and real
-    /// amounts — instructed to find NOTHING rather than invent. Cached 3 days.
+    /// How mood and body line up against money — computed, like every other observation.
+    ///
+    /// The old version handed eight weeks of mood-and-money rows to a model and asked it to "find
+    /// real patterns connecting mind and money". That framing is an invitation to write psychology,
+    /// and it accepted: *"calories are currently your primary mood regulator"*. The engine now
+    /// reports the two averages side by side and stops, which is the entire honest content of the
+    /// comparison.
     static func mindMoney(_ context: ModelContext, ai: AIManager, force: Bool = false) async -> [String] {
-        guard ai.isReady else { return await mindMoneyLines(context) }
-        if !force {
-            let cached = await mindMoneyLines(context)
-            if !cached.isEmpty { return cached }
-        }
-        let (dataset, base, enough) = await MainActor.run { mindMoneyDataset(context) }
-        guard enough else { return [] }
-        let prompt = """
-        You see a freelancer's private mood trail (one-word sentiments from journal entries) alongside
-        their daily money flows (spend out, income in), base currency \(base).
-        Find up to 3 REAL patterns connecting mind and money — correlations, lead/lag effects (e.g.
-        "the heavy entries cluster in the week before income lands"), spending spikes around certain
-        moods, or a notable honest absence of connection.
-        Each insight: ONE sentence, concrete, citing actual days/amounts from the data below. Warm,
-        plain words — no therapy-speak, no percentages pulled from thin air.
-        If the data is too thin for a real pattern, return fewer insights — or none. NEVER invent.
-        Reply with ONLY a JSON object shaped like {"insights": [array of strings]}, each string one
-        complete insight sentence. Never echo this format description — no placeholders, no ellipses.
-        Data (newest first, one line per day that had mood or money):
-        \(dataset)
-        """
-        guard let raw = try? await ai.heavy.generate(prompt: prompt),
-              let jsonStr = AIJSON.firstObject(in: raw),
-              let data = jsonStr.data(using: .utf8),
-              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let arr = obj["insights"] as? [Any] else { return await mindMoneyLines(context) }
-        let lines = arr.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }
-            .filter { AIJSON.isRealText($0) }.prefix(3).map { $0 }
-        await MainActor.run {
-            if let d = try? JSONSerialization.data(withJSONObject: Array(lines)), let s = String(data: d, encoding: .utf8) {
-                store(context, key: "mind_money", payload: s, ttl: 3 * 24 * 3600)
-            }
+        let lines = ObservationEngine.compute(context)
+            .filter { $0.area == "life" || $0.area == "pattern" }
+            .prefix(3).map(\.text)
+        if let d = try? JSONSerialization.data(withJSONObject: Array(lines)),
+           let s = String(data: d, encoding: .utf8) {
+            store(context, key: "mind_money", payload: s, ttl: 3 * 24 * 3600)
         }
         return Array(lines)
     }
 
     /// One compact line per day (last 56) that had mood or money. `enough` requires ≥4 mood-tagged
     /// days — below that any "pattern" would be noise.
-    @MainActor
     private static func mindMoneyDataset(_ context: ModelContext) -> (String, String, Bool) {
         let cal = PHT.calendar
         let cutoff = cal.date(byAdding: .day, value: -56, to: Date()) ?? Date()
@@ -748,8 +655,6 @@ enum Brain {
             .filter { $0.deletedAt == nil && $0.spentAt >= cutoff }
         let pays = ((try? context.fetch(FetchDescriptor<Payment>())) ?? [])
             .filter { $0.deletedAt == nil && $0.paidAt >= cutoff }
-        // The structured body check-ins — mood/energy/sleep were collected for months and never
-        // fed to this correlator; joining them in makes mind × money a real BODY × money read.
         let bodyLogs = ((try? context.fetch(FetchDescriptor<BodyLog>())) ?? [])
             .filter { $0.deletedAt == nil && $0.day >= cutoff }
         var days: [Date: (moods: [String], out: Double, inn: Double, body: [String])] = [:]
@@ -776,7 +681,6 @@ enum Brain {
             if !bits.isEmpty { r.body.append(bits.joined(separator: ", ")) }
             days[key(b.day)] = r
         }
-        // Body check-ins count as mood signal too — a 3/5 rating is as real as a journal's tone.
         let moodDays = days.values.filter { !$0.moods.isEmpty || !$0.body.isEmpty }.count
         let rows = days.keys.sorted(by: >).map { d -> String in
             let r = days[d]!
@@ -793,30 +697,28 @@ enum Brain {
     // MARK: - Duplicate people
 
     struct DupeGroup: Codable, Identifiable {
-        var keep: String          // entity id to keep
-        var merge: [String]       // entity ids to fold into it
+        var keep: String
+        var merge: [String]
         var why: String
         var id: String { keep + "|" + merge.sorted().joined(separator: ",") }
     }
 
-    /// AI-grade duplicate detection for People. The old heuristic only caught "my wife" vs a
-    /// relationship field; the model also knows "Celine", "wife" and "my wife" are one person.
-    /// Conservative by instruction, cached per entity-list fingerprint, and pairs the user
-    /// marked "not the same" are never suggested again.
+    /// Duplicate detection for People — "Celine", "wife" and "my wife" are one person. Conservative
+    /// by instruction and by schema; pairs the user marked "not the same" are never suggested again.
     static func findDuplicatePeople(_ context: ModelContext, ai: AIManager, force: Bool = false) async -> [DupeGroup] {
         guard ai.isReady else { return [] }
-        let (listing, fingerprint) = await MainActor.run { () -> (String, String) in
-            let entities = ((try? context.fetch(FetchDescriptor<Entity>())) ?? [])
-                .filter { $0.deletedAt == nil && !$0.archived }
-            let lines = entities.map { e in
-                "id: \(e.id.uuidString) | name: \"\(e.name)\" | kind: \(e.kind.label)"
-                + ((e.relationship?.isEmpty == false) ? " | relationship: \(e.relationship!)" : "")
-                + ((e.notes?.isEmpty == false) ? " | notes: \(String(e.notes!.prefix(80)))" : "")
-            }
-            // STABLE hash — String.hashValue is randomized per launch, so it would make the
-            // cache miss every launch and re-run this heavy prompt (token waste). FNV is stable.
-            return (lines.joined(separator: "\n"), StableHash.of(lines.sorted().joined()))
+        let entities = ((try? context.fetch(FetchDescriptor<Entity>())) ?? [])
+            .filter { $0.deletedAt == nil && !$0.archived }
+        let lines = entities.map { e in
+            "id: \(e.id.uuidString) | name: \"\(e.name)\" | kind: \(e.kind.label)"
+            + ((e.relationship?.isEmpty == false) ? " | relationship: \(e.relationship!)" : "")
+            + ((e.notes?.isEmpty == false) ? " | notes: \(String(e.notes!.prefix(80)))" : "")
         }
+        // STABLE hash — String.hashValue is randomised per launch, which would miss the cache
+        // every launch and re-run this prompt for nothing.
+        let fingerprint = StableHash.of(lines.sorted().joined())
+        let listing = lines.joined(separator: "\n")
+
         func filtered(_ groups: [DupeGroup]) -> [DupeGroup] {
             let banned = EntityMerge.notSamePairs
             return groups.compactMap { g in
@@ -828,44 +730,197 @@ enum Brain {
             }
         }
         if !force,
-           let raw = await MainActor.run(body: { cached(context, key: "dupe_people", fingerprint: fingerprint) }),
+           let raw = cached(context, key: "dupe_people", fingerprint: fingerprint),
            let data = raw.data(using: .utf8),
            let groups = try? JSONDecoder().decode([DupeGroup].self, from: data) {
             return filtered(groups)
         }
-        guard listing.split(separator: "\n").count > 1 else { return [] }
+        guard lines.count > 1 else { return [] }
+
         let prompt = """
-        These are people/entities tracked in a private life app. Some entries are DUPLICATES —
-        the same real person entered different ways (e.g. "Celine", "wife", and "my wife" can all
-        be the user's wife). Group entries that clearly refer to the same real person or thing.
-        For each group pick the entry to KEEP: a real name beats a relationship word ("Celine"
-        beats "wife"); the most complete record wins ties.
-        BE CONSERVATIVE: relationship words matching a relationship field, one name contained in
-        another, or obvious nickname/full-name pairs. Two DIFFERENT real names are never the same
-        person. No group → empty list.
-        Reply with ONLY a JSON object: {"groups":[{"keep":"<id>","merge":["<id>"],"why":"<short reason>"}]}
-        Entities:
-        \(listing)
+        These are people tracked in a private life app. Some entries are DUPLICATES — the same real \
+        person entered more than one way, for example a first name, a relationship word, and "my " \
+        plus that word.
+
+        Group entries that clearly refer to one real person. For each group pick the entry to KEEP: \
+        a real name beats a relationship word, and the most complete record wins ties.
+
+        Be conservative. Two different real names are never the same person. If nothing is clearly a \
+        duplicate, return no groups.
+
+        \(String(listing.prefix(3_000)))
         """
-        // fast tier: short structured matching — runs on-device when available (free, private).
-        guard let raw = try? await ai.fast.generate(prompt: prompt),
-              let jsonStr = AIJSON.firstObject(in: raw),
-              let data = jsonStr.data(using: .utf8),
-              let obj = try? JSONDecoder().decode([String: [DupeGroup]].self, from: data),
-              let groups = obj["groups"] else { return [] }
-        let valid = groups.filter { UUID(uuidString: $0.keep) != nil && !$0.merge.isEmpty }
-        await MainActor.run {
-            if let d = try? JSONEncoder().encode(valid), let s = String(data: d, encoding: .utf8) {
-                store(context, key: "dupe_people", payload: s, ttl: 7 * 24 * 3600, fingerprint: fingerprint)
-            }
+        guard let result = try? await ai.fast.object(AIDupeGroups.self,
+                                                     AIRequest(prompt, instructions: voice, temperature: 0.2),
+                                                     jsonShape: AIDupeGroups.jsonShape) else { return [] }
+        let valid = result.groups
+            .map { DupeGroup(keep: $0.keep, merge: $0.merge, why: $0.why) }
+            .filter { UUID(uuidString: $0.keep) != nil && !$0.merge.isEmpty }
+        if let d = try? JSONEncoder().encode(valid), let s = String(data: d, encoding: .utf8) {
+            store(context, key: "dupe_people", payload: s, ttl: 7 * 24 * 3600, fingerprint: fingerprint)
         }
         return filtered(valid)
     }
 
-    /// Project lifecycle → journal bridge. When a deal closes (fully paid) or falls through
-    /// (deleted before being paid), drop ONE gentle question about it into the journal. Deduped
-    /// by text, so a project can only ever ask once.
-    @MainActor
+    // MARK: - Journal questions
+
+    /// The eight territories a question can come from. A batch draws DIFFERENT ones than the last
+    /// batch — rotation is enforced in code, not requested in the prompt, because a small model
+    /// asked to "vary the topic" will still orbit whatever the recent entries were about.
+    private static let journalTerritories = [
+        "how they're feeling", "their work", "their money", "someone in their life",
+        "their faith", "the near future", "their body and energy", "something small they enjoyed",
+    ]
+
+    private static func rotateTerritories(_ count: Int) -> [String] {
+        let lastRaw = UserDefaults.standard.string(forKey: "journal.lastTerritories") ?? ""
+        let last = Set(lastRaw.split(separator: "|").map(String.init))
+        var pool = journalTerritories.filter { !last.contains($0) }
+        if pool.count < count { pool = journalTerritories }
+        let chosen = Array(pool.shuffled().prefix(count))
+        UserDefaults.standard.set(chosen.joined(separator: "|"), forKey: "journal.lastTerritories")
+        return chosen
+    }
+
+    /// The gate a question must pass to be shown to a human.
+    ///
+    /// The `??` in "…from journal_1784966887??" got through because the old lenient fallback path
+    /// skipped the single-question-mark check entirely. There is one gate now, and everything
+    /// passes through it — there is no lenient tier to leak through.
+    static func isHumanQuestion(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard AIJSON.isRealText(t), t.hasSuffix("?"), t.count <= 110 else { return false }
+        guard t.filter({ $0 == "?" }).count == 1 else { return false }           // one ask, and no "??"
+        guard !t.contains("—"), !t.contains(";"), !t.contains("_") else { return false }  // poetry, or a leaked key
+        guard t.split(separator: ",").count <= 2 else { return false }           // no clause trains
+        // A question naming an internal identifier is a leak, not a question.
+        guard !t.contains(where: { $0.isNumber }) || !looksLikeIdentifier(t) else { return false }
+        return true
+    }
+
+    /// Catches internal ids that escaped into text — long digit runs are never something a person
+    /// wrote about their own life.
+    private static func looksLikeIdentifier(_ s: String) -> Bool {
+        var run = 0
+        for ch in s {
+            if ch.isNumber { run += 1; if run >= 5 { return true } } else { run = 0 }
+        }
+        return false
+    }
+
+    /// What the question writer is allowed to know. Every block is character-capped: shipping the
+    /// full ask history (110 questions, 19k characters) is what made generation throw on real data.
+    struct JournalContext {
+        var asked: [String] = []
+        var liked: [String] = []
+        var refused: [String] = []
+        var mood = ""
+        var beliefs = ""
+        var recent = ""
+    }
+
+    static func journalContext(_ context: ModelContext) -> JournalContext {
+        var m = JournalContext()
+        let askedRows = ((try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? [])
+            .sorted { $0.createdAt > $1.createdAt }
+        // Recent asks only. Repetition against the DEEP archive is caught mechanically in
+        // `storeJournalPrompts`, which the model can't be relied on to do anyway.
+        let refused = askedRows.filter { $0.status == "dismissed" || $0.feedback == "down" }.prefix(10)
+        let rest = askedRows.filter { !($0.status == "dismissed" || $0.feedback == "down") }.prefix(20)
+        m.asked = (Array(refused) + Array(rest)).map(\.text)
+        m.liked = askedRows.filter { $0.feedback == "up" }.prefix(6).map(\.text)
+        m.refused = refused.map(\.text)
+
+        let letters = ((try? context.fetch(FetchDescriptor<Letter>())) ?? [])
+            .filter { $0.deletedAt == nil }.sorted { $0.createdAt > $1.createdAt }
+        m.mood = letters.prefix(6).compactMap { l in
+            l.sentiment.map { "\(l.createdAt.formatted(.dateTime.month().day())): \($0)" }
+        }.joined(separator: ", ")
+        m.beliefs = Memory.brief(context, maxChars: 600)
+        m.recent = letters.prefix(3).map { l in
+            "[\(l.createdAt.formatted(.dateTime.month().day()))] asked: \(l.title)\n  they wrote: \(String(l.body.prefix(240)))"
+        }.joined(separator: "\n")
+        return m
+    }
+
+    /// Personalised journaling questions — ONE per territory, generated concurrently.
+    ///
+    /// The previous version asked for the whole batch in a single prompt carrying every
+    /// territory's context at once. That prompt grew with the user's history until it exceeded the
+    /// context window, threw, and returned nothing — the "New questions fails 90% of the time"
+    /// bug. Per-territory generation keeps each prompt small and makes a failure cost one question
+    /// instead of the batch.
+    static func journalPrompts(_ context: ModelContext, ai: AIManager, count: Int = 3) async -> [String] {
+        guard ai.isReady else { return [] }
+        let ctx = journalContext(context)
+        let territories = rotateTerritories(count)
+
+        let instructions = """
+        \(voice)
+
+        You write ONE journalling question for this person.
+
+        Hard rules, all of them:
+        · Under 15 words. One idea. Exactly one question mark.
+        · Plain spoken words, the way a close friend texts. No metaphors, no therapy-speak, no \
+          em-dashes, no "what does that say about".
+        · Open-ended, but light — something they would want to answer, not homework.
+        · You may name a real, specific thing from their own entries when it fits. Their own words \
+          outrank everything else you were told.
+        · Never assert that something happened unless they wrote it themselves.
+        · If their mood reads heavy, keep it gentle.
+        """
+
+        // Fire all territories at once. A slow brain costs one round trip, not N.
+        let results = await withTaskGroup(of: String?.self) { group in
+            for territory in territories {
+                group.addTask { @MainActor in
+                    await oneQuestion(ai: ai, territory: territory, ctx: ctx, instructions: instructions)
+                }
+            }
+            var out: [String] = []
+            for await r in group { if let r { out.append(r) } }
+            return out
+        }
+        return results
+    }
+
+    /// One question for one territory, with a single retry that tightens the ask.
+    private static func oneQuestion(ai: AIManager, territory: String,
+                                    ctx: JournalContext, instructions: String) async -> String? {
+        let avoid = ctx.asked.prefix(16).map { "- \($0)" }.joined(separator: "\n")
+        let liked = ctx.liked.isEmpty ? "" : "\nQuestions they liked — write in this spirit:\n" + ctx.liked.map { "- \($0)" }.joined(separator: "\n")
+        let refused = ctx.refused.isEmpty ? "" : "\nQuestions they refused — avoid this tone and topic:\n" + ctx.refused.prefix(6).map { "- \($0)" }.joined(separator: "\n")
+
+        let prompt = """
+        Write one question about: \(territory).
+
+        Their recent mood: \(ctx.mood.isEmpty ? "unknown" : ctx.mood)
+
+        What you know about them:
+        \(ctx.beliefs.isEmpty ? "Not much yet." : ctx.beliefs)
+
+        Their most recent entries:
+        \(ctx.recent.isEmpty ? "(nothing yet)" : String(ctx.recent.prefix(900)))
+
+        Already asked — never repeat or reword these:
+        \(avoid.isEmpty ? "(none yet)" : avoid)\(liked)\(refused)
+        """
+
+        for pass in 0..<2 {
+            let req = AIRequest(pass == 0 ? prompt : prompt + "\n\nYour last attempt broke the rules. Keep it under 15 words, one question mark, plain words.",
+                                instructions: instructions, temperature: pass == 0 ? 0.9 : 0.5)
+            guard let r = try? await ai.smart.object(AIJournalQuestion.self, req,
+                                                     jsonShape: AIJournalQuestion.jsonShape) else { continue }
+            let q = r.question.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isHumanQuestion(q) { return q }
+        }
+        return nil
+    }
+
+    // MARK: - Project lifecycle → journal bridge
+
+    /// When a deal closes or falls through, drop ONE gentle question about it into the journal.
     static func enqueueProjectPostMortem(_ context: ModelContext, projectTitle: String, clientName: String?, outcome: String) {
         let title = projectTitle.trimmingCharacters(in: .whitespaces)
         guard !title.isEmpty else { return }
@@ -873,370 +928,267 @@ enum Brain {
         let text: String
         switch outcome {
         case "paid":
-            text = "“\(title)”\(who) just wrapped, fully paid — how did this one feel, start to finish? Anything you'd price, scope, or do differently next time?"
+            text = "“\(title)”\(who) just wrapped and got paid — how did it feel?"
         default:
-            text = "“\(title)”\(who) didn't work out in the end — what happened, and how are you sitting with it?"
+            text = "“\(title)”\(who) didn't work out — what happened?"
         }
         storeJournalPrompts(context, texts: [text], source: "project")
     }
 
-    /// Persist freshly generated prompts as OPEN questions — deduped (case-insensitive) against every
-    /// prompt ever stored, so an answered or dismissed question can never sneak back in. Returns how
-    /// many were actually added.
-    /// Loose topical fingerprint of a question — lowercase content words, stop-words dropped —
-    /// used to catch a REPHRASED duplicate that the exact-string check would miss.
-    private static func promptTokens(_ s: String) -> Set<String> {
-        let stop: Set<String> = ["the","a","an","and","or","but","to","of","in","on","for","is","are","was","were","do","does","you","your","yours","that","this","it","with","what","how","when","why","who","been","have","has","had","feel","feeling","about","they","their","them","one","more","most","some","any","get","got","like","just"]
-        return Set(s.lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { $0.count > 2 && !stop.contains($0) })
-    }
-    private static func jaccard(_ a: Set<String>, _ b: Set<String>) -> Double {
-        guard !a.isEmpty, !b.isEmpty else { return 0 }
-        let inter = a.intersection(b).count
-        let uni = a.union(b).count
-        return uni == 0 ? 0 : Double(inter) / Double(uni)
-    }
+    // MARK: - Storing questions
 
-    @MainActor @discardableResult
-    /// Self-heal at launch: delete stored questions (and dismiss insights) that are echoed
-    /// placeholders — the macOS 27 model copied a "{"prompts":["…","…"]}" example literally in
-    /// v0.16 and a batch of "…" questions reached the Journal. Cheap; also mops up any future junk.
-    static func purgePlaceholderJunk(_ context: ModelContext) {
-        var changed = false
+    /// Loose topical fingerprint of a question, for catching a REPHRASED duplicate.
+    private static func promptTokens(_ s: String) -> Set<String> { Memory.contentTokens(s) }
+    private static func jaccard(_ a: Set<String>, _ b: Set<String>) -> Double { Memory.jaccard(a, b) }
+
+    /// Self-heal at launch: delete stored questions (and dismiss observations) that are echoed
+    /// placeholders or contain a leaked internal identifier.
+    @discardableResult
+    static func purgePlaceholderJunk(_ context: ModelContext) -> Int {
+        var removed = 0
         for p in ((try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? [])
-        where p.status == "open" && !AIJSON.isRealText(p.text) {
-            context.delete(p); changed = true
+        where p.status == "open" && !isHumanQuestion(p.text) {
+            context.delete(p); removed += 1
         }
+
+        // ONE-TIME: every observation in the store predates the computed engine, which means every
+        // one of them was written by a model asked to interpret. Rather than try to sort the sound
+        // ones from "guilt-driven gifting" with another blocklist — the approach that already
+        // failed twice — the whole set is retired and rebuilt from arithmetic. Nothing of value is
+        // lost: the real findings recompute in milliseconds.
+        let purgeFlag = "insights.modelEraPurged.v1"
+        if !UserDefaults.standard.bool(forKey: purgeFlag) {
+            UserDefaults.standard.set(true, forKey: purgeFlag)
+            for i in ((try? context.fetch(FetchDescriptor<InsightLog>())) ?? []) where i.dismissedAt == nil {
+                i.dismissedAt = .now; i.dirty = true; removed += 1
+            }
+            // The cached AI narratives are the same problem wearing a different hat. `mind_money`
+            // in particular had a three-day TTL, so without this it would keep serving lines like
+            // "the mood went heavy right before the largest spend" — a sequence claim dressed as a
+            // fact — for days after the engine that replaced it shipped.
+            let staleKeys = ["mind_money", "weather_detail", "daily_calm"]
+            for row in ((try? context.fetch(FetchDescriptor<BrainCache>())) ?? [])
+            where staleKeys.contains(row.key) {
+                context.delete(row); removed += 1
+            }
+        }
+
+        // Observations written before the computed engine carry no `key`, so a re-worded version
+        // of the same finding could sit beside the original ("Wife is down 96%…" above "Spending
+        // tagged 'Wife' is down 96%…"). Retire the keyless ones once; the engine recomputes them
+        // with a key in milliseconds.
+        let keyedFlag = "insights.keylessPurged.v1"
+        if !UserDefaults.standard.bool(forKey: keyedFlag) {
+            UserDefaults.standard.set(true, forKey: keyedFlag)
+            for i in ((try? context.fetch(FetchDescriptor<InsightLog>())) ?? [])
+            where i.dismissedAt == nil && (i.key ?? "").isEmpty {
+                i.dismissedAt = .now; i.dirty = true; removed += 1
+            }
+        }
+
+        // Ongoing guard, in case anything speculative ever reaches this table again.
         for i in ((try? context.fetch(FetchDescriptor<InsightLog>())) ?? [])
-        where i.dismissedAt == nil && !AIJSON.isRealText(i.text, minLetters: 10) {
-            i.dismissedAt = .now; i.dirty = true; changed = true
+        where i.dismissedAt == nil && (!AIJSON.isRealText(i.text, minLetters: 10) || readsAsSpeculation(i.text)) {
+            i.dismissedAt = .now; i.dirty = true; removed += 1
         }
-        if changed { try? context.save() }
+        if removed > 0 {
+            try? context.save()
+            moneyLog.notice("Brain: purged \(removed, privacy: .public) unusable questions/observations.")
+        }
+        return removed
     }
 
+    /// Persist freshly generated questions as OPEN — deduped against every question ever stored,
+    /// exactly and semantically, so an answered or dismissed one can never sneak back.
+    @discardableResult
     static func storeJournalPrompts(_ context: ModelContext, texts: [String], source: String = "ai",
                                     sourceLetterId: UUID? = nil, sourceExcerpt: String? = nil) -> Int {
         let all = ((try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? [])
         let existing = Set(all.map { $0.text.lowercased().trimmingCharacters(in: .whitespaces) })
-        // Semantic dedup: reject a candidate that's a reworded twin of any recent question
-        // (the #1 cause of "it keeps asking the same thing"). Token-overlap — no embedding infra needed.
         var seenTokens = all.sorted { $0.createdAt > $1.createdAt }.prefix(150).map { promptTokens($0.text) }
         var added = 0
         for t in texts {
             let key = t.lowercased().trimmingCharacters(in: .whitespaces)
-            // Chokepoint guard: nothing placeholder-shaped ever becomes a stored question,
-            // no matter which path produced it (ai / followup / project).
-            guard AIJSON.isRealText(t), !existing.contains(key) else { continue }
+            // Chokepoint: nothing that fails the human gate is ever stored, whichever path made it.
+            guard isHumanQuestion(t), !existing.contains(key) else { continue }
             let toks = promptTokens(t)
             if seenTokens.contains(where: { jaccard($0, toks) >= 0.6 }) { continue }
             let p = JournalPrompt(text: t, source: source); p.dirty = true
             p.sourceLetterId = sourceLetterId
             p.sourceExcerpt = sourceExcerpt
             context.insert(p); added += 1
-            seenTokens.append(toks)   // also dedup within this same batch
+            seenTokens.append(toks)
         }
         if added > 0 { try? context.save() }
         return added
     }
 
-    /// Brand/price intelligence: given items you bought (name + price-per-unit in base), ask the AI
-    /// for the typical Philippine retail price and whether you got a good deal. Knowledge-based
-    /// estimate (no fragile live scraping) — approximate but never breaks. Returns name → verdict.
-    static func receiptDealCheck(_ ai: AIManager, items: [(name: String, unitPrice: Double)], base: String) async -> [String: String] {
-        guard ai.isReady, !items.isEmpty else { return [:] }
-        let list = items.map { "- \($0.name): paid \(String(format: "%.0f", $0.unitPrice)) \(base)/unit" }.joined(separator: "\n")
-        let prompt = """
-        These are grocery/retail items I bought in the Philippines and what I paid per unit. For EACH item,
-        recognize the brand if you can, estimate the typical Philippine retail price per unit, and judge whether
-        I got a good deal, a fair price, or overpaid. Keep each verdict to one short phrase like
-        "good deal — usually ~₱48" or "a bit high — typically ₱30".
-        Reply with ONLY a JSON object mapping each item's EXACT name to its short verdict.
-        \(list)
-        """
-        guard let raw = try? await ai.heavy.generate(prompt: prompt),
-              let jsonStr = AIJSON.firstObject(in: raw),
-              let data = jsonStr.data(using: .utf8),
-              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [:] }
-        return obj.compactMapValues { $0 as? String }
-    }
+    // MARK: - Reading a finished entry
 
-    /// Read a finished journal entry: tag a one-word sentiment + up to 3 themes, fold any durable
-    /// fact into the AI memory, and — when `followUp` is on — let it propose AT MOST one follow-up
-    /// question, which is stored as an open prompt for another day. All on-device-first.
+    /// Tag a finished entry, fold anything durable into memory, honour a correction, and — when
+    /// asked — propose at most one follow-up.
+    ///
+    /// The correction path is the important one. On this user's real data the previous version
+    /// stored *"Sold the motorbike in May"* as a belief, was told *"Actually I never did this"*,
+    /// and stored THAT as another belief — so it held both at once and kept asking about the
+    /// motorbike. A correction now DELETES what it contradicts instead of accumulating beside it.
     @discardableResult
     static func analyzeJournal(_ context: ModelContext, ai: AIManager, letter: Letter, followUp: Bool = false) async -> Bool {
         let text = letter.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.count >= 20 else { return false }
-        let safe = Redactor.forCloud(text, onDevice: !ai.cloudReachable)
-        let mem = followUp ? await journalMemory(context) : JournalMemory()
-        let followUpKey = followUp ? ",\"followup\":\"<one question or empty string>\"" : ""
-        let followUpRules = followUp ? """
+        guard text.count >= 20, ai.isReady else { return false }
 
-        Follow-up rules: propose ONE follow-up question ONLY if the entry clearly leaves a thread worth
-        pulling on another day — something they're sitting with, deciding, or feeling their way through.
-        Anchor it in something CONCRETE they wrote in THIS entry (a phrase, a decision, a person, a feeling)
-        so it's unmistakably about what they just said — never a generic prompt.
-        Style: under 15 words, plain spoken language like a friend texting, one idea, one question mark —
-        no poetry, no metaphors, no em-dashes, no therapy-speak.
-        Match its emotional weight to their recent mood trail (\(mem.moodTrail.isEmpty ? "unknown" : mem.moodTrail)):
-        gentler when they're heavy, bolder when they're bright.
-        It must NOT repeat or rephrase anything in this ask-history:
-        \(mem.asked.isEmpty ? "(none)" : mem.asked.joined(separator: "\n"))
-        If nothing earns a follow-up (most entries don't), return an empty string for it. Never force it.
-        """ : ""
+        let ctx = followUp ? journalContext(context) : JournalContext()
+        let followUpBlock = followUp ? """
+
+        You may also propose ONE follow-up question, but only if this entry clearly leaves a thread \
+        worth pulling another day. Anchor it in something concrete they wrote HERE. Same style rules: \
+        under 15 words, plain, one question mark. Match their mood: \(ctx.mood.isEmpty ? "unknown" : ctx.mood).
+        Never repeat any of these:
+        \(ctx.asked.prefix(12).map { "- \($0)" }.joined(separator: "\n"))
+        Most entries earn no follow-up. Returning an empty string is the normal answer.
+        """ : "\n\nDo not propose a follow-up question — return an empty string for it."
+
         let prompt = """
-        Read this private journal entry (written in answer to: “\(letter.title)”). Reply with ONLY a JSON object:
-        {"sentiment":"<one lowercase word for the mood>","themes":["<theme>","<theme>","<theme>"],"memory":"<one durable fact about the writer worth remembering, or empty string>","dont_ask":<true or false>,"correction":"<see below, or empty string>"\(followUpKey)}
-        Up to 3 short themes (1-2 words each). The "memory" is optional — only a lasting preference/goal/situation, not a passing mood.
-        "dont_ask" is true when the writer pushes back on the QUESTION itself: asks to stop asking,
-        says they're not interested in the topic, or says the question's premise is false ("I never
-        did this", "what competition??"). Venting about hard life stuff is NOT dont_ask.
-        "correction" is for when they correct the app's knowledge of them — "actually I…", "no, that's
-        wrong — I…", "I never had a…", "I don't X anymore" — restate the CORRECTED fact plainly in one
-        sentence (e.g. "Sold the motorbike in May"). Empty when nothing was corrected. No commentary.\(followUpRules)
-        Entry: \(safe)
+        Read this private journal entry. It was written in answer to the question: “\(letter.title)”
+
+        A "durable fact" is something lasting they stated as TRUE about themselves. If they are \
+        denying something, correcting something, or venting, there is no durable fact — leave it empty \
+        and use the correction field instead.\(followUpBlock)
+
+        Entry:
+        \(String(text.prefix(3_000)))
         """
-        // Plain tagging (no follow-up) is a fast-tier extract — on-device when available, so the
-        // most frequent AI call in the app costs zero tokens. Follow-up generation needs the
-        // ask-history reasoning → heavy.
-        let provider = followUp ? ai.heavy : ai.fast
-        guard let raw = try? await provider.generate(prompt: prompt),
-              let jsonStr = AIJSON.firstObject(in: raw),
-              let data = jsonStr.data(using: .utf8),
-              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
-        let sentiment = (obj["sentiment"] as? String)?.trimmingCharacters(in: .whitespaces)
-        let themes = (obj["themes"] as? [Any])?.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        await MainActor.run {
-            if let s = sentiment, !s.isEmpty { letter.sentiment = s }
-            if let t = themes, !t.isEmpty { letter.themesRaw = t.prefix(3).joined(separator: ", ") }
-            letter.dirty = true
-            if let mem = (obj["memory"] as? String)?.trimmingCharacters(in: .whitespaces), mem.count >= 8 {
-                let key = "journal_\(Int(letter.createdAt.timeIntervalSince1970))"
-                upsertFact(context, key: key, value: mem, confidence: 0.6, source: "inferred")
+
+        // Reading is a fast-tier extraction; only follow-up writing needs the smart brain.
+        let router = followUp ? ai.smart : ai.fast
+        guard let r = try? await router.object(AIJournalReading.self,
+                                               AIRequest(prompt, instructions: voice, temperature: 0.3),
+                                               jsonShape: AIJournalReading.jsonShape) else { return false }
+
+        let sentiment = r.sentiment.trimmingCharacters(in: .whitespaces)
+        if !sentiment.isEmpty, sentiment.count <= 24 { letter.sentiment = sentiment.lowercased() }
+        let themes = r.themes.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        if !themes.isEmpty { letter.themesRaw = themes.prefix(3).joined(separator: ", ") }
+        letter.dirty = true
+
+        // A correction outranks everything — it retires the beliefs it contradicts.
+        let correction = r.correction.trimmingCharacters(in: .whitespaces)
+        if AIJSON.isRealText(correction) {
+            if Memory.readsAsDenial(correction) {
+                Memory.deny(context, statement: correction)
+            } else {
+                Memory.remember(context, topic: String(correction.prefix(40)), fact: correction,
+                                confidence: 0.95, source: .userAnswered)
             }
-            // "Don't ask about this again" said IN the answer → treat it like the ✕/👎 buttons:
-            // the answered question becomes a hard-no taste signal, so its topic is burned.
-            // The explicit phrases are matched IN CODE (a literal command must never depend on
-            // model judgment — it missed one in testing); the model flag covers softer pushback.
-            let lowered = text.lowercased()
-            let explicit = ["don't ask", "dont ask", "do not ask", "stop asking", "never ask",
-                            "not interested in this", "why do you keep asking"].contains { lowered.contains($0) }
-            let dontAsk = explicit
-                || (obj["dont_ask"] as? Bool) ?? ((obj["dont_ask"] as? String) == "true")
-            if dontAsk {
-                let prompts = (try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? []
-                if let p = prompts.first(where: { $0.answeredLetterId == letter.id }) {
-                    p.feedback = "down"; p.dirty = true
-                }
+        }
+
+        // A durable fact is only stored when the entry wasn't a correction — otherwise the model
+        // reliably "remembers" the thing being denied.
+        let fact = r.durableFact.trimmingCharacters(in: .whitespaces)
+        if AIJSON.isRealText(fact), !AIJSON.isRealText(correction), !Memory.readsAsDenial(text) {
+            Memory.remember(context, topic: String(fact.prefix(40)), fact: fact,
+                            confidence: 0.6, source: .inferred)
+        }
+
+        // "Don't ask about this again" — matched IN CODE, because a literal instruction from the
+        // user must never depend on a model's judgement. The model's flag covers softer pushback.
+        let lowered = text.lowercased()
+        let explicit = ["don't ask", "dont ask", "do not ask", "stop asking", "never ask",
+                        "not interested in this", "why do you keep asking"].contains { lowered.contains($0) }
+        if explicit || r.pushback {
+            let prompts = (try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? []
+            if let p = prompts.first(where: { $0.answeredLetterId == letter.id }) {
+                p.feedback = "down"; p.dirty = true
             }
-            // Corrections in their own words outrank anything inferred: store the corrected fact
-            // at near-certainty, and archive inferred beliefs it contradicts (token overlap).
-            if let corr = (obj["correction"] as? String)?.trimmingCharacters(in: .whitespaces),
-               AIJSON.isRealText(corr) {
-                upsertFact(context, key: "corrected_\(Int(letter.createdAt.timeIntervalSince1970))",
-                           value: String(corr.prefix(160)), confidence: 0.95, source: "user_answered")
-                let corrTokens = promptTokens(corr)
-                let facts = ((try? context.fetch(FetchDescriptor<AIFact>())) ?? [])
-                    .filter { $0.subjectKind == "user" && $0.archivedAt == nil && $0.source == "inferred" }
-                for f in facts where jaccard(promptTokens(f.value), corrTokens) >= 0.45 {
-                    f.archivedAt = .now; f.updatedAt = .now   // superseded by their own words
-                }
-            }
-            if followUp, let f = (obj["followup"] as? String)?.trimmingCharacters(in: .whitespaces), isHumanQuestion(f) {
-                // Carry the answer this follow-up grew out of, so it's never shown context-free.
+        }
+
+        if followUp {
+            let f = r.followUp.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isHumanQuestion(f) {
                 let excerpt = text.count > 150 ? String(text.prefix(150)) + "…" : text
                 storeJournalPrompts(context, texts: [f], source: "followup",
                                     sourceLetterId: letter.id, sourceExcerpt: excerpt)
             }
-            try? context.save()
         }
+        try? context.save()
         return true
     }
 
-    static func draftNudge(_ ai: AIManager, name: String, outstanding: String, facts: [String], tone: String = "warm") async -> String {
-        guard ai.isReady else {
-            return "Hi \(name), just following up on the outstanding balance of \(outstanding) when you get a chance — thanks!"
-        }
-        let context = facts.isEmpty ? "" : "\nWhat I know about them: " + facts.joined(separator: "; ")
-        let toneLine: String
-        switch tone {
-        case "firm": toneLine = "Tone: direct and firm but still polite — this balance is overdue and you want it settled."
-        case "formal": toneLine = "Tone: formal and professional, business-letter register."
-        default: toneLine = "Tone: warm and friendly, like a freelancer who values the relationship."
-        }
-        let prompt = """
-        Draft a short follow-up message to my client \(name) about an outstanding balance of \(outstanding).
-        Under 4 sentences. No placeholders, no "[name]", ready to send. \(toneLine)\(context)
-        """
-        let r = (try? await ai.heavy.generate(prompt: prompt)) ?? ""
-        return r.isEmpty ? "Hi \(name), following up on the \(outstanding) outstanding — thanks!" : r.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    // MARK: - Curiosity (the bell's one clarifying question)
 
-    /// Read a client's notes + project history for friction signals (scope creep,
-    /// revision burden, rate lag, underpriced…). Returns up to 3 short observations.
-    static func rateSignals(_ ai: AIManager, name: String, material: String) async -> [String] {
-        guard ai.isReady, material.trimmingCharacters(in: .whitespaces).count >= 12 else { return [] }
-        let prompt = """
-        Read these notes and project history about my freelance client "\(name)". List up to 3 SHORT
-        friction signals you notice (scope creep, revision burden, rate lag, underpriced, slow to pay…),
-        each one terse sentence. If nothing stands out, return an empty array. No advice, just observations.
-        Reply with ONLY a JSON array of strings. Material:
-        \(material)
-        """
-        guard let r = try? await ai.provider.generate(prompt: prompt) else { return [] }
-        return parseStringArray(r).prefix(3).map { $0 }
-    }
-
-    private static func parseStringArray(_ s: String) -> [String] {
-        guard let lo = s.firstIndex(of: "["), let hi = s.lastIndex(of: "]") else { return [] }
-        guard let data = String(s[lo...hi]).data(using: .utf8),
-              let arr = try? JSONSerialization.jsonObject(with: data) as? [String] else { return [] }
-        return arr.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-    }
-
-    private static func parseFactArray(_ s: String) -> [(key: String, value: String)] {
-        guard let lo = s.firstIndex(of: "["), let hi = s.lastIndex(of: "]") else { return [] }
-        let sub = String(s[lo...hi])
-        guard let data = sub.data(using: .utf8),
-              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
-        return arr.compactMap { o in
-            guard let k = o["key"] as? String else { return nil }
-            let v: String
-            if let s = o["value"] as? String { v = s }
-            else if let n = o["value"] as? NSNumber { v = "\(n)" }
-            else { return nil }
-            let key = k.lowercased().replacingOccurrences(of: " ", with: "_").filter { $0.isLetter || $0.isNumber || $0 == "_" }
-            return key.isEmpty || v.isEmpty ? nil : (key, v)
-        }
-    }
-
-    // MARK: - Fact store
-
-    static func upsertFact(_ context: ModelContext, subjectKind: String = "user", subjectId: String? = nil,
-                           key: String, value: String, confidence: Double = 1.0, source: String = "user_answered") {
-        let id = "\(subjectKind):\(subjectId ?? "_"):\(key)"
-        let d = FetchDescriptor<AIFact>(predicate: #Predicate { $0.id == id })
-        if let row = (try? context.fetch(d))?.first {
-            row.value = value; row.confidence = confidence; row.source = source
-            row.updatedAt = .now; row.archivedAt = nil
-        } else {
-            context.insert(AIFact(subjectKind: subjectKind, subjectId: subjectId, key: key,
-                                  value: value, confidence: confidence, source: source))
-        }
-        try? context.save()
-    }
-
-    static func hasFact(_ context: ModelContext, subjectKind: String = "user", subjectId: String? = nil, key: String) -> Bool {
-        let id = "\(subjectKind):\(subjectId ?? "_"):\(key)"
-        let d = FetchDescriptor<AIFact>(predicate: #Predicate { $0.id == id && $0.archivedAt == nil })
-        return ((try? context.fetch(d))?.isEmpty == false)
-    }
-
-    // MARK: - Clarifying questions (ask more while it has little data)
-
-    // (The hardcoded "foundational ladder" of canned questions was removed 2026-06-13 —
-    //  every clarifying question is now AI-generated from the user's actual state.)
-
-    /// ONE AI-generated clarifying question for the bell — born from THIS user's actual money
-    /// state, known facts, and the FULL ask-history. On-device models are weak at
-    /// honoring "don't repeat", so repetition is blocked in CODE, not just asked for: a candidate
-    /// is rejected if its fact_key was already asked or is already known, or if its wording is
-    /// too similar to any past question. Up to 2 attempts, then silence (better than a repeat).
+    /// ONE question born from this user's actual state. Repetition is blocked in CODE — small
+    /// models are weak at honouring "don't repeat" — and silence is always preferred to a repeat.
     static func curiosityQuestion(_ context: ModelContext, ai: AIManager) async -> (subject: String, body: String, choices: [String], factKey: String)? {
         guard ai.isReady else { return nil }
-        let ctx = await MainActor.run { () -> (snapshot: String, facts: String, askedBlock: String,
-                                               askedTokens: [Set<String>], askedKeys: Set<String>, knownKeys: Set<String>) in
-            let snap = StateSnapshot.text(context, includePersonal: !ai.cloudReachable)
-            // Digest-led context (Hermes-style): curated core memory + a few fresh raw facts.
-            let liveFacts = ((try? context.fetch(FetchDescriptor<AIFact>())) ?? []).filter { $0.archivedAt == nil }
-            let fresh = liveFacts.sorted { $0.updatedAt > $1.updatedAt }
-                .prefix(MemoryCompactor.digest.isEmpty ? 30 : 12)
-                .map { "\($0.key): \($0.value)" }.joined(separator: "; ")
-            let digest = MemoryCompactor.digest
-            let facts = digest.isEmpty ? fresh : digest + "\nFreshest facts: \(fresh)"
-            let knownKeys = Set(liveFacts.map { $0.key.lowercased() })
-            let rows = ((try? context.fetch(FetchDescriptor<AppNotification>())) ?? [])
-                .filter { $0.isQuestion }.sorted { $0.createdAt > $1.createdAt }
-            let askedBlock = rows.prefix(40)
-                .map { "- \($0.subject)\($0.dismissedAt != nil && $0.answer == nil ? " (they skipped this — drop the topic)" : "")" }
-                .joined(separator: "\n")
-            let askedTokens = rows.prefix(60).map { topicTokens($0.subject) }
-            let askedKeys = Set(rows.compactMap { $0.factKey?.lowercased() }.filter { !$0.isEmpty })
-            return (snap, facts, askedBlock, askedTokens, askedKeys, knownKeys)
-        }
 
-        func basePrompt(_ extra: String) -> String {
-            """
-            You are the curiosity of a private life-OS for a solo freelancer. Decide whether there is ONE
-            question worth asking them right now — something that would make the system genuinely smarter
-            about THEIR life or money, grounded in the state below.
+        let snapshot = String(StateSnapshot.text(context, includePersonal: false).prefix(2_000))
+        let beliefs = Memory.brief(context, maxChars: 600)
+        let rows = ((try? context.fetch(FetchDescriptor<AppNotification>())) ?? [])
+            .filter { $0.isQuestion }.sorted { $0.createdAt > $1.createdAt }
+        let askedBlock = rows.prefix(30).map { "- \($0.subject)" }.joined(separator: "\n")
+        let askedTokens = rows.prefix(50).map { Memory.contentTokens($0.subject) }
+        let askedKeys = Set(rows.compactMap { $0.factKey?.lowercased() }.filter { !$0.isEmpty })
 
-            ABSOLUTE RULE — NO REPEATS: Do NOT ask about any topic already in the ask-history or already in
-            "what I already know", not even reworded, narrowed, or from a different angle. If the only
-            questions you can think of touch those topics, answer {"ask":false}. A repeat is the worst
-            possible output — silence is always better. Pick a topic from a DIFFERENT area of their life
-            (money, work, people, faith, health, home, the future) than anything recently asked.\(extra)
+        let instructions = """
+        \(voice)
 
-            Reply with ONLY a JSON object:
-            {"ask":true|false,"subject":"<the question>","body":"<one line on why you're asking>","choices":["<2-4 tap answers>"],"fact_key":"<snake_case key for the answer>"}
-            STRICT FORMAT — these roles must never swap:
-            · "subject" IS the question: one short interrogative sentence, ending in "?".
-            · "choices" are ANSWERS the user taps — short phrases (max ~5 words), statements only,
-              NEVER questions. Example: subject "Is the Honda your only vehicle?" →
-              choices ["Yes, just the Honda", "No, there's another", "I don't drive"].
-            · "body" is one short statement (not a question) explaining why you're asking.
-            · "fact_key" is a snake_case label for WHAT the answer records (e.g. "primary_vehicle").
+        You decide whether there is ONE question worth asking right now — something that would make \
+        the app genuinely smarter about their life or money.
 
-            Ask-history — these topics are BURNED, never ask them again:
-            \(ctx.askedBlock.isEmpty ? "(none yet)" : ctx.askedBlock)
-            What I already know (never ask about these):
-            \(ctx.facts.isEmpty ? "very little" : ctx.facts)
-            Current state:
-            \(ctx.snapshot)
-            """
-        }
+        Answering "no, don't ask" is the right call most of the time and costs nothing. A repeated \
+        question is the worst possible outcome.
 
-        // Up to 2 tries: if the model returns a repeat, tell it exactly what to avoid and retry once.
+        Never ask about anything already known, already asked, or listed as not true about them. If \
+        the only questions you can think of touch those, say don't ask.
+
+        The question is one short sentence ending in a question mark. The choices are ANSWERS they \
+        tap — short statements, never questions.
+        """
+
         var extra = ""
         for attempt in 0..<2 {
-            guard let raw = try? await ai.heavy.generate(prompt: basePrompt(extra)),
-                  let jsonStr = AIJSON.firstObject(in: raw),
-                  let data = jsonStr.data(using: .utf8),
-                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { continue }
-            guard (obj["ask"] as? Bool) == true,
-                  let subject = (obj["subject"] as? String)?.trimmingCharacters(in: .whitespaces),
-                  subject.count >= 8, subject.count <= 140, subject.hasSuffix("?") else { return nil }   // ask:false or malformed → silence
-            let key = (obj["fact_key"] as? String)?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
-            let tokens = topicTokens(subject)
+            let prompt = """
+            What you already know about them:
+            \(beliefs.isEmpty ? "Very little." : beliefs)
 
-            // CODE-SIDE REPEAT BLOCK — the heart of the fix.
-            let keyRepeat = !key.isEmpty && (ctx.askedKeys.contains(key) || ctx.knownKeys.contains(key))
-            let wordRepeat = ctx.askedTokens.contains { tooSimilar(tokens, $0) }
+            Already asked — these topics are burned:
+            \(askedBlock.isEmpty ? "(none yet)" : askedBlock)
+
+            Their current state:
+            \(snapshot)\(extra)
+            """
+            guard let r = try? await ai.smart.object(AICuriosityAsk.self,
+                                                     AIRequest(prompt, instructions: instructions, temperature: 0.7),
+                                                     jsonShape: AICuriosityAsk.jsonShape) else { continue }
+            guard r.shouldAsk else { return nil }
+
+            let subject = r.question.trimmingCharacters(in: .whitespaces)
+            guard subject.count >= 8, subject.count <= 140, subject.hasSuffix("?"),
+                  subject.filter({ $0 == "?" }).count == 1 else { return nil }
+
+            let key = r.factKey.trimmingCharacters(in: .whitespaces).lowercased()
+            let tokens = Memory.contentTokens(subject)
+            let knownKeys = Set(Memory.live(context).map { $0.key.lowercased() })
+
+            // CODE-SIDE REPEAT BLOCK — the part that actually works.
+            let keyRepeat = !key.isEmpty && (askedKeys.contains(key) || knownKeys.contains(key))
+            let wordRepeat = askedTokens.contains { tooSimilar(tokens, $0) }
             if keyRepeat || wordRepeat {
-                if attempt == 0 { extra = "\n\nYour previous attempt \"\(subject)\" was a REPEAT and was rejected. Choose a completely different topic this time, or answer {\"ask\":false}." ; continue }
-                return nil   // still repeating after a nudge → stay silent
+                if attempt == 0 {
+                    extra = "\n\nYour previous attempt \"\(subject)\" repeated something already covered. Pick a completely different area of their life, or say don't ask."
+                    continue
+                }
+                return nil
             }
 
-            let body = (obj["body"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
-            let rawChoices = ((obj["choices"] as? [Any])?.compactMap { $0 as? String } ?? [])
-                .map { $0.trimmingCharacters(in: .whitespaces) }
+            let choices = r.choices.map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty && !$0.contains("?") && $0.count <= 48 }
-            let choices = rawChoices.count >= 2 ? Array(rawChoices.prefix(4)) : []
-            return (subject, body, choices, key.isEmpty ? "curiosity_\(Int(Date.now.timeIntervalSince1970))" : key)
+            guard choices.count >= 2 else { return nil }
+            let why = r.why.trimmingCharacters(in: .whitespaces)
+            return (subject, why, Array(choices.prefix(4)),
+                    key.isEmpty ? "curiosity_\(Int(Date.now.timeIntervalSince1970))" : key)
         }
         return nil
-    }
-
-    /// Meaningful words of a question, lowercased with punctuation and filler/question words
-    /// stripped — the basis for detecting reworded repeats.
-    private static func topicTokens(_ s: String) -> Set<String> {
-        let stop: Set<String> = ["a","an","the","is","are","do","does","did","you","your","yours","what","whats",
-            "how","when","where","who","which","why","of","to","in","on","for","and","or","any","have","has",
-            "got","there","this","that","with","still","right","now","it","its","me","my","i","am","be","been",
-            "would","could","should","can","want","like","just","about","more","one","ever","most","also"]
-        let cleaned = s.lowercased().map { $0.isLetter || $0.isNumber || $0 == " " ? $0 : " " }
-        return Set(String(cleaned).split(separator: " ").map(String.init).filter { $0.count > 2 && !stop.contains($0) })
     }
 
     /// Two questions are "the same topic" if they share most of their meaningful words, or one's
@@ -1244,24 +1196,25 @@ enum Brain {
     private static func tooSimilar(_ a: Set<String>, _ b: Set<String>) -> Bool {
         guard !a.isEmpty, !b.isEmpty else { return false }
         let inter = a.intersection(b).count
-        let jaccard = Double(inter) / Double(a.union(b).count)
-        let subset = Double(inter) / Double(min(a.count, b.count))   // most of the smaller one is contained
-        return jaccard >= 0.5 || subset >= 0.7
+        let j = Double(inter) / Double(a.union(b).count)
+        let subset = Double(inter) / Double(min(a.count, b.count))
+        return j >= 0.5 || subset >= 0.7
     }
 
-    /// The most-visited vendor name from spends that has no brand match and no
-    /// fact yet. Returns nil when everything's identified.
+    // MARK: - Vendors
+
+    /// The most-visited vendor name from spends that has no brand match and no identification yet.
     static func topUnidentifiedVendor(_ context: ModelContext) -> String? {
         var sd = FetchDescriptor<Spend>(sortBy: [SortDescriptor(\.spentAt, order: .reverse),
                                                  SortDescriptor(\.createdAt, order: .reverse)])
-        sd.fetchLimit = 2000   // bound the scan; recency-first (createdAt breaks timestamp ties)
+        sd.fetchLimit = 2000
         let spends = (try? context.fetch(sd)) ?? []
         var counts: [String: Int] = [:]
         for s in spends {
             guard let raw = s.vendorName?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { continue }
-            if Brand.match(raw) != nil { continue }                     // a known money rail/brand
-            if VendorBrand.match(raw) != nil { continue }               // a known everyday vendor (Jollibee, Mercury…)
-            if hasFact(context, key: "vendor_" + slug(raw)) { continue } // already identified by the AI/user
+            if Brand.match(raw) != nil { continue }
+            if VendorBrand.match(raw) != nil { continue }
+            if vendorIsIdentified(context, name: raw) { continue }
             counts[raw, default: 0] += 1
         }
         return counts.filter { $0.value >= 2 }.max { $0.value < $1.value }?.key

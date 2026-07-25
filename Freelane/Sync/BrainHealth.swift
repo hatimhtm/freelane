@@ -1,9 +1,9 @@
 import Foundation
 import SwiftData
 
-/// Per-brain reliability ledger — on-device (Apple), cloud (Gemini).
+/// Per-brain reliability ledger — on-device, Private Cloud Compute, local model.
 /// Every AI attempt is recorded, so a silently-failing brain becomes VISIBLE:
-///   · Settings → AI shows each brain's success/failure counts and its last error.
+///   · Settings → Intelligence shows each brain's success/failure counts and its last error.
 ///   · Three consecutive failures raise ONE notification (and re-arm only after a recovery),
 ///     so the user learns "the local model keeps failing" without being spammed.
 @MainActor @Observable
@@ -35,6 +35,27 @@ final class BrainHealth {
         }
     }
 
+    func success(_ brain: AIBrainID) { success(brain.rawValue) }
+    func failure(_ brain: AIBrainID, error: Error) { failure(brain.rawValue, error: error) }
+
+    /// CIRCUIT BREAKER: a brain that has failed repeatedly and has NEVER once succeeded is broken,
+    /// not flaky, and is dropped from the chains until the user re-enables it.
+    ///
+    /// This exists because Apple's Private Cloud Compute reports itself `available` on this macOS
+    /// build and then fails every single call with `LanguageModelError -1` — so availability alone
+    /// is not evidence a brain works. Without this the app kept routing to it, kept falling through,
+    /// and kept posting "keeps failing" notifications for something the user cannot fix.
+    func isBroken(_ brain: AIBrainID) -> Bool {
+        guard let s = stats[brain.rawValue] else { return false }
+        return s.ok == 0 && s.consecutive >= 3
+    }
+
+    /// Give a brain another chance (Settings → "Try again").
+    func reset(_ brain: AIBrainID) {
+        stats[brain.rawValue] = Stat()
+        persist()
+    }
+
     func success(_ source: String) {
         var s = stats[source] ?? Stat()
         s.ok += 1; s.consecutive = 0; s.notified = false   // recovery re-arms the alert
@@ -57,16 +78,12 @@ final class BrainHealth {
             let name = Self.displayName(source)
             Notify.post(AppContainer.shared.mainContext, kind: "warning",
                         subject: "\(name) keeps failing",
-                        body: "\(s.consecutive) failures in a row — last error: \(s.lastError ?? "unknown"). Other brains are covering for it; check Settings → AI.",
+                        body: "\(s.consecutive) failures in a row — last error: \(s.lastError ?? "unknown"). Other brains are covering for it; check Settings → Intelligence.",
                         priority: 1, feature: .settings)
         }
     }
 
     static func displayName(_ source: String) -> String {
-        switch source {
-        case "local": return "Your local model (retired)"
-        case "on-device": return "Apple's on-device model"
-        default: return "Gemini (cloud)"
-        }
+        AIBrainID(rawValue: source)?.label ?? source
     }
 }

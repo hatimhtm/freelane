@@ -1,137 +1,145 @@
 import Foundation
 import SwiftData
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
-/// A capability the model can CALL to fetch real data, instead of us pre-stuffing the whole
-/// ledger into the prompt. "Ask my money" becomes: model decides what it needs → calls a tool →
-/// we run it locally → feed the result back → model answers. Cheaper, more correct, retrieval-first.
-protocol AITool {
-    var name: String { get }
-    var summary: String { get }
-    /// JSON-Schema "properties" object for the tool's arguments.
-    var properties: [String: Any] { get }
-    @MainActor func run(_ args: [String: Any], context: ModelContext) async -> String
-}
+// MARK: - Tools the assistant can call
+//
+// Retrieval beats recall: instead of stuffing the whole ledger into every prompt and hoping the
+// model reads it correctly, the model decides what it needs, calls a tool, and we run the real
+// query locally. Exact figures, small prompts.
+//
+// This used to be a hand-rolled Gemini function-calling loop — HTTP round trips, a bespoke JSON
+// schema per tool, and a manual hop counter. FoundationModels does tool calling natively on BOTH
+// Apple brains, so the loop is gone and tools now work on-device and offline too, which the
+// cloud-only version never did.
+//
+// One concurrency rule, and it is not negotiable: `Tool.call` runs off the main actor, and
+// `ModelContext` is not Sendable. So every tool captures a plain, immutable snapshot of the rows
+// it needs, taken on the main actor before the session starts. No tool ever touches SwiftData.
 
-// MARK: - Concrete tools
+#if canImport(FoundationModels)
 
-struct SearchSpendsTool: AITool {
-    let name = "search_spends"
-    let summary = "Search recent spends by keyword/vendor and/or a day window; returns matches with amounts."
-    var properties: [String: Any] {
-        ["query": ["type": "string", "description": "vendor or keyword, empty for all"],
-         "days": ["type": "integer", "description": "look-back window in days (default 90)"]]
+/// The rows the tools are allowed to see, flattened into Sendable value types once per chat turn.
+struct AIToolData: Sendable {
+    struct SpendRow: Sendable {
+        var date: Date, label: String, tags: [String], amount: Double
     }
-    @MainActor func run(_ args: [String: Any], context: ModelContext) async -> String {
-        let q = (args["query"] as? String ?? "").lowercased()
-        let days = (args["days"] as? Int) ?? ((args["days"] as? Double).map(Int.init) ?? 90)
-        let since = PHT.daysAgo(max(1, days))
-        var d = FetchDescriptor<Spend>(sortBy: [SortDescriptor(\.spentAt, order: .reverse)])
-        d.fetchLimit = 400
-        let spends = ((try? context.fetch(d)) ?? []).filter { $0.deletedAt == nil && $0.spentAt >= since }
-        let base = (try? context.fetch(FetchDescriptor<AppSettings>()))?.first?.baseCurrency ?? "PHP"
-        let matches = spends.filter { s in
-            q.isEmpty || (s.vendorName ?? "").lowercased().contains(q) || (s.spendDescription ?? "").lowercased().contains(q)
-                || s.tags.contains { $0.lowercased().contains(q) }
-        }.prefix(40)
-        guard !matches.isEmpty else { return "No spends matched." }
-        let total = matches.reduce(0) { $0 + $1.amountBase }
-        let rows = matches.map { "\($0.spentAt.formatted(.dateTime.month().day())) \($0.vendorName ?? $0.spendDescription ?? "?") \(CurrencyFormat.string($0.amountBase, base, compact: true))" }
-        return "\(matches.count) matches, total \(CurrencyFormat.string(total, base, compact: true)):\n" + rows.joined(separator: "\n")
+    struct WalletRow: Sendable {
+        var name: String, balance: Double
     }
-}
+    var base: String = "PHP"
+    var spends: [SpendRow] = []
+    var wallets: [WalletRow] = []
+    var walletTotal: Double = 0
+    var expectedIncome60: Double = 0
+    var expectedBills60: Double = 0
+    var dailyPace: Double = 0
 
-struct WalletBalanceTool: AITool {
-    let name = "get_wallet_balances"
-    let summary = "Current balance of each holding wallet, plus the total."
-    var properties: [String: Any] { [:] }
-    @MainActor func run(_ args: [String: Any], context: ModelContext) async -> String {
-        let d = StateSnapshot.load(context)
-        let base = d.baseCurrency
-        let live = d.wallets.filter { $0.isHolding && !$0.archived }
-        let rows = live.map { "\($0.name): \(CurrencyFormat.string(WalletMath.balance(of: $0, ledger: d.ledger), base, compact: true))" }
-        let total = live.reduce(0) { $0 + WalletMath.balance(of: $1, ledger: d.ledger) }
-        return rows.joined(separator: "\n") + "\nTotal: \(CurrencyFormat.string(total, base, compact: true))"
-    }
-}
-
-struct ProjectionTool: AITool {
-    let name = "run_projection"
-    let summary = "Project the wallet total forward N days: + expected recurring income, − expected bills, − recent daily spend pace."
-    var properties: [String: Any] {
-        ["days": ["type": "integer", "description": "horizon in days (default 60)"]]
-    }
-    @MainActor func run(_ args: [String: Any], context: ModelContext) async -> String {
-        let days = max(7, (args["days"] as? Int) ?? ((args["days"] as? Double).map(Int.init) ?? 60))
-        let d = StateSnapshot.load(context)
-        let base = d.baseCurrency
-        func money(_ v: Double) -> String { CurrencyFormat.string(v, base, compact: true) }
-        let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends, wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)
-        let income = RecurringMath.expectedBase(d.recurrings, kind: .income, days: days)
-        let bills = RecurringMath.expectedBase(d.recurrings, kind: .expense, days: days)
-        let recent = d.spends.filter { $0.spentAt >= PHT.daysAgo(30) }.reduce(0.0) { $0 + $1.amountBase }
-        let spend = (recent / 30.0) * Double(days)
-        let end = safe.walletTotal + income - bills - spend
-        return "Over \(days)d: start \(money(safe.walletTotal)), +\(money(income)) income, −\(money(bills)) bills, −\(money(spend)) spending pace → ends ~\(money(end))."
-    }
-}
-
-/// Runs Gemini's function-calling loop: the model may call tools (possibly several times) before
-/// producing a final text answer. Bounded iterations so it always terminates.
-enum ToolRunner {
-    static let tools: [AITool] = [SearchSpendsTool(), WalletBalanceTool(), ProjectionTool(), SemanticSpendSearchTool()]
+    func money(_ v: Double) -> String { CurrencyFormat.string(v, base, compact: true) }
 
     @MainActor
-    static func answer(_ question: String, system: String, context: ModelContext, apiKey: String, maxHops: Int = 4) async -> String? {
-        guard !apiKey.isEmpty else { return nil }
-        let byName = Dictionary(uniqueKeysWithValues: tools.map { ($0.name, $0) })
-        let declarations: [[String: Any]] = tools.map { t in
-            // Gemini's function schema requires a `required` array on the parameters object.
-            // All our tool args are optional, so `required: []`.
-            ["name": t.name, "description": t.summary,
-             "parameters": ["type": "object", "properties": t.properties, "required": [String]()]]
-        }
-        var contents: [[String: Any]] = [
-            ["role": "user", "parts": [["text": system + "\n\nQuestion: " + question]]]
-        ]
-        let model = GeminiModels.model(.heavy)
-        for _ in 0..<maxHops {
-            guard let resp = try? await call(model: model, apiKey: apiKey, contents: contents, tools: declarations) else { return nil }
-            // A function call?
-            if let fc = resp.functionCall {
-                let tool = byName[fc.name]
-                let result = await tool?.run(fc.args, context: context) ?? "Unknown tool."
-                contents.append(["role": "model", "parts": [["functionCall": ["name": fc.name, "args": fc.args]]]])
-                contents.append(["role": "user", "parts": [["functionResponse": ["name": fc.name, "response": ["result": result]]]]])
-                continue
-            }
-            if let text = resp.text, !text.isEmpty { return text }
-            return nil
-        }
-        return nil   // ran out of hops
-    }
-
-    private struct Reply { var text: String?; var functionCall: (name: String, args: [String: Any])? }
-
-    private static func call(model: String, apiKey: String, contents: [[String: Any]], tools: [[String: Any]]) async throws -> Reply {
-        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")   // key in header, not URL query (less log-prone)
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "contents": contents,
-            "tools": [["functionDeclarations": tools]],
-        ])
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw AIError.badResponse }
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let parts = (((json?["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]]) ?? []
-        for p in parts {
-            if let fc = p["functionCall"] as? [String: Any], let name = fc["name"] as? String {
-                return Reply(text: nil, functionCall: (name, (fc["args"] as? [String: Any]) ?? [:]))
-            }
-        }
-        let text = parts.compactMap { $0["text"] as? String }.joined()
-        return Reply(text: text, functionCall: nil)
+    static func load(_ context: ModelContext) -> AIToolData {
+        let d = StateSnapshot.load(context)
+        var out = AIToolData(base: d.baseCurrency)
+        out.spends = d.spends
+            .filter { $0.deletedAt == nil && $0.spentAt >= PHT.daysAgo(365) }
+            .sorted { $0.spentAt > $1.spentAt }
+            .prefix(600)
+            .map { .init(date: $0.spentAt,
+                         label: $0.vendorName ?? $0.spendDescription ?? "—",
+                         tags: $0.tags,
+                         amount: $0.amountBase) }
+        let live = d.wallets.filter { $0.isHolding && !$0.archived }
+        out.wallets = live.map { .init(name: $0.name, balance: WalletMath.balance(of: $0, ledger: d.ledger)) }
+        out.walletTotal = out.wallets.reduce(0) { $0 + $1.balance }
+        out.expectedIncome60 = RecurringMath.expectedBase(d.recurrings, kind: .income, days: 60)
+        out.expectedBills60 = RecurringMath.expectedBase(d.recurrings, kind: .expense, days: 60)
+        let recent = d.spends.filter { $0.spentAt >= PHT.daysAgo(30) }.reduce(0.0) { $0 + $1.amountBase }
+        out.dailyPace = recent / 30.0
+        return out
     }
 }
+
+// MARK: Individual tools
+
+@available(macOS 26.0, *)
+struct SearchSpendsTool: Tool {
+    let name = "search_spends"
+    let description = "Search the person's own spending by keyword, vendor or category over a day window. Returns the matching rows and their total."
+    let data: AIToolData
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Vendor, keyword or category to match. Empty string matches everything.")
+        var query: String
+        @Guide(description: "How many days back to look.", .range(1...365))
+        var days: Int
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        let q = arguments.query.lowercased().trimmingCharacters(in: .whitespaces)
+        let since = Calendar(identifier: .gregorian).date(byAdding: .day, value: -max(1, arguments.days), to: .now) ?? .distantPast
+        let matches = data.spends.filter { row in
+            row.date >= since && (q.isEmpty
+                || row.label.lowercased().contains(q)
+                || row.tags.contains { $0.lowercased().contains(q) })
+        }
+        guard !matches.isEmpty else { return "No spends matched \"\(arguments.query)\" in the last \(arguments.days) days." }
+        let total = matches.reduce(0) { $0 + $1.amount }
+        let rows = matches.prefix(40).map {
+            "\($0.date.formatted(.dateTime.month().day())) \($0.label) \(data.money($0.amount))"
+        }
+        return "\(matches.count) matches over \(arguments.days) days, total \(data.money(total)):\n" + rows.joined(separator: "\n")
+    }
+}
+
+@available(macOS 26.0, *)
+struct WalletBalanceTool: Tool {
+    let name = "get_wallet_balances"
+    let description = "The current balance of each of the person's wallets, plus the total across all of them."
+    let data: AIToolData
+
+    @Generable struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        guard !data.wallets.isEmpty else { return "No wallets are set up yet." }
+        let rows = data.wallets.map { "\($0.name): \(data.money($0.balance))" }
+        return rows.joined(separator: "\n") + "\nTotal: \(data.money(data.walletTotal))"
+    }
+}
+
+@available(macOS 26.0, *)
+struct ProjectionTool: Tool {
+    let name = "run_projection"
+    let description = "Project the person's total wallet balance forward: adds expected recurring income, subtracts expected bills and their recent daily spending pace."
+    let data: AIToolData
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "How many days ahead to project.", .range(7...365))
+        var days: Int
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        let days = arguments.days
+        let scale = Double(days) / 60.0
+        let income = data.expectedIncome60 * scale
+        let bills = data.expectedBills60 * scale
+        let spend = data.dailyPace * Double(days)
+        let end = data.walletTotal + income - bills - spend
+        return "Over \(days) days: start \(data.money(data.walletTotal)), +\(data.money(income)) income, −\(data.money(bills)) bills, −\(data.money(spend)) spending pace → ends around \(data.money(end))."
+    }
+}
+
+/// Everything the assistant can reach for, built from one snapshot.
+@available(macOS 26.0, *)
+enum AIToolbox {
+    static func tools(_ data: AIToolData) -> [any Tool] {
+        [SearchSpendsTool(data: data), WalletBalanceTool(data: data),
+         ProjectionTool(data: data), SemanticSpendSearchTool(data: data)]
+    }
+}
+
+#endif

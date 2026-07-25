@@ -52,6 +52,9 @@ struct FreelaneApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var updater = UpdaterModel.shared   // owns the Sparkle updater for the app's lifetime
     // Held here so a change in Settings re-renders the scene and flips the scheme LIVE (no relaunch).
+    // DARK is the default and the face the app is designed around. A near-white light theme was
+    // tried and rejected on sight — "it almost blinded me" — so light is now an opt-in variant,
+    // retuned to warm grey rather than paper white. See `Palette` for the light values.
     @AppStorage("appearance") private var appearance = "dark"
     private var scheme: ColorScheme? {
         switch appearance { case "light": return .light; case "system": return nil; default: return .dark }

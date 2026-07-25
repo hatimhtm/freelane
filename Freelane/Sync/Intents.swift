@@ -186,7 +186,6 @@ struct AddJournalEntryIntent: AppIntent {
         l.dirty = true
         ctx.insert(l); try? ctx.save()
         let all = ((try? ctx.fetch(FetchDescriptor<Letter>())) ?? []).filter { $0.deletedAt == nil }
-        JournalGame.reconcileCoins(entries: all.map { ($0.id, $0.createdAt) })
         // Await the analysis (mood/themes/memory + maybe a follow-up). A detached Task would be
         // killed when this Shortcuts/Siri process tears down right after the result, so the
         // enrichment would silently never run.

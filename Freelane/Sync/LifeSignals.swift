@@ -66,7 +66,8 @@ enum LifeSignals {
         guard anyOn else { return }
         let last = UserDefaults.standard.double(forKey: "signals.refreshedAt")
         if !force, Date.now.timeIntervalSince1970 - last < 20 * 3600 { return }
-        guard FoundationModelProvider.isAvailable else { return }   // on-device ONLY, by design
+        // On-device ONLY, by design — this is the most personal material the app touches.
+        guard #available(macOS 26.0, *), OnDeviceBrain.isReady else { return }
 
         // Sources are split by EPISTEMIC WEIGHT: what they DID (messages/calendar/reminders)
         // vs what they merely LOOKED AT (browsing). v1 mixed them and the model asserted news
@@ -86,39 +87,30 @@ enum LifeSignals {
         if safariOn, let s = safariSource() { looked.append(s) }
         guard !(lived.isEmpty && looked.isEmpty) else { return }
 
-        let prompt = """
-        You are building a compact, private context sheet about one person from raw signals off
-        their own computer. Reply with ONLY a JSON object shaped like {"doing": [array of up to 5
-        short strings], "reading": [array of up to 5 short strings], "people": [array of up to 5
-        names], "notes": [array of up to 3 short strings]}.
-
-        HARD RULES — this sheet must be trustworthy, a wrong guess is worse than an empty field:
-        - "doing" comes ONLY from the THEIR OWN LIFE section (their messages, calendar, reminders).
-          Each entry needs at least TWO supporting signals. Never place browsing here.
-        - "reading" comes from the BROWSING section: topics they're looking into. Reading about a
-          thing is NOT doing it — a news story, a show, a sports event they read about belongs
-          here or nowhere. Skip one-off visits, news-of-the-day, and entertainment headlines.
-        - "people" = real person NAMES they exchange messages with. Never service or app names,
-          never abbreviations or fragments. If you only see a phone number or a fragment, omit it.
-        - "notes" = one-sentence reminders a thoughtful friend would keep (an upcoming event they
-          are ATTENDING per calendar, a decision they're weighing in their own words).
-        - Never invent, never embellish, never quote message text verbatim. Fewer, surer entries
-          always beat more. Never echo this format description.
-
-        === THEIR OWN LIFE (messages / calendar / reminders) ===
-        \(lived.isEmpty ? "(no sources enabled)" : lived.joined(separator: "\n\n"))
-
-        === BROWSING (things they looked at — weakest signal) ===
-        \(looked.isEmpty ? "(no sources enabled)" : looked.joined(separator: "\n\n"))
+        let instructions = """
+        You build a compact, private context sheet about one person from raw signals off their own
+        computer. This sheet must be trustworthy: a wrong guess is far worse than an empty field.
+        Never invent, never embellish, never quote message text back verbatim. Fewer, surer entries
+        always beat more.
         """
-        guard let raw = try? await FoundationModelProvider().generate(prompt: prompt),
-              let jsonStr = AIJSON.firstObject(in: raw),
-              let data = jsonStr.data(using: .utf8),
-              var d = try? JSONDecoder().decode(Digest.self, from: data) else { return }
-        d.doing = d.doing.filter { AIJSON.isRealText($0, minLetters: 4) }.map { String($0.prefix(60)) }
-        d.reading = d.reading.filter { AIJSON.isRealText($0, minLetters: 4) }.map { String($0.prefix(60)) }
-        d.people = d.people.map { $0.trimmingCharacters(in: .whitespaces) }.filter { plausiblePersonName($0) }
-        d.notes = d.notes.filter { AIJSON.isRealText($0) }.map { String($0.prefix(120)) }
+        let prompt = """
+        === THEIR OWN LIFE (messages / calendar / reminders) ===
+        \(lived.isEmpty ? "(no sources enabled)" : String(lived.joined(separator: "\n\n").prefix(3_000)))
+
+        === BROWSING (things they looked at — the weakest signal) ===
+        \(looked.isEmpty ? "(no sources enabled)" : String(looked.joined(separator: "\n\n").prefix(1_500)))
+        """
+        // On-device ONLY, by design: this is the most personal material in the app, and it stays
+        // on this Mac even though the cloud tier is Apple-private.
+        guard #available(macOS 26.0, *),
+              let r = try? await OnDeviceBrain().object(AILifeDigest.self,
+                                                        AIRequest(prompt, instructions: instructions, temperature: 0.3),
+                                                        jsonShape: AILifeDigest.jsonShape) else { return }
+        var d = Digest()
+        d.doing = r.doing.filter { AIJSON.isRealText($0, minLetters: 4) }.map { String($0.prefix(60)) }
+        d.reading = r.reading.filter { AIJSON.isRealText($0, minLetters: 4) }.map { String($0.prefix(60)) }
+        d.people = r.people.map { $0.trimmingCharacters(in: .whitespaces) }.filter { plausiblePersonName($0) }
+        d.notes = r.notes.filter { AIJSON.isRealText($0) }.map { String($0.prefix(120)) }
         guard let out = try? JSONEncoder().encode(d), let payload = String(data: out, encoding: .utf8) else { return }
         await MainActor.run {
             Brain.store(context, key: "life_signals.v2", payload: payload, ttl: 2 * 86400)

@@ -3,6 +3,33 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.0
+
+The first version I'd call finished. The intelligence was rebuilt from the ground up, the app has a new identity, and the parts that were quietly making things up have been taken out.
+
+### The AI no longer invents things about you
+
+- **Observations are computed, not written.** Everything in "What Freelane noticed" is now arithmetic over your own rows — a comparison you could check by hand. No language model decides what's true about your money or your life any more. It used to, and it produced sentences like *"your gifting pattern is designed to preemptively manage relationship friction, not genuine generosity"* — fluent, confident, and entirely invented. Two rounds of stricter instructions didn't stop it, so the model lost the job. The 84 fabricated ones already in your app are cleared on update.
+- **It can't leak internal ids into questions.** "What would make the next step feel good, like the 1000 euro contract from journal_1784966887??" happened because memories were keyed by timestamp and the key was being shown to the model. Nothing outside the memory layer ever sees a key now, and no question ships without passing a single strict gate — the old lenient fallback path is gone, which is how the double question mark got through.
+- **Corrections actually correct.** Telling it "I never sold a motorbike" used to file that sentence as one more belief beside the claim it was refuting, so it held both and kept asking. A correction now deletes what it contradicts, including an older correction on the same subject. Your 253 stored beliefs were rebuilt: guesses retired, what you confirmed kept, your corrections replayed oldest-first so the most recent thing you said wins.
+- **You can see and delete everything it believes.** Settings → Intelligence lists every belief, where it came from, and a bin next to each one.
+- **Questions can't come back malformed.** Every structured AI call now decodes against a fixed schema, so a wrong category or a truncated reply is impossible rather than merely discouraged. That class of bug — where a bad reply silently rendered an empty box — is what "things don't load and it breaks" was.
+- **Questions are written one at a time.** The old batch prompt carried your entire history and blew the context window, which is why "New questions" failed most of the time. Each question now gets its own small prompt, and a failure costs one question instead of all of them. When nothing can be added, it tells you why and which brain was asked.
+
+### A local model that's actually yours
+
+- **Qwen3-8B runs inside Freelane, on your Mac.** About 4.6 GB, downloaded once from Settings → Intelligence, loaded straight onto the GPU. No Ollama, no server, no second app. Once it's down, the AI works with the internet off.
+- **Apple's Private Cloud Compute is off.** It's wired up, but on this macOS build it reports itself available and then fails every call — four attempts, four errors, zero successes. A new circuit breaker drops any brain that fails repeatedly without ever succeeding, so a dead one can't sit at the head of the queue burning every request or spam you about it.
+- **Superseded weights are deleted automatically.** Changing models never leaves two multi-gigabyte copies on disk.
+- **Interrupted downloads resume** on next launch instead of leaving the app brainless with half a file.
+
+### A new look, and one less thing to feel bad about
+
+- **New palette and new icon.** Warm-neutral ink instead of the muddy brown, one forest-green accent, and a serif for headlines and hero figures so the app reads like a page rather than a dashboard. The mark no longer inverts with the theme — a logo is a constant. There's a light theme in Settings, retuned to warm grey rather than the paper white that was genuinely painful to look at.
+- **The journal streak is gone.** The whole system — streaks, coins, freezes, recovery, and the calendar marking every day you missed in red. It turned journalling into a daily obligation and made a busy day feel like a failure, which is the opposite of the point. Days you wrote still show; days you didn't are simply blank.
+- **Open questions read like invitations.** Larger serif type, room to breathe, and the housekeeping controls stay out of the way until you're on a question.
+- **The page stopped shimmering.** The animated background was re-rendering continuously for the whole life of the app to make glass refract against something. The cards aren't glass any more, so it bought nothing but heat.
+
 ## 0.20
 
 Talk back to it — your answers now teach it directly.

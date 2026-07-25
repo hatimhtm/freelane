@@ -1,11 +1,14 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Palette v5 — "Warm Dark + Warm Light" (adaptive)
-// One warm identity in two moods. Every color resolves to a LIGHT or DARK variant based on the
-// current appearance (see `dyn`), so the WHOLE app flips between cozy warm-charcoal and warm paper
-// with zero call-site changes — driven by Settings → Appearance (System / Light / Dark).
-// Names are historical labels (`acidLime`, `azure`, `cyan`); the VALUES are the identity.
+// MARK: - Palette v6 — "Editorial: paper & ink" (adaptive, light-first)
+// The identity is a well-printed page: warm off-white paper, near-black ink, generous white space,
+// and a small set of MUTED inks instead of bright jewel tones. Nothing glows, nothing is muddy.
+// Light is the app's default face; dark is a true warm-neutral ink-black (never brown).
+//
+// Every color resolves to a LIGHT or DARK variant from the current appearance (see `dyn`), so the
+// WHOLE app re-skins from this one block — driven by Settings → Appearance (System / Light / Dark).
+// Names are historical labels (`acidLime`, `azure`, `cyan`); the VALUES carry the identity.
 
 /// A color that resolves to `light` in a light appearance and `dark` in a dark one. Tuples are
 /// sRGB (r, g, b, a). This one function is how the whole app themes both modes from a single block.
@@ -18,124 +21,113 @@ private func dyn(_ light: (Double, Double, Double, Double), _ dark: (Double, Dou
 }
 
 enum Palette {
-    /// Signature amber — the one warm accent (deepened in light mode for contrast on paper).
-    static let acidLime = dyn((0.761, 0.459, 0.122, 1), (0.910, 0.569, 0.235, 1))
+    /// The signature ink — deep forest. The one brand accent: primary buttons, the home section,
+    /// selected states. Lifted to a readable sage in dark mode.
+    static let acidLime = dyn((0.122, 0.361, 0.239, 1), (0.435, 0.702, 0.545, 1))   // #1F5C3D / #6FB38B
     static let azure    = acidLime
 
-    // Feature accents — jewel tones, deepened for light mode so they read on paper.
-    static let cyan   = dyn((0.180, 0.533, 0.600, 1), (0.373, 0.718, 0.769, 1))   // teal
-    static let indigo = dyn((0.345, 0.322, 0.753, 1), (0.557, 0.545, 0.878, 1))   // periwinkle
-    static let violet = dyn((0.588, 0.278, 0.761, 1), (0.773, 0.549, 0.878, 1))   // orchid
+    // Section inks — muted, printerly, clearly distinct from each other without shouting.
+    static let cyan   = dyn((0.114, 0.369, 0.388, 1), (0.408, 0.678, 0.698, 1))   // #1D5E63 deep teal
+    static let indigo = dyn((0.141, 0.282, 0.431, 1), (0.478, 0.616, 0.804, 1))   // #24486E ink blue
+    static let violet = dyn((0.416, 0.227, 0.388, 1), (0.741, 0.541, 0.706, 1))   // #6A3A63 plum
 
-    // Money-semantic (mint / coral / amber-yellow)
-    static let teal     = dyn((0.180, 0.620, 0.388, 1), (0.373, 0.788, 0.541, 1))
+    // Money-semantic — green in, oxblood out, ochre for attention.
+    static let teal     = dyn((0.173, 0.431, 0.286, 1), (0.451, 0.729, 0.561, 1))   // #2C6E49
     static let positive = teal
-    static let negative = dyn((0.824, 0.255, 0.184, 1), (0.941, 0.408, 0.361, 1))
-    static let warning  = dyn((0.761, 0.525, 0.106, 1), (0.949, 0.722, 0.290, 1))
+    static let negative = dyn((0.639, 0.227, 0.133, 1), (0.878, 0.443, 0.353, 1))   // #A33A22 oxblood
+    static let warning  = dyn((0.690, 0.490, 0.141, 1), (0.859, 0.663, 0.310, 1))   // #B07D24 ochre
 
-    // Text — deep warm ink on paper / warm cream on charcoal.
-    static let textPrimary   = dyn((0.141, 0.114, 0.078, 1), (0.949, 0.925, 0.890, 1))
-    static let textSecondary = dyn((0.431, 0.384, 0.322, 1), (0.659, 0.620, 0.565, 1))
-    static let textTertiary  = dyn((0.612, 0.561, 0.482, 1), (0.478, 0.439, 0.392, 1))
+    // Text — near-black ink on paper / warm bone on ink-black.
+    static let textPrimary   = dyn((0.086, 0.082, 0.059, 1), (0.949, 0.941, 0.914, 1))
+    static let textSecondary = dyn((0.420, 0.400, 0.349, 1), (0.659, 0.635, 0.588, 1))
+    static let textTertiary  = dyn((0.604, 0.580, 0.525, 1), (0.447, 0.427, 0.384, 1))
 
-    // Backdrop glow pools (what the glass lenses against).
-    static let coolGlow = dyn((0.910, 0.635, 0.298, 1), (0.910, 0.635, 0.298, 1))   // warm amber glow
-    static let warmGlow = dyn((0.804, 0.549, 0.443, 1), (0.690, 0.349, 0.243, 1))   // terracotta
+    // Backdrop wash pools — a whisper of tone in the paper, never a glow.
+    static let coolGlow = dyn((0.122, 0.361, 0.239, 1), (0.435, 0.702, 0.545, 1))
+    static let warmGlow = dyn((0.690, 0.490, 0.141, 1), (0.396, 0.302, 0.161, 1))
 
-    // Mesh wallpaper stops — warm paper pools in light, warm-charcoal pools in dark.
-    static let meshGraphite = dyn((0.953, 0.929, 0.878, 1), (0.102, 0.086, 0.078, 1))
-    static let meshCool     = dyn((0.929, 0.890, 0.839, 1), (0.165, 0.102, 0.110, 1))
-    static let meshWarm     = dyn((0.965, 0.914, 0.824, 1), (0.180, 0.118, 0.063, 1))
-    static let meshLime     = dyn((0.941, 0.918, 0.839, 1), (0.149, 0.118, 0.055, 1))
+    // Page wash stops — the faint unevenness of real stock (light) / ink depth (dark).
+    static let meshGraphite = dyn((0.929, 0.918, 0.898, 1), (0.071, 0.071, 0.059, 1))
+    static let meshCool     = dyn((0.910, 0.910, 0.898, 1), (0.075, 0.086, 0.078, 1))
+    static let meshWarm     = dyn((0.925, 0.914, 0.890, 1), (0.090, 0.086, 0.071, 1))
+    static let meshLime     = dyn((0.914, 0.922, 0.906, 1), (0.071, 0.082, 0.075, 1))
 
-    // Neutrals — warm paper in light, warm charcoal in dark.
-    static let ink   = dyn((0.965, 0.945, 0.906, 1), (0.102, 0.086, 0.078, 1))   // background
-    static let ink2  = dyn((0.937, 0.910, 0.855, 1), (0.133, 0.110, 0.094, 1))
-    static let ink3  = dyn((0.898, 0.863, 0.800, 1), (0.173, 0.141, 0.118, 1))
-    // Content card surface — near-white on paper, raised charcoal in dark (lifts off the bg).
-    static let card  = dyn((0.992, 0.984, 0.965, 1), (0.149, 0.125, 0.106, 1))
+    // Neutrals — warm GREY in light, warm-neutral ink-black in dark.
+    //
+    // The light theme was originally paper white (#FBFAF7 ground, pure white cards). On a bright
+    // display that is genuinely painful — the verdict was "it almost blinded me" — so the whole
+    // light ramp is pulled down about 6%: a warm grey ground with off-white cards, which keeps the
+    // editorial feel and the contrast ratios while dropping the glare. Dark is the default face.
+    static let ink   = dyn((0.929, 0.918, 0.898, 1), (0.071, 0.071, 0.059, 1))   // #EDEAE5 / #12120F
+    static let ink2  = dyn((0.898, 0.886, 0.863, 1), (0.098, 0.094, 0.082, 1))
+    static let ink3  = dyn((0.855, 0.843, 0.816, 1), (0.129, 0.122, 0.102, 1))
+    // Content card surface — off-white stock lifted just off the grey ground, a raised ink plate in dark.
+    static let card  = dyn((0.965, 0.957, 0.941, 1), (0.106, 0.102, 0.086, 1))
 
     // Adaptive surface tones — the replacement for hardcoded `.white.opacity(...)` that assumed a
-    // dark background (dark ink on paper, white on charcoal), so hairlines/wells work in both modes.
-    static let hairline      = dyn((0.10, 0.09, 0.07, 0.10), (1, 1, 1, 0.08))
-    static let wellFill      = dyn((0.10, 0.09, 0.07, 0.04), (1, 1, 1, 0.05))
-    static let wellFillHover = dyn((0.10, 0.09, 0.07, 0.07), (1, 1, 1, 0.08))
-    static let wellStroke    = dyn((0.10, 0.09, 0.07, 0.12), (1, 1, 1, 0.10))
-    static let cardEdge      = dyn((0.16, 0.13, 0.09, 0.13), (1, 1, 1, 0.12))
+    // dark background (dark ink on paper, bone on ink-black), so hairlines/wells work in both modes.
+    static let hairline      = dyn((0.09, 0.08, 0.06, 0.11), (1, 1, 0.98, 0.09))
+    static let wellFill      = dyn((0.09, 0.08, 0.06, 0.035), (1, 1, 0.98, 0.045))
+    static let wellFillHover = dyn((0.09, 0.08, 0.06, 0.065), (1, 1, 0.98, 0.075))
+    static let wellStroke    = dyn((0.09, 0.08, 0.06, 0.10), (1, 1, 0.98, 0.09))
+    static let cardEdge      = dyn((0.09, 0.08, 0.06, 0.12), (1, 1, 0.98, 0.10))
     // Input fields sit a step above wells so "type here" reads at a glance in both modes.
-    static let fieldFill     = dyn((0.10, 0.09, 0.07, 0.06), (1, 1, 1, 0.11))
-    static let fieldStroke   = dyn((0.10, 0.09, 0.07, 0.16), (1, 1, 1, 0.16))
+    static let fieldFill     = dyn((0.09, 0.08, 0.06, 0.05), (1, 1, 0.98, 0.09))
+    static let fieldStroke   = dyn((0.09, 0.08, 0.06, 0.15), (1, 1, 0.98, 0.15))
 
     static func accent(for index: Int) -> Color {
         [acidLime, teal, violet, cyan, indigo][index % 5]
     }
 
-    /// Per-section identity accent. Each sidebar area owns a color so Money / People / Life /
-    /// Insights are distinguishable at a glance (Phase 1 wires this into the shell + screens).
+    /// Per-section identity ink. Each sidebar area owns a color so Money / People / Life /
+    /// Insights read distinct at a glance without turning the page into a highlighter set.
     enum Section { case overview, money, people, life, insights, settings }
     static func section(_ s: Section) -> Color {
+        // Each section needs to be told apart at a glance in the sidebar. Overview and Money both
+        // reading green failed that — the brand forest and the money green are neighbours.
         switch s {
-        case .overview:  return azure     // amber — the home temperature
-        case .money:     return positive  // mint — it's money
-        case .people:    return indigo    // periwinkle
-        case .life:      return violet    // orchid
-        case .insights:  return cyan      // teal
+        case .overview:  return azure     // forest — the brand, and home
+        case .money:     return indigo    // ink blue
+        case .people:    return cyan      // deep teal
+        case .life:      return violet    // plum
+        case .insights:  return warning   // ochre
         case .settings:  return textSecondary
         }
     }
 }
 
-// MARK: - Animated backdrop (the "wallpaper" Liquid Glass refracts against)
+// MARK: - The page ground
 
-/// Liquid Glass only looks like glass when there's something luminous and varied
-/// behind it. This is our wallpaper: a deep graphite base with slow-drifting light
-/// pools (neutral + a couple of jewel tints + one acid-lime signature) so the glass
-/// tiles lens and shift like the macOS Tahoe Control Center.
+/// The paper the app is printed on. Deliberately STILL: an editorial page doesn't shimmer.
+///
+/// This replaced a 3×3 `MeshGradient` that re-rendered at 20fps for the app's entire lifetime to
+/// make Liquid Glass lens against something. Content cards are matte panels now, not glass, so the
+/// drift bought nothing but heat — and a moving ground is exactly what made the old look feel
+/// restless. What's left is what good paper actually has: a barely-there tonal wash, one whisper of
+/// the brand ink in the top corner, and a soft edge falloff. No timers, no animation, no redraws.
 struct AppBackground: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.controlActiveState) private var activeState
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        // 20fps is indistinguishable for drift this slow, and the animation PAUSES whenever
-        // this window isn't the active one — so background windows, hidden sheets, and an
-        // unfocused app cost ~zero CPU/battery on a MacBook.
         let dark = scheme == .dark
-        return TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: reduceMotion || activeState == .inactive)) { timeline in
-            let t = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
-            ZStack {
-                MeshGradient(width: 3, height: 3, points: points(t), colors: meshColors)
-                    .ignoresSafeArea()
-                // A slow candle-glow pool that drifts across the room — the warmth the glass bends.
-                RadialGradient(colors: [Palette.coolGlow.opacity(dark ? 0.05 : 0.08), .clear],
-                               center: UnitPoint(x: 0.5 + 0.18 * sin(t * 0.11), y: 0.32 + 0.10 * cos(t * 0.09)),
-                               startRadius: 60, endRadius: 560)
-                    .ignoresSafeArea()
-                // Depth vignette — darkens edges in dark mode; a whisper on paper so it stays bright.
-                RadialGradient(colors: [.clear, .black.opacity(dark ? 0.40 : 0.05)],
-                               center: .center, startRadius: 340, endRadius: 1100)
-                    .ignoresSafeArea()
-            }
+        ZStack {
+            Palette.ink.ignoresSafeArea()
+            // Paper stock is never perfectly flat — a faint diagonal wash gives the page a grain
+            // of depth without reading as a "gradient background".
+            LinearGradient(colors: [Palette.meshWarm.opacity(dark ? 0.9 : 0.7),
+                                    Palette.meshGraphite.opacity(0),
+                                    Palette.meshCool.opacity(dark ? 0.8 : 0.6)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+            // One quiet pool of the brand ink where the eye lands first (top-left, under the title).
+            RadialGradient(colors: [Palette.coolGlow.opacity(dark ? 0.05 : 0.035), .clear],
+                           center: UnitPoint(x: 0.18, y: 0.04), startRadius: 0, endRadius: 620)
+                .ignoresSafeArea()
+            // Edge falloff — keeps the eye on the column of content. A whisper on paper.
+            RadialGradient(colors: [.clear, .black.opacity(dark ? 0.28 : 0.035)],
+                           center: .center, startRadius: 380, endRadius: 1150)
+                .ignoresSafeArea()
         }
-    }
-
-    // The center stop uses the (adaptive) graphite so the paper mesh never goes black in light mode.
-    private var meshColors: [Color] {
-        [Palette.meshGraphite, Palette.meshCool,     Palette.meshGraphite,
-         Palette.meshWarm,     Palette.meshGraphite, Palette.meshCool,
-         Palette.meshGraphite, Palette.meshLime,     Palette.meshGraphite]
-    }
-
-    /// 3×3 control grid; corners pinned, interior points drift slowly so the color
-    /// field breathes and the glass above it lenses differently as it moves.
-    private func points(_ t: Double) -> [SIMD2<Float>] {
-        func s(_ p: Double) -> Float { Float(0.10 * sin(t * 0.26 + p)) }
-        func c(_ p: Double) -> Float { Float(0.10 * cos(t * 0.22 + p)) }
-        return [
-            SIMD2(0, 0),            SIMD2(0.5 + s(0), 0),            SIMD2(1, 0),
-            SIMD2(0, 0.5 + c(1)),   SIMD2(0.5 + s(2), 0.5 + c(2)),   SIMD2(1, 0.5 + s(3)),
-            SIMD2(0, 1),            SIMD2(0.5 + c(4), 1),            SIMD2(1, 1),
-        ]
     }
 }
 
@@ -169,23 +161,29 @@ struct GlassCardModifier: ViewModifier {
     var elevated: Bool
     var interactive: Bool = false   // accepted for call-site compatibility; no longer used
     var morphID: String? = nil      // (morphing removed — it caused the two-tile flow)
+    @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        // GROUNDED panel — not glass. A solid matte surface (near-white on paper, raised charcoal in
-        // dark), a hairline edge, and one soft shadow. Real Liquid Glass is reserved for the floating
-        // nav layer (`navGlass`), the way Apple uses it — content cards stay calm and solid.
+        let dark = scheme == .dark
+        // A PRINTED CARD, not glass: white stock on warm paper (a raised ink plate in dark), one
+        // hairline rule, and a shadow you can barely name. Real Liquid Glass is reserved for the
+        // floating nav layer (`navGlass`), the way Apple uses it.
+        //
+        // Shadow weight is mode-specific on purpose: the old single value (18%/10% black) was tuned
+        // for a dark room and smeared grey halos across the light theme, which is most of what made
+        // paper look dirty. On white, depth comes from the rule; in the dark, from the shadow.
         return content
             .background {
                 ZStack {
                     shape.fill(Palette.card)
-                    if let tint { shape.fill(tint.opacity(0.10)) }
+                    if let tint { shape.fill(tint.opacity(dark ? 0.10 : 0.055)) }
                 }
             }
             .overlay(shape.strokeBorder(Palette.cardEdge, lineWidth: 0.8))
             .clipShape(shape)
-            .shadow(color: .black.opacity(elevated ? 0.18 : 0.10),
-                    radius: elevated ? 16 : 8, x: 0, y: elevated ? 6 : 3)
+            .shadow(color: .black.opacity(dark ? (elevated ? 0.34 : 0.20) : (elevated ? 0.07 : 0.035)),
+                    radius: elevated ? 18 : 9, x: 0, y: elevated ? 7 : 3)
             .contentShape(shape)
     }
 }
@@ -396,10 +394,16 @@ struct MoneyText: View {
     var body: some View {
         let sym = CurrencyFormat.symbol(code)
         let num = CurrencyFormat.string(amount, code, compact: compact).replacingOccurrences(of: sym, with: "")
-        return HStack(alignment: .firstTextBaseline, spacing: 1) {
-            Text(sym).font(.system(size: size * 0.6, weight: .semibold, design: .rounded))
-                .foregroundStyle(color.opacity(0.55))
-            Text(num).font(.system(size: size, weight: .semibold, design: .rounded))
+        // Hero figures are set in the editorial serif (New York) with monospaced digits, so they
+        // read as the headline of the page and still align in columns. Small figures inside dense
+        // rows keep SF Rounded — see `Typo.rowFigure` — because serif at 12pt is just noise.
+        let serif = size >= 20
+        return HStack(alignment: .firstTextBaseline, spacing: serif ? 2 : 1) {
+            Text(sym)
+                .font(serif ? Typo.figure(size * 0.58) : Typo.rowFigure(size * 0.6))
+                .foregroundStyle(color.opacity(0.5))
+            Text(num)
+                .font(serif ? Typo.figure(size) : Typo.rowFigure(size))
                 .monospacedDigit()
                 .foregroundStyle(color)
                 .contentTransition(.numericText(value: amount))   // digits roll on change
@@ -551,7 +555,12 @@ struct Sparkline: View {
     }
 }
 
-/// A titled content card.
+/// A titled content card — the app's main structural unit.
+///
+/// The header is separated from its content by a hairline rule rather than by spacing alone. That
+/// single line is most of what distinguishes a considered layout from a stack of boxes: it gives
+/// the card an internal structure, so the eye reads *heading, then content* instead of one
+/// undifferentiated block of text at four similar sizes.
 struct SectionCard<Content: View>: View {
     var title: String
     var subtitle: String? = nil
@@ -560,22 +569,32 @@ struct SectionCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                // No per-card colored dot: content cards stay calm and neutral (section identity
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                // No per-card coloured dot: content cards stay calm and neutral (section identity
                 // lives in the sidebar). `accent` is kept for call-site compat + trailing tints.
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).sectionTitle()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(Typo.title(19)).foregroundStyle(Palette.textPrimary)
                     if let subtitle {
-                        Text(subtitle).font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+                        Text(subtitle).font(.system(size: 11.5))
+                            .foregroundStyle(Palette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 if let trailing { trailing }
             }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.top, Spacing.l + 2)
+            .padding(.bottom, Spacing.m)
+
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+
             content()
+                .padding(.horizontal, Spacing.xl)
+                .padding(.top, Spacing.l)
+                .padding(.bottom, Spacing.l + 2)
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: Radii.card)
     }
@@ -637,28 +656,50 @@ struct MiniWidget: View {
 
     var body: some View {
         Button { if let d = destination { navigate(d) } } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Image(systemName: systemImage).font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(accent).frame(width: 26, height: 26)
-                        .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    Spacer()
+            VStack(alignment: .leading, spacing: 0) {
+                // Label line. The icon sits INLINE at text size, not inside a tinted rounded
+                // square — that motif, repeated across a grid of a dozen tiles, is the single
+                // biggest reason a layout like this reads as a template rather than a product.
+                HStack(spacing: 5) {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(accent)
+                    Text(label)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .textCase(.uppercase).kerning(0.6)
+                        .foregroundStyle(Palette.textTertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
                     if destination != nil {
-                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Palette.textTertiary).opacity(hover ? 1 : 0)
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Palette.textTertiary)
+                            .opacity(hover ? 1 : 0)
                     }
                 }
-                Spacer(minLength: 2)
-                Text(label).font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.textTertiary).lineLimit(1)
-                // The most-glanced numbers in the app get the biggest type on the tile — values
-                // arrive pre-abbreviated, so the scale floor stays high instead of shrinking.
-                Text(value).font(.system(size: 22, weight: .semibold, design: .rounded))
-                    .foregroundStyle(tone ?? Palette.textPrimary).lineLimit(1).minimumScaleFactor(0.75)
-                    .contentTransition(.numericText()).animation(.snappy(duration: 0.4), value: value)
-                if let sub { Text(sub).font(.system(size: 9)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
+
+                Spacer(minLength: 8)
+
+                // The value IS the tile. Figures get the editorial serif at a size that dominates
+                // everything around it; WORDS don't — a vendor name set in 27pt New York reads as
+                // a headline the tile never meant to make ("Lazada" was arriving that way). So a
+                // value with no digits in it drops to sans at a size that fits a name.
+                let isFigure = value.contains(where: \.isNumber)
+                Text(value)
+                    .font(isFigure ? Typo.figure(27) : .system(size: 17, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(tone ?? Palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .contentTransition(.numericText())
+                    .animation(.snappy(duration: 0.4), value: value)
+
+                if let sub {
+                    Text(sub).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                        .lineLimit(1).padding(.top, 2)
+                }
             }
-            .padding(13)
-            .frame(maxWidth: .infinity, minHeight: 98, alignment: .leading)
+            .padding(.horizontal, 15).padding(.vertical, 14)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
             .glassCard(cornerRadius: Radii.tile, tint: hover && destination != nil ? accent : nil,
                        interactive: destination != nil, morphID: morphID)
         }

@@ -782,7 +782,6 @@ struct LettersView: View {
     private let promptTarget = 5                  // always keep this many open questions ahead so journaling never stalls
     @State private var searchDate: Date?
     @State private var showCalendar = false
-    @State private var showStreak = false
     @State private var selectedDay: JournalDayGroup?
     @State private var mindMoney: [String] = []
     @State private var loadingMM = false
@@ -818,36 +817,18 @@ struct LettersView: View {
     private func dayDate(_ d: Date) -> String { d.formatted(.dateTime.month().day().year()) }
 
     private var wroteToday: Bool { letters.contains { cal.isDateInToday($0.createdAt) } }
-    private var entryDayKeys: Set<String> { Set(letters.map { JournalGame.dayKey($0.createdAt) }) }
-    private var entryCounts: [String: Int] { Dictionary(letters.map { (JournalGame.dayKey($0.createdAt), 1) }, uniquingKeysWith: +) }
-    private var firstEntryDate: Date? { letters.map(\.createdAt).min() }
-    /// Streak counts entry days AND coin-frozen / recovered days.
-    private var journalStreak: Int { JournalGame.streak(entryDays: entryDayKeys) }
-    /// Recovery questions answered since a break was armed.
-    private var recoveryProgress: Int {
-        guard let started = JournalGame.recoveryStartedAt else { return 0 }
-        return letters.filter { $0.createdAt >= started }.count
+    /// Day key for the calendar heat map. (Was `JournalGame.dayKey` before the streak system was
+    /// removed — journaling is no longer scored, so nothing but the calendar needs this.)
+    static func dayKey(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = PHT.calendar; f.timeZone = PHT.zone; f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d)
     }
-    /// Arm a break + auto-restore once enough recovery questions are answered.
-    private func reconcileStreak() {
-        JournalGame.armRecoveryIfNeeded(entryDays: entryDayKeys)
-        let req = JournalGame.recoveryRequired(missedDays: JournalGame.recoveryMissed.count)
-        if JournalGame.recoveryStartedAt != nil, req > 0, recoveryProgress >= req { JournalGame.completeRecovery() }
-    }
+    private var entryCounts: [String: Int] { Dictionary(letters.map { (Self.dayKey($0.createdAt), 1) }, uniquingKeysWith: +) }
 
     var body: some View {
         Page("Journal", subtitle: "Your private space — every answer teaches it what to ask next.", toolbar: AnyView(
             HStack(spacing: 10) {
-                // Round streak chip (journal-only, up by the bell) — tap for the streak menu.
-                Button { showStreak = true } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "flame.fill").font(.system(size: 12))
-                        Text("\(journalStreak)").font(.system(size: 12, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(journalStreak > 0 ? Palette.warning : Palette.textTertiary)
-                    .padding(.horizontal, 10).frame(height: 30)
-                }.buttonStyle(.plain).background(Palette.hairline, in: Capsule())
-                    .overlay(Capsule().strokeBorder((journalStreak > 0 ? Palette.warning : .white).opacity(0.2), lineWidth: 0.8))
                 Menu {
                     Button("This month") { write("month") }
                     Button("This week") { write("week") }
@@ -860,19 +841,22 @@ struct LettersView: View {
             // what you write (follow-ups) or on demand; never random, never re-pasted daily.
             SectionCard(title: "Open questions",
                         subtitle: openPromptRows.isEmpty
-                            ? (!ai.isReady ? "Enable Apple Intelligence or add an AI key in Settings — or just write." : "All answered. Ask for new ones, or just write.")
-                            : "Saved until you answer them — answering may spark a follow-up",
-                        accent: Palette.indigo,
+                            ? (!ai.isReady ? ai.unavailableReason : "All answered. Ask for new ones, or just start writing.")
+                            : "Yours until you answer them — an answer may spark a follow-up",
+                        accent: Palette.violet,
                         trailing: AnyView(
                             Button { loadAIPrompts(force: true) } label: {
                                 Label(loadingPrompts ? "Thinking…" : "New questions", systemImage: "sparkles").font(.system(size: 11))
-                            }.buttonStyle(.plain).foregroundStyle(Palette.indigo).disabled(loadingPrompts || !ai.isReady))) {
+                            }.buttonStyle(.plain).foregroundStyle(Palette.violet).disabled(loadingPrompts || !ai.isReady))) {
                 VStack(spacing: 8) {
                     ForEach(openPromptRows) { p in promptRow(p) }
+                    // Say WHAT happened when nothing came back. A control that quietly does
+                    // nothing is the single loudest "this app is broken" signal there is.
                     if let promptStatus {
                         Label(promptStatus, systemImage: "info.circle")
                             .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Button { activeEntry = JournalEntryPrompt(text: "") } label: {
                         Label("Just write — no prompt", systemImage: "pencil").frame(maxWidth: .infinity)
@@ -938,8 +922,6 @@ struct LettersView: View {
             }
         }
         .task {
-            JournalGame.reconcileCoins(entries: letters.map { ($0.id, $0.createdAt) })   // backfill past entries
-            reconcileStreak()
             // Mind × money: show what's cached instantly; quietly regenerate when stale.
             mindMoney = Brain.mindMoneyLines(context)
             if mindMoney.isEmpty, ai.isReady, letters.filter({ $0.sentiment != nil }).count >= 4 {
@@ -952,7 +934,6 @@ struct LettersView: View {
             if count < old { refillExhausted = false }   // a slot opened → new questions are likely possible again
             if count < promptTarget, ai.isReady, !loadingPrompts, !refillExhausted { loadAIPrompts() }
         }
-        .sheet(isPresented: $showStreak) { StreakMenu(entryCounts: entryCounts, firstEntry: firstEntryDate, recoveryProgress: recoveryProgress) }
         .sheet(item: $selectedDay) { day in journalDaySheet(day) }
         .sheet(item: $activeEntry) { AddLetterSheet(seedPrompt: $0.text, promptId: $0.promptId) }
         .sheet(item: $reading) { l in
@@ -1071,39 +1052,19 @@ struct LettersView: View {
         }
     }
 
-    /// One persisted question — click to answer, ♥ to teach it your taste, ✕ to dismiss for good.
-    /// Action buttons are SIBLINGS of the row button (not nested) so they never open the sheet.
+    /// One open question.
+    ///
+    /// Set as an invitation rather than a table row: the question itself carries the editorial
+    /// serif at a size you'd actually want to answer, and the housekeeping (where it came from, the
+    /// ♥ / ✕ controls) recedes until you're on it. The old row put a 12pt system-font question
+    /// between two always-visible grey circles, which read as a chore list.
     private func promptRow(_ p: JournalPrompt) -> some View {
-        let liked = p.feedback == "up"
-        return HStack(spacing: 10) {
-            Button { activeEntry = JournalEntryPrompt(text: p.text, promptId: p.id) } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: promptIcon(p)).font(.system(size: 13)).foregroundStyle(Palette.indigo)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(p.text).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).multilineTextAlignment(.leading)
-                        if let badge = promptBadge(p) {
-                            Text(badge).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                        }
-                    }
-                    Spacer()
-                    Image(systemName: "square.and.pencil").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                }.contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            // Taste signals: ♥ = "good question, more like this" (kept open); ✕ = "not for me" (gone).
-            Button { p.feedback = liked ? nil : "up"; p.dirty = true; try? context.save() } label: {
-                Image(systemName: liked ? "heart.fill" : "heart")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(liked ? Palette.acidLime : Palette.textTertiary)
-                    .padding(5).background(liked ? Palette.wellFillHover : Palette.wellFill, in: Circle())
-            }.buttonStyle(.iconPress).help("Good question — ask more in this spirit")
-            Button { dismissPrompt(p) } label: {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.textTertiary)
-                    .padding(5).background(Palette.hairline, in: Circle())
-            }.buttonStyle(.iconPress).help("Not for me — dismiss it, and the AI learns to avoid this kind")
-        }
-        .padding(.vertical, 7).padding(.horizontal, 10)
-        .insetRow(cornerRadius: Radii.field)
-        .transition(.opacity)
+        PromptRow(prompt: p,
+                  icon: promptIcon(p),
+                  badge: promptBadge(p),
+                  onAnswer: { activeEntry = JournalEntryPrompt(text: p.text, promptId: p.id) },
+                  onLike: { p.feedback = (p.feedback == "up") ? nil : "up"; p.dirty = true; try? context.save() },
+                  onDismiss: { dismissPrompt(p) })
     }
 
     private func dismissPrompt(_ p: JournalPrompt) {
@@ -1128,28 +1089,96 @@ struct LettersView: View {
         let need = force ? 3 : (promptTarget - openPromptRows.count)
         guard need > 0 else { return }
         loadingPrompts = true
+        promptStatus = nil
         let mgr = ai, ctx = context
         Task {
             let ps = await Brain.journalPrompts(ctx, ai: mgr, count: need + 2)
-            await MainActor.run {
-                let added = Brain.storeJournalPrompts(ctx, texts: ps, source: "ai")
-                if added == 0 {
-                    refillExhausted = true   // nothing new — wait for a slot to open before retrying
-                    // Say WHY instead of silently doing nothing (the old "button does nothing" feel).
-                    promptStatus = ps.isEmpty
-                        ? "The model couldn't produce questions just now — try once more."
-                        : "Its ideas were all too close to past questions — answer or dismiss one and try again."
-                } else {
-                    promptStatus = nil
-                }
-                loadingPrompts = false
+            let added = Brain.storeJournalPrompts(ctx, texts: ps, source: "ai")
+            if added == 0 {
+                refillExhausted = true   // nothing new — wait for a slot to open before retrying
+                // Three different failures, three different things to tell the user — and the last
+                // one names the brain, because "which brain is even running" was invisible before.
+                let brain = mgr.smartLead?.shortLabel ?? "no brain"
+                promptStatus = ps.isEmpty
+                    ? "The \(brain) couldn't write anything usable this time. Try once more — or just write."
+                    : "Everything it came up with was too close to a question you've already had. Answer or dismiss one and try again."
             }
+            loadingPrompts = false
         }
     }
 }
 
 /// Carries the exact prompt into the writing sheet (item-driven so the right question always shows).
 struct JournalEntryPrompt: Identifiable { let id = UUID(); let text: String; var promptId: UUID? = nil }
+
+/// A single open question, presented as something to answer rather than a row to process.
+private struct PromptRow: View {
+    let prompt: JournalPrompt
+    let icon: String
+    let badge: String?
+    let onAnswer: () -> Void
+    let onLike: () -> Void
+    let onDismiss: () -> Void
+
+    @State private var hover = false
+
+    var body: some View {
+        let liked = prompt.feedback == "up"
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.violet.opacity(0.85))
+                .frame(width: 16).padding(.top, 3)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(prompt.text)
+                    .font(Typo.title(15))
+                    .foregroundStyle(Palette.textPrimary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let badge {
+                    Text(badge)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.textTertiary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 8)
+
+            // Housekeeping stays out of the way until you're on the row — except ♥ once it's set,
+            // which is state the user chose and should be able to see at a glance.
+            HStack(spacing: 6) {
+                if hover || liked {
+                    Button(action: onLike) {
+                        Image(systemName: liked ? "heart.fill" : "heart")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(liked ? Palette.negative : Palette.textTertiary)
+                    }.buttonStyle(.iconPress).help("Good question — ask more like this")
+                }
+                if hover {
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Palette.textTertiary)
+                    }.buttonStyle(.iconPress).help("Not for me — and learn from that")
+                }
+            }
+            .padding(.top, 2)
+            .animation(.easeOut(duration: 0.12), value: hover)
+        }
+        .padding(.vertical, 12).padding(.horizontal, 14)
+        .background(RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
+            .fill(hover ? Palette.wellFillHover : Palette.wellFill))
+        .overlay(RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
+            .strokeBorder(hover ? Palette.violet.opacity(0.28) : Palette.wellStroke, lineWidth: 0.8))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onAnswer)
+        .pointerStyle(.link)
+        .onHover { hover = $0 }
+        .animation(.easeOut(duration: 0.14), value: hover)
+        .transition(.opacity)
+    }
+}
 
 struct AddLetterSheet: View {
     var seedPrompt: String = ""
@@ -1237,9 +1266,7 @@ struct AddLetterSheet: View {
             p.status = "answered"; p.answeredLetterId = l.id; p.resolvedAt = .now; p.dirty = true
         }
         try? context.save()
-        // Award coins (idempotent across all entries — backfills any not yet paid).
         let all = ((try? context.fetch(FetchDescriptor<Letter>())) ?? []).filter { $0.deletedAt == nil }
-        JournalGame.reconcileCoins(entries: all.map { ($0.id, $0.createdAt) })
         // Quiet synthesis: tag mood/themes, fold durable facts into memory, and maybe — only when
         // the entry earns it — leave ONE follow-up question for another day.
         let ctx = context, mgr = AIManager()
@@ -1253,13 +1280,13 @@ struct AddLetterSheet: View {
 /// A day's worth of journal entries (for the day-detail sheet).
 struct JournalDayGroup: Identifiable { let id: Date; let entries: [Letter] }
 
-/// A month calendar that reads at a glance, GitHub-style: GREEN for days you wrote (deeper green the
-/// more you wrote), ICE BLUE for restored/frozen days, faint RED for days you missed inside an active
-/// stretch. Bigger month-nav boxes for easy clicking.
+/// A month calendar of the days you wrote — deeper green the more you wrote that day.
+///
+/// It used to also paint every day you DIDN'T write in red, as part of the streak system. That is
+/// gone: marking absence made the calendar an accusation, which is the opposite of what a journal
+/// should do. Days you wrote are shown. Days you didn't are simply blank.
 struct MonthCalendar: View {
     let entryCounts: [String: Int]   // dayKey → number of entries
-    var covered: Set<String> = []     // restored or coin-frozen days
-    var firstEntry: Date? = nil       // earliest entry, so we only flag misses after you started
     var selected: Date? = nil         // highlighted day (filter mode)
     var onSelect: ((Date) -> Void)? = nil   // tappable when set (filter mode)
     @State private var month = Date()
@@ -1275,23 +1302,15 @@ struct MonthCalendar: View {
         return out
     }
 
-    /// (fill, isWritten) for a day.
+    /// (fill, isWritten) for a day. Wrote → green, deeper the more you wrote. Everything else blank.
     private func cell(_ d: Date) -> (Color, Bool) {
-        let k = JournalGame.dayKey(d)
-        if let c = entryCounts[k], c > 0 {
-            switch c {                                   // GitHub-style intensity
-            case 1: return (Palette.positive.opacity(0.40), true)
-            case 2: return (Palette.positive.opacity(0.62), true)
-            case 3: return (Palette.positive.opacity(0.82), true)
-            default: return (Palette.positive, true)
-            }
+        guard let c = entryCounts[LettersView.dayKey(d)], c > 0 else { return (.clear, false) }
+        switch c {
+        case 1: return (Palette.positive.opacity(0.40), true)
+        case 2: return (Palette.positive.opacity(0.62), true)
+        case 3: return (Palette.positive.opacity(0.82), true)
+        default: return (Palette.positive, true)
         }
-        if covered.contains(k) { return (Palette.cyan.opacity(0.55), false) }   // restored / frozen = ice
-        let today = cal.startOfDay(for: Date())
-        if let first = firstEntry, d >= cal.startOfDay(for: first), d < today {
-            return (Palette.negative.opacity(0.22), false)                       // missed inside a stretch
-        }
-        return (.clear, false)
     }
 
     var body: some View {
@@ -1323,14 +1342,6 @@ struct MonthCalendar: View {
                     } else { Color.clear.frame(height: 30) }
                 }
             }
-            if onSelect == nil {     // legend only in the streak view
-                HStack(spacing: 12) {
-                    legend(Palette.positive.opacity(0.7), "wrote")
-                    legend(Palette.cyan.opacity(0.55), "restored")
-                    legend(Palette.negative.opacity(0.3), "missed")
-                    Spacer()
-                }.padding(.top, 2)
-            }
         }
     }
 
@@ -1345,71 +1356,6 @@ struct MonthCalendar: View {
             RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 10, height: 10)
             Text(label).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
         }
-    }
-}
-
-/// The streak menu: streak, coins, a month calendar of logged days, freeze + recovery, and a close.
-struct StreakMenu: View {
-    let entryCounts: [String: Int]
-    let firstEntry: Date?
-    let recoveryProgress: Int
-    @Environment(\.dismiss) private var dismiss
-    @State private var tick = 0
-
-    private var entryDays: Set<String> { Set(entryCounts.keys) }
-    private var streak: Int { JournalGame.streak(entryDays: entryDays) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Your streak").font(Typo.title(17)).foregroundStyle(Palette.textPrimary)
-                Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 19)).foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
-            }.padding(16)
-            Divider().overlay(Palette.hairline)
-            ScrollView {
-                VStack(spacing: 14) {
-                    HStack {
-                        stat("flame.fill", Palette.warning, "\(streak)", "day streak")
-                        Spacer()
-                        stat("dollarsign.circle.fill", Palette.acidLime, "\(JournalGame.coins)", "coins")
-                    }
-                    if JournalGame.recoveryStartedAt != nil { recoveryCard }
-                    MonthCalendar(entryCounts: entryCounts, covered: JournalGame.covered, firstEntry: firstEntry).padding(10).glassCard(cornerRadius: Radii.tile)
-                    Button { _ = JournalGame.freezeToday(); tick += 1 } label: {
-                        Label(JournalGame.isFrozenToday() ? "Today is frozen ✓" : "Freeze today · \(JournalGame.freezeCost) coins", systemImage: "snowflake").frame(maxWidth: .infinity)
-                    }.buttonStyle(.glass).disabled(JournalGame.isFrozenToday() || JournalGame.coins < JournalGame.freezeCost)
-                    Text("Coins come from answering questions — write more in a day to bank more. Spend them to freeze a day before you miss it, or to bridge a broken streak instantly.")
-                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
-                }.padding(16)
-            }
-        }
-        .frame(width: 350, height: 540).flagshipSheet()
-        .id(tick)
-    }
-
-    private var recoveryCard: some View {
-        let missed = JournalGame.recoveryMissed.count
-        let required = JournalGame.recoveryRequired(missedDays: missed)
-        let done = min(recoveryProgress, required)
-        let cost = missed * JournalGame.unbreakCostPerDay
-        return VStack(alignment: .leading, spacing: 8) {
-            Label("Streak broken — bring it back", systemImage: "exclamationmark.triangle.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.warning)
-            Text("You missed \(missed) day\(missed == 1 ? "" : "s"). Answer \(required) questions to restore it — \(done)/\(required) so far.").font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
-            ProgressView(value: Double(done), total: Double(max(required, 1))).tint(Palette.warning)
-            Button { _ = JournalGame.unbreakWithCoins(); tick += 1 } label: { Label("Bridge now · \(cost) coins", systemImage: "bolt.fill").frame(maxWidth: .infinity) }
-                .buttonStyle(.glass).controlSize(.small).disabled(JournalGame.coins < cost)
-        }.padding(12).background(Palette.warning.opacity(0.08), in: RoundedRectangle(cornerRadius: Radii.field, style: .continuous)).overlay(RoundedRectangle(cornerRadius: Radii.field, style: .continuous).strokeBorder(Palette.warning.opacity(0.22)))
-    }
-
-    private func stat(_ icon: String, _ color: Color, _ value: String, _ label: String) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: icon).font(.system(size: 24)).foregroundStyle(color)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(value).font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(Palette.textPrimary)
-                Text(label).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8).padding(.horizontal, 10).glassCard(cornerRadius: Radii.field)
     }
 }
 

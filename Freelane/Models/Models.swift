@@ -474,9 +474,14 @@ final class InsightLog {
     var pinned: Bool
     var dismissedAt: Date?
     var dirty: Bool
+    /// What this observation is ABOUT — e.g. `cat:Wife:2026-07`. Deduplication keys off this
+    /// rather than the sentence, because rewording the phrasing of a finding must not make it a
+    /// second finding. (It did: "Wife is down 96%…" and "Spending tagged 'Wife' is down 96%…"
+    /// both showed on the Dashboard.) Optional so the existing store migrates in place.
+    var key: String?
 
-    init(id: UUID = UUID(), text: String, category: String = "pattern") {
-        self.id = id; self.text = text; self.category = category
+    init(id: UUID = UUID(), text: String, category: String = "pattern", key: String? = nil) {
+        self.id = id; self.text = text; self.category = category; self.key = key
         self.createdAt = .now; self.pinned = false; self.dirty = false
     }
 }

@@ -1,10 +1,19 @@
 import SwiftUI
 
-/// The Freelane mark: a tile with three ascending bars, the tallest in the signature accent.
-/// Tile + bars are driven by the palette so the mark always matches the app's identity (it used
-/// to hardcode an espresso-brown tile, which clashed once the palette changed).
+/// The Freelane mark: a dark graphite tile with three ascending bars, the tallest in the brand ink.
+///
+/// The tile colour is FIXED, not palette-driven. It used to resolve from `Palette.ink`, which meant
+/// the mark inverted with the theme and turned into a pale, washed-out square in light mode. Real
+/// marks don't invert — a logo is a constant, and this one is always dark. Only the accent bar
+/// tracks the brand.
 struct LogoMark: View {
     var size: CGFloat = 32
+
+    /// Fixed graphite tile — deliberately independent of `Palette`.
+    private static let tileTop = Color(.sRGB, red: 0.161, green: 0.169, blue: 0.157, opacity: 1)
+    private static let tileBottom = Color(.sRGB, red: 0.075, green: 0.082, blue: 0.075, opacity: 1)
+    /// Brand forest, held constant for the same reason.
+    private static let markAccent = Color(.sRGB, red: 0.286, green: 0.643, blue: 0.443, opacity: 1)
 
     var body: some View {
         let tile = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
@@ -13,26 +22,26 @@ struct LogoMark: View {
         let gap = size * 0.095
         return ZStack {
             tile.fill(
-                LinearGradient(colors: [Palette.ink3, Palette.ink],
+                LinearGradient(colors: [Self.tileTop, Self.tileBottom],
                                startPoint: .topLeading, endPoint: .bottomTrailing))
-            tile.strokeBorder(Palette.acidLime.opacity(0.22), lineWidth: max(0.6, size * 0.02))
+            tile.strokeBorder(Self.markAccent.opacity(0.28), lineWidth: max(0.6, size * 0.02))
 
             HStack(alignment: .bottom, spacing: gap) {
-                bar(w: barW, h: region * 0.46, color: Palette.textSecondary.opacity(0.65))
-                bar(w: barW, h: region * 0.72, color: Palette.textPrimary.opacity(0.85))
-                bar(w: barW, h: region * 1.00, color: Palette.acidLime, glow: true)
+                bar(w: barW, h: region * 0.46, color: .white.opacity(0.38))
+                bar(w: barW, h: region * 0.72, color: .white.opacity(0.72))
+                bar(w: barW, h: region * 1.00, color: Self.markAccent, glow: true)
             }
             .frame(width: region, height: region, alignment: .bottom)
         }
         .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.35), radius: size * 0.12, y: size * 0.05)
+        .shadow(color: .black.opacity(0.28), radius: size * 0.10, y: size * 0.04)
     }
 
     private func bar(w: CGFloat, h: CGFloat, color: Color, glow: Bool = false) -> some View {
         RoundedRectangle(cornerRadius: w * 0.42, style: .continuous)
             .fill(color)
             .frame(width: w, height: h)
-            .shadow(color: glow ? Palette.acidLime.opacity(0.55) : .clear, radius: glow ? size * 0.06 : 0)
+            .shadow(color: glow ? Self.markAccent.opacity(0.5) : .clear, radius: glow ? size * 0.06 : 0)
     }
 }
 

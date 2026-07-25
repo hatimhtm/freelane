@@ -19,6 +19,11 @@ final class AIFact {
     var createdAt: Date
     var updatedAt: Date
     var archivedAt: Date?
+    /// "affirm" (default) or "deny". A DENIAL is a standing record that something is not true —
+    /// stored as its own row rather than as another fact, so the store can never hold a belief and
+    /// its negation at the same time. Optional so SwiftData migrates the existing store in place.
+    /// See `Memory` for the rules; nothing outside that type should set this.
+    var polarity: String?
 
     init(subjectKind: String = "user", subjectId: String? = nil, key: String,
          value: String, confidence: Double = 1.0, source: String = "user_answered",

@@ -237,7 +237,7 @@ struct DashboardView: View {
                        destination: .spending, morphID: "w.safe"))),
             ("spent", AnyView(MiniWidget(label: "Spent today", value: CurrencyFormat.abbreviated(safe.spentToday, base),
                        systemImage: "cart", accent: Palette.azure, destination: .spending, morphID: "w.spent"))),
-            ("landed", AnyView(MiniWidget(label: "Landed this month", value: CurrencyFormat.abbreviated(m.landedMTD, base),
+            ("landed", AnyView(MiniWidget(label: "Landed MTD", value: CurrencyFormat.abbreviated(m.landedMTD, base),
                        systemImage: "arrow.down.left", accent: Palette.azure,
                        sub: "YTD " + CurrencyFormat.abbreviated(m.landedYTD, base), destination: .payments, morphID: "w.landed"))),
             ("out", AnyView(MiniWidget(label: "Outstanding", value: CurrencyFormat.abbreviated(m.outstandingBase, base),
@@ -246,13 +246,13 @@ struct DashboardView: View {
             ("net", AnyView(MiniWidget(label: "Net · 30 days", value: CurrencyFormat.abbreviated(net30, base),
                        systemImage: "chart.line.uptrend.xyaxis", accent: Palette.azure,
                        tone: net30 < 0 ? Palette.negative : Palette.textPrimary, destination: .stats, morphID: "w.net"))),
-            ("fees", AnyView(MiniWidget(label: "Fees this month", value: CurrencyFormat.abbreviated(m.feesMTD, base),
+            ("fees", AnyView(MiniWidget(label: "Fees MTD", value: CurrencyFormat.abbreviated(m.feesMTD, base),
                        systemImage: "scissors", accent: Palette.azure, destination: .stats, morphID: "w.fees"))),
-            ("proj", AnyView(MiniWidget(label: "Active projects", value: "\(m.activeProjects)",
+            ("proj", AnyView(MiniWidget(label: "Active", value: "\(m.activeProjects)",
                        systemImage: "folder", accent: overdueProjects > 0 ? Palette.warning : Palette.azure,
                        sub: overdueProjects > 0 ? "\(overdueProjects) overdue" : (paidThisMonth > 0 ? "\(paidThisMonth) paid this month" : nil),
                        destination: .projects, morphID: "w.proj"))),
-            ("sadaka", AnyView(MiniWidget(label: "Sadaka given", value: CurrencyFormat.abbreviated(sadakaMTD, base),
+            ("sadaka", AnyView(MiniWidget(label: "Sadaka", value: CurrencyFormat.abbreviated(sadakaMTD, base),
                        systemImage: "heart.fill", accent: Palette.azure,
                        sub: "this month", destination: .sadaka, morphID: "w.sadaka"))),
         ]
@@ -265,7 +265,7 @@ struct DashboardView: View {
         if let mv = VendorTrends.biggest(spends), let d = mv.delta {
             let up = d > 0
             specs.append(("vendortrend", AnyView(MiniWidget(
-                label: up ? "Spending up at" : "Spending down at", value: mv.name,
+                label: up ? "Biggest riser" : "Biggest faller", value: mv.name,
                 systemImage: up ? "arrow.up.right.circle" : "arrow.down.right.circle",
                 accent: up ? Palette.negative : Palette.positive,
                 sub: "\(abs(Int((d * 100).rounded())))% vs last month",
@@ -312,26 +312,29 @@ struct DashboardView: View {
         let view: AnyView
     }
 
-    // MARK: AI insights (the accountant brain — accumulates over time)
+    // MARK: Observations — what the data actually shows, and nothing more
 
     private var liveInsights: [InsightLog] { insights.filter { $0.dismissedAt == nil } }
 
     @ViewBuilder private var insightsCard: some View {
         let shown = Array(liveInsights.sorted { ($0.pinned ? 1 : 0, $0.createdAt) > ($1.pinned ? 1 : 0, $1.createdAt) }.prefix(4))
-        SectionCard(title: "AI insights", subtitle: "What the assistant notices across your money & life",
+        SectionCard(title: "What Freelane noticed", subtitle: "Only patterns it can point at in your own numbers",
                     accent: Palette.violet,
                     trailing: AnyView(
                         Button { refreshInsights() } label: {
                             Label(generatingInsights ? "Thinking…" : "Refresh", systemImage: "sparkles").font(.system(size: 11))
                         }.buttonStyle(.plain).foregroundStyle(Palette.violet)
                             .disabled(generatingInsights || !ai.isReady)
-                            .opacity(generatingInsights || !ai.isReady ? 0.45 : 1)
-                            .help(!ai.isReady ? "Enable Apple Intelligence (or add a Gemini key) in Settings → AI to enable insights" : "Regenerate insights from your latest data"))) {
+                            .opacity(generatingInsights ? 0.45 : 1)
+                            .help("Recompute from your latest rows"))) {
             if shown.isEmpty {
-                Text(!ai.isReady
-                     ? "Enable Apple Intelligence (or add a Gemini key) in Settings → AI, then I'll study your spending, journals, and habits and surface real insights here."
-                     : "Tap Refresh and I'll read everything — your spending, journals, and patterns — and tell you what I notice. It gets sharper the more you log.")
-                    .font(.system(size: 12)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
+                // No AI in this copy any more, because there is no AI in this feature: observations
+                // are arithmetic over the user's own rows, so "nothing to say" means nothing moved
+                // enough to be worth a sentence — not that a model failed or a key is missing.
+                Text("Nothing has moved enough this month to be worth pointing at. This fills in as your spending and entries build up — every line is a comparison you can check yourself.")
+                    .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 VStack(alignment: .leading, spacing: 9) {
                     ForEach(shown) { ins in
@@ -362,7 +365,7 @@ struct DashboardView: View {
     private func refreshInsights() {
         generatingInsights = true
         let ctx = context, mgr = ai
-        Task { _ = await Brain.generateInsights(ctx, ai: mgr); await MainActor.run { generatingInsights = false } }
+        Task { _ = await Brain.generateObservations(ctx, ai: mgr); await MainActor.run { generatingInsights = false } }
     }
 
     private var prayedToday: Int {

@@ -186,8 +186,8 @@ extension ButtonStyle where Self == DestructiveButtonStyle {
     static var destructive: DestructiveButtonStyle { DestructiveButtonStyle() }
 }
 
-/// The user's chosen appearance. Defaults to dark; full light theming arrives in the polish phase,
-/// so this just unlocks the previously-hardcoded `.appAppearance()` from a single place.
+/// The user's chosen appearance. Dark is the default and the designed-for face; light is an opt-in
+/// variant tuned to warm grey, never paper white.
 enum Appearance {
     static var scheme: ColorScheme? {
         switch UserDefaults.standard.string(forKey: "appearance") {

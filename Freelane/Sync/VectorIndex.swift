@@ -42,19 +42,40 @@ enum VectorIndex {
     }
 }
 
-/// A semantic-search tool the model can call (composes with the other AITools).
-struct SemanticSpendSearchTool: AITool {
+#if canImport(FoundationModels)
+import FoundationModels
+
+/// Semantic search as a callable tool — it finds "that vet bill" inside "Paws & Claws checkup",
+/// which keyword search never will. Runs against the same Sendable snapshot as the other tools, so
+/// it never touches SwiftData off the main actor; embeddings are computed only if the model
+/// actually reaches for this tool.
+@available(macOS 26.0, *)
+struct SemanticSpendSearchTool: Tool {
     let name = "semantic_search_spends"
-    let summary = "Find spends by MEANING (not just exact words), e.g. 'pet expenses', 'eating out with friends'."
-    var properties: [String: Any] {
-        ["query": ["type": "string", "description": "what to find, in natural language"]]
+    let description = "Find the person's spends by MEANING rather than exact words — for example 'pet expenses' or 'eating out with friends'. Use this when a keyword search would miss the point."
+    let data: AIToolData
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "What to find, in natural language.")
+        var query: String
     }
-    @MainActor func run(_ args: [String: Any], context: ModelContext) async -> String {
-        let q = args["query"] as? String ?? ""
-        let hits = VectorIndex.searchSpends(q, context: context)
-        guard !hits.isEmpty else { return "No semantically similar spends found." }
-        let base = (try? context.fetch(FetchDescriptor<AppSettings>()))?.first?.baseCurrency ?? "PHP"
-        return hits.map { "\($0.spend.spentAt.formatted(.dateTime.month().day())) \($0.spend.vendorName ?? $0.spend.spendDescription ?? "?") \(CurrencyFormat.string($0.spend.amountBase, base, compact: true))" }
+
+    func call(arguments: Arguments) async throws -> String {
+        guard let qv = VectorIndex.vector(arguments.query) else {
+            return "Semantic search isn't available on this Mac."
+        }
+        let hits = data.spends.prefix(300).compactMap { row -> (AIToolData.SpendRow, Double)? in
+            guard let v = VectorIndex.vector(row.label) else { return nil }
+            return (row, VectorIndex.cosine(qv, v))
+        }
+        .filter { $0.1 > 0.3 }
+        .sorted { $0.1 > $1.1 }
+        .prefix(8)
+
+        guard !hits.isEmpty else { return "No spends were semantically similar to \"\(arguments.query)\"." }
+        return hits.map { "\($0.0.date.formatted(.dateTime.month().day())) \($0.0.label) \(data.money($0.0.amount))" }
             .joined(separator: "\n")
     }
 }
+#endif

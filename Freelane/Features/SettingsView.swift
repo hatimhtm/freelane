@@ -14,7 +14,7 @@ struct SettingsView: View {
     @State private var recalFlash: String?
     @State private var notifs = NotificationManager()
     @State private var ai = AIManager()
-    @State private var keyField = ""
+    @State private var local = LocalModelStore.shared
     @State private var storeSize = "—"
     @State private var sub = 0
     @State private var pendingBase: String?
@@ -22,8 +22,6 @@ struct SettingsView: View {
     @AppStorage("integ.reminders") private var remindersOn = false
     @AppStorage("integ.contacts") private var contactsOn = false
     @AppStorage("hotkey.capture.enabled") private var captureHotkey = true   // matches HotkeyManager's on-by-default
-    @AppStorage("redact.health") private var redactHealth = true
-    @AppStorage("redact.intimate") private var redactIntimate = true
     @AppStorage("appearance") private var appearance = "dark"
     @State private var city = UserDefaults.standard.string(forKey: "user.city") ?? ""
     @State private var backedUp = false
@@ -45,8 +43,8 @@ struct SettingsView: View {
 
     var body: some View {
         let tabs = SyncManager.cloudSyncEnabled
-            ? ["General", "Storage", "Notifications", "AI", "Integrations", "Cloud", "About"]
-            : ["General", "Storage", "Notifications", "AI", "Integrations", "About"]
+            ? ["General", "Storage", "Notifications", "Intelligence", "Integrations", "Cloud", "About"]
+            : ["General", "Storage", "Notifications", "Intelligence", "Integrations", "About"]
         let current = sub < tabs.count ? tabs[sub] : (tabs.last ?? "General")
         let subtitle = (SyncManager.cloudSyncEnabled && sync.connected)
             ? "Synced to your private cloud — and fully usable offline."
@@ -56,7 +54,7 @@ struct SettingsView: View {
             case "General": generalCard
             case "Storage": storageCard; recalibrateCard
             case "Notifications": notificationsCard
-            case "AI": aiCard
+            case "Intelligence": aiCard
             case "Integrations": integrationsCard
             case "Cloud": cloudCard
             default: aboutCard
@@ -64,7 +62,6 @@ struct SettingsView: View {
         }
         .task {
             await notifs.refreshStatus()
-            keyField = ai.apiKey
             storeSize = computeStoreSize()
         }
     }
@@ -426,8 +423,142 @@ struct SettingsView: View {
 
     private var aiCard: some View {
         VStack(spacing: 18) {
+            brainsCard
+            localModelCard
+            memoryCard
             brainHealthCard
-            cloudAICard
+        }
+    }
+
+    // MARK: The three brains
+
+    private var brainsCard: some View {
+        SectionCard(title: "Intelligence",
+                    subtitle: "Three brains, tried in the order that suits the job",
+                    accent: Palette.violet) {
+            VStack(alignment: .leading, spacing: 12) {
+                brainRow(title: "On-device",
+                         detail: ai.onDeviceReady
+                            ? "Apple's system model. Instant, free, works offline. Handles tagging and reading your entries."
+                            : "Unavailable — turn on Apple Intelligence in System Settings.",
+                         ready: ai.onDeviceReady)
+
+                brainRow(title: "Apple Private Cloud Compute",
+                         detail: ai.privateCloudReady
+                            ? "Server-scale quality with Apple's privacy guarantee — they can't read or keep what's sent. Writes your questions, letters and observations."
+                            : "Unavailable on this Mac right now.",
+                         ready: ai.privateCloudReady && ai.usePrivateCloud)
+
+                brainRow(title: "Local model",
+                         detail: ai.localReady
+                            ? "\(LocalModelSpec.displayName), running on this Mac. Covers the cloud when you're offline."
+                            : "Not downloaded. Without it, AI needs a connection.",
+                         ready: ai.localReady)
+
+                Divider().overlay(Palette.hairline)
+
+                Toggle(isOn: Binding(get: { ai.usePrivateCloud }, set: { ai.usePrivateCloud = $0 })) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Use Apple Private Cloud Compute").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
+                        Text("On: the app writes noticeably better. Apple's guarantee is the same as on-device — nothing is retained and nobody, including Apple, can read it. Off: everything stays on this Mac.")
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                    }
+                }.toggleStyle(.switch).tint(Palette.violet)
+
+                if let lead = ai.smartLead {
+                    Label("Writing tasks are going to \(lead.label) right now.", systemImage: "arrow.turn.down.right")
+                        .font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
+                } else {
+                    Label(ai.unavailableReason, systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 11)).foregroundStyle(Palette.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                let usage = AIUsage.thisWeek()
+                if !usage.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "gauge.with.dots.needle.bottom.50percent").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                        Text("~\(AIUsage.totalThisWeek().formatted()) tokens this week")
+                            .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                        Text("(" + usage.map { "\($0.brain.shortLabel) \($0.tokens.formatted())" }.joined(separator: " · ") + ")")
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+
+    private func brainRow(title: String, detail: String, ready: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Circle().fill(ready ? Palette.positive : Palette.textTertiary.opacity(0.5))
+                .frame(width: 7, height: 7).padding(.top, 5)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary)
+                Text(detail).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 8).padding(.horizontal, 10)
+        .insetRow(cornerRadius: Radii.field, hoverable: false)
+    }
+
+    // MARK: The local model
+
+    private var localModelCard: some View {
+        SectionCard(title: "Local model",
+                    subtitle: "So the app still thinks with the internet off",
+                    accent: Palette.teal) {
+            VStack(alignment: .leading, spacing: 12) {
+                switch local.state {
+                case .unavailable(let why):
+                    Text(why).font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+
+                case .notInstalled:
+                    Text("\(LocalModelSpec.displayName) — about \(LocalModelSpec.approxSizeLabel), downloaded once and then yours. It runs inside Freelane on the GPU; there's no separate app or server to keep alive.")
+                        .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button { local.install() } label: {
+                        Label("Download the local model", systemImage: "arrow.down.circle")
+                    }.buttonStyle(.glassProminent).tint(Palette.teal)
+
+                case .downloading(let p):
+                    VStack(alignment: .leading, spacing: 6) {
+                        ProgressView(value: p).tint(Palette.teal)
+                        Text("Downloading — \(Int(p * 100))% of about \(LocalModelSpec.approxSizeLabel). You can keep using the app.")
+                            .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                    }
+
+                case .loading:
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading the weights onto the GPU…").font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
+                    }
+
+                case .ready:
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.positive)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("\(LocalModelSpec.displayName) is ready").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                            Text("Runs entirely on this Mac. No quota, no connection needed.")
+                                .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                        }
+                        Spacer()
+                    }
+                    HStack(spacing: 10) {
+                        Button("Unload from memory") { local.unload() }.buttonStyle(.glass)
+                        Button("Delete download", role: .destructive) { local.remove() }.buttonStyle(.glass)
+                        Spacer()
+                    }
+
+                case .failed(let why):
+                    Label(why, systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 12)).foregroundStyle(Palette.negative)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Try again") { local.install() }.buttonStyle(.glass)
+                }
+            }
         }
     }
 
@@ -435,7 +566,7 @@ struct SettingsView: View {
 
     private var brainHealthCard: some View {
         let health = BrainHealth.shared
-        let known = ["on-device", "cloud"].filter { health.stats[$0] != nil }
+        let known = AIBrainID.allCases.map(\.rawValue).filter { health.stats[$0] != nil }
         return Group {
             if !known.isEmpty {
                 SectionCard(title: "Brain health", subtitle: "Every AI call is tracked — a failing brain can't hide", accent: Palette.indigo) {
@@ -475,62 +606,58 @@ struct SettingsView: View {
         .insetRow(cornerRadius: Radii.field, hoverable: false)
     }
 
-    private var cloudAICard: some View {
-        SectionCard(title: "AI", subtitle: "Your brains, your tokens — cloud only when you say so", accent: Palette.violet) {
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle(isOn: Binding(get: { ai.preferOnDevice }, set: { ai.preferOnDevice = $0 })) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Use Apple Intelligence on-device").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
-                        Text(FoundationModelProvider.isAvailable
-                             ? "Available — macOS 27's rebuilt on-device model: fast, private, works offline. This is the app's main brain."
-                             : "Not available on this Mac yet.")
-                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                    }
-                }.toggleStyle(.switch).tint(Palette.violet)
-                Toggle(isOn: Binding(get: { ai.allowCloudFallback }, set: { ai.allowCloudFallback = $0 })) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Use Gemini (cloud) at all").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
-                        Text("Off (recommended): everything — questions, tagging, summaries AND chat — runs on Apple's on-device model. Zero cloud tokens, fully private. On: Gemini assists where it's strongest.")
-                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                    }
-                }.toggleStyle(.switch).tint(Palette.violet)
-                LabeledField("Gemini API key") {
-                    HStack {
-                        SecureField("AIza…", text: $keyField).textFieldStyle(GlassFieldStyle())
-                        Button("Save") { ai.setKey(keyField) }.buttonStyle(.glass)
-                    }
+    // MARK: What the app believes about you
+
+    /// Memory made inspectable. The old build kept 253 beliefs the user could neither see nor
+    /// correct — including several they had explicitly denied — and quietly wrote questions from
+    /// them. Anything the app thinks it knows is now listed here and deletable in one click.
+    private var memoryCard: some View {
+        let beliefs = Memory.live(context)
+            .filter { $0.subjectKind == "user" }
+            .sorted { Memory.weight($0) > Memory.weight($1) }
+        let affirmed = beliefs.filter { $0.polarity != "deny" }
+        let denied = beliefs.filter { $0.polarity == "deny" }
+
+        return SectionCard(title: "What Freelane believes about you",
+                           subtitle: affirmed.isEmpty && denied.isEmpty
+                               ? "Nothing yet — it learns from what you write"
+                               : "\(affirmed.count) things it thinks are true · \(denied.count) it knows aren't",
+                           accent: Palette.indigo) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(affirmed.prefix(12)) { f in beliefRow(f, denied: false) }
+                if !denied.isEmpty {
+                    Text("KNOWN NOT TO BE TRUE").font(.system(size: 9, weight: .semibold))
+                        .kerning(0.5).foregroundStyle(Palette.textTertiary).padding(.top, 4)
+                    ForEach(denied.prefix(8)) { f in beliefRow(f, denied: true) }
                 }
-                // Local token meter — estimated AI usage this week.
-                let usage = AIUsage.thisWeek()
-                if !usage.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "gauge.with.dots.needle.bottom.50percent").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                        Text("~\(AIUsage.totalThisWeek().formatted()) tokens this week").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(Palette.textSecondary)
-                        Text("(" + usage.map { "\($0.source) \($0.tokens.formatted())" }.joined(separator: " · ") + ")")
-                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                        Spacer()
-                    }
+                if affirmed.isEmpty && denied.isEmpty {
+                    Text("As you journal, anything durable it picks up will show here — and you can delete any of it.")
+                        .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                HStack(spacing: 10) {
-                    Button("Test connection") { ai.setKey(keyField); Task { await ai.test() } }
-                        .buttonStyle(.glassProminent).tint(Palette.violet).disabled(ai.busy)
-                    if ai.busy { ProgressView().controlSize(.small) }
-                    if let r = ai.lastResult { Label(r, systemImage: "checkmark.circle").font(.system(size: 12)).foregroundStyle(Palette.positive).lineLimit(1) }
-                    if let e = ai.lastError { Label(e, systemImage: "xmark.circle").font(.system(size: 12)).foregroundStyle(Palette.negative).lineLimit(1) }
-                    Spacer()
-                }
-                Divider().overlay(Palette.hairline)
-                Text("PRIVACY — redact before sending to the cloud").font(.system(size: 9, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
-                Toggle(isOn: Binding(get: { redactHealth }, set: { redactHealth = $0 })) {
-                    Text("Hide health terms (doctor, therapy…)").font(.system(size: 12)).foregroundStyle(Palette.textPrimary)
-                }.toggleStyle(.switch).tint(Palette.teal)
-                Toggle(isOn: Binding(get: { redactIntimate }, set: { redactIntimate = $0 })) {
-                    Text("Hide sensitive terms (lawyer, divorce…)").font(.system(size: 12)).foregroundStyle(Palette.textPrimary)
-                }.toggleStyle(.switch).tint(Palette.teal)
-                Text("On-device prompts are never redacted — nothing leaves this Mac. Redaction only applies to Gemini (cloud) calls. Your key is stored locally; the assistant runs cache-first.")
-                    .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func beliefRow(_ f: AIFact, denied: Bool) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: denied ? "xmark.circle" : "circle.fill")
+                .font(.system(size: denied ? 11 : 6))
+                .foregroundStyle(denied ? Palette.negative : Palette.indigo)
+                .padding(.top, denied ? 2 : 5)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(f.value).font(.system(size: 12)).foregroundStyle(Palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(f.source == "user_answered" ? "You told it this" : "Picked up from your writing")
+                    .font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
+            }
+            Spacer()
+            Button { Memory.forget(context, f) } label: {
+                Image(systemName: "trash").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+            }.buttonStyle(.iconPress).help("Forget this")
+        }
+        .padding(.vertical, 7).padding(.horizontal, 10)
+        .insetRow(cornerRadius: Radii.field, hoverable: false)
     }
 
     // MARK: General

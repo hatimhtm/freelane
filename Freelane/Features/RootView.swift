@@ -199,7 +199,16 @@ struct RootView: View {
         .environment(sync)
         .environment(ai)
         .environment(undo)
-        .task {
+        .task { await runLaunchWork() }
+    }
+
+    /// Everything the app does on first appearance.
+    ///
+    /// This lives in a real function rather than inline in `body` for a concrete reason: as a
+    /// closure it repeatedly pushed the view builder past "unable to type-check this expression in
+    /// reasonable time", and every future addition made it worse. Keep launch work here.
+    @MainActor
+    private func runLaunchWork() async {
             sync.attach(context: context)
             // Offline-first sync is built but DORMANT (SyncManager.cloudSyncEnabled) until the
             // Android companion ships — until then nothing touches the network: no session restore,
@@ -237,9 +246,6 @@ struct RootView: View {
             Curiosity.sweep(context)
             // Notice duplicate people (a generic "my wife" next to the real one) → suggest a merge.
             DuplicatePeople.scan(context)
-            // Credit journaling coins for any entries not yet paid out (idempotent backfill).
-            let entries = ((try? context.fetch(FetchDescriptor<Letter>())) ?? []).filter { $0.deletedAt == nil }
-            JournalGame.reconcileCoins(entries: entries.map { ($0.id, $0.createdAt) })
             // (Removed the robotic "Today's read" number-restating notification — real insight now
             //  lives in the Dashboard "AI insights" card, which actually analyzes instead of parroting.)
             // Sweep away any old "Today's read" notifications still sitting in the bell.
@@ -257,8 +263,16 @@ struct RootView: View {
                 UserDefaults.standard.set(true, forKey: "notif.askedOnce")
                 Task { _ = await NotificationManager().requestAuthorization() }
             }
-            // Keep Gemini model names current (weekly) so renames never cause downtime.
-            Task { await ai.refreshModels() }
+            // One-time memory repair: the pre-v1 belief store held contradictions the app had no
+            // way to resolve — beliefs the user had explicitly denied sat next to the denials and
+            // fed every question. This retires the guesses, keeps what was confirmed, and converts
+            // the corrections into real denials. See `Memory.repairLegacyStoreIfNeeded`.
+            Memory.repairLegacyStoreIfNeeded(context)
+            // Bring the local model up if the user has asked for it before. Deliberately NOT
+            // conditioned on the weights being present: if a download was interrupted — quit,
+            // sleep, dropped connection — this resumes it rather than leaving the app silently
+            // brainless with a half-finished file on disk.
+            if LocalModelStore.shared.autoLoad { LocalModelStore.shared.install() }
             // Learn the city's real cost of living so safe-to-spend stays relevant.
             Task { await Brain.refreshCostOfLiving(context, ai: ai) }
             // Live FX (frankfurter) + a non-pushy "good time to get paid" note.
@@ -269,12 +283,13 @@ struct RootView: View {
             MonthlyReview.maybeRun(context)
             // Mop up any placeholder junk the AI parsers rejected too late (see Brain).
             Brain.purgePlaceholderJunk(context)
+            // Recompute observations from the rows themselves — no model, no network, instant.
+            ObservationEngine.refresh(context)
             // Refresh the desktop widget snapshot.
             WidgetBridge.update(context)
             // Launch work is done — lift the splash now (instead of a blind fixed timer that could
             // reveal a still-churning UI). A max-timeout fallback in the overlay guards against a stall.
             withAnimation(.easeOut(duration: 0.45)) { splash = false }
-        }
     }
 
     /// Invisible buttons carrying the app-wide shortcuts, grouped in ONE background so the
@@ -328,14 +343,20 @@ private struct Sidebar: View {
                     // Wallets live inside Payments now (not a separate sidebar item).
                     let items = Feature.allCases.filter { $0.group == group && $0 != .settings && $0 != .wallets && !$0.isRetired }
                     if !items.isEmpty {
-                        HStack(spacing: 7) {
-                            Circle().fill(group.accent).frame(width: 5, height: 5)
-                                .shadow(color: group.accent.opacity(0.7), radius: 3)
+                        // Group heading as a typographic rule, the way a contents page sets one:
+                        // small caps, then a hairline running out to the margin. The old version
+                        // was a glowing coloured dot beside the label — six of them stacked down
+                        // the sidebar read as decoration, and decoration is what makes an app look
+                        // cheap. Section colour survives on the selected row, where it means
+                        // something.
+                        HStack(spacing: 9) {
                             Text(group.rawValue)
-                                .font(Typo.label(10)).textCase(.uppercase).kerning(1.0)
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .textCase(.uppercase).kerning(1.1)
                                 .foregroundStyle(Palette.textTertiary)
+                            Rectangle().fill(Palette.hairline).frame(height: 1)
                         }
-                        .padding(.horizontal, 18).padding(.top, Spacing.l).padding(.bottom, 6)
+                        .padding(.horizontal, 20).padding(.top, Spacing.l + 4).padding(.bottom, 7)
                         ForEach(items) { item in NavRow(item: item, selected: feature == item) { select(item) } }
                     }
                 }
@@ -418,34 +439,49 @@ private struct NavRow: View {
     @State private var hovering = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
+        // A quiet row. Selection is carried by ONE thing — a solid accent bar at the leading edge,
+        // plus a neutral fill and heavier text. The old row stacked four signals on top of each
+        // other (tinted fill, tinted border, glowing capsule, a glass layer, coloured icon), which
+        // is why the sidebar looked busy and slightly toy-like. One signal is enough; the rest is
+        // what separates a considered interface from a decorated one.
+        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
         Button(action: action) {
             HStack(spacing: 11) {
-                Image(systemName: item.icon).font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(selected ? item.accent : Palette.textSecondary).frame(width: 22)
-                Text(item.title).font(.system(size: 13, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(selected ? Palette.textPrimary : (hovering ? Palette.textPrimary : Palette.textSecondary))
+                Image(systemName: item.icon)
+                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? Palette.textPrimary : Palette.textTertiary)
+                    .frame(width: 19)
+                Text(item.title)
+                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? Palette.textPrimary
+                                     : (hovering ? Palette.textSecondary : Palette.textTertiary))
                 Spacer(minLength: 4)
             }
-            .padding(.horizontal, 12).padding(.vertical, 9)
+            .padding(.leading, 13).padding(.trailing, 10).padding(.vertical, 7.5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(shape)
             .background {
                 if selected {
-                    shape.fill(item.accent.opacity(0.16)).overlay(shape.strokeBorder(item.accent.opacity(0.4), lineWidth: 0.8))
-                        .overlay(alignment: .leading) {
-                            Capsule().fill(item.accent).frame(width: 3, height: 16).shadow(color: item.accent, radius: 4).padding(.leading, 3)
-                        }
+                    shape.fill(Palette.wellFillHover)
                 } else if hovering {
-                    shape.fill(Palette.hairline)
+                    shape.fill(Palette.wellFill)
                 }
             }
-            .modifier(SelectedGlass(active: selected, shape: shape, tint: item.accent))
+            .overlay(alignment: .leading) {
+                // The one carrier of section identity in the whole sidebar.
+                if selected {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(item.accent)
+                        .frame(width: 2.5, height: 15)
+                        .padding(.leading, 3)
+                }
+            }
         }
         .buttonStyle(.plain)
         .pointerStyle(.link)
-        .padding(.horizontal, 10).padding(.vertical, 1)
+        .padding(.horizontal, 12).padding(.vertical, 0.5)
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 
@@ -486,22 +522,37 @@ struct Page<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Pinned header + subtabs (the "top bar") — does not scroll.
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title).displayStyle(31)
-                        if let subtitle {
-                            Text(subtitle).font(.system(size: 13)).foregroundStyle(Palette.textTertiary)
-                        }
-                    }
-                    Spacer()
+            // Pinned masthead + subtabs (the "top bar") — does not scroll.
+            //
+            // Set like a chapter opening: the title in the editorial serif, the toolbar on its
+            // baseline, then a hairline rule across the full content column. That rule is doing
+            // real work — it separates chrome from content, so the page has a top edge instead of
+            // the title just floating above a stack of cards.
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .lastTextBaseline, spacing: 16) {
+                    Text(title).displayStyle(32)
+                    Spacer(minLength: 8)
                     if let toolbar { toolbar }
                 }
-                .padding(.trailing, 56)  // clear the global notification bell (top-trailing overlay)
-                if !subtabs.isEmpty, let selection { SubtabBar(tabs: subtabs, selection: selection) }
+                .padding(.trailing, 52)  // clear the global notification bell (top-trailing overlay)
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Palette.textTertiary)
+                        .padding(.top, 5)
+                        .padding(.trailing, 52)
+                }
+
+                Rectangle().fill(Palette.hairline)
+                    .frame(height: 1)
+                    .padding(.top, 15)
+
+                if !subtabs.isEmpty, let selection {
+                    SubtabBar(tabs: subtabs, selection: selection).padding(.top, 13)
+                }
             }
-            .padding(.horizontal, 26).padding(.top, 22).padding(.bottom, 14)
+            .padding(.horizontal, 30).padding(.top, 24).padding(.bottom, 16)
             .frame(maxWidth: 1000, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)   // …but the COLUMN centers in wide windows (no dead right gutter)
 

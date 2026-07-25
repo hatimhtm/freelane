@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		AA000000000000000000001A /* FreelaneWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000010 /* FreelaneWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5EA0000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 5EA0000000000000000002 /* Sparkle */; };
+		5EB0000000000000000001 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 5EB0000000000000000002 /* MLXLLM */; };
+		5EB0000000000000000003 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 5EB0000000000000000004 /* MLXLMCommon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,6 +75,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				5EA0000000000000000001 /* Sparkle in Frameworks */,
+				5EB0000000000000000001 /* MLXLLM in Frameworks */,
+				5EB0000000000000000003 /* MLXLMCommon in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -128,6 +132,8 @@
 			name = Freelane;
 			packageProductDependencies = (
 				5EA0000000000000000002 /* Sparkle */,
+				5EB0000000000000000002 /* MLXLLM */,
+				5EB0000000000000000004 /* MLXLMCommon */,
 			);
 			productName = Freelane;
 			productReference = AA0000000000000000000001 /* Freelane.app */;
@@ -184,6 +190,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				5EA0000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				5EB0000000000000000005 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA0000000000000000000005 /* Products */;
@@ -295,7 +302,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = MB62UV7Z9W;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -313,7 +320,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.20;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -331,7 +338,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = MB62UV7Z9W;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -349,7 +356,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.20;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -365,7 +372,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = MB62UV7Z9W;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -377,7 +384,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 0.20;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac.FreelaneWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -397,7 +404,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = MB62UV7Z9W;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -409,7 +416,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 0.20;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac.FreelaneWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -462,6 +469,14 @@
 				minimumVersion = 2.6.0;
 			};
 		};
+		5EB0000000000000000005 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-examples";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.29.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -469,6 +484,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 5EA0000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		5EB0000000000000000002 /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5EB0000000000000000005 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLLM;
+		};
+		5EB0000000000000000004 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5EB0000000000000000005 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLMCommon;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

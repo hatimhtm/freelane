@@ -120,40 +120,56 @@ struct ClientsView: View {
             .reduce(0.0) { $0 + rates.toBase(ProjectMath.outstandingNative(project: $1, allocations: allocations, rates: rates), $1.currency) }
         let earned = ps.reduce(0.0) { $0 + ProjectMath.paidBase(project: $1, allocations: allocations) }
         let fx = facts.filter { $0.subjectKind == "client" && $0.subjectId == c.id.uuidString && $0.archivedAt == nil }
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+        // One number leads. A client card previously showed Earned, Outstanding and Projects as
+        // three equal columns of 14pt figures — three things shouting at the same volume, which is
+        // the same as none of them speaking. What you actually want to know at a glance is whether
+        // they owe you; everything else is supporting detail on one quiet line beneath.
+        let owes = outstanding > 0.005
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 11) {
                 Text(String(c.name.prefix(1)).uppercased())
-                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    .font(Typo.title(15))
+                    .foregroundStyle(Palette.textSecondary)
                     .frame(width: 34, height: 34)
-                    .background(LinearGradient(colors: [Palette.cyan, Palette.azure], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(c.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                    if let co = c.company { Text(co).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
+                    .background(Palette.wellFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(Palette.wellStroke, lineWidth: 0.8))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(c.name).font(Typo.title(15)).foregroundStyle(Palette.textPrimary)
+                        .lineLimit(1).truncationMode(.tail)
+                    Text(c.company ?? "\(ps.count) \(ps.count == 1 ? "project" : "projects")")
+                        .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 }
-                Spacer()
+                Spacer(minLength: 6)
             }
-            HStack {
-                metric("Earned", CurrencyFormat.abbreviated(earned, base), Palette.positive)
-                Spacer()
-                metric("Outstanding", CurrencyFormat.abbreviated(outstanding, base), outstanding > 0 ? Palette.warning : Palette.textTertiary)
-                Spacer()
-                metric("Projects", "\(ps.count)", Palette.textSecondary)
-            }
+            .padding(.bottom, 14)
+
+            // The hero figure: what they owe, or what they've paid you when they're square.
+            Text(owes ? "Owes you" : "Earned")
+                .font(.system(size: 9, weight: .semibold)).textCase(.uppercase).kerning(0.6)
+                .foregroundStyle(Palette.textTertiary)
+            Text(CurrencyFormat.abbreviated(owes ? outstanding : earned, base))
+                .font(Typo.figure(25)).monospacedDigit()
+                .foregroundStyle(owes ? Palette.warning : Palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .padding(.top, 1)
+
+            // Supporting detail, one line, deliberately quiet.
+            Text(owes
+                 ? "\(CurrencyFormat.abbreviated(earned, base)) earned · \(ps.count) \(ps.count == 1 ? "project" : "projects")"
+                 : "\(ps.count) \(ps.count == 1 ? "project" : "projects") · all settled")
+                .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                .lineLimit(1).padding(.top, 4)
+
             if !fx.isEmpty {     // AI-learned info pills — most important first, not a cluttered wall
                 ClientPills(facts: fx.sorted { factWeight($0) > factWeight($1) }, total: fx.count)
+                    .padding(.top, 11)
             }
         }
-        .padding(13).frame(minHeight: 96, alignment: .topLeading)
+        .padding(16).frame(minHeight: 132, alignment: .topLeading)
         .glassCard(cornerRadius: Radii.card, interactive: true, morphID: "client.\(c.id)")
         .contentShape(Rectangle())
-    }
-
-    private func metric(_ label: String, _ value: String, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 10, weight: .semibold)).textCase(.uppercase).foregroundStyle(Palette.textTertiary)
-            Text(value).font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(color).lineLimit(1)
-        }
     }
 }
 

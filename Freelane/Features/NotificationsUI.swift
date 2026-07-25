@@ -140,20 +140,42 @@ struct BellButton: View {
     @State private var tab = 0
 
     var body: some View {
+        // A quiet control that grows only when it has something to say.
+        //
+        // It was a 44pt filled glass circle with a red count badge riding on the corner — permanent
+        // alarm furniture in the top-right of every screen, shouting at the same volume whether
+        // there were nine things waiting or none. Now it's a bell glyph in a small well; when
+        // something is unread the well tints with the brand ink and the count sits INSIDE it on the
+        // same baseline, so the control stays one object instead of a badge stuck onto one.
+        let count = unread.count
+        let hasUnread = count > 0
         Button { open.toggle() } label: {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: "bell.fill").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                if !unread.isEmpty {
-                    Text(unread.count > 9 ? "9+" : "\(unread.count)").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
-                        .padding(.horizontal, 5).padding(.vertical, 2).background(Palette.negative, in: Capsule()).offset(x: -2, y: 4)
+            HStack(spacing: 5) {
+                Image(systemName: hasUnread ? "bell.fill" : "bell")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(hasUnread ? Palette.azure : Palette.textTertiary)
+                if hasUnread {
+                    Text(count > 9 ? "9+" : "\(count)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Palette.azure)
+                        .contentTransition(.numericText())
                 }
             }
-            .contentShape(Circle())     // the whole circle is clickable, not just the glyph
+            .padding(.horizontal, hasUnread ? 10 : 9)
+            .frame(height: 30)
+            .background(
+                Capsule().fill(hasUnread ? Palette.azure.opacity(0.13) : Palette.wellFill)
+            )
+            .overlay(
+                Capsule().strokeBorder(hasUnread ? Palette.azure.opacity(0.30) : Palette.wellStroke,
+                                       lineWidth: 0.8)
+            )
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .glassEffect(Glass.regular, in: .circle)
-        .shadow(color: .black.opacity(0.20), radius: 9, y: 4)
+        .pointerStyle(.link)
+        .animation(.easeOut(duration: 0.18), value: hasUnread)
         .popover(isPresented: $open, arrowEdge: .top) { popover }
         .sheet(item: $answering) { AnswerSheet(note: $0) }
         .sheet(item: $paying) { PayRecurringSheet(recurring: $0) }

@@ -77,7 +77,7 @@ enum NightShift {
         //    (dashboard). generateInsights builds on and de-dupes against prior ones, so a daily
         //    run only ever adds genuinely new insight (or nothing) — it never piles up noise.
         _ = await Brain.mindMoney(context, ai: ai, force: true)
-        _ = await Brain.generateInsights(context, ai: ai)
+        _ = await Brain.generateObservations(context, ai: ai)
 
         // 4) Desktop widget wakes up with today's numbers.
         await MainActor.run { WidgetBridge.update(context) }
