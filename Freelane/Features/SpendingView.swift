@@ -20,19 +20,45 @@ struct SpendingView: View {
     @State private var selMonth: Date?
     @State private var query = ""
     @State private var showBudgets = false
+    @State private var categoryFilter: String? = nil
     @Query private var budgets: [CategoryBudget]
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
     /// Full-text filter over description / vendor / category / tags. Empty = everything.
     private var filteredSpends: [Spend] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return spends }
-        return spends.filter {
+        var out = spends
+        // Tapping a category in the rail filters the ledger. The breakdown used to be a chart you
+        // could only look at — the single most common thing you want after seeing "Food ₱4,080" is
+        // to see WHICH food, and there was no way to get there.
+        if let cat = categoryFilter?.lowercased() {
+            out = out.filter { ($0.category ?? $0.tags.first ?? "Other").lowercased() == cat }
+        }
+        guard !q.isEmpty else { return out }
+        return out.filter {
             ($0.spendDescription ?? "").lowercased().contains(q)
             || ($0.vendorName ?? "").lowercased().contains(q)
             || ($0.category ?? "").lowercased().contains(q)
             || $0.tags.contains { $0.lowercased().contains(q) }
         }
+    }
+
+    /// Ledger grouped by day, newest first, with each day's total — so you can see a day's damage
+    /// without adding up rows.
+    private var spendDays: [(day: Date, rows: [Spend], total: Double)] {
+        let cal = PHT.calendar
+        let grouped = Dictionary(grouping: filteredSpends) { cal.startOfDay(for: $0.spentAt) }
+        return grouped.keys.sorted(by: >).map { d in
+            let rows = grouped[d]!.sorted { $0.spentAt > $1.spentAt }
+            return (d, rows, rows.reduce(0) { $0 + $1.amountBase })
+        }
+    }
+
+    private func dayLabel(_ d: Date) -> String {
+        let cal = PHT.calendar
+        if cal.isDateInToday(d) { return "Today" }
+        if cal.isDateInYesterday(d) { return "Yesterday" }
+        return d.formatted(.dateTime.weekday(.wide).month().day())
     }
     private var monthTotal: Double {
         spends.filter { $0.spentAt >= PHT.startOfMonth() }.reduce(0) { $0 + $1.amountBase }
@@ -120,24 +146,98 @@ struct SpendingView: View {
     }
 
     @ViewBuilder private var spendsList: some View {
-        categoryCard
-        budgetsCard
-        let list = filteredSpends
-        SectionCard(title: "Recent spending",
-                    subtitle: query.isEmpty ? "\(spends.count) entries" : "\(list.count) of \(spends.count)",
-                    accent: Palette.warning) {
-            SearchField(text: $query, placeholder: "Search description, vendor, or tag").padding(.bottom, 10)
+        // TWO COLUMNS, and the right one does work.
+        //
+        // This tab was four stacked cards: a hero, a category chart, a budgets card, and a list.
+        // The chart and the budgets were both read-only decoration, and the list was undated. Now
+        // the ledger runs down the left grouped by day with a daily total, and the rail on the
+        // right is the category breakdown — tapping a category filters the ledger, and a category
+        // with a budget shows its cap in the same bar.
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 18) {
+                spendLedger
+                categoryRail.frame(width: 268)
+            }
+            VStack(alignment: .leading, spacing: 18) {
+                categoryRail
+                spendLedger
+            }
+        }
+    }
+
+    private var spendLedger: some View {
+        let days = spendDays
+        let count = days.reduce(0) { $0 + $1.rows.count }
+        return SectionCard(
+            title: categoryFilter ?? "Every spend",
+            subtitle: categoryFilter != nil
+                ? "\(count) in this category · tap it again to clear"
+                : (query.isEmpty ? "\(spends.count) entries" : "\(count) of \(spends.count)"),
+            accent: Palette.warning,
+            trailing: categoryFilter != nil
+                ? AnyView(Button("Clear") { withAnimation(Motion.snappy) { categoryFilter = nil } }
+                    .buttonStyle(.glass).controlSize(.small))
+                : nil) {
+            SearchField(text: $query, placeholder: "Search description, vendor, or tag").padding(.bottom, 12)
             if spends.isEmpty {
                 EmptyStateCard(icon: "creditcard", title: "No spending logged yet",
                                message: "Log a spend — type it naturally and the AI sorts the vendor, category, and logo for you.")
-            } else if list.isEmpty {
-                Text("No matches for “\(query)”.").font(.system(size: 13)).foregroundStyle(Palette.textTertiary)
+            } else if days.isEmpty {
+                Text(categoryFilter != nil ? "Nothing in \(categoryFilter!) yet." : "No matches for “\(query)”.")
+                    .font(.system(size: 13)).foregroundStyle(Palette.textTertiary)
                     .frame(maxWidth: .infinity, minHeight: 60)
             } else {
                 LazyVStack(spacing: 0) {
-                    ForEach(list) { s in
-                        row(s)
-                        if s.id != list.last?.id { Divider().overlay(Palette.hairline) }
+                    ForEach(Array(days.enumerated()), id: \.element.day) { i, group in
+                        HStack(spacing: 9) {
+                            Text(dayLabel(group.day))
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .textCase(.uppercase).kerning(0.9)
+                                .foregroundStyle(Palette.textSecondary)
+                            Rectangle().fill(Palette.hairline).frame(height: 1)
+                            Text(CurrencyFormat.string(group.total, base, compact: true))
+                                .font(Typo.rowFigure(11)).monospacedDigit()
+                                .foregroundStyle(Palette.textTertiary)
+                        }
+                        .padding(.top, i == 0 ? 0 : 18).padding(.bottom, 4)
+
+                        ForEach(group.rows) { s in
+                            row(s)
+                            if s.id != group.rows.last?.id { Divider().overlay(Palette.hairline) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Categories as an interactive rail: label, a bar showing its share, the amount — and a budget
+    /// cap drawn into the same bar when one is set, instead of living in a separate card.
+    private var categoryRail: some View {
+        let data = catData
+        let maxC = data.map(\.total).max() ?? 1
+        let caps = Dictionary(uniqueKeysWithValues: budgets.filter { $0.capBase > 0 }.map { ($0.tag.lowercased(), $0.capBase) })
+        return SectionCard(title: "By category", subtitle: "This month",
+                           accent: Palette.warning,
+                           trailing: AnyView(Button("Budgets") { showBudgets = true }
+                            .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Palette.azure))) {
+            if data.isEmpty {
+                Text("Nothing this month yet.")
+                    .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(data.enumerated()), id: \.element.name) { i, c in
+                        if i > 0 { Rectangle().fill(Palette.hairline).frame(height: 1) }
+                        CategoryRailRow(
+                            name: c.name, total: c.total, share: maxC > 0 ? c.total / maxC : 0,
+                            cap: caps[c.name.lowercased()], base: base,
+                            selected: categoryFilter == c.name,
+                            onTap: {
+                                withAnimation(Motion.snappy) {
+                                    categoryFilter = categoryFilter == c.name ? nil : c.name
+                                }
+                            })
+                        .riseIn(i)
                     }
                 }
             }
@@ -1174,5 +1274,75 @@ private struct RecurringRow: View {
         .animation(.easeOut(duration: 0.12), value: hovering)
         .contentShape(Rectangle())
         .onTapGesture(perform: onEdit)
+    }
+}
+
+/// One category in the rail: name, amount, and a bar that doubles as a budget gauge.
+///
+/// The bar shows the category's share of the biggest category — so the column reads as a ranking at
+/// a glance. When a budget is set, the track behind it becomes the cap and the fill turns ochre as
+/// it approaches, then oxblood past it. That folds the entire Budgets card into the place you're
+/// already looking, instead of repeating every category name in a second list further down.
+private struct CategoryRailRow: View {
+    let name: String
+    let total: Double
+    let share: Double
+    let cap: Double?
+    let base: String
+    let selected: Bool
+    let onTap: () -> Void
+    @State private var hovering = false
+
+    private var overCap: Double? { cap.map { $0 > 0 ? total / $0 : 0 } }
+
+    private var barTone: Color {
+        guard let r = overCap else { return selected ? Palette.azure : Palette.textSecondary.opacity(0.55) }
+        if r >= 1 { return Palette.negative }
+        if r >= 0.8 { return Palette.warning }
+        return selected ? Palette.azure : Palette.positive
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(name)
+                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text(CurrencyFormat.string(total, base, compact: true))
+                        .font(Typo.rowFigure(12)).monospacedDigit()
+                        .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Palette.wellFill).frame(height: 4)
+                        Capsule().fill(barTone)
+                            .frame(width: max(3, geo.size.width * CGFloat(min(1, share))), height: 4)
+                        // The cap, as a tick on the track.
+                        if let r = overCap, r > 0, r < 1.6 {
+                            let x = geo.size.width * CGFloat(min(1, share / max(r, 0.0001)))
+                            Rectangle().fill(Palette.textTertiary)
+                                .frame(width: 1, height: 8)
+                                .offset(x: min(x, geo.size.width - 1))
+                        }
+                    }
+                }
+                .frame(height: 8)
+                if let r = overCap {
+                    Text(r >= 1 ? "over budget" : "\(Int((r * 100).rounded()))% of cap")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(r >= 1 ? Palette.negative : Palette.textTertiary)
+                }
+            }
+            .padding(.horizontal, 2).padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .background(hovering ? Palette.wellFill : .clear)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }

@@ -145,13 +145,45 @@ struct StatsView: View {
                                title: "No income yet",
                                message: "Log your first payment and Insights will start answering how the business is doing — trend, fees, and who pays the bills.")
             } else {
+                // Seven stacked cards became a lead and two columns.
+                //
+                // Every card here was full-width and equal-weight — the trend chart, the client
+                // table, the payment rails, the fee leaderboard and the latency figures all
+                // shouting at the same volume down a single column, so nothing was the answer to
+                // "how is the business doing". The chart is the answer; it leads. The four
+                // supporting figures move into a rail beside it, and the tables sit below in two
+                // columns instead of end to end.
                 hero
-                pulseGrid
-                trendCard
-                clientsCard
-                railsCard
-                feeLeaderCard
-                latencyCard
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 18) {
+                        trendCard
+                        pulseRail.frame(width: 262)
+                    }
+                    VStack(alignment: .leading, spacing: 18) {
+                        trendCard
+                        pulseRail
+                    }
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 18) {
+                        clientsCard
+                        railsCard
+                    }
+                    VStack(alignment: .leading, spacing: 18) {
+                        clientsCard
+                        railsCard
+                    }
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 18) {
+                        feeLeaderCard
+                        latencyCard
+                    }
+                    VStack(alignment: .leading, spacing: 18) {
+                        feeLeaderCard
+                        latencyCard
+                    }
+                }
             }
         }
     }
@@ -180,25 +212,24 @@ struct StatsView: View {
 
     // MARK: 2 · Pulse — supporting tiles
 
-    private var pulseGrid: some View {
-        let cols = [GridItem(.adaptive(minimum: 170), spacing: 12)]
-        return LazyVGrid(columns: cols, spacing: 12) {
-            MiniWidget(label: "Fees paid", value: CurrencyFormat.abbreviated(fees, base),
-                       systemImage: "scissors", accent: Palette.azure,
-                       sub: String(format: "%.1f%% of gross", feePct * 100),
-                       tone: Palette.negative, destination: .payments)
-            MiniWidget(label: "Avg payment", value: CurrencyFormat.abbreviated(avg, base),
-                       systemImage: "equal.circle", accent: Palette.azure,
-                       sub: "across \(scopedPayments.count) payments")
-            MiniWidget(label: "Top client",
-                       value: topShare.map { "\(Int($0.pct * 100))%" } ?? "—",
-                       systemImage: "crown", accent: Palette.azure,
-                       sub: topShare?.name ?? "No earnings yet",
-                       destination: .clients)
-            MiniWidget(label: "Clients earning", value: "\(clientEarnings.count)",
-                       systemImage: "person.2", accent: Palette.azure,
-                       sub: "of \(clients.count) total", destination: .clients)
-        }
+    /// The four supporting figures, as a rail beside the chart rather than a row of tiles under it.
+    private var pulseRail: some View {
+        FigureRail(title: "The numbers", items: [
+            .init(id: "fees", label: "Fees paid",
+                  value: CurrencyFormat.abbreviated(fees, base),
+                  sub: String(format: "%.1f%% of gross", feePct * 100),
+                  tone: Palette.negative, destination: .payments),
+            .init(id: "avg", label: "Average payment",
+                  value: CurrencyFormat.abbreviated(avg, base),
+                  sub: "across \(scopedPayments.count) payments"),
+            .init(id: "top", label: "Biggest client",
+                  value: topShare.map { "\(Int($0.pct * 100))%" } ?? "—",
+                  sub: topShare?.name ?? "No earnings yet",
+                  destination: .clients),
+            .init(id: "earning", label: "Clients earning",
+                  value: "\(clientEarnings.count)",
+                  sub: "of \(clients.count) total", destination: .clients),
+        ])
     }
 
     // MARK: 3 · Trend — 12-month income, sparkline-aligned styling

@@ -3,6 +3,14 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.4
+
+Spending and Insights actually restructured, not restyled.
+
+- **Spending is two columns, and the right one does work.** It was four stacked cards — a hero, a category chart, a budgets card, and an undated list — where the chart and the budgets were both read-only. Now the ledger runs down the left **grouped by day with a running daily total**, and the category breakdown on the right is **interactive: tap a category and the ledger filters to it**. The single most common thing you want after seeing "Food ₱4,080" is to see which food, and there was no way to get there before.
+- **Budgets folded into the categories.** A category with a cap now draws that cap into its own bar — ochre as it approaches, oxblood past it — instead of repeating every category name in a second card further down the page.
+- **Insights leads with the chart.** Seven full-width cards of equal weight meant nothing was the answer to "how is the business doing". The trend chart now leads with the four supporting figures in a rail beside it, and the tables sit two-up instead of end to end.
+
 ## 1.3
 
 Motion, depth, and the last of the badges.
