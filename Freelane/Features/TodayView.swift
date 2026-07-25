@@ -63,7 +63,7 @@ struct TodayView: View {
                                 if s.isSadaka { Text("sadaka").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.teal) }
                                 Spacer()
                                 Text("−" + CurrencyFormat.string(s.amountBase, base, compact: true))
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                                    .font(Typo.rowFigure(12)).monospacedDigit()
                                     .foregroundStyle(Palette.textPrimary).lineLimit(1)
                             }
                         }
@@ -81,7 +81,7 @@ struct TodayView: View {
                                 Text(projectTitle(p)).font(.system(size: 12)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                 Spacer()
                                 Text("+" + CurrencyFormat.string(p.netAmountBase ?? 0, base, compact: true))
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                                    .font(Typo.rowFigure(12)).monospacedDigit()
                                     .foregroundStyle(Palette.positive).lineLimit(1)
                             }
                         }
@@ -110,7 +110,7 @@ struct TodayView: View {
             Sparkline(values: sparkline, color: Palette.positive).frame(height: 50)
         }
         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: Radii.card, tint: Palette.positive, elevated: true)
+        .glassCard(cornerRadius: Radii.card, elevated: true)
     }
 
     private var greeting: String {
@@ -194,7 +194,7 @@ struct TodayView: View {
         HStack(spacing: 10) {
             Button { showSpend = true } label: { Label("Log spend", systemImage: "cart") }.buttonStyle(.glass)
             Button { showPay = true } label: { Label("Log payment", systemImage: "plus") }
-                .buttonStyle(.glassProminent).tint(Palette.positive)
+                .buttonStyle(.glassProminent).tint(Palette.azure)
         }
     }
 
@@ -228,7 +228,7 @@ struct TodayView: View {
                             Text(p.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                             Spacer()
                             Text(CurrencyFormat.string(ProjectMath.outstandingNative(project: p, allocations: liveAllocs, rates: rates), p.currency, compact: true))
-                                .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                                .font(Typo.rowFigure(12)).monospacedDigit()
                                 .foregroundStyle(Palette.warning).lineLimit(1)
                         }
                     }
@@ -276,7 +276,7 @@ struct TodayView: View {
                 Text(date, format: .dateTime.month().day()).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             Spacer()
-            Text(amount).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(amount).font(Typo.rowFigure(12)).monospacedDigit()
                 .foregroundStyle(amountColor).lineLimit(1)
         }
         .padding(.vertical, 7)

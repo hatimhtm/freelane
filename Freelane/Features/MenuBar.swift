@@ -59,9 +59,9 @@ struct MenuBarView: View {
                     Spacer()
                     if let d = c.draft, d.amount > 0 {
                         Text(CurrencyFormat.string(d.amount, d.currency, compact: true))
-                            .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textSecondary)
+                            .font(Typo.rowFigure(11)).foregroundStyle(Palette.textSecondary)
                     }
-                    Button("Log") { logReminder(c) }.buttonStyle(.glassProminent).tint(Palette.positive).controlSize(.mini)
+                    Button("Log") { logReminder(c) }.buttonStyle(.glassProminent).tint(Palette.azure).controlSize(.mini)
                 }
             }
         }
@@ -115,7 +115,7 @@ struct MenuBarView: View {
                     .frame(maxWidth: 150)
                 Spacer()
                 Button { submit() } label: { Label("Log", systemImage: "return").labelStyle(.titleAndIcon) }
-                    .buttonStyle(.glassProminent).tint(Palette.positive).controlSize(.small)
+                    .buttonStyle(.glassProminent).tint(Palette.azure).controlSize(.small)
                     .disabled(NaturalCapture.parse(capture, wallets: walletRefs, currencies: CurrencyFormat.supported, base: base) == nil)
             }
             Text("Type an amount + what it was. Add a wallet name or currency and I'll pick them up. “payment / client” logs income.")
@@ -136,7 +136,7 @@ struct MenuBarView: View {
                     }
                     Spacer()
                     Text(CurrencyFormat.string(s.amountBase, base, compact: true))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textPrimary)
+                        .font(Typo.rowFigure(12)).foregroundStyle(Palette.textPrimary)
                     Button { repeatSpend(s) } label: { Image(systemName: "arrow.counterclockwise") }
                         .buttonStyle(.iconPress).foregroundStyle(Palette.textTertiary).help("Log this again")
                 }

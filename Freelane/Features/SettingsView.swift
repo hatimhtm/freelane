@@ -106,7 +106,7 @@ struct SettingsView: View {
                                 get: { recalAmounts[w.id] ?? "" },
                                 set: { recalAmounts[w.id] = $0 })).textFieldStyle(GlassFieldStyle())
                             Button("Fix") { recalibrate(w) }
-                                .buttonStyle(.glassProminent).tint(Palette.warning)
+                                .buttonStyle(.glassProminent).tint(Palette.azure)
                                 .disabled(parseAmount(recalAmounts[w.id] ?? "") == nil || !rates.hasRate(for: cur))
                                 .help("Set \(w.name) to the real balance you entered")
                         }
@@ -167,7 +167,7 @@ struct SettingsView: View {
                     HStack(spacing: 10) {
                         Button { Task { await sync.syncNow() } } label: {
                             Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
-                        }.buttonStyle(.glassProminent).tint(Palette.section(.overview)).disabled(sync.busy)
+                        }.buttonStyle(.glassProminent).tint(Palette.azure).disabled(sync.busy)
                         Button(role: .destructive) { sync.disconnect() } label: {
                             Label("Disconnect", systemImage: "xmark.icloud")
                         }.buttonStyle(.glass)
@@ -183,7 +183,7 @@ struct SettingsView: View {
                         } label: {
                             Label(sync.busy ? "Connecting…" : "Connect & import", systemImage: "icloud.and.arrow.down")
                         }
-                        .buttonStyle(.glassProminent).tint(Palette.section(.overview))
+                        .buttonStyle(.glassProminent).tint(Palette.azure)
                         .disabled(sync.busy || !sync.isConfigured || cloudPassword.isEmpty)
                     }
                 }
@@ -358,7 +358,7 @@ struct SettingsView: View {
                         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmm"
                         if DataBackup.backupNow(stamp: f.string(from: .now)) != nil { backedUp = true; DataBackup.reveal() }
                     } label: { Label(backedUp ? "Backed up ✓" : "Back up now", systemImage: "externaldrive.badge.checkmark") }
-                        .buttonStyle(.glassProminent).tint(Palette.teal)
+                        .buttonStyle(.glassProminent).tint(Palette.azure)
                     Button { DataExport.save(context) } label: { Label("Export CSV", systemImage: "tablecells") }
                         .buttonStyle(.glass)
                     Spacer()
@@ -521,7 +521,7 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Button { local.install() } label: {
                         Label("Download the local model", systemImage: "arrow.down.circle")
-                    }.buttonStyle(.glassProminent).tint(Palette.teal)
+                    }.buttonStyle(.glassProminent).tint(Palette.azure)
 
                 case .downloading(let p):
                     VStack(alignment: .leading, spacing: 6) {
@@ -595,7 +595,7 @@ struct SettingsView: View {
             }
             Spacer()
             Text(total == 0 ? "—" : "\(s.ok)/\(total) ok")
-                .font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
+                .font(Typo.rowFigure(11)).monospacedDigit()
                 .foregroundStyle(s.fail == 0 ? Palette.positive : Palette.textSecondary)
             if s.consecutive >= 3 {
                 Text("FAILING").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.negative)

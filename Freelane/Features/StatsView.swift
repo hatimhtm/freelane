@@ -190,7 +190,7 @@ struct StatsView: View {
             MiniWidget(label: "Avg payment", value: CurrencyFormat.abbreviated(avg, base),
                        systemImage: "equal.circle", accent: Palette.azure,
                        sub: "across \(scopedPayments.count) payments")
-            MiniWidget(label: "Top client share",
+            MiniWidget(label: "Top client",
                        value: topShare.map { "\(Int($0.pct * 100))%" } ?? "—",
                        systemImage: "crown", accent: Palette.azure,
                        sub: topShare?.name ?? "No earnings yet",
@@ -204,7 +204,7 @@ struct StatsView: View {
     // MARK: 3 · Trend — 12-month income, sparkline-aligned styling
 
     private var trendCard: some View {
-        SectionCard(title: "Income trend", subtitle: "Net landed · last 12 months", accent: Palette.cyan,
+        SectionCard(title: "Income trend", subtitle: "Net landed · last 12 months", accent: Palette.azure,
                     trailing: byMonth.isEmpty ? nil : AnyView(
                         Text("12-mo avg " + CurrencyFormat.abbreviated(monthlyAvg, base))
                             .font(.system(size: 11)).foregroundStyle(Palette.textTertiary))) {
@@ -218,7 +218,7 @@ struct StatsView: View {
                         Text(p.month.formatted(.dateTime.month(.abbreviated).year()))
                             .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textSecondary)
                         Text(CurrencyFormat.string(p.total, base))
-                            .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(Palette.positive)
+                            .font(Typo.rowFigure(14)).foregroundStyle(Palette.positive)
                     } else {
                         Text("Hover a bar for the exact amount").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
@@ -226,7 +226,7 @@ struct StatsView: View {
                 }
                 Chart(byMonth) { m in
                     BarMark(x: .value("Month", m.month, unit: .month), y: .value("Net", m.total))
-                        .foregroundStyle(LinearGradient(colors: [Palette.cyan, Palette.cyan.opacity(0.22)],
+                        .foregroundStyle(LinearGradient(colors: [Palette.azure, Palette.azure.opacity(0.22)],
                                                         startPoint: .top, endPoint: .bottom))
                         .cornerRadius(4)
                         .opacity(selPt == nil || selPt?.month == m.month ? 1 : 0.35)
@@ -259,7 +259,7 @@ struct StatsView: View {
     /// Rank number, leaderboard style: tertiary, fixed column.
     private func rank(_ i: Int) -> some View {
         Text("\(i + 1)")
-            .font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
+            .font(Typo.rowFigure(11)).monospacedDigit()
             .foregroundStyle(Palette.textTertiary)
             .frame(width: 18, alignment: .center)
     }
@@ -284,7 +284,7 @@ struct StatsView: View {
                                             .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                                     }
                                     Text(CurrencyFormat.string(c.earned, base, compact: true))
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .font(Typo.rowFigure(13))
                                         .foregroundStyle(Palette.positive)
                                 }
                                 GeometryReader { geo in
@@ -323,7 +323,7 @@ struct StatsView: View {
                                         Text("keeps \(Int(r.netPct * 100))%").font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
                                         Spacer()
                                         Text("−\(CurrencyFormat.string(r.feeBase, base, compact: true))")
-                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                            .font(Typo.rowFigure(12))
                                             .foregroundStyle(Palette.negative)
                                         Text("\(r.count) pmts").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                                     }
@@ -361,9 +361,9 @@ struct StatsView: View {
                                 }
                                 Spacer()
                                 Text("−\(CurrencyFormat.string(row.payment.impliedFeeBase ?? 0, base, compact: true))")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(Palette.negative)
+                                    .font(Typo.rowFigure(12)).foregroundStyle(Palette.negative)
                                 Text(String(format: "%.1f%%", row.pct * 100))
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .font(Typo.rowFigure(13, .bold))
                                     .foregroundStyle(row.pct > 0.05 ? Palette.negative : Palette.warning)
                                     .frame(width: 52, alignment: .trailing)
                             }
@@ -387,7 +387,7 @@ struct StatsView: View {
                                 Text(r.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                 Text("\(r.n) paid").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                                 Spacer()
-                                Text("\(r.avgDays)d").font(.system(size: 13, weight: .semibold, design: .rounded))
+                                Text("\(r.avgDays)d").font(Typo.rowFigure(13))
                                     .foregroundStyle(r.avgDays >= 30 ? Palette.negative : (r.avgDays >= 14 ? Palette.warning : Palette.positive))
                             }
                             .padding(.horizontal, 12).padding(.vertical, 9)

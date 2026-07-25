@@ -99,7 +99,7 @@ struct ClientsView: View {
 
     private var addButton: some View {
         Button { showAdd = true } label: { Label("Add client", systemImage: "plus") }
-            .buttonStyle(.glassProminent).tint(Palette.cyan)
+            .buttonStyle(.glassProminent).tint(Palette.azure)
     }
 
     private func clientProjects(_ c: Client) -> [Project] { projects.filter { $0.clientId == c.id } }
@@ -361,7 +361,7 @@ struct ClientDetailSheet: View {
     private var header: some View {
         HStack(spacing: 12) {
             Text(String(client.name.prefix(1)).uppercased())
-                .font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                .font(Typo.rowFigure(18, .bold)).foregroundStyle(.white)
                 .frame(width: 46, height: 46)
                 .background(LinearGradient(colors: [Palette.cyan, Palette.azure], startPoint: .topLeading, endPoint: .bottomTrailing),
                             in: RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -416,14 +416,14 @@ struct ClientDetailSheet: View {
                         busyNudge = false
                     }
                 } label: { Label(busyNudge ? "Drafting…" : "Draft nudge", systemImage: "paperplane") }
-                    .buttonStyle(.glassProminent).tint(Palette.cyan).disabled(busyNudge)
+                    .buttonStyle(.glassProminent).tint(Palette.azure).disabled(busyNudge)
             }
         }
     }
     private func stat(_ l: String, _ v: String, _ c: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(l).font(.system(size: 10, weight: .semibold)).textCase(.uppercase).foregroundStyle(Palette.textTertiary)
-            Text(v).font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(c).lineLimit(1)
+            Text(v).font(Typo.rowFigure(15)).monospacedDigit().foregroundStyle(c).lineLimit(1)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(12).glassCard(cornerRadius: Radii.tile)
     }
 
@@ -491,7 +491,7 @@ struct ClientDetailSheet: View {
                             Text(p.paidAt, format: .dateTime.month().day().year()).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                         }
                         Spacer()
-                        Text(CurrencyFormat.string(p.netAmountBase ?? 0, base, compact: true)).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.positive)
+                        Text(CurrencyFormat.string(p.netAmountBase ?? 0, base, compact: true)).font(Typo.rowFigure(12)).monospacedDigit().foregroundStyle(Palette.positive)
                     }.padding(.vertical, 6)
                 }
             }
@@ -561,7 +561,7 @@ struct NudgeSheet: View {
             HStack {
                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string); copied = true } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                }.buttonStyle(.glassProminent).tint(Palette.cyan)
+                }.buttonStyle(.glassProminent).tint(Palette.azure)
                 Spacer()
                 Button("Close") { dismiss() }.buttonStyle(.glass)
             }

@@ -69,7 +69,7 @@ struct CommandPalette: View {
                 if !query.isEmpty {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress)
                 }
-                Text("⌘K").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textTertiary)
+                Text("⌘K").font(Typo.rowFigure(11)).foregroundStyle(Palette.textTertiary)
                     .padding(.horizontal, 6).padding(.vertical, 3).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))
             }
             .padding(16)
@@ -165,7 +165,7 @@ struct ShortcutsHUD: View {
             VStack(spacing: 2) {
                 ForEach(shortcuts, id: \.0) { s in
                     HStack(spacing: 14) {
-                        Text(s.0).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textPrimary)
+                        Text(s.0).font(Typo.rowFigure(12)).foregroundStyle(Palette.textPrimary)
                             .frame(width: 92, alignment: .leading)
                             .padding(.horizontal, 8).padding(.vertical, 5)
                             .background(Palette.hairline, in: RoundedRectangle(cornerRadius: 7))

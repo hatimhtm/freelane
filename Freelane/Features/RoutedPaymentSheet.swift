@@ -74,7 +74,7 @@ struct RoutedPaymentSheet: View {
                     Text("Effective fee").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textSecondary)
                     Spacer()
                     Text("−\(CurrencyFormat.string(effectiveFee, base, compact: true)) · \(String(format: "%.1f%%", feePct * 100))")
-                        .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(feePct > 0.05 ? Palette.negative : Palette.warning)
+                        .font(Typo.rowFigure(14, .bold)).foregroundStyle(feePct > 0.05 ? Palette.negative : Palette.warning)
                 }
                 .padding(10).insetRow(cornerRadius: Radii.field, hoverable: false)
             }

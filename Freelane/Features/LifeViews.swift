@@ -34,7 +34,7 @@ struct LoansView: View {
     var body: some View {
         Page("Loans", subtitle: "Money lent and borrowed.", toolbar: AnyView(
             Button { showAdd = true } label: { Label("New loan", systemImage: "plus") }
-                .buttonStyle(.glassProminent).tint(Palette.teal))) {
+                .buttonStyle(.glassProminent).tint(Palette.azure))) {
             HStack(spacing: 16) {
                 StatTile(label: "Owed to you", value: lentOut, code: base, systemImage: "arrow.down.left", accent: Palette.positive, chip: nil)
                 StatTile(label: "You owe", value: borrowed, code: base, systemImage: "arrow.up.right", accent: Palette.negative, chip: nil)
@@ -49,20 +49,18 @@ struct LoansView: View {
                         ForEach(groups) { g in
                             Button { selectedPerson = LoanPersonRef(id: g.id, name: g.name) } label: {
                                 HStack(spacing: 12) {
-                                    Circle().fill(g.tint.opacity(0.18)).frame(width: 34, height: 34)
-                                        .overlay(Image(systemName: g.icon).font(.system(size: 12, weight: .bold)).foregroundStyle(g.tint))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(g.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
-                                        Text(g.subtitle).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                                    }
-                                    Spacer()
+                                    LedgerMark(tone: g.tint)
+                                    LedgerLabel(title: g.name, meta: g.subtitle)
+                                    Spacer(minLength: 10)
                                     if g.isSettled {
                                         StatusBadge(text: "Settled", color: Palette.positive)
                                     } else {
-                                        Text(CurrencyFormat.string(abs(g.netOutstanding), base, compact: true))
-                                            .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(g.tint)
+                                        LedgerAmount(amount: CurrencyFormat.string(abs(g.netOutstanding), base, compact: true),
+                                                     tone: g.tint)
                                     }
-                                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(Palette.textTertiary)
                                 }
                                 .padding(.vertical, 9).hoverRow()
                             }.buttonStyle(.plain)
@@ -260,7 +258,7 @@ struct LoanPersonSheet: View {
                             if !givenOpen.isEmpty {
                                 Button { pooled = PooledContext(loans: givenOpen, inbound: true) } label: {
                                     Label("Record return", systemImage: "arrow.down.left").frame(maxWidth: .infinity)
-                                }.buttonStyle(.glassProminent).tint(Palette.teal).controlSize(.large)
+                                }.buttonStyle(.glassProminent).tint(Palette.azure).controlSize(.large)
                             }
                             if !receivedOpen.isEmpty {
                                 Button { pooled = PooledContext(loans: receivedOpen, inbound: false) } label: {
@@ -310,7 +308,7 @@ struct LoanPersonSheet: View {
                         Text(e.eventAt.formatted(.dateTime.month().day().year()))
                             .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                         Text(CurrencyFormat.string(e.amountBase, base, compact: true))
-                            .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                            .font(Typo.rowFigure(12)).monospacedDigit()
                             .foregroundStyle(e.amountBase >= 0 ? Palette.positive : Palette.negative)
                             .frame(width: 78, alignment: .trailing)
                     }
@@ -496,16 +494,15 @@ struct BodyView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: Radii.card, tint: Palette.negative, elevated: true)
+        .glassCard(cornerRadius: Radii.card, elevated: true)
         .animation(Motion.snappy, value: savedToday)
     }
 
     private func scaleRow(_ label: String, icon: String, color: Color, value: Int?, words: [String], onTap: @escaping (Int) -> Void) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 12, weight: .bold)).foregroundStyle(color)
-                .frame(width: 26, height: 26)
-                .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
+            Image(systemName: icon).font(.system(size: 12, weight: .medium)).foregroundStyle(color)
+                .frame(width: 18)
+            Text(label).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
             if let v = value, (1...5).contains(v) {
                 Text(words[v - 1]).font(.system(size: 11, weight: .medium)).foregroundStyle(color)
             }
@@ -519,10 +516,9 @@ struct BodyView: View {
 
     private var sleepRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: "bed.double.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.indigo)
-                .frame(width: 26, height: 26)
-                .background(Palette.indigo.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text("Sleep").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
+            Image(systemName: "bed.double.fill").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.indigo)
+                .frame(width: 18)
+            Text("Sleep").font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
             Spacer()
             ForEach([6.0, 7.0, 8.0], id: \.self) { h in
                 Button(hoursFmt(h)) { sleepH = h; saveScales() }
@@ -533,7 +529,7 @@ struct BodyView: View {
                 Button { sleepH = max(0, (sleepH ?? 7.5) - 0.5); saveScales() } label: { Image(systemName: "minus") }
                     .buttonStyle(.glass).controlSize(.small)
                 Text(sleepH.map(hoursFmt) ?? "—")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(Typo.rowFigure(13)).monospacedDigit()
                     .foregroundStyle(sleepH == nil ? Palette.textTertiary : Palette.textPrimary)
                     .frame(minWidth: 38)
                 Button { sleepH = min(16, (sleepH ?? 6.5) + 0.5); saveScales() } label: { Image(systemName: "plus") }
@@ -624,19 +620,18 @@ struct BodyView: View {
     /// One metric, one line: icon + label, the 14-day sparkline, the 7-day average.
     private func trendRow(_ label: String, icon: String, color: Color, series: [Double], avg: Double?, unit: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 12, weight: .bold)).foregroundStyle(color)
-                .frame(width: 26, height: 26)
-                .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
+            Image(systemName: icon).font(.system(size: 12, weight: .medium)).foregroundStyle(color)
+                .frame(width: 18)
+            Text(label).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
             Spacer()
             if series.count >= 2 {
                 Sparkline(values: series, color: color).frame(width: 150, height: 28)
             } else {
-                Text("A few more days and a line appears").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                Text("—").font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(width: 150)
             }
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(avg.map { String(format: "%.1f", $0) } ?? "—")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(Typo.rowFigure(16)).monospacedDigit()
                     .foregroundStyle(avg == nil ? Palette.textTertiary : Palette.textPrimary)
                 Text(unit).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
@@ -752,7 +747,7 @@ private struct TapScale: View {
                         .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
                             .strokeBorder(filled ? color.opacity(0.45) : Palette.wellStroke, lineWidth: 0.8))
                         .frame(width: 32, height: 26)
-                        .overlay(Text("\(i)").font(.system(size: 11, weight: .bold, design: .rounded))
+                        .overlay(Text("\(i)").font(Typo.rowFigure(11, .bold))
                             .foregroundStyle(filled ? .white : Palette.textTertiary))
                 }
                 .buttonStyle(.cardPress)
@@ -958,7 +953,7 @@ struct LettersView: View {
                         Label(busyAnalyze ? "Reflecting…" : (l.sentiment == nil ? "Reflect with AI" : "Re-reflect"), systemImage: "sparkles")
                     }.buttonStyle(.glass).disabled(busyAnalyze || !ai.isReady || l.body.count < 20)
                     Spacer()
-                    Button("Done") { reading = nil }.buttonStyle(.glassProminent).tint(Palette.indigo)
+                    Button("Done") { reading = nil }.buttonStyle(.glassProminent).tint(Palette.azure)
                 }.padding(16)
             }.frame(width: 520, height: 600).flagshipSheet()
         }
@@ -1244,7 +1239,7 @@ struct AddLetterSheet: View {
                     .animation(Motion.snappy, value: words)
                 Spacer()
                 Button("Cancel") { dismiss() }.buttonStyle(.glass)
-                Button("Save") { save() }.buttonStyle(.glassProminent).tint(Palette.indigo)
+                Button("Save") { save() }.buttonStyle(.glassProminent).tint(Palette.azure)
                     .disabled(body0.trimmingCharacters(in: .whitespaces).isEmpty).keyboardShortcut(.defaultAction)
                     .help("Save this entry (⏎)")
             }
@@ -1500,7 +1495,7 @@ struct FaithView: View {
                     if tasbihCount >= tasbihTarget { /* keep showing the completed count until reset */ }
                 } label: {
                     Text("\(tasbihCount)")
-                        .font(.system(size: 34, weight: .bold, design: .rounded)).foregroundStyle(Palette.teal)
+                        .font(Typo.rowFigure(34, .bold)).foregroundStyle(Palette.teal)
                         .frame(maxWidth: .infinity, minHeight: 70)
                         .background(Palette.teal.opacity(tasbihCount >= tasbihTarget ? 0.22 : 0.12), in: RoundedRectangle(cornerRadius: Radii.tile, style: .continuous))
                 }.buttonStyle(.cardPress)
@@ -1533,7 +1528,7 @@ struct FaithView: View {
             Spacer()
             Button { value.wrappedValue = max(0, value.wrappedValue - 1) } label: { Image(systemName: "minus.circle.fill") }
                 .buttonStyle(.iconPress).foregroundStyle(value.wrappedValue == 0 ? Palette.textTertiary : Palette.positive)
-            Text("\(value.wrappedValue)").font(.system(size: 15, weight: .bold, design: .rounded)).monospacedDigit()
+            Text("\(value.wrappedValue)").font(Typo.rowFigure(15, .bold)).monospacedDigit()
                 .foregroundStyle(Palette.textPrimary).frame(minWidth: 24)
             Button { value.wrappedValue += 1 } label: { Image(systemName: "plus.circle.fill") }
                 .buttonStyle(.iconPress).foregroundStyle(Palette.warning)
@@ -1550,7 +1545,7 @@ struct FaithView: View {
                 if let n = next {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(n.label.uppercased()).font(.system(size: 9, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
-                        Text(n.target, style: .timer).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(Palette.indigo)
+                        Text(n.target, style: .timer).font(Typo.rowFigure(26, .bold)).foregroundStyle(Palette.indigo)
                         Text("at \(n.target.formatted(date: .omitted, time: .shortened))").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
                 }
@@ -1604,7 +1599,7 @@ struct FaithView: View {
                             .foregroundStyle(done ? Palette.positive : Palette.textPrimary)
                         if isNow && !done { MetricChip(text: "Now", color: Palette.violet) }
                         Spacer()
-                        Text(r.time).font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
+                        Text(r.time).font(Typo.rowFigure(13)).monospacedDigit()
                             .foregroundStyle(isNow ? Palette.textPrimary : Palette.textSecondary)
                     }
                     .padding(.vertical, 8).padding(.horizontal, 11)
@@ -1624,7 +1619,7 @@ struct FaithView: View {
                     Image(systemName: r.icon).font(.system(size: 12)).foregroundStyle(Palette.textTertiary).frame(width: 20)
                     Text(r.name).font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                     Spacer()
-                    Text(r.time).font(.system(size: 12, weight: .medium, design: .rounded)).monospacedDigit()
+                    Text(r.time).font(Typo.rowFigure(12, .medium)).monospacedDigit()
                         .foregroundStyle(Palette.textTertiary)
                 }
                 .padding(.vertical, 4).padding(.horizontal, 11)
@@ -1644,7 +1639,7 @@ struct FaithView: View {
                         .foregroundStyle(fastedToday ? Palette.teal : Palette.textPrimary)
                     Spacer()
                     if ramadan {
-                        Text("\(fastedThisMonth)/30").font(.system(size: 17, weight: .semibold, design: .rounded))
+                        Text("\(fastedThisMonth)/30").font(Typo.rowFigure(17))
                             .monospacedDigit().foregroundStyle(Palette.teal)
                     }
                 }
@@ -1687,7 +1682,7 @@ struct FaithView: View {
                 }
                 HStack {
                     Button("Save") { if let la = Double(latStr) { lat = la }; if let lo = Double(lngStr) { lng = lo }; editingLoc = false }
-                        .buttonStyle(.glassProminent).tint(Palette.indigo)
+                        .buttonStyle(.glassProminent).tint(Palette.azure)
                     Button("Cancel") { editingLoc = false }.buttonStyle(.glass)
                 }
             } else {

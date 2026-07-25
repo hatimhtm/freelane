@@ -269,8 +269,8 @@ struct ProjectsView: View {
             HStack(spacing: 10) {
                 Text(p.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                 Text(clientName(p)).font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1).frame(width: 140, alignment: .leading)
-                Text(CurrencyFormat.string(p.amount, p.currency, compact: true)).font(.system(size: 12, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary).lineLimit(1).frame(width: 90, alignment: .trailing)
-                Text(out > 0 ? CurrencyFormat.string(out, p.currency, compact: true) : "—").font(.system(size: 12, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(out > 0 ? Palette.warning : Palette.textTertiary).lineLimit(1).frame(width: 100, alignment: .trailing)
+                Text(CurrencyFormat.string(p.amount, p.currency, compact: true)).font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(Palette.textPrimary).lineLimit(1).frame(width: 90, alignment: .trailing)
+                Text(out > 0 ? CurrencyFormat.string(out, p.currency, compact: true) : "—").font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(out > 0 ? Palette.warning : Palette.textTertiary).lineLimit(1).frame(width: 100, alignment: .trailing)
                 Text(p.dueDate.map { $0.formatted(.dateTime.month().day()) } ?? "—").font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(width: 84, alignment: .trailing)
             }.padding(.horizontal, 14).padding(.vertical, 9).contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -282,7 +282,7 @@ struct ProjectsView: View {
 
     private var addButton: some View {
         Button { showAdd = true } label: { Label("Add project", systemImage: "plus") }
-            .buttonStyle(.glassProminent).tint(Palette.violet)
+            .buttonStyle(.glassProminent).tint(Palette.azure)
     }
 
     private func columnBackground(_ accent: Color, _ status: ProjectStatus) -> some View {
@@ -437,29 +437,30 @@ struct ProjectsView: View {
         let prog = ProjectMath.progress(project: p, allocations: allocations, rates: rates)
         let overdue = (p.dueDate.map { $0 < PHT.startOfDay() } ?? false) && p.status != .paid
         return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Capsule().fill(clientColor).frame(width: 3, height: 30)   // per-client color spine
+            // Client identity is carried by ONE spine down the card's leading edge. It used to be a
+            // spine AND a dot beside the name — the same information twice, and the dot competed
+            // with the status badge on a card only 170pt wide.
+            HStack(alignment: .top, spacing: 9) {
+                Capsule().fill(clientColor).frame(width: 3, height: 30)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(p.title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                    HStack(spacing: 5) {
-                        Circle().fill(clientColor).frame(width: 6, height: 6)
-                        Text(clientName).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                    }
+                    Text(p.title).font(Typo.title(14)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                    Text(clientName).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 }
-                Spacer()
+                Spacer(minLength: 4)
+                // Overdue REPLACES the status badge rather than sitting beside it: a card can't be
+                // shouting two states at once, and overdue is the one that needs acting on.
                 if overdue {
-                    Text("OVERDUE").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.negative)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Palette.negative.opacity(0.16), in: Capsule())
+                    StatusBadge(text: "Overdue", color: Palette.negative)
+                } else {
+                    StatusBadge(text: p.status.label, color: p.status.color)
                 }
-                StatusBadge(text: p.status.label, color: p.status.color)
             }
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(CurrencyFormat.string(p.amount, p.currency, compact: true))
-                    .font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(Typo.figure(23)).monospacedDigit()
                     .foregroundStyle(Palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.6)
-                Spacer()
+                Spacer(minLength: 4)
                 if out > 0 {
                     Text(CurrencyFormat.string(out, p.currency, compact: true) + " left")
                         .font(.system(size: 11, weight: .medium)).monospacedDigit()

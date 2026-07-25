@@ -3,6 +3,21 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.1
+
+Every screen, gone through one at a time.
+
+- **One ledger, everywhere.** Payments, spends, bills, loans, sadaka and the agenda timeline now share a single row: a hairline mark in the semantic colour, the label, and the figure in tabular type at the end. Each screen used to draw its own — usually a 34pt filled colour circle in front and the amount set at the same size as its label, so the least informative thing on the row was the loudest and columns of numbers didn't line up.
+- **Vendor logos stay.** They're the one mark that was actually information; the invented badges around them are gone.
+- **Tiles lead with the number.** The tinted rounded-square icon in the corner of every tile is retired — a grid of a dozen of them is what made the app read as a template. The label is now a small-caps line and the figure is set in the editorial serif at nearly twice its old size. Values that are words rather than numbers drop to sans, so a vendor name stops arriving as a headline.
+- **Client cards say one thing.** Earned, Outstanding and Projects were three equal columns shouting at the same volume. Now what they owe you leads, and the rest is one quiet line.
+- **Project cards stopped repeating themselves.** Client colour was a spine AND a dot; overdue was a badge NEXT TO the status badge. One spine, one badge.
+- **Primary buttons are one colour.** Nine different tints across nine screens read as nine apps.
+- **Charts joined the palette** — the teal that predated this palette is gone from the cash-flow and income graphs.
+- **The assistant button stopped covering things.** A 54pt orb was parked over the bottom-right corner of every page, on top of the Set budgets button and the income chart. It's a small capsule now that names itself on hover.
+- **Body no longer looks like a warning.** The check-in card was washed in oxblood; the same applied to Sadaka's suggestion card. Depth comes from elevation, not a colour wash.
+- Truncated tile labels fixed ("Landed this mo…", "Top client sha…"), and observations now de-duplicate on what they're ABOUT rather than their wording, so a rephrasing stops appearing as a second finding.
+
 ## 1.0
 
 The first version I'd call finished. The intelligence was rebuilt from the ground up, the app has a new identity, and the parts that were quietly making things up have been taken out.

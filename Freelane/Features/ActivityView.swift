@@ -201,7 +201,7 @@ struct ActivityFeed: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 1) {
-                Text(s.amount).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(s.amount).font(Typo.rowFigure(12)).monospacedDigit()
                     .foregroundStyle(s.amountColor)
                 Text(e.date.formatted(.dateTime.hour().minute()))
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)

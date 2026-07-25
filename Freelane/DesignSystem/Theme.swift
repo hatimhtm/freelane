@@ -463,17 +463,25 @@ struct StatTile: View {
     var chipColor: Color = Palette.textTertiary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                GlyphChip(systemImage: systemImage, color: accent, size: 28)
-                Spacer()
+        // Same anatomy as MiniWidget: an inline label line, then the figure. Was a tinted glyph
+        // square with the number underneath at 23pt — the badge outweighed the data.
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(accent)
+                Text(label)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .textCase(.uppercase).kerning(0.6)
+                    .foregroundStyle(Palette.textTertiary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
                 if let chip { MetricChip(text: chip.text, systemImage: chip.icon, color: chipColor) }
             }
-            Spacer(minLength: 2)
-            Text(label).tileLabel()
-            MoneyText(amount: value, code: code, size: 23)
+            Spacer(minLength: 8)
+            MoneyText(amount: value, code: code, size: 26)
         }
-        .padding(14)
+        .padding(.horizontal, 15).padding(.vertical, 14)
         .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
         .glassCard(cornerRadius: Radii.tile)
     }
@@ -491,11 +499,16 @@ struct HeroTile: View {
     var body: some View {
         HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    GlyphChip(systemImage: "sparkles", color: accent, size: 30)
-                    Text(label).tileLabel()
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(accent)
+                    Text(label)
+                        .font(.system(size: 10, weight: .semibold))
+                        .textCase(.uppercase).kerning(0.7)
+                        .foregroundStyle(Palette.textTertiary)
                 }
-                MoneyText(amount: value, code: code, size: 42)
+                MoneyText(amount: value, code: code, size: 44)
                 HStack(spacing: 8) {
                     ForEach(Array(chips.enumerated()), id: \.offset) { _, c in
                         MetricChip(text: c.text, systemImage: c.icon, color: c.color)
@@ -605,12 +618,16 @@ struct StatusBadge: View {
     var color: Color
 
     var body: some View {
+        // A filled capsule with a matching border was two treatments doing one job, and at 16%
+        // fill it read as a coloured blob on a small card. Small caps on a faint ground is quieter
+        // and, being tracked and uppercase, is actually easier to read at this size.
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 9.5, weight: .semibold))
+            .textCase(.uppercase).kerning(0.5)
             .foregroundStyle(color)
-            .padding(.horizontal, 9).padding(.vertical, 4)
-            .background(color.opacity(0.16), in: Capsule())
-            .overlay(Capsule().strokeBorder(color.opacity(0.3), lineWidth: 0.7))
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(color.opacity(0.12), in: Capsule())
+            .fixedSize()
     }
 }
 

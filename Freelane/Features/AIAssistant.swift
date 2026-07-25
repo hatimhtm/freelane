@@ -5,16 +5,32 @@ struct FloatingAIButton: View {
     var page: Feature
     @State private var open = false
 
+    @State private var hovering = false
+
     var body: some View {
+        // A 54pt orb parked over the bottom-right corner of every page was covering real content —
+        // the "Set budgets" button on Spending, the income chart on Insights. It's smaller now, sits
+        // quieter, and expands to name itself on hover, so it earns its place instead of blocking a
+        // corner of every screen permanently.
         Button { open = true } label: {
-            Image(systemName: "sparkles")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 54, height: 54)
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.azure)
+                if hovering {
+                    Text("Ask")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Palette.textPrimary)
+                }
+            }
+            .padding(.horizontal, hovering ? 14 : 12)
+            .frame(height: 38)
         }
         .buttonStyle(.iconPress)
-        .glassEffect(Glass.regular.tint(Palette.azure.opacity(0.28)), in: .circle)
-        .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
+        .glassEffect(Glass.regular.tint(Palette.azure.opacity(0.20)), in: .capsule)
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.16), value: hovering)
         .sheet(isPresented: $open) { AIChatSheet(page: page) }
         .help("Ask the assistant about \(page.title)")
     }

@@ -94,7 +94,7 @@ struct AgendaView: View {
         }
         for p in projects where p.status == .unpaid || p.status == .partiallyPaid {
             if let d = p.dueDate, d <= end {
-                out.append(.init(date: d, title: p.title, detail: "Project due", icon: "folder", color: Palette.cyan, warn: d < today,
+                out.append(.init(date: d, title: p.title, detail: "Project due", icon: "folder", color: Palette.indigo, warn: d < today,
                                  edit: { editingProject = p }))
             }
         }
@@ -167,16 +167,17 @@ struct AgendaView: View {
     }
 
     private func flowColumn(_ label: String, icon: String, tint: Color, text: String, valueColor: Color) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: icon).font(.system(size: 11, weight: .bold)).foregroundStyle(tint)
-                .frame(width: 26, height: 26)
-                .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.system(size: 9, weight: .semibold)).textCase(.uppercase).kerning(0.6)
+        // Same anatomy as every other figure in the app: inline label line, then the number in the
+        // editorial serif. Was a tinted glyph square beside a 16pt rounded figure.
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 9, weight: .semibold)).foregroundStyle(tint)
+                Text(label).font(.system(size: 9.5, weight: .semibold)).textCase(.uppercase).kerning(0.6)
                     .foregroundStyle(Palette.textTertiary)
-                Text(text).font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(valueColor)
             }
+            Text(text).font(Typo.figure(20)).monospacedDigit()
+                .foregroundStyle(valueColor)
+                .lineLimit(1).minimumScaleFactor(0.7)
         }
     }
 
@@ -249,7 +250,7 @@ struct AgendaView: View {
         let dipsNegative = (low?.balance ?? 0) < 0
         return SectionCard(title: "Cash-flow forecast",
                            subtitle: "Projected balance over \(horizon) days · recurring + loans",
-                           accent: dipsNegative ? Palette.negative : Palette.cyan) {
+                           accent: dipsNegative ? Palette.negative : Palette.azure) {
             VStack(alignment: .leading, spacing: 8) {
                 if let low {
                     HStack(spacing: 6) {
@@ -263,10 +264,10 @@ struct AgendaView: View {
                     ForEach(pts) { p in
                         AreaMark(x: .value("Date", p.date), y: .value("Balance", p.balance))
                             .interpolationMethod(.stepEnd)
-                            .foregroundStyle(LinearGradient(colors: [Palette.cyan.opacity(0.30), Palette.cyan.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                            .foregroundStyle(LinearGradient(colors: [Palette.azure.opacity(0.30), Palette.azure.opacity(0.02)], startPoint: .top, endPoint: .bottom))
                         LineMark(x: .value("Date", p.date), y: .value("Balance", p.balance))
                             .interpolationMethod(.stepEnd).lineStyle(StrokeStyle(lineWidth: 2))
-                            .foregroundStyle(Palette.cyan)
+                            .foregroundStyle(Palette.azure)
                     }
                     RuleMark(y: .value("Zero", 0)).foregroundStyle(Palette.negative.opacity(0.4)).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                     if let low {
@@ -333,7 +334,7 @@ struct AgendaView: View {
                 .font(.system(size: 9, weight: .bold)).kerning(0.6)
                 .foregroundStyle(tint ?? Palette.textTertiary)
             Text(day.formatted(.dateTime.day()))
-                .font(.system(size: 23, weight: .semibold, design: .rounded)).monospacedDigit()
+                .font(Typo.rowFigure(23)).monospacedDigit()
                 .foregroundStyle(day < today ? Palette.negative : Palette.textPrimary)
             Text(day.formatted(.dateTime.month(.abbreviated)).uppercased())
                 .font(.system(size: 9, weight: .medium))
@@ -345,12 +346,10 @@ struct AgendaView: View {
 
     private func entryRow(_ i: Item, tint: Color?) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: i.icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(i.color)
-                .frame(width: 28, height: 28)
-                .background(i.color.opacity(0.15), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            LedgerMark(tone: i.color)
             VStack(alignment: .leading, spacing: 1) {
-                Text(i.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                Text(i.detail).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                Text(i.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                Text(i.detail).font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }
             Spacer(minLength: 8)
             if i.warn {
@@ -358,7 +357,7 @@ struct AgendaView: View {
             }
             if let a = i.amount {
                 Text((a >= 0 ? "+" : "−") + CurrencyFormat.string(abs(a), base, compact: true))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(Typo.rowFigure(13)).monospacedDigit()
                     .foregroundStyle(a >= 0 ? Palette.positive : (i.warn ? Palette.negative : (tint ?? Palette.textPrimary)))
             }
             if let pay = i.pay {
@@ -448,7 +447,7 @@ extension AgendaView {
                 }
                 Spacer()
                 Text("\(CurrencyFormat.string(p.savedAmount, base, compact: true)) of \(CurrencyFormat.string(p.targetAmount, base, compact: true))")
-                    .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
+                    .font(Typo.rowFigure(11, .medium)).monospacedDigit()
                     .foregroundStyle(Palette.textSecondary)
                 if p.remaining <= 0 {
                     Text("reached").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.positive)

@@ -147,7 +147,7 @@ struct PaymentsView: View {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(w.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                     Text(CurrencyFormat.string(bal, base, compact: true))
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
+                                        .font(Typo.rowFigure(13)).monospacedDigit()
                                         .foregroundStyle(bal < -w.overdraftToleranceBase - 0.005 ? Palette.negative : Palette.textPrimary)
                                         .lineLimit(1).minimumScaleFactor(0.7)
                                 }
@@ -173,7 +173,7 @@ struct PaymentsView: View {
                 Button { showBulk = true } label: { Label("Log payment", systemImage: "arrow.down.left.circle") }
                 Button { showRouted = true } label: { Label("Routed payment (multi-hop)", systemImage: "arrow.triangle.branch") }
             } label: { Label("Log payment", systemImage: "plus") }
-                .buttonStyle(.glassProminent).tint(Palette.positive).menuStyle(.button)
+                .buttonStyle(.glassProminent).tint(Palette.azure).menuStyle(.button)
         }
     }
 
@@ -191,79 +191,39 @@ struct PaymentsView: View {
         let title = projects.first { $0.id == p.projectId }?.title ?? "Payment"
         let fee = p.impliedFeeBase ?? 0
         let landing = landingWallet(p)
-        return HStack(spacing: 12) {
-            icon("arrow.down", Palette.positive)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(p.paidAt, format: .dateTime.month().day().year())
-                    if let landing { Text("· \(landing)") }
-                    Text("· \(CurrencyFormat.string(p.amount, p.currency, compact: true)) gross")
-                }
-                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("+" + CurrencyFormat.string(p.netAmountBase ?? 0, base))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(Palette.positive).lineLimit(1).minimumScaleFactor(0.8)
-                if fee > 0 {
-                    Text("−" + CurrencyFormat.string(fee, base) + " fee")
-                        .font(.system(size: 10)).monospacedDigit().foregroundStyle(Palette.negative.opacity(0.9))
-                }
-            }
-            Menu {
-                Button("Edit", systemImage: "pencil") { editing = p }
-                Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = p }
-            } label: {
-                Image(systemName: "ellipsis").foregroundStyle(Palette.textTertiary).frame(width: 24, height: 24)
-            }
-            .menuStyle(.borderlessButton).frame(width: 24)
-            .help("Edit or delete this payment")
-            .accessibilityLabel("Payment actions")
+        var meta = p.paidAt.formatted(.dateTime.month().day().year())
+        if let landing { meta += " · \(landing)" }
+        meta += " · \(CurrencyFormat.string(p.amount, p.currency, compact: true)) gross"
+        return LedgerRow(
+            tone: Palette.positive,
+            title: title,
+            meta: meta,
+            amount: "+" + CurrencyFormat.string(p.netAmountBase ?? 0, base),
+            amountTone: Palette.positive,
+            note: fee > 0 ? "−" + CurrencyFormat.string(fee, base) + " fee" : nil,
+            onTap: { editing = p }
+        ) {
+            Button("Edit", systemImage: "pencil") { editing = p }
+            Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = p }
         }
-        .padding(.vertical, 9)
-        .hoverRow()
-        .onTapGesture { editing = p }
     }
 
     private func withdrawalRow(_ w: Withdrawal) -> some View {
-        HStack(spacing: 12) {
-            icon("arrow.up", Palette.warning)
-            VStack(alignment: .leading, spacing: 2) {
-                Text((w.toMethodId != nil ? "Transfer" : "Withdrawal")
-                     + (walletName(w.fromMethodId).map { " · \($0)" } ?? "")
-                     + (walletName(w.toMethodId).map { " → \($0)" } ?? ""))
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                Text(w.withdrawnAt, format: .dateTime.month().day().year())
-                    .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("−" + CurrencyFormat.string(w.grossBase, base))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(Palette.textPrimary).lineLimit(1).minimumScaleFactor(0.8)
-                if w.feeBase > 0 {
-                    Text("−" + CurrencyFormat.string(w.feeBase, base) + " fee")
-                        .font(.system(size: 10)).monospacedDigit().foregroundStyle(Palette.negative.opacity(0.9))
-                }
-            }
-            Menu {
-                Button("Edit", systemImage: "pencil") { editingWithdrawal = w }
-                Button("Delete", systemImage: "trash", role: .destructive) { pendingDeleteWithdrawal = w }
-            } label: { Image(systemName: "ellipsis").foregroundStyle(Palette.textTertiary).frame(width: 24, height: 24) }
-                .menuStyle(.borderlessButton).frame(width: 24)
-                .help("Edit or delete this transfer")
-                .accessibilityLabel("Transfer actions")
+        let title = (w.toMethodId != nil ? "Transfer" : "Withdrawal")
+            + (walletName(w.fromMethodId).map { " · \($0)" } ?? "")
+            + (walletName(w.toMethodId).map { " → \($0)" } ?? "")
+        return LedgerRow(
+            tone: Palette.warning,
+            title: title,
+            meta: w.withdrawnAt.formatted(.dateTime.month().day().year()),
+            amount: "−" + CurrencyFormat.string(w.grossBase, base),
+            amountTone: Palette.textPrimary,
+            note: w.feeBase > 0 ? "−" + CurrencyFormat.string(w.feeBase, base) + " fee" : nil,
+            onTap: { editingWithdrawal = w }
+        ) {
+            Button("Edit", systemImage: "pencil") { editingWithdrawal = w }
+            Button("Delete", systemImage: "trash", role: .destructive) { pendingDeleteWithdrawal = w }
         }
-        .padding(.vertical, 9)
-        .hoverRow()
-        .onTapGesture { editingWithdrawal = w }
-    }
-
-    private func icon(_ name: String, _ color: Color) -> some View {
-        Circle().fill(color.opacity(0.18)).frame(width: 34, height: 34)
-            .overlay(Image(systemName: name).font(.system(size: 12, weight: .bold)).foregroundStyle(color))
     }
 
 }
@@ -394,20 +354,20 @@ struct BulkPaymentSheet: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Total landed").tileLabel()
                     Text(CurrencyFormat.string(totalNet, base))
-                        .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+                        .font(Typo.rowFigure(16)).monospacedDigit()
                         .foregroundStyle(Palette.positive).lineLimit(1).minimumScaleFactor(0.7)
                 }
                 if totalFee > 0 {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Fees (auto)").tileLabel()
-                        Text(CurrencyFormat.string(totalFee, base)).font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.negative).lineLimit(1)
+                        Text(CurrencyFormat.string(totalFee, base)).font(Typo.rowFigure(14)).monospacedDigit().foregroundStyle(Palette.negative).lineLimit(1)
                     }.padding(.leading, 10)
                 }
                 if let result { Text(result).font(.caption).foregroundStyle(Palette.negative).padding(.leading, 8) }
                 Spacer()
                 Button("Cancel") { dismiss() }.buttonStyle(.glass)
                 Button("Log \(draftRows.count)") { save() }
-                    .buttonStyle(.glassProminent).tint(Palette.positive)
+                    .buttonStyle(.glassProminent).tint(Palette.azure)
                     .disabled(!canLog)
                     .keyboardShortcut(.defaultAction)   // ⏎ logs from anywhere in the sheet
                     .help(canLog ? "Log these payments (⏎)" : "Pick a project and enter an amount first")
@@ -470,7 +430,7 @@ struct BulkPaymentSheet: View {
                 if merge {
                     field("Lands as") {
                         Text("≈ " + CurrencyFormat.string(rowNet(r), base, compact: true))
-                            .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
+                            .font(Typo.rowFigure(13)).monospacedDigit()
                             .foregroundStyle(Palette.positive).lineLimit(1)
                             .padding(.horizontal, 11).padding(.vertical, 9)
                             .insetRow(cornerRadius: Radii.field, hoverable: false)

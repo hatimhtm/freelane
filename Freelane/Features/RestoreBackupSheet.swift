@@ -53,7 +53,7 @@ struct RestoreBackupSheet: View {
                     Button(role: .destructive) { confirm = true } label: {
                         Label("Restore “\(sel.name)”", systemImage: "arrow.counterclockwise")
                     }
-                    .buttonStyle(.glassProminent).tint(Palette.warning)
+                    .buttonStyle(.glassProminent).tint(Palette.azure)
                     .confirmationDialog("Replace all current data with this backup?", isPresented: $confirm) {
                         Button("Back up current & restore", role: .destructive) { doRestore(sel) }
                         Button("Cancel", role: .cancel) {}

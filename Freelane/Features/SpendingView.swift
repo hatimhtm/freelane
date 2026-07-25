@@ -108,7 +108,7 @@ struct SpendingView: View {
                         .cornerRadius(5)
                         .annotation(position: .trailing, alignment: .leading, spacing: 6) {
                             Text(CurrencyFormat.string(c.total, base, compact: true))
-                                .font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                                .font(Typo.rowFigure(10)).monospacedDigit().foregroundStyle(Palette.textSecondary)
                         }
                 }
                 .chartXScale(domain: 0...(maxC * 1.3))
@@ -173,7 +173,7 @@ struct SpendingView: View {
                 Text(b.tag).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                 Spacer()
                 Text("\(CurrencyFormat.string(spent, base, compact: true)) of \(CurrencyFormat.string(b.capBase, base, compact: true))")
-                    .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
+                    .font(Typo.rowFigure(11, .medium)).monospacedDigit()
                     .foregroundStyle(frac >= 1 ? Palette.negative : Palette.textSecondary)
                 if frac >= 1 {
                     Text("over").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.negative)
@@ -229,7 +229,7 @@ struct SpendingView: View {
                 HStack(spacing: 8) {
                     if let p = selPt {
                         Text(p.label).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textSecondary)
-                        Text(CurrencyFormat.string(p.total, base)).font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.warning)
+                        Text(CurrencyFormat.string(p.total, base)).font(Typo.rowFigure(14)).monospacedDigit().foregroundStyle(Palette.warning)
                     } else {
                         Text("Hover a bar for the exact amount").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
@@ -271,7 +271,7 @@ struct SpendingView: View {
                                 Text(c.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                 Spacer()
                                 Text(CurrencyFormat.string(c.total, base, compact: true))
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                                    .font(Typo.rowFigure(12)).monospacedDigit().foregroundStyle(Palette.textSecondary)
                             }
                             GeometryReader { geo in
                                 Capsule().fill(Palette.warning.opacity(0.25))
@@ -290,7 +290,7 @@ struct SpendingView: View {
         Button { if sub == 2 { showAddRecurring = true } else { showAdd = true } } label: {
             Label(sub == 2 ? "Add recurring" : "Log spend", systemImage: "plus")
         }
-        .buttonStyle(.glassProminent).tint(Palette.warning)
+        .buttonStyle(.glassProminent).tint(Palette.azure)
     }
 
     @ViewBuilder private var recurringList: some View {
@@ -318,45 +318,22 @@ struct SpendingView: View {
     }
 
     private func recurringRow(_ r: Recurring) -> some View {
-        let c = r.kind == .income ? Palette.positive : Palette.negative
-        return HStack(spacing: 12) {
-            Circle().fill(c.opacity(0.18)).frame(width: 34, height: 34)
-                .overlay(Image(systemName: r.kind == .income ? "arrow.down.left" : "calendar")
-                    .font(.system(size: 12, weight: .bold)).foregroundStyle(c))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(r.label).font(.system(size: 13, weight: .medium)).foregroundStyle(r.active ? Palette.textPrimary : Palette.textTertiary).lineLimit(1)
-                HStack(spacing: 6) {
-                    Text("\(r.cadence.label) · \(r.kind.label)")
-                    if r.isVariableAmount { Text("· varies").foregroundStyle(Palette.azure) }
-                    if r.kind == .expense, let due = RecurringMath.nextDue(r) {
-                        let days = PHT.calendar.dateComponents([.day], from: PHT.startOfDay(), to: PHT.startOfDay(due)).day ?? 0
-                        let tag = days < 0 ? "(overdue)" : (days == 0 ? "(today)" : "(\(days)d)")
-                        Text("· due \(due.formatted(.dateTime.month().day())) \(tag)")
-                            .foregroundStyle(days <= 2 ? Palette.negative : Palette.textTertiary)
-                    }
-                }.font(.system(size: 11)).foregroundStyle(Palette.textTertiary).lineLimit(1)
-            }
-            Spacer()
-            Text(CurrencyFormat.string(r.amountBase, base, compact: true))
-                .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(c)
-            if r.kind == .expense {
-                Button("Pay") { payingRecurring = r }.buttonStyle(.glass).controlSize(.small)
-                    .help("Log this bill as paid")
-            }
-            Toggle("", isOn: Binding(get: { r.active }, set: { r.active = $0; r.dirty = true; try? context.save() }))
-                .labelsHidden().toggleStyle(.switch).tint(Palette.warning).controlSize(.mini)
-                .help(r.active ? "Active — reserved in safe-to-spend" : "Paused")
-                .accessibilityLabel("\(r.label) active")
-            Menu {
-                Button("Edit", systemImage: "pencil") { editingRecurring = r }
-                Button("Delete", systemImage: "trash", role: .destructive) { undo.trashSimple(r, label: "recurring", context: context) }
-            } label: { Image(systemName: "ellipsis").foregroundStyle(Palette.textTertiary).frame(width: 22) }.menuStyle(.borderlessButton).frame(width: 22)
-                .help("More actions")
-                .accessibilityLabel("More actions for \(r.label)")
+        let tone = r.kind == .income ? Palette.positive : Palette.negative
+        var meta = "\(r.cadence.label) · \(r.kind.label)"
+        if r.isVariableAmount { meta += " · varies" }
+        var dueTone = Palette.textTertiary
+        if r.kind == .expense, let due = RecurringMath.nextDue(r) {
+            let days = PHT.calendar.dateComponents([.day], from: PHT.startOfDay(), to: PHT.startOfDay(due)).day ?? 0
+            let tag = days < 0 ? "overdue" : (days == 0 ? "today" : "in \(days)d")
+            meta += " · due \(due.formatted(.dateTime.month().day())) (\(tag))"
+            if days <= 2 { dueTone = Palette.negative }
         }
-        .padding(.vertical, 9)
-        .hoverRow()
-        .onTapGesture { editingRecurring = r }
+        return RecurringRow(recurring: r, tone: tone, meta: meta, metaTone: dueTone,
+                            amount: CurrencyFormat.string(r.amountBase, base, compact: true),
+                            onPay: { payingRecurring = r },
+                            onEdit: { editingRecurring = r },
+                            onDelete: { undo.trashSimple(r, label: "recurring", context: context) },
+                            onToggle: { r.active = $0; r.dirty = true; try? context.save() })
     }
 
     private func walletName(_ id: UUID?) -> String? { id.flatMap { i in wallets.first { $0.id == i }?.name } }
@@ -364,40 +341,56 @@ struct SpendingView: View {
     private func row(_ s: Spend) -> some View {
         let title = s.spendDescription ?? s.vendorName ?? "Spend"
         let tagLine = s.tags.isEmpty ? s.category : s.tags.joined(separator: ", ")
-        return HStack(spacing: 12) {
-            if s.isSadaka {
-                Circle().fill(Palette.negative.opacity(0.18)).frame(width: 34, height: 34)
-                    .overlay(Image(systemName: "heart.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.negative))
-            } else if let v = s.vendorName, !v.isEmpty {
-                VendorMark(name: v, size: 34)
-            } else {
-                Circle().fill(Palette.warning.opacity(0.18)).frame(width: 34, height: 34)
-                    .overlay(Image(systemName: "arrow.up.right").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.warning))
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(s.spentAt, format: .dateTime.month().day().year())
-                    if let w = walletName(s.walletId) { Text("· \(w)") }
-                    if let t = tagLine, !t.isEmpty { Text("· \(t)") }
-                }.font(.system(size: 11)).foregroundStyle(Palette.textTertiary).lineLimit(1)
-            }
-            Spacer()
-            Text("−" + CurrencyFormat.string(s.amountBase, base))
-                .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
-            Menu {
-                Button("Edit", systemImage: "pencil") { editingSpend = s }
-                Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = s }
-            } label: { Image(systemName: "ellipsis").foregroundStyle(Palette.textTertiary).frame(width: 24, height: 24) }
-                .menuStyle(.borderlessButton).frame(width: 24)
-                .help("More actions")
-                .accessibilityLabel("More actions for \(title)")
-        }
-        .padding(.vertical, 9)
-        .hoverRow()
-        .onTapGesture { editingSpend = s }
+        var meta = s.spentAt.formatted(.dateTime.month().day().year())
+        if let w = walletName(s.walletId) { meta += " · \(w)" }
+        if let t = tagLine, !t.isEmpty { meta += " · \(t)" }
+        return SpendRow(spend: s, title: title, meta: meta,
+                        amount: "−" + CurrencyFormat.string(s.amountBase, base),
+                        onTap: { editingSpend = s },
+                        onEdit: { editingSpend = s },
+                        onDelete: { pendingDelete = s })
     }
 }
+
+/// A spend, with the vendor's real logo as its mark where we have one.
+///
+/// The logo is kept — unlike the coloured circles this replaced, a Jollibee or Lazada mark is
+/// genuine information and you can pick a row out of a list by it. Rows with no vendor fall back to
+/// the same hairline mark every other ledger uses, rather than inventing a badge to fill the space.
+private struct SpendRow: View {
+    let spend: Spend
+    let title: String
+    let meta: String
+    let amount: String
+    let onTap: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let v = spend.vendorName, !v.isEmpty, !spend.isSadaka {
+                VendorMark(name: v, size: 30)
+            } else {
+                LedgerMark(tone: spend.isSadaka ? Palette.violet : Palette.warning)
+            }
+            LedgerLabel(title: title, meta: meta)
+            Spacer(minLength: 10)
+            LedgerAmount(amount: amount, tone: Palette.textPrimary)
+            RowMenu(hovering: hovering, help: "Edit or delete this spend") {
+                Button("Edit", systemImage: "pencil", action: onEdit)
+                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+            }
+        }
+        .padding(.vertical, 10)
+        .hoverRow()
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+    }
+}
+
 
 struct AddSpendSheet: View {
     var existing: Spend? = nil
@@ -521,7 +514,7 @@ struct AddSpendSheet: View {
             HStack(spacing: 12) {
                 LabeledField("Amount") {
                     if itemized {
-                        Text(CurrencyFormat.string(itemizedTotal, currency)).font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text(CurrencyFormat.string(itemizedTotal, currency)).font(Typo.rowFigure(15))
                             .foregroundStyle(Palette.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 13).padding(.vertical, 11)
                             .insetRow(cornerRadius: Radii.field, hoverable: false)
@@ -841,7 +834,7 @@ struct PayRecurringSheet: View {
                 Text("Total to log").tileLabel()
                 Spacer()
                 Text(CurrencyFormat.string(total, recurring.currency, compact: true))
-                    .font(.system(size: 18, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.warning)
+                    .font(Typo.rowFigure(18)).monospacedDigit().foregroundStyle(Palette.warning)
             }.padding(12).glassCard(cornerRadius: Radii.field)
             if !history.isEmpty {
                 LabeledField("Recent payments") {
@@ -850,7 +843,7 @@ struct PayRecurringSheet: View {
                             HStack {
                                 Text(s.spentAt, format: .dateTime.month().day().year()).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                                 Spacer()
-                                Text(CurrencyFormat.string(s.amountBase, base, compact: true)).font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                                Text(CurrencyFormat.string(s.amountBase, base, compact: true)).font(Typo.rowFigure(11, .medium)).monospacedDigit().foregroundStyle(Palette.textSecondary)
                             }
                         }
                     }
@@ -925,7 +918,7 @@ struct SpendHeatmap: View {
             HStack(spacing: 8) {
                 if let s = sel {
                     Text(s.date.formatted(.dateTime.weekday(.wide).month().day())).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textSecondary)
-                    Text(s.total > 0 ? CurrencyFormat.string(s.total, base) : "nothing spent").font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(s.total > 0 ? Palette.warning : Palette.textTertiary)
+                    Text(s.total > 0 ? CurrencyFormat.string(s.total, base) : "nothing spent").font(Typo.rowFigure(13)).monospacedDigit().foregroundStyle(s.total > 0 ? Palette.warning : Palette.textTertiary)
                 } else {
                     Text("Hover a day to see what you spent").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 }
@@ -1126,5 +1119,60 @@ struct BudgetsSheet: View {
         }
         try? context.save()
         dismiss()
+    }
+}
+
+/// A recurring bill or income line.
+///
+/// Carries more controls than a plain ledger row — pay, pause, edit — so it keeps its own struct,
+/// but it uses the same mark, label and figure as everything else, and the controls only appear on
+/// hover. A row of permanently-visible switches and buttons reads as a settings panel; this is a
+/// ledger that happens to be actionable.
+private struct RecurringRow: View {
+    let recurring: Recurring
+    let tone: Color
+    let meta: String
+    let metaTone: Color
+    let amount: String
+    let onPay: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    let onToggle: (Bool) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            LedgerMark(tone: recurring.active ? tone : Palette.textTertiary.opacity(0.5))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(recurring.label)
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(recurring.active ? Palette.textPrimary : Palette.textTertiary)
+                    .lineLimit(1)
+                Text(meta).font(.system(size: 11)).foregroundStyle(metaTone).lineLimit(1)
+            }
+            Spacer(minLength: 10)
+            if recurring.kind == .expense, hovering {
+                Button("Pay", action: onPay)
+                    .buttonStyle(.glass).controlSize(.small)
+                    .help("Log this bill as paid")
+            }
+            LedgerAmount(amount: amount, tone: recurring.active ? tone : Palette.textTertiary)
+            if hovering {
+                Toggle("", isOn: Binding(get: { recurring.active }, set: onToggle))
+                    .labelsHidden().toggleStyle(.switch).tint(Palette.azure).controlSize(.mini)
+                    .help(recurring.active ? "Active — reserved in safe-to-spend" : "Paused")
+                    .accessibilityLabel("\(recurring.label) active")
+            }
+            RowMenu(hovering: hovering, help: "Edit or delete this bill") {
+                Button("Edit", systemImage: "pencil", action: onEdit)
+                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+            }
+        }
+        .padding(.vertical, 10)
+        .hoverRow()
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onEdit)
     }
 }

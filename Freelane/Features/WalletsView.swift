@@ -62,7 +62,7 @@ struct WalletsView: View {
             }.buttonStyle(.glass)
             Button { showAdd = true } label: {
                 Label("Add wallet", systemImage: "plus")
-            }.buttonStyle(.glassProminent).tint(Palette.teal)
+            }.buttonStyle(.glassProminent).tint(Palette.azure)
         }
     }
 
@@ -80,7 +80,7 @@ struct WalletsView: View {
             }
             Spacer(minLength: 2)
             Text(CurrencyFormat.string(bal, base))
-                .font(.system(size: 21, weight: .semibold, design: .rounded))
+                .font(Typo.rowFigure(21))
                 .monospacedDigit()
                 .foregroundStyle(low ? Palette.negative : Palette.textPrimary)
                 .lineLimit(1).minimumScaleFactor(0.6)
@@ -168,7 +168,7 @@ struct WalletDetailSheet: View {
                                         Text(e.note ?? "").font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1)
                                         Spacer()
                                         Text((e.amountBase >= 0 ? "+" : "") + CurrencyFormat.string(e.amountBase, base, compact: true))
-                                            .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                                            .font(Typo.rowFigure(12)).monospacedDigit()
                                             .foregroundStyle(e.amountBase >= 0 ? Palette.positive : Palette.textPrimary)
                                             .lineLimit(1)
                                         Text(e.eventAt, format: .dateTime.month().day()).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).frame(width: 44, alignment: .trailing)
@@ -186,7 +186,7 @@ struct WalletDetailSheet: View {
     private func tag(_ l: String, _ v: Double, _ c: Color) -> some View {
         HStack(spacing: 4) {
             Text(l).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-            Text(CurrencyFormat.string(abs(v), base, compact: true)).font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(c)
+            Text(CurrencyFormat.string(abs(v), base, compact: true)).font(Typo.rowFigure(11)).monospacedDigit().foregroundStyle(c)
         }
     }
     private func kindLabel(_ e: LedgerEntry) -> String {
@@ -304,7 +304,7 @@ struct WithdrawalSheet: View {
                 Text(to == nil ? "Out of wallet" : "Moving").tileLabel()
                 Spacer()
                 Text(CurrencyFormat.string(receivedBase, base))
-                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(Typo.rowFigure(16)).monospacedDigit()
                     .foregroundStyle(Palette.warning).lineLimit(1).minimumScaleFactor(0.7)
                 if feeBase > 0 {
                     Text("· fee " + CurrencyFormat.string(feeBase, base, compact: true))

@@ -441,7 +441,7 @@ private struct CashFlowCard: View {
                             .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(s.date, format: .dateTime.month(.abbreviated).day()).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
-                                    Text(CurrencyFormat.string(s.cumulative, base, compact: true)).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                                    Text(CurrencyFormat.string(s.cumulative, base, compact: true)).font(Typo.rowFigure(12)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                                 }
                                 .padding(6)
                                 .background(Palette.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

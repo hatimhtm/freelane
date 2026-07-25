@@ -88,7 +88,7 @@ struct PeopleView: View {
                 .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.textTertiary)
                 .help("Never suggest this pair again")
             Button("Merge") { applyDupe(g) }
-                .buttonStyle(.glassProminent).tint(Palette.warning).controlSize(.small)
+                .buttonStyle(.glassProminent).tint(Palette.azure).controlSize(.small)
                 .disabled(keep == nil || members.isEmpty)
         }
         .padding(.vertical, 7).padding(.horizontal, 10)
@@ -115,7 +115,7 @@ struct PeopleView: View {
 
     private var addButton: some View {
         Button { showAdd = true } label: { Label("Add", systemImage: "plus") }
-            .buttonStyle(.glassProminent).tint(Palette.violet)
+            .buttonStyle(.glassProminent).tint(Palette.azure)
     }
 
     private func sectionHeader(_ t: String, _ s: String) -> some View {
@@ -304,13 +304,13 @@ struct EntityDetailSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if flowTotal > 0 {
                         SectionCard(title: "Money flow", subtitle: "\(flowSpends.count) spends mention \(entity.name)", accent: Palette.violet) {
-                            Text(CurrencyFormat.string(flowTotal, "PHP")).font(.system(size: 24, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                            Text(CurrencyFormat.string(flowTotal, "PHP")).font(Typo.rowFigure(24)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                             VStack(spacing: 0) {
                                 ForEach(Array(flowSpends.prefix(8))) { s in
                                     HStack {
                                         Text(s.spendDescription ?? s.vendorName ?? "Spend").font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1)
                                         Spacer()
-                                        Text(CurrencyFormat.string(s.amountBase, "PHP", compact: true)).font(.system(size: 12, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                                        Text(CurrencyFormat.string(s.amountBase, "PHP", compact: true)).font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                                     }.padding(.vertical, 5)
                                 }
                             }

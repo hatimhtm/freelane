@@ -140,7 +140,7 @@ struct RootView: View {
                     .padding(.top, 14).padding(.trailing, 20)
             }
             .overlay(alignment: .bottomTrailing) {
-                FloatingAIButton(page: feature).padding(24)
+                FloatingAIButton(page: feature).padding(.trailing, 20).padding(.bottom, 18)
             }
             .toolbar(removing: .title)
             .toolbarBackground(.hidden, for: .windowToolbar)
@@ -567,7 +567,7 @@ struct Page<Content: View>: View {
                         staggered(content())
                     }
                 }
-                .padding(.horizontal, 26).padding(.top, 4).padding(.bottom, 64)
+                .padding(.horizontal, 30).padding(.top, 4).padding(.bottom, 78)
                 .frame(maxWidth: 1000, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)   // …but the COLUMN centers in wide windows (no dead right gutter)
             }

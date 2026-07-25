@@ -70,17 +70,17 @@ struct SadakaView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Zakatable wealth").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                        Text(CurrencyFormat.string(zakatNet, base)).font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                        Text(CurrencyFormat.string(zakatNet, base)).font(Typo.rowFigure(15)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 1) {
                         Text(zakatNisab > 0 && zakatNet >= zakatNisab ? "ZAKAT DUE (2.5%)" : (zakatNisab > 0 ? "BELOW NISAB — none due" : "SET NISAB ABOVE")).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                        Text(CurrencyFormat.string(zakatDue, base)).font(.system(size: 22, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(zakatDue > 0 ? Palette.teal : Palette.textTertiary)
+                        Text(CurrencyFormat.string(zakatDue, base)).font(Typo.rowFigure(22, .bold)).monospacedDigit().foregroundStyle(zakatDue > 0 ? Palette.teal : Palette.textTertiary)
                     }
                 }
                 if zakatDue > 0 {
                     Button { giveOpen = true } label: { Label("Give zakat now", systemImage: "heart.fill").frame(maxWidth: .infinity) }
-                        .buttonStyle(.glassProminent).tint(Palette.teal)
+                        .buttonStyle(.glassProminent).tint(Palette.azure)
                 }
             }
         }
@@ -90,7 +90,7 @@ struct SadakaView: View {
             Text(label).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
             if auto { Text("auto").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.teal).padding(.horizontal, 5).padding(.vertical, 1).background(Palette.teal.opacity(0.16), in: Capsule()) }
             Spacer()
-            Text(CurrencyFormat.string(value, base, compact: true)).font(.system(size: 12, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+            Text(CurrencyFormat.string(value, base, compact: true)).font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(Palette.textPrimary)
         }
     }
     private func zakatField(_ label: String, _ value: Binding<Double>) -> some View {
@@ -108,18 +108,21 @@ struct SadakaView: View {
         let show = s.surface && !snoozed
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                GlyphChip(systemImage: "heart.fill", color: Palette.negative, size: 30)
-                Text(show ? "Suggested now" : "Sadaka").tileLabel()
+                Image(systemName: "heart.fill").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.violet)
+                Text(show ? "Suggested now" : "Sadaka")
+                    .font(.system(size: 10, weight: .semibold)).textCase(.uppercase).kerning(0.7)
+                    .foregroundStyle(Palette.textTertiary)
                 Spacer()
                 if daysSinceLast == nil { MetricChip(text: "no gifts yet", color: Palette.textTertiary) }
                 else if let d = daysSinceLast { MetricChip(text: d == 0 ? "gave today" : "\(d)d since last", systemImage: "clock", color: Palette.textTertiary) }
             }
             if show {
-                MoneyText(amount: s.amount, code: base, size: 42, color: Palette.negative)
+                MoneyText(amount: s.amount, code: base, size: 44, color: Palette.violet)
                 Text(s.reasoning).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                 HStack(spacing: 10) {
                     Button { giveOpen = true } label: { Label("Give now", systemImage: "heart.fill") }
-                        .buttonStyle(.glassProminent).tint(Palette.negative)
+                        .buttonStyle(.glassProminent).tint(Palette.azure)
                     Button("Not now") { snooze() }.buttonStyle(.glass)
                 }
             } else {
@@ -130,7 +133,7 @@ struct SadakaView: View {
             }
         }
         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: Radii.card, tint: Palette.negative, elevated: true)
+        .glassCard(cornerRadius: Radii.card, elevated: true)
     }
 
     private var tiles: some View {
@@ -147,7 +150,7 @@ struct SadakaView: View {
     private var anchorCard: some View {
         SectionCard(title: "Your anchor", subtitle: "Roughly how much of income to lean toward giving", accent: Palette.negative) {
             HStack(spacing: 14) {
-                Text(String(format: "%.1f%%", anchorPct)).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                Text(String(format: "%.1f%%", anchorPct)).font(Typo.rowFigure(22)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                 Stepper("", value: Binding(
                     get: { anchorPct },
                     set: { v in
@@ -208,19 +211,20 @@ struct SadakaView: View {
 
     private func line(title: String, date: Date, amount: Double, badge: String, badgeColor: Color) -> some View {
         HStack(spacing: 12) {
-            Circle().fill(Palette.negative.opacity(0.18)).frame(width: 34, height: 34)
-                .overlay(Image(systemName: "heart.fill").font(.system(size: 12)).foregroundStyle(Palette.negative))
+            LedgerMark(tone: badgeColor)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                Text(title).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                 HStack(spacing: 6) {
                     StatusBadge(text: badge, color: badgeColor)
-                    Text(date, format: .dateTime.month().day().year()).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                    Text(date, format: .dateTime.month().day().year())
+                        .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 }
             }
-            Spacer()
-            Text(CurrencyFormat.string(amount, base)).font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Palette.negative)
+            Spacer(minLength: 10)
+            LedgerAmount(amount: CurrencyFormat.string(amount, base), tone: Palette.violet)
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
+        .hoverRow()
     }
 
     private func snooze() {

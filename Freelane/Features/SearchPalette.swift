@@ -52,7 +52,7 @@ struct SearchPalette: View {
                     .onChange(of: query) { _, _ in selected = 0 }
                     .onKeyPress(.downArrow) { if !hits.isEmpty { selected = min(selected + 1, hits.count - 1) }; return .handled }
                     .onKeyPress(.upArrow) { if !hits.isEmpty { selected = max(selected - 1, 0) }; return .handled }
-                Text("⌘F").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Palette.textTertiary)
+                Text("⌘F").font(Typo.rowFigure(11)).foregroundStyle(Palette.textTertiary)
                     .padding(.horizontal, 6).padding(.vertical, 3).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))
             }.padding(16)
             Divider().overlay(Palette.hairline)
