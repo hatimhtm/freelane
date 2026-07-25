@@ -300,17 +300,74 @@ struct AgendaView: View {
     }
 
     private var timelineCard: some View {
-        SectionCard(title: "Timeline",
-                    subtitle: "\(items.count) upcoming · next \(horizon) days",
+        SectionCard(title: "What's coming",
+                    subtitle: items.isEmpty ? "Nothing due in the next \(horizon) days" : "\(items.count) things · next \(horizon) days",
                     accent: Palette.indigo) {
-            VStack(spacing: 0) {
-                ForEach(Array(dayGroups.enumerated()), id: \.element.day) { idx, group in
-                    dayRow(group)
-                    if idx < dayGroups.count - 1 {
-                        Divider().overlay(Palette.hairline).padding(.leading, 62)
+            // Grouped into periods a person actually thinks in — "This week", "Next week",
+            // "Later this month" — instead of an undifferentiated run of dates. A list of 23 day
+            // rows tells you nothing about what's near; a heading that says "This week" does, and
+            // it's the difference between a schedule you scan and one you have to read.
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(periods.enumerated()), id: \.element.title) { pIdx, period in
+                    if pIdx > 0 {
+                        Rectangle().fill(Palette.hairline).frame(height: 1)
+                            .padding(.vertical, 14)
+                    }
+                    HStack(spacing: 9) {
+                        Text(period.title)
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .textCase(.uppercase).kerning(1.0)
+                            .foregroundStyle(period.tone)
+                        Text(period.summary)
+                            .font(.system(size: 10.5)).monospacedDigit()
+                            .foregroundStyle(Palette.textTertiary)
+                        Rectangle().fill(Palette.hairline).frame(height: 1)
+                    }
+                    .padding(.bottom, 10)
+
+                    ForEach(Array(period.days.enumerated()), id: \.element.day) { idx, group in
+                        dayRow(group)
+                        if idx < period.days.count - 1 {
+                            Divider().overlay(Palette.hairline).padding(.leading, 58)
+                        }
                     }
                 }
             }
+        }
+    }
+
+    /// A named stretch of time, with the day groups that fall inside it.
+    private struct Period {
+        let title: String
+        let tone: Color
+        let days: [(day: Date, items: [Item])]
+        /// Net money moving in this stretch, so a heading carries information and not just a label.
+        var summary: String
+    }
+
+    /// Bucket the day groups into "Overdue / This week / Next week / Later".
+    private var periods: [Period] {
+        let cal = PHT.calendar
+        let today = PHT.startOfDay()
+        let weekEnd = cal.date(byAdding: .day, value: 7, to: today) ?? today
+        let fortnight = cal.date(byAdding: .day, value: 14, to: today) ?? today
+
+        func net(_ days: [(day: Date, items: [Item])]) -> String {
+            let total = days.flatMap(\.items).compactMap(\.amount).reduce(0, +)
+            guard abs(total) >= 1 else { return "" }
+            return (total >= 0 ? "+" : "−") + CurrencyFormat.string(abs(total), base, compact: true)
+        }
+
+        let buckets: [(String, Color, (Date) -> Bool)] = [
+            ("Overdue",    Palette.negative, { $0 < today }),
+            ("This week",  Palette.textSecondary, { $0 >= today && $0 < weekEnd }),
+            ("Next week",  Palette.textTertiary, { $0 >= weekEnd && $0 < fortnight }),
+            ("Later",      Palette.textTertiary, { $0 >= fortnight }),
+        ]
+        return buckets.compactMap { title, tone, belongs in
+            let days = dayGroups.filter { belongs($0.day) }
+            guard !days.isEmpty else { return nil }
+            return Period(title: title, tone: tone, days: days, summary: net(days))
         }
     }
 
@@ -329,18 +386,21 @@ struct AgendaView: View {
     private func dateColumn(_ day: Date, tint: Color?) -> some View {
         let today = PHT.startOfDay()
         let isToday = day == today
+        let cal = PHT.calendar
+        let isTomorrow = cal.date(byAdding: .day, value: 1, to: today) == day
         return VStack(spacing: 1) {
-            Text(isToday ? "TODAY" : day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
-                .font(.system(size: 9, weight: .bold)).kerning(0.6)
+            Text(isToday ? "TODAY" : (isTomorrow ? "TOMORROW" : day.formatted(.dateTime.weekday(.abbreviated)).uppercased()))
+                .font(.system(size: 8.5, weight: .bold)).kerning(0.5)
                 .foregroundStyle(tint ?? Palette.textTertiary)
+                .lineLimit(1).minimumScaleFactor(0.7)
             Text(day.formatted(.dateTime.day()))
-                .font(Typo.rowFigure(23)).monospacedDigit()
+                .font(Typo.figure(22)).monospacedDigit()
                 .foregroundStyle(day < today ? Palette.negative : Palette.textPrimary)
             Text(day.formatted(.dateTime.month(.abbreviated)).uppercased())
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(Palette.textTertiary)
         }
-        .frame(width: 48)
+        .frame(width: 52)
         .padding(.vertical, 3)
     }
 

@@ -137,3 +137,121 @@ struct LedgerRow<Menu: View>: View {
         .onTapGesture(perform: onTap)
     }
 }
+
+// MARK: - The figure rail
+
+/// A column of numbers, set as a table rather than as tiles.
+///
+/// This replaced a grid of ten equal-weight tiles on the Dashboard. Ten boxes of the same size and
+/// colour is not a summary — nothing leads, so the eye has to read all ten to find the one it
+/// wanted, and on a wide window they sprawl across the page. A rail is how a financial page has
+/// always solved this: labels left, figures right, hairlines between, scanned top to bottom in one
+/// movement. It also costs a third of the width, which is what makes room for a real lead column
+/// beside it.
+struct FigureRail: View {
+    struct Item: Identifiable {
+        let id: String
+        var label: String
+        var value: String
+        var sub: String? = nil
+        var tone: Color? = nil
+        var destination: Feature? = nil
+    }
+
+    var title: String
+    var items: [Item]
+    @Environment(\.navigate) private var navigate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 9.5, weight: .semibold))
+                .textCase(.uppercase).kerning(1.0)
+                .foregroundStyle(Palette.textTertiary)
+                .padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 11)
+
+            ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                if i > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 16) }
+                RailRow(item: item, onTap: { if let d = item.destination { navigate(d) } })
+            }
+        }
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(cornerRadius: Radii.card)
+    }
+}
+
+private struct RailRow: View {
+    let item: FigureRail.Item
+    let onTap: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+                if let sub = item.sub {
+                    Text(sub).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(item.value)
+                .font(Typo.figure(17))
+                .monospacedDigit()
+                .foregroundStyle(item.tone ?? Palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .contentTransition(.numericText())
+        }
+        .padding(.horizontal, 16).padding(.vertical, 9)
+        .background(hovering && item.destination != nil ? Palette.wellFill : .clear)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .pointerStyle(item.destination != nil ? .link : .default)
+        .onTapGesture { onTap() }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+// MARK: - The lead figure
+
+/// The one number a page is about, set as a masthead: label, figure at display size, a line of
+/// context, and a sparkline that fills whatever width is left.
+struct LeadFigure: View {
+    var label: String
+    var amount: Double
+    var code: String
+    var context: [String]
+    var spark: [Double]
+    var accent: Color = Palette.azure
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(label)
+                .font(.system(size: 9.5, weight: .semibold))
+                .textCase(.uppercase).kerning(1.0)
+                .foregroundStyle(Palette.textTertiary)
+
+            MoneyText(amount: amount, code: code, size: 52)
+                .padding(.top, 6)
+
+            if !context.isEmpty {
+                Text(context.joined(separator: "   ·   "))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.textTertiary)
+                    .padding(.top, 7)
+            }
+
+            if spark.count > 1 {
+                Sparkline(values: spark, color: accent)
+                    .frame(height: 54)
+                    .padding(.top, 14)
+            }
+        }
+        .padding(.horizontal, 20).padding(.vertical, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(cornerRadius: Radii.card, elevated: true)
+    }
+}

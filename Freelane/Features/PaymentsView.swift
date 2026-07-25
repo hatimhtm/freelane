@@ -93,13 +93,32 @@ struct PaymentsView: View {
                         .font(.system(size: 13)).foregroundStyle(Palette.textTertiary)
                         .frame(maxWidth: .infinity, minHeight: 60)
                 } else {
+                    // Grouped by month with a running total per month, the way a statement is set.
+                    // A flat run of 51 rows gives you no sense of period at all — you can't tell
+                    // where June ended without reading dates, and "how did last month go" needs
+                    // arithmetic. The heading answers it.
                     LazyVStack(spacing: 0) {
-                        ForEach(list) { row in
-                            switch row {
-                            case .payment(let p): paymentRow(p)
-                            case .withdrawal(let w): withdrawalRow(w)
+                        ForEach(monthGroups(list), id: \.key) { group in
+                            HStack(spacing: 9) {
+                                Text(group.title)
+                                    .font(.system(size: 9.5, weight: .semibold))
+                                    .textCase(.uppercase).kerning(1.0)
+                                    .foregroundStyle(Palette.textSecondary)
+                                Rectangle().fill(Palette.hairline).frame(height: 1)
+                                Text(group.net)
+                                    .font(Typo.rowFigure(11)).monospacedDigit()
+                                    .foregroundStyle(Palette.textTertiary)
                             }
-                            if row.id != list.last?.id { Divider().overlay(Palette.hairline) }
+                            .padding(.top, group.key == monthGroups(list).first?.key ? 2 : 18)
+                            .padding(.bottom, 4)
+
+                            ForEach(group.rows) { row in
+                                switch row {
+                                case .payment(let p): paymentRow(p)
+                                case .withdrawal(let w): withdrawalRow(w)
+                                }
+                                if row.id != group.rows.last?.id { Divider().overlay(Palette.hairline) }
+                            }
                         }
                     }
                 }
@@ -174,6 +193,34 @@ struct PaymentsView: View {
                 Button { showRouted = true } label: { Label("Routed payment (multi-hop)", systemImage: "arrow.triangle.branch") }
             } label: { Label("Log payment", systemImage: "plus") }
                 .buttonStyle(.glassProminent).tint(Palette.azure).menuStyle(.button)
+        }
+    }
+
+    /// History split into months, newest first, each with its net for the period.
+    private struct MonthGroup { let key: String; let title: String; let net: String; let rows: [Row] }
+
+    private func monthGroups(_ rows: [Row]) -> [MonthGroup] {
+        let cal = PHT.calendar
+        let grouped = Dictionary(grouping: rows) { row -> Date in
+            cal.date(from: cal.dateComponents([.year, .month], from: row.date)) ?? row.date
+        }
+        let thisMonth = cal.date(from: cal.dateComponents([.year, .month], from: .now))
+        return grouped.keys.sorted(by: >).map { month in
+            let rows = grouped[month]!.sorted { $0.date > $1.date }
+            let net = rows.reduce(0.0) { sum, row in
+                switch row {
+                case .payment(let p): return sum + (p.netAmountBase ?? 0)
+                case .withdrawal(let w): return sum - w.grossBase
+                }
+            }
+            let title = month == thisMonth
+                ? "This month"
+                : month.formatted(.dateTime.month(.wide).year())
+            return MonthGroup(
+                key: ISO8601DateFormatter().string(from: month),
+                title: title,
+                net: (net >= 0 ? "+" : "−") + CurrencyFormat.string(abs(net), base, compact: true),
+                rows: rows)
         }
     }
 

@@ -88,7 +88,7 @@ enum Feature: String, CaseIterable, Identifiable {
     /// Retired from the UI (2026-07 declutter): removed from the sidebar & palettes. The enum cases
     /// and their views stay so nothing breaks and the data is untouched — they're just not navigable.
     // Activity lives inside Insights (Stats) as a subtab now, not as its own sidebar row.
-    static let retired: Set<Feature> = [.today, .people, .vendors, .faith, .activity]
+    static let retired: Set<Feature> = [.today, .people, .vendors, .faith, .activity, .body]
     var isRetired: Bool { Feature.retired.contains(self) }
 
     var group: FeatureGroup {

@@ -65,19 +65,107 @@ struct DashboardView: View {
                                message: "Add the places your money lives — a bank, GCash, cash. Everything you log flows through a wallet, so this one step unlocks spends, payments, and the rest of the app.",
                                actionLabel: "Add your first wallet") { navigate(.wallets) }
             } else {
-                // Priority first: the few things actually worth a tap. When nothing needs you, the
-                // calm weather banner takes this slot instead of a wall of equal-weight tiles.
-                if signals.isEmpty {
-                    CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
-                } else {
-                    needsYouCard(signals)
+                // A FRONT PAGE, not a stack of cards.
+                //
+                // Every screen in this app was the same shape — full-width cards down a centred
+                // column — and the Dashboard was the worst case: a hero, then ten equal tiles, then
+                // a chart, all the same width, nothing leading. On a Mac window that also wastes
+                // half the horizontal space.
+                //
+                // Now it reads like a page: a narrow rail of figures on the right, and a lead
+                // column on the left carrying the one number that matters, what needs you, and what
+                // the app noticed. `ViewThatFits` stacks the two on a narrow window.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 18) {
+                        leadColumn(m, s, signals)
+                        rail(m, s).frame(width: 262)
+                    }
+                    VStack(alignment: .leading, spacing: 18) {
+                        leadColumn(m, s, signals)
+                        rail(m, s)
+                    }
                 }
-                hero(m, s)
-                insightsCard
-                grid(m, s)
-                CashFlowCard(points: m.cashFlow, base: base)
             }
         }
+    }
+
+    // MARK: The front page
+
+    /// The narrative column: the number that matters, then anything that needs a decision, then
+    /// what the app noticed, then the shape of the month.
+    @ViewBuilder
+    private func leadColumn(_ m: DashboardMetrics, _ s: SafeBreakdown, _ signals: [FocusSignal]) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            LeadFigure(
+                label: "Available across wallets",
+                amount: m.available, code: base,
+                // `runway` is optional (there's no runway without a spending pace) and returns a
+                // fractional Double — interpolating it raw put "Optional(19.463007703879317)-day
+                // runway" on the front page. Build the line from parts that are each already
+                // formatted, and drop any that don't apply.
+                context: {
+                    var bits = ["Safe " + CurrencyFormat.abbreviated(s.liveRemaining, base) + " today"]
+                    if let r = runway(s), r.isFinite, r > 0 {
+                        bits.append("\(Int(r.rounded()))-day runway")
+                    }
+                    if m.activeProjects > 0 {
+                        bits.append("\(m.activeProjects) open \(m.activeProjects == 1 ? "project" : "projects")")
+                    }
+                    return bits
+                }(),
+                spark: Array(m.cashFlow.suffix(30).map { $0.cumulative }))
+
+            if signals.isEmpty {
+                CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
+            } else {
+                needsYouCard(signals)
+            }
+            insightsCard
+            CashFlowCard(points: m.cashFlow, base: base)
+        }
+    }
+
+    /// The figure rail. Replaces the ten-tile grid — same numbers, a third of the width, and
+    /// actually scannable because the labels line up and the figures are in one column.
+    private func rail(_ m: DashboardMetrics, _ s: SafeBreakdown) -> some View {
+        var items: [FigureRail.Item] = [
+            .init(id: "safe", label: "Safe to spend",
+                  value: CurrencyFormat.abbreviated(s.liveRemaining, base),
+                  sub: "of " + CurrencyFormat.abbreviated(s.initialForToday, base) + " today",
+                  destination: .spending),
+            .init(id: "spent", label: "Spent today",
+                  value: CurrencyFormat.abbreviated(s.spentToday, base), destination: .spending),
+            .init(id: "landed", label: "Landed this month",
+                  value: CurrencyFormat.abbreviated(m.landedMTD, base),
+                  sub: "YTD " + CurrencyFormat.abbreviated(m.landedYTD, base), destination: .payments),
+            .init(id: "out", label: "Outstanding",
+                  value: CurrencyFormat.abbreviated(m.outstandingBase, base),
+                  sub: "\(m.activeProjects) open", destination: .projects),
+            .init(id: "net", label: "Net · 30 days",
+                  value: CurrencyFormat.abbreviated(net30, base),
+                  tone: net30 < 0 ? Palette.negative : nil, destination: .stats),
+            .init(id: "fees", label: "Fees this month",
+                  value: CurrencyFormat.abbreviated(m.feesMTD, base), destination: .stats),
+            .init(id: "proj", label: "Active projects", value: "\(m.activeProjects)",
+                  sub: overdueProjects > 0 ? "\(overdueProjects) overdue" : nil,
+                  tone: overdueProjects > 0 ? Palette.warning : nil, destination: .projects),
+            .init(id: "sadaka", label: "Sadaka this month",
+                  value: CurrencyFormat.abbreviated(sadakaMTD, base), destination: .sadaka),
+        ]
+        if loanOutstanding > 0 {
+            items.append(.init(id: "loans", label: "Loans out",
+                               value: CurrencyFormat.abbreviated(loanOutstanding, base),
+                               sub: "\(openLoanCount) open", destination: .loans))
+        }
+        if let mv = VendorTrends.biggest(spends), let d = mv.delta {
+            let up = d > 0
+            items.append(.init(id: "vtrend", label: up ? "Biggest riser" : "Biggest faller",
+                               value: mv.name,
+                               sub: "\(abs(Int((d * 100).rounded())))% vs last month",
+                               tone: up ? Palette.negative : Palette.positive,
+                               destination: .spending))
+        }
+        return FigureRail(title: "At a glance", items: items)
     }
 
     // MARK: Needs you — the prioritized attention surface
