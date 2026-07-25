@@ -3,6 +3,15 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 1.3
+
+Motion, depth, and the last of the badges.
+
+- **The app moves now.** Figures tally up as they arrive rather than appearing fully formed, the balance line traces itself left to right with a soft glow under the stroke, sections rise and settle in sequence, and large panels carry a light that follows your pointer. All of it respects Reduce Motion, and none of it is decoration — a number counts because it's being totalled, a line draws because it's being traced.
+- **The Dashboard has a lead, not a header.** The balance is set at 60pt with the chart bleeding across the full width behind it and light falling from the top-left corner, instead of a figure in a flat box with a chart underneath it.
+- **The last tinted glyph squares are gone.** The weather banner was the final one — a coloured icon in a rounded square plus a full-card colour wash, sitting directly under the lead panel looking like a different product.
+- **Observations stopped being badges.** Four rows each led by a differently-coloured icon turned a card of four sentences into a card of four logos, and every row carried a permanently-visible "⋯". The icons are gone, and pin/dismiss appear on hover.
+
 ## 1.2
 
 Menus, copy, and the Dock icon — the details.

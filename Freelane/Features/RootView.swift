@@ -588,7 +588,7 @@ struct Page<Content: View>: View {
 private func staggered<V: View>(_ v: V) -> some View {
     Group(subviews: v) { subviews in
         ForEach(Array(subviews.enumerated()), id: \.element.id) { i, sub in
-            sub.fluidAppear(min(i, 7))
+            sub.riseIn(i)
         }
     }
 }

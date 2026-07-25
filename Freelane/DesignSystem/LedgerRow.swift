@@ -173,6 +173,7 @@ struct FigureRail: View {
             ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
                 if i > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 16) }
                 RailRow(item: item, onTap: { if let d = item.destination { navigate(d) } })
+                    .riseIn(i)
             }
         }
         .padding(.bottom, 6)
@@ -198,12 +199,21 @@ private struct RailRow: View {
                 }
             }
             Spacer(minLength: 8)
-            Text(item.value)
-                .font(Typo.figure(17))
-                .monospacedDigit()
-                .foregroundStyle(item.tone ?? Palette.textPrimary)
-                .lineLimit(1).minimumScaleFactor(0.7)
-                .contentTransition(.numericText())
+            HStack(spacing: 6) {
+                Text(item.value)
+                    .font(Typo.figure(17))
+                    .monospacedDigit()
+                    .foregroundStyle(item.tone ?? Palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .contentTransition(.numericText())
+                if item.destination != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Palette.textTertiary)
+                        .opacity(hovering ? 1 : 0)
+                        .offset(x: hovering ? 0 : -4)
+                }
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 9)
         .background(hovering && item.destination != nil ? Palette.wellFill : .clear)
@@ -217,8 +227,14 @@ private struct RailRow: View {
 
 // MARK: - The lead figure
 
-/// The one number a page is about, set as a masthead: label, figure at display size, a line of
-/// context, and a sparkline that fills whatever width is left.
+/// The number a page is about, given the room to actually land.
+///
+/// This is the app's one moment of theatre and it's deliberate. The previous version put the
+/// balance in a 52pt figure inside a flat panel with a static line under it, which is a report
+/// header. Now: the figure counts up as it arrives, the line traces itself left to right and keeps
+/// a soft glow, the panel carries a gradient that suggests light falling across it, and a pointer
+/// light follows your cursor. None of it is decoration — it's the difference between a page that
+/// has loaded and a page that is *yours*.
 struct LeadFigure: View {
     var label: String
     var amount: Double
@@ -227,31 +243,71 @@ struct LeadFigure: View {
     var spark: [Double]
     var accent: Color = Palette.azure
 
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(label)
-                .font(.system(size: 9.5, weight: .semibold))
-                .textCase(.uppercase).kerning(1.0)
-                .foregroundStyle(Palette.textTertiary)
-
-            MoneyText(amount: amount, code: code, size: 52)
-                .padding(.top, 6)
-
-            if !context.isEmpty {
-                Text(context.joined(separator: "   ·   "))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.textTertiary)
-                    .padding(.top, 7)
+        let dark = scheme == .dark
+        ZStack(alignment: .topLeading) {
+            // The line lives BEHIND the figure and bleeds to the panel's edges, so the number sits
+            // in the data rather than on top of a chart in a box.
+            if spark.count > 1 {
+                DrawingSparkline(values: spark, color: accent, lineWidth: 2.2)
+                    .frame(height: 128)
+                    .opacity(dark ? 0.55 : 0.40)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .allowsHitTesting(false)
             }
 
-            if spark.count > 1 {
-                Sparkline(values: spark, color: accent)
-                    .frame(height: 54)
-                    .padding(.top, 14)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(label)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .textCase(.uppercase).kerning(1.2)
+                    .foregroundStyle(Palette.textTertiary)
+
+                CountUpMoney(amount: amount, code: code, size: 60, color: Palette.textPrimary)
+                    .padding(.top, 8)
+
+                if !context.isEmpty {
+                    HStack(spacing: 0) {
+                        ForEach(Array(context.enumerated()), id: \.offset) { i, bit in
+                            if i > 0 {
+                                Circle().fill(Palette.textTertiary.opacity(0.5))
+                                    .frame(width: 2.5, height: 2.5)
+                                    .padding(.horizontal, 9)
+                            }
+                            Text(bit)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                    }
+                    .padding(.top, 10)
+                }
+            }
+            .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 26)
+        }
+        .frame(maxWidth: .infinity, minHeight: 208, alignment: .topLeading)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: Radii.card, style: .continuous)
+            ZStack {
+                shape.fill(Palette.card)
+                // Light falling from the top-left corner — what stops a large dark panel from
+                // reading as a flat rectangle.
+                shape.fill(
+                    LinearGradient(
+                        colors: dark
+                            ? [accent.opacity(0.13), .clear, .black.opacity(0.16)]
+                            : [accent.opacity(0.07), .clear, .black.opacity(0.02)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing))
             }
         }
-        .padding(.horizontal, 20).padding(.vertical, 18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: Radii.card, elevated: true)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radii.card, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(colors: [Palette.cardEdge, accent.opacity(dark ? 0.22 : 0.14)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 0.9))
+        .clipShape(RoundedRectangle(cornerRadius: Radii.card, style: .continuous))
+        .shadow(color: .black.opacity(dark ? 0.36 : 0.07), radius: 22, y: 9)
+        .pointerLight(accent, radius: 380)
     }
 }

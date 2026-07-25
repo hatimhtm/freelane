@@ -424,31 +424,17 @@ struct DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                VStack(alignment: .leading, spacing: 9) {
+                VStack(alignment: .leading, spacing: 11) {
                     ForEach(shown) { ins in
-                        HStack(alignment: .top, spacing: 9) {
-                            Image(systemName: insightIcon(ins.category)).font(.system(size: 12)).foregroundStyle(insightColor(ins.category)).frame(width: 16).padding(.top, 1)
-                            Text(ins.text).font(.system(size: 12)).foregroundStyle(Palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 4)
-                            Menu {
-                                Button(ins.pinned ? "Unpin" : "Pin", systemImage: ins.pinned ? "pin.slash" : "pin") { ins.pinned.toggle(); ins.dirty = true; try? context.save() }
-                                Button("Dismiss", systemImage: "xmark") { ins.dismissedAt = .now; ins.dirty = true; try? context.save() }
-                            } label: { Image(systemName: "ellipsis").font(.system(size: 11)).foregroundStyle(Palette.textTertiary) }
-                                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 14)
-                                .help("Pin or dismiss this insight")
-                                .accessibilityLabel("Insight options")
-                        }
+                        ObservationRow(
+                            text: ins.text,
+                            pinned: ins.pinned,
+                            onPin: { ins.pinned.toggle(); ins.dirty = true; try? context.save() },
+                            onDismiss: { ins.dismissedAt = .now; ins.dirty = true; try? context.save() })
                     }
                 }
             }
         }
-    }
-
-    private func insightIcon(_ c: String) -> String {
-        switch c { case "money": return "banknote.fill"; case "spending": return "cart.fill"; case "life": return "heart.fill"; default: return "lightbulb.fill" }
-    }
-    private func insightColor(_ c: String) -> Color {
-        switch c { case "money": return Palette.positive; case "spending": return Palette.warning; case "life": return Palette.negative; default: return Palette.violet }
     }
     private func refreshInsights() {
         generatingInsights = true
@@ -560,5 +546,53 @@ private struct CashFlowCard: View {
                 .frame(height: 220)
             }
         }
+    }
+}
+
+/// One computed observation.
+///
+/// No leading icon: four rows each led by a differently-coloured glyph turned a card of four
+/// sentences into a card of four badges, and the icon carried no information the sentence didn't.
+/// A hairline rule marks the row instead, and the pin/dismiss control appears only on hover — a
+/// permanently-visible ⋯ on every row is clutter on a surface whose whole job is to be read.
+private struct ObservationRow: View {
+    let text: String
+    let pinned: Bool
+    let onPin: () -> Void
+    let onDismiss: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 11) {
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                .fill(pinned ? Palette.azure : Palette.textTertiary.opacity(0.45))
+                .frame(width: 2, height: 15)
+                .padding(.top, 3)
+            Text(text)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            HStack(spacing: 4) {
+                if hovering || pinned {
+                    Button(action: onPin) {
+                        Image(systemName: pinned ? "pin.fill" : "pin")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(pinned ? Palette.azure : Palette.textTertiary)
+                    }.buttonStyle(.iconPress).help(pinned ? "Unpin" : "Keep this at the top")
+                }
+                if hovering {
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Palette.textTertiary)
+                    }.buttonStyle(.iconPress).help("Dismiss")
+                }
+            }
+            .padding(.top, 1)
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }

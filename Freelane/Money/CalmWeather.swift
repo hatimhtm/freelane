@@ -88,19 +88,21 @@ struct CalmWeatherBanner: View {
     var body: some View {
         Button { showDetail = true } label: {
             HStack(spacing: 12) {
-                Image(systemName: band.icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(band.color)
-                    .frame(width: 34, height: 34)
-                    .background(band.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                LedgerMark(tone: band.color)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(band.label).font(.system(size: 12, weight: .semibold)).foregroundStyle(band.color)
+                    Text(band.label)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .textCase(.uppercase).kerning(0.8)
+                        .foregroundStyle(band.color)
                     Text(CalmWeather.line(band, safe: safe, base: base, overdrawn: overdrawn, runwayDays: runwayDays))
-                        .font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(2)
+                        .font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary).lineLimit(2)
                 }
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.textTertiary)
+                Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.textTertiary)
             }
-            .padding(13).frame(maxWidth: .infinity, alignment: .leading)
-            .glassCard(cornerRadius: Radii.tile, tint: band.color)
+            .padding(.horizontal, 16).padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassCard(cornerRadius: Radii.tile)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
