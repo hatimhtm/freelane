@@ -1113,8 +1113,10 @@ enum Brain {
         \(String(text.prefix(3_000)))
         """
 
-        // Reading is a fast-tier extraction; only follow-up writing needs the smart brain.
-        let router = followUp ? ai.smart : ai.fast
+        // NOT the fast chain, even though reading an entry is structurally a fast-tier extraction.
+        // The fast chain leads with Apple's on-device model, which refuses journal entries on
+        // safety grounds — see `AIManager.personal`.
+        let router = followUp ? ai.smart : ai.personal
         guard let r = try? await router.object(AIJournalReading.self,
                                                AIRequest(prompt, instructions: voice, temperature: 0.3),
                                                jsonShape: AIJournalReading.jsonShape) else { return false }

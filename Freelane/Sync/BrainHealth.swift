@@ -1,5 +1,8 @@
 import Foundation
 import SwiftData
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 /// Per-brain reliability ledger — on-device, Private Cloud Compute, local model.
 /// Every AI attempt is recorded, so a silently-failing brain becomes VISIBLE:
@@ -17,6 +20,26 @@ final class BrainHealth {
         var lastError: String?
         var lastFailAt: Date?
         var notified = false
+        /// Times this brain REFUSED rather than broke — see `isRefusal`. Counted apart from
+        /// `fail` and deliberately never notified: nothing is wrong and there is nothing to fix.
+        var refused = 0
+    }
+
+    /// A refusal is a policy outcome, not a malfunction.
+    ///
+    /// Apple's on-device model has a safety filter that can't be configured or opted out of, and it
+    /// throws `guardrailViolation` on first-person emotional writing — which is exactly what a
+    /// journal entry is. Treating that as a failure was wrong twice over: it told the user their AI
+    /// was broken when it was working as designed, and it pointed them at a Settings page where
+    /// nothing could be changed. The router still falls through to the next brain; that's the whole
+    /// remedy, and it needs no announcement.
+    nonisolated static func isRefusal(_ error: Error) -> Bool {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *),
+           let g = error as? LanguageModelSession.GenerationError,
+           case .guardrailViolation = g { return true }
+        #endif
+        return error.localizedDescription.localizedCaseInsensitiveContains("guardrail")
     }
 
     private(set) var stats: [String: Stat] = [:]
@@ -38,16 +61,22 @@ final class BrainHealth {
     func success(_ brain: AIBrainID) { success(brain.rawValue) }
     func failure(_ brain: AIBrainID, error: Error) { failure(brain.rawValue, error: error) }
 
-    /// CIRCUIT BREAKER: a brain that has failed repeatedly and has NEVER once succeeded is broken,
-    /// not flaky, and is dropped from the chains until the user re-enables it.
+    /// CIRCUIT BREAKER: a brain that keeps failing is dropped from the chains until the user
+    /// re-enables it.
     ///
     /// This exists because Apple's Private Cloud Compute reports itself `available` on this macOS
     /// build and then fails every single call with `LanguageModelError -1` — so availability alone
     /// is not evidence a brain works. Without this the app kept routing to it, kept falling through,
     /// and kept posting "keeps failing" notifications for something the user cannot fix.
+    ///
+    /// The second condition is the one that was missing. Requiring `ok == 0` meant a brain only
+    /// ever tripped if it had NEVER worked — so one that succeeded at short transactional prompts
+    /// and hard-failed at long ones stayed at the head of the chain for good, burning a doomed call
+    /// on every single request. Eight in a row is broken enough, whatever it managed last week.
     func isBroken(_ brain: AIBrainID) -> Bool {
         guard let s = stats[brain.rawValue] else { return false }
-        return s.ok == 0 && s.consecutive >= 3
+        if s.ok == 0 && s.consecutive >= 3 { return true }
+        return s.consecutive >= 8
     }
 
     /// Give a brain another chance (Settings → "Try again").
@@ -63,7 +92,22 @@ final class BrainHealth {
         persist()
     }
 
+    /// This brain declined the content. Recorded, never announced, never counted against its
+    /// health — and `consecutive` is left alone so a run of refusals can't masquerade as an outage.
+    func refusal(_ brain: AIBrainID) {
+        var s = stats[brain.rawValue] ?? Stat()
+        s.refused += 1
+        stats[brain.rawValue] = s
+        persist()
+    }
+
     func failure(_ source: String, error: Error) {
+        // A refusal reaching here would be a routing bug (the router filters them first), but
+        // guard anyway: this is the path that puts a scary notification in front of the user.
+        guard !Self.isRefusal(error) else {
+            AIBrainID(rawValue: source).map { refusal($0) }
+            return
+        }
         var s = stats[source] ?? Stat()
         s.fail += 1; s.consecutive += 1
         s.lastError = String(error.localizedDescription.prefix(160))
@@ -76,9 +120,13 @@ final class BrainHealth {
         persist()
         if shouldNotify {
             let name = Self.displayName(source)
+            // The error already ends in a full stop of its own — appending another produced
+            // "…were triggered.." in the one message whose job is to look considered.
+            let why = (s.lastError ?? "unknown").trimmingCharacters(in: .whitespaces)
+            let tail = why.hasSuffix(".") || why.hasSuffix("!") || why.hasSuffix("?") ? "" : "."
             Notify.post(AppContainer.shared.mainContext, kind: "warning",
                         subject: "\(name) keeps failing",
-                        body: "\(s.consecutive) failures in a row — last error: \(s.lastError ?? "unknown"). Other brains are covering for it; check Settings → Intelligence.",
+                        body: "\(s.consecutive) in a row — \(why)\(tail) Another brain is doing its work, so nothing is stuck. Settings → Intelligence has the details.",
                         priority: 1, feature: .settings)
         }
     }

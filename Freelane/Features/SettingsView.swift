@@ -431,7 +431,7 @@ struct SettingsView: View {
                     subtitle: "Everything runs on this Mac",
                     accent: Palette.violet) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Two models share the work. Apple's built-in one handles the small, constant jobs — sorting a spend into a category, reading an entry you just wrote — because it answers instantly and costs nothing. The model you download writes the things you actually read: your journal questions, your reflections, and the chat.")
+                Text("Two models share the work. Apple's built-in one handles the small, constant jobs — sorting a spend into a category, working out a bill increase — because it answers instantly and costs nothing. The model you download does everything that touches what you've written: your journal, your reflections, your questions, and the chat.")
                     .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -444,6 +444,43 @@ struct SettingsView: View {
                         .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                brainNotes
+            }
+        }
+    }
+
+    /// The one thing worth saying about a brain, and only when there IS something.
+    ///
+    /// "On-device keeps failing" used to point here, and here held nothing at all — the health card
+    /// this replaces was written but never rendered, so the notification sent you to a page with no
+    /// mention of the subject. This says the two things that can actually be true, in a sentence
+    /// each, and shows nothing at all when both brains are behaving.
+    @ViewBuilder private var brainNotes: some View {
+        let health = BrainHealth.shared
+        let refusedOnDevice = health.stats[AIBrainID.onDevice.rawValue]?.refused ?? 0
+        let broken = AIBrainID.allCases.filter { health.isBroken($0) }
+
+        if refusedOnDevice > 0 || !broken.isEmpty {
+            Rectangle().fill(Palette.hairline).frame(height: 1).padding(.vertical, 2)
+        }
+        if refusedOnDevice > 0 {
+            Label("Apple's model has declined \(refusedOnDevice) \(refusedOnDevice == 1 ? "request" : "requests") on safety grounds — it won't read personal writing, which is why your journal goes to the downloaded model instead. Nothing is broken and there's nothing to change.",
+                  systemImage: "hand.raised")
+                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        ForEach(broken, id: \.self) { b in
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11)).foregroundStyle(Palette.warning)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(b.label) failed too often and has been taken out of rotation. \(health.stats[b.rawValue]?.lastError ?? "")")
+                        .font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Try \(b.label) again") { health.reset(b) }
+                        .buttonStyle(.glass).controlSize(.small)
+                }
+                Spacer(minLength: 0)
             }
         }
     }

@@ -225,7 +225,15 @@ struct AIRouter: Sendable {
                 return r
             } catch {
                 lastError = error
-                await BrainHealth.shared.failure(brain.id, error: error)
+                // A brain that DECLINED the content hasn't malfunctioned — the fall-through to the
+                // next brain is the correct and complete response. Scoring it as a failure is what
+                // produced "On-device keeps failing" for journal entries Apple's safety filter will
+                // never accept, on a loop, about something the user cannot change.
+                if BrainHealth.isRefusal(error) {
+                    await BrainHealth.shared.refusal(brain.id)
+                } else {
+                    await BrainHealth.shared.failure(brain.id, error: error)
+                }
             }
         }
         throw lastError
@@ -325,6 +333,29 @@ final class AIManager {
         var chain: [any AIBrain] = []
         if let local = LocalModelStore.shared.brain, usable(.local) { chain.append(local) }
         if usePrivateCloud, usable(.privateCloud), #available(macOS 27.0, *) { chain.append(PrivateCloudBrain()) }
+        if usable(.onDevice) { chain.append(OnDeviceBrain()) }
+        return AIRouter(chain: chain)
+    }
+
+    /// Anything that reads what you WROTE about yourself — journal entries, reflections, moods.
+    ///
+    /// Same ordering as `smart`, and it exists as a separate name so nobody optimises it back onto
+    /// the fast chain. Reading a journal entry looks like fast-tier extraction — short prompt,
+    /// structured output — and it was on the fast chain for exactly that reason. But the fast chain
+    /// leads with Apple's on-device model, whose safety filter cannot be configured and which
+    /// throws `guardrailViolation` on first-person emotional writing. A journal is first-person
+    /// emotional writing. So every nightly tagging pass sent eight private entries to a model that
+    /// was going to refuse them, fell through to the local model anyway, and left a "keeps failing"
+    /// warning behind.
+    ///
+    /// The local model has no such filter and reads the entry the app was built to read.
+    var personal: AIRouter {
+        guard #available(macOS 26.0, *) else { return AIRouter(chain: []) }
+        var chain: [any AIBrain] = []
+        if let local = LocalModelStore.shared.brain, usable(.local) { chain.append(local) }
+        if usePrivateCloud, usable(.privateCloud), #available(macOS 27.0, *) { chain.append(PrivateCloudBrain()) }
+        // Kept last rather than dropped, so the feature still attempts something on a Mac with no
+        // local model downloaded. It will usually refuse, and refusing is now silent.
         if usable(.onDevice) { chain.append(OnDeviceBrain()) }
         return AIRouter(chain: chain)
     }

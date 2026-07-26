@@ -3,6 +3,16 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.7
+
+Stop telling you Apple's model is broken when it is working exactly as designed.
+
+- **"On-device keeps failing" was never a failure.** Apple's built-in model has a safety filter that can't be configured or turned off, and it refuses first-person emotional writing. The nightly pass that tags your journal entries was sending them to that model — up to eight private entries a night, each one certain to be refused — because reading an entry *looks* like the same kind of small extraction job as sorting a spend. It isn't. Journal reading now goes to the downloaded model, which was built to read it.
+- **A refusal is no longer counted as a fault.** Declining content is a policy outcome, not a malfunction: the app already falls through to the next brain, and that is the entire remedy. It's recorded, and it's silent.
+- **The warning could never stop.** The circuit breaker only ever tripped for a brain that had *never once* succeeded — so one that worked on short transactional prompts and refused long personal ones stayed at the head of the queue permanently, and each success re-armed the alert. That was an unbreakable loop about something you cannot fix. A brain now also drops out after eight consecutive genuine failures, whatever it managed last week.
+- **The notification pointed at a page with nothing on it.** "Check Settings → Intelligence" led to a card that never mentioned brains, because the health display had been written but never rendered. Settings → Intelligence now says the two things that can be true — Apple's model has declined N requests and that's fine, or a brain has been dropped and here's a button to try it again — and shows nothing when both are behaving.
+- Fixed the message reading "…safety guardrails were triggered.." with two full stops.
+
 ## 2.6
 
 The app finally uses its own design system — and categories get a face.

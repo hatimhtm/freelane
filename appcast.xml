@@ -4,22 +4,22 @@
         <title>Freelane</title>
         <item>
             <description><![CDATA[
-<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.6</h3>
+<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.7</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>The app finally uses its own design system — and categories get a face.</li>
-  <li>**Every gap in the app is now one of thirteen numbers, and every piece of text one of ten.** There was a `Spacing` scale in the design system, written during the v1 audit specifically to stop screens hand-tuning magic numbers. It was used **seven times**, against 893 hardcoded values that had grown to fifty-one distinct gaps — including 7.5, 23, 41 and 46 — and twenty-eight font sizes, seven of which differed from their neighbour by half a point. Half a point is invisible; what it isn't is free, because it guarantees nothing ever shares a baseline. That is the entire reason the app read as assembled rather than composed, and 586 sites have been snapped to the ladder.</li>
-  <li>**Spending categories have a mark now.** Vendors have had real logos since 1.5, but categories — the thing you actually budget by, sort by, and filter the ledger with — had a hashed colour smeared along a 4pt bar. Groceries are a green basket, fuel a red pump, transport a cyan car, rent an indigo house; anything unrecognised still gets a stable colour and a tag glyph, so every category has a face. Categories are a small set you see daily, and after a week you stop reading the word and just look for the shape.</li>
-  <li>**Category colour means something.** It was picked by hashing the name, so "Fuel" was whatever hue the hash landed on. Where the category is recognisable the hue now comes from meaning, and the hash is only the fallback.</li>
-  <li>**Spends with no vendor stopped all looking identical.** Rent, a bus fare and a doctor's bill were three of the same amber blob; each now wears its category's mark.</li>
-  <li>**Dashboard card labels were being cut off** — "Landed this month" shipped as "LANDED THIS MO…" on a card whose only job is to be read at a glance. Labels wrap to two lines, and the space is reserved whether they need it or not, so the figures across a row stay on one baseline instead of three.</li>
+  <li>Stop telling you Apple's model is broken when it is working exactly as designed.</li>
+  <li>**"On-device keeps failing" was never a failure.** Apple's built-in model has a safety filter that can't be configured or turned off, and it refuses first-person emotional writing. The nightly pass that tags your journal entries was sending them to that model — up to eight private entries a night, each one certain to be refused — because reading an entry *looks* like the same kind of small extraction job as sorting a spend. It isn't. Journal reading now goes to the downloaded model, which was built to read it.</li>
+  <li>**A refusal is no longer counted as a fault.** Declining content is a policy outcome, not a malfunction: the app already falls through to the next brain, and that is the entire remedy. It's recorded, and it's silent.</li>
+  <li>**The warning could never stop.** The circuit breaker only ever tripped for a brain that had *never once* succeeded — so one that worked on short transactional prompts and refused long personal ones stayed at the head of the queue permanently, and each success re-armed the alert. That was an unbreakable loop about something you cannot fix. A brain now also drops out after eight consecutive genuine failures, whatever it managed last week.</li>
+  <li>**The notification pointed at a page with nothing on it.** "Check Settings → Intelligence" led to a card that never mentioned brains, because the health display had been written but never rendered. Settings → Intelligence now says the two things that can be true — Apple's model has declined N requests and that's fine, or a brain has been dropped and here's a button to try it again — and shows nothing when both are behaving.</li>
+  <li>Fixed the message reading "…safety guardrails were triggered.." with two full stops.</li>
 </ul>
             ]]></description>
-            <title>2.6</title>
-            <pubDate>Sun, 26 Jul 2026 12:45:56 +0800</pubDate>
-            <sparkle:version>37</sparkle:version>
-            <sparkle:shortVersionString>2.6</sparkle:shortVersionString>
+            <title>2.7</title>
+            <pubDate>Sun, 26 Jul 2026 13:38:45 +0800</pubDate>
+            <sparkle:version>38</sparkle:version>
+            <sparkle:shortVersionString>2.7</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.6/Freelane.zip" length="13596716" type="application/octet-stream" sparkle:edSignature="IzQFZ2nQvmXhjcVTt5FUw+1Np7ln43j/OlxLM50mkGR152xF8aH5hGnjgsLpZbCFSX6HlvZQD6qPW082A337DQ=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.7/Freelane.zip" length="13614448" type="application/octet-stream" sparkle:edSignature="u3iaZw/lKMnq7TSqd1nMYpSNfbKur5oJxPOY7p9OSKFKfVlG26nh0tXPCearYomi0zS2KCmeSYtroaYW3JNgBQ=="/>
         </item>
     </channel>
 </rss>
