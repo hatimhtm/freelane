@@ -293,6 +293,9 @@ struct RootView: View {
             // One-time: move "what kind of place is X?" answers out of the user's beliefs and
             // under the vendor subject, where the asker actually looks — see the method.
             Brain.repairVendorFactsIfNeeded(context)
+            // Fill the journal question well NOW, while nobody is waiting on it. This is the whole
+            // point of the well: by the time the journal is opened, the questions are already there.
+            JournalWell.shared.topUp(context, ai: ai)
             // Bring the local model up if the user has asked for it before. Deliberately NOT
             // conditioned on the weights being present: if a download was interrupted — quit,
             // sleep, dropped connection — this resumes it rather than leaving the app silently

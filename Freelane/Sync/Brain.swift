@@ -930,9 +930,21 @@ enum Brain {
         m.mood = letters.prefix(6).compactMap { l in
             l.sentiment.map { "\(l.createdAt.formatted(.dateTime.month().day())): \($0)" }
         }.joined(separator: ", ")
-        m.beliefs = Memory.brief(context, maxChars: 600)
-        m.recent = letters.prefix(3).map { l in
-            "[\(l.createdAt.formatted(.dateTime.month().day()))] asked: \(l.title)\n  they wrote: \(String(l.body.prefix(240)))"
+        // THEIR WORDS OUTWEIGH THE APP'S NOTES ABOUT THEM.
+        //
+        // This used to be three entries at 240 characters against a 600-character belief brief —
+        // so the writer saw more of the model's own summarising than of the person. And those
+        // summaries are fragments: the live store holds lines like "Budgeting and savings",
+        // "No major immediate issues", "Purely self-directed projects". Rendered without the key
+        // that gave them meaning (deliberately — keys used to leak into questions), they carry
+        // almost nothing, and a question built from them comes out generic or bolted-together.
+        //
+        // Six entries at 300 characters is the actual material: what they were asked, and what
+        // they said back, in their own voice. Everything here still stays well inside the context
+        // window that the old single-prompt-for-everything version used to blow.
+        m.beliefs = Memory.brief(context, maxChars: 800)
+        m.recent = letters.prefix(6).map { l in
+            "[\(l.createdAt.formatted(.dateTime.month().day()))] asked: \(l.title)\n  they wrote: \(String(l.body.prefix(300)))"
         }.joined(separator: "\n")
         return m
     }
@@ -966,6 +978,12 @@ enum Brain {
         · Open-ended, but light — something they would want to answer, not homework.
         · Never assert that something happened unless they wrote it themselves.
         · If their mood reads heavy, keep it gentle.
+
+        Prefer what they WROTE over what the app has noted about them. The notes are compressed \
+        fragments the app made earlier — "Budgeting and savings", "No major immediate issues" — and \
+        a question built out of one of those comes out hollow, because the fragment has already \
+        lost whatever made it worth knowing. Their own sentences still have it. If their last few \
+        entries give you something to ask about, ask about that and ignore the notes entirely.
 
         On using what you know about them: a detail belongs in the question only when the question \
         is genuinely ABOUT it. Do not bolt a fact onto the end as a comparison. "What would make \
@@ -1005,8 +1023,8 @@ enum Brain {
         What you know about them:
         \(ctx.beliefs.isEmpty ? "Not much yet." : ctx.beliefs)
 
-        Their most recent entries:
-        \(ctx.recent.isEmpty ? "(nothing yet)" : String(ctx.recent.prefix(900)))
+        Their most recent entries — this is the best material you have, use it before anything else:
+        \(ctx.recent.isEmpty ? "(nothing yet)" : String(ctx.recent.prefix(1_800)))
 
         Already asked — never repeat or reword these:
         \(avoid.isEmpty ? "(none yet)" : avoid)\(liked)\(refused)

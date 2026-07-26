@@ -3,6 +3,15 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.11
+
+Journal questions are written ahead of time, not while you wait for them.
+
+- **The questions are generated in the background now, and there are ten of them waiting.** Nothing was ever generated unless you were *looking at the journal* — the refill hung off the screen's own state — and it started the moment you answered one, which is exactly when you wanted the next. With a target of five and a local 8B model that takes real seconds per question (and a second attempt whenever the first breaks a style rule), the well was usually near-empty precisely when it mattered. It had two questions left in it. The screen no longer generates anything; it reads. Filling happens at launch, when a question is used up, and during the nightly pass, in small batches saved as they land — so questions appear one at a time instead of ten at once after a long silence.
+- **Nothing was broken.** Worth saying plainly, since the delay looked like failure: the local model is succeeding twelve times to every two failures. It's just slow, and slow work belongs where nobody is waiting on it.
+- **The questions lean on what you wrote, not on the app's notes about you.** The writer used to see three of your entries at 240 characters against a 600-character digest of stored beliefs — more of the app's own summarising than of you. Those beliefs are compressed fragments: the real store holds lines like "Budgeting and savings" and "No major immediate issues", shown without the context that made them worth knowing, which is how questions end up generic or with a fact bolted on the end. It now sees six entries at 300 characters, and is told plainly to prefer your sentences over its own notes.
+- The "New questions" button reports the well's real state instead of guessing from the screen's own flag, so "Thinking…" is now true whenever it's showing.
+
 ## 2.10
 
 - **Questions the data has already answered now retire themselves.** A question posted before its subject became known sat in the inbox permanently: the sweep sees an open question and returns before it can notice the question is moot. So the fix that made "What kind of place is Sari Sari store?" answerable didn't clear the copy already waiting for you.

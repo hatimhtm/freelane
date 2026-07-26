@@ -79,6 +79,11 @@ enum NightShift {
         _ = await Brain.mindMoney(context, ai: ai, force: true)
         _ = await Brain.generateObservations(context, ai: ai)
 
+        // 3.5) Refill the journal question well while the Mac is idle — the questions are better
+        //      here than anywhere else, because tonight's pass has just tagged the newest entries
+        //      and folded them into memory, so the writer has the freshest possible material.
+        await MainActor.run { JournalWell.shared.topUp(context, ai: ai) }
+
         // 4) Desktop widget wakes up with today's numbers.
         await MainActor.run { WidgetBridge.update(context) }
     }

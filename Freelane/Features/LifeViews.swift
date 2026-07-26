@@ -798,11 +798,9 @@ struct LettersView: View {
     @State private var reading: Letter?
     @State private var writing = false
     @State private var busyAnalyze = false
-    @State private var loadingPrompts = false
+    private var well: JournalWell { JournalWell.shared }
     @State private var searchQuery = ""
-    @State private var refillExhausted = false   // local model produced no NEW question last try — wait for a slot to open
-    @State private var promptStatus: String?     // why the last "New questions" produced nothing (honest button)
-    private let promptTarget = 5                  // always keep this many open questions ahead so journaling never stalls
+    private var promptTarget: Int { JournalWell.target }   // the well decides; the screen just reads
     @State private var searchDate: Date?
     @State private var showCalendar = false
     @State private var selectedDay: JournalDayGroup?
@@ -868,13 +866,13 @@ struct LettersView: View {
                         accent: Palette.violet,
                         trailing: AnyView(
                             Button { loadAIPrompts(force: true) } label: {
-                                Label(loadingPrompts ? "Thinking…" : "New questions", systemImage: "sparkles").font(.system(size: 11))
-                            }.buttonStyle(.plain).foregroundStyle(Palette.violet).disabled(loadingPrompts || !ai.isReady))) {
+                                Label(well.filling ? "Thinking…" : "New questions", systemImage: "sparkles").font(.system(size: 11))
+                            }.buttonStyle(.plain).foregroundStyle(Palette.violet).disabled(well.filling || !ai.isReady))) {
                 VStack(spacing: 8) {
                     ForEach(openPromptRows) { p in promptRow(p) }
                     // Say WHAT happened when nothing came back. A control that quietly does
                     // nothing is the single loudest "this app is broken" signal there is.
-                    if let promptStatus {
+                    if let promptStatus = well.lastStatus {
                         Label(promptStatus, systemImage: "info.circle")
                             .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -951,10 +949,10 @@ struct LettersView: View {
             }
         }
         .onChange(of: openPromptRows.count, initial: true) { old, count in
-            // Always keep a buffer of questions ahead. The moment you answer one (count drops), top
-            // it back up in the background so you can keep journaling without waiting for the model.
-            if count < old { refillExhausted = false }   // a slot opened → new questions are likely possible again
-            if count < promptTarget, ai.isReady, !loadingPrompts, !refillExhausted { loadAIPrompts() }
+            // A nudge, not a generator. Using a question frees a slot, which is the one moment the
+            // model is most likely to have something new to say, so ask the well to refill then.
+            if count < old { well.slotOpened(context, ai: ai) }
+            else if count < promptTarget { well.topUp(context, ai: ai) }
         }
         .sheet(item: $selectedDay) { day in journalDaySheet(day) }
         .sheet(item: $activeEntry) { AddLetterSheet(seedPrompt: $0.text, promptId: $0.promptId) }
@@ -1118,30 +1116,11 @@ struct LettersView: View {
         }
     }
 
-    /// Keep the open-question well topped up to `promptTarget`, in the background, local-first, so
-    /// journaling never stalls. Re-entrancy-guarded by `loadingPrompts`; over-asks to absorb dedup
-    /// rejections; flags `refillExhausted` when the model returns nothing new so we don't spin.
+    /// Ask the well for a top-up. The screen does NOT generate anything itself any more — see
+    /// `JournalWell`. Generation that only happens while you are looking at the journal is
+    /// generation that happens while you are waiting for it.
     private func loadAIPrompts(force: Bool = false) {
-        guard ai.isReady, !loadingPrompts else { return }
-        let need = force ? 3 : (promptTarget - openPromptRows.count)
-        guard need > 0 else { return }
-        loadingPrompts = true
-        promptStatus = nil
-        let mgr = ai, ctx = context
-        Task {
-            let ps = await Brain.journalPrompts(ctx, ai: mgr, count: need + 2)
-            let added = Brain.storeJournalPrompts(ctx, texts: ps, source: "ai")
-            if added == 0 {
-                refillExhausted = true   // nothing new — wait for a slot to open before retrying
-                // Three different failures, three different things to tell the user — and the last
-                // one names the brain, because "which brain is even running" was invisible before.
-                let brain = mgr.smartLead?.shortLabel ?? "no brain"
-                promptStatus = ps.isEmpty
-                    ? "The \(brain) couldn't write anything usable this time. Try once more — or just write."
-                    : "Everything it came up with was too close to a question you've already had. Answer or dismiss one and try again."
-            }
-            loadingPrompts = false
-        }
+        well.topUp(context, ai: ai, force: force)
     }
 }
 
