@@ -6,15 +6,16 @@
             <description><![CDATA[
 <h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.13</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>**Two questions asking the same thing can no longer both sit in the well.** The writer had gained a containment test for rewordings; the sweep that re-checks questions already waiting still compared each one to nothing, so a pair about faith that the writer would now reject stayed put. Both go through one named rule now, and when two match, the one you've had longest is the one that survives.</li>
+  <li>**Two questions asking the same thing can no longer both sit in the well.** The writer had gained a containment test for rewordings; the sweep that re-checks questions already waiting compared each one to nothing, so a pair about faith that the writer would now reject stayed put. Both go through one named rule now, and when two match, the one you've had longest survives.</li>
+  <li>**The similarity thresholds are measured, not guessed.** The first attempt at this shipped a bar the real duplicate didn't clear, and the pair stayed in the well. Scored against every pair actually sitting there: the two faith questions share four content words at 0.57 containment, while the closest pair that is genuinely two different questions manages 0.50 on two shared words. The bar sits at three shared words and 0.55 — which drops exactly the duplicate and nothing else.</li>
 </ul>
             ]]></description>
             <title>2.13</title>
-            <pubDate>Mon, 27 Jul 2026 05:19:26 +0800</pubDate>
-            <sparkle:version>44</sparkle:version>
+            <pubDate>Mon, 27 Jul 2026 05:24:27 +0800</pubDate>
+            <sparkle:version>45</sparkle:version>
             <sparkle:shortVersionString>2.13</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.13/Freelane.zip" length="13639848" type="application/octet-stream" sparkle:edSignature="LrjreiqzYXerLj9rFGqmR/nOAhamAFeBctnfzgc8bCG+PVpTuljjcpcT00SLWMwtPz+BetkTFzv5CeYVIpOMCQ=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.13/Freelane.zip" length="13639923" type="application/octet-stream" sparkle:edSignature="yCdJ4N6JpnWyM2d58CUpu9rxvtq8zam62/JYHAqK6kywY0kukzgI59FZdxddxT/a9b48BRHIx93blulL29qjAg=="/>
         </item>
     </channel>
 </rss>

@@ -1148,11 +1148,22 @@ enum Brain {
     /// ones already waiting cannot disagree — which they did: the writer gained a containment test
     /// while the pruner still compared nothing at all, so two questions about faith that the writer
     /// would now reject sat in the well regardless.
+    /// Thresholds measured against the real well rather than guessed. The pair
+    ///
+    ///   "How does your faith help you cope with recent stress and financial challenges?"
+    ///   "How has your faith been a source of strength amidst the recent financial challenges?"
+    ///
+    /// shares four content words and scores 0.57 containment / 0.33 overlap — plainly one question
+    /// to a reader, comfortably under a 0.70 bar. The nearest pair that is genuinely two questions
+    /// ("prioritise business tasks when payments are delayed" / "track your spending when payments
+    /// are delayed") scores 0.50 on just two shared words. So: three shared words minimum, and
+    /// 0.55 containment. The floor on shared words is what does the real work — it's why the
+    /// payments pair can't be caught however the ratio falls.
     static func isReword(_ a: String, _ b: String) -> Bool {
         let x = promptTokens(a), y = promptTokens(b)
         if jaccard(x, y) >= 0.55 { return true }
         let shared = x.intersection(y).count
-        return shared >= 3 && Double(shared) / Double(max(1, min(x.count, y.count))) >= 0.7
+        return shared >= 3 && Double(shared) / Double(max(1, min(x.count, y.count))) >= 0.55
     }
 
     /// Self-heal at launch: delete stored questions (and dismiss observations) that are echoed

@@ -5,7 +5,8 @@ version is shown as in-app release notes when you update.
 
 ## 2.13
 
-- **Two questions asking the same thing can no longer both sit in the well.** The writer had gained a containment test for rewordings; the sweep that re-checks questions already waiting still compared each one to nothing, so a pair about faith that the writer would now reject stayed put. Both go through one named rule now, and when two match, the one you've had longest is the one that survives.
+- **Two questions asking the same thing can no longer both sit in the well.** The writer had gained a containment test for rewordings; the sweep that re-checks questions already waiting compared each one to nothing, so a pair about faith that the writer would now reject stayed put. Both go through one named rule now, and when two match, the one you've had longest survives.
+- **The similarity thresholds are measured, not guessed.** The first attempt at this shipped a bar the real duplicate didn't clear, and the pair stayed in the well. Scored against every pair actually sitting there: the two faith questions share four content words at 0.57 containment, while the closest pair that is genuinely two different questions manages 0.50 on two shared words. The bar sits at three shared words and 0.55 — which drops exactly the duplicate and nothing else.
 
 ## 2.12
 
