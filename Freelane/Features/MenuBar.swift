@@ -44,7 +44,7 @@ struct MenuBarView: View {
     private var defaultWallet: UUID? { spends.first?.walletId ?? holding.first?.id }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 12) {
             header
             safeCard
             Divider().overlay(Palette.hairline)
@@ -63,7 +63,7 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("FROM REMINDERS").font(.system(size: 9, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
             ForEach(reminderCandidates) { c in
-                HStack(spacing: 9) {
+                HStack(spacing: 8) {
                     Image(systemName: "checklist").font(.system(size: 12)).foregroundStyle(Palette.azure).frame(width: 22)
                     Text(c.prefill).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                     Spacer()
@@ -78,7 +78,7 @@ struct MenuBarView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             LogoMark(size: 26)
             Text("Freelane").font(Typo.title(15)).foregroundStyle(Palette.textPrimary)
             Spacer()
@@ -104,7 +104,7 @@ struct MenuBarView: View {
                 Text("QUICK CAPTURE").font(.system(size: 9, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
                 Spacer()
                 if let f = justLogged {
-                    HStack(spacing: 7) {
+                    HStack(spacing: 8) {
                         Label(f.text, systemImage: f.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(f.ok ? Palette.positive : Palette.warning)
@@ -122,10 +122,10 @@ struct MenuBarView: View {
             HStack(spacing: 8) {
                 Image(systemName: "sparkle").font(.system(size: 12)).foregroundStyle(Palette.azure)
                 TextField("450 jollibee  ·  received 5000 acme gcash", text: $capture)
-                    .textFieldStyle(.plain).font(.system(size: 14))
+                    .textFieldStyle(.plain).font(.system(size: 13))
                     .onSubmit { submit() }
             }
-            .padding(.horizontal, 11).padding(.vertical, 9)
+            .padding(.horizontal, 12).padding(.vertical, 8)
             .insetRow(cornerRadius: Radii.field, hoverable: false)
 
             HStack(spacing: 8) {
@@ -147,9 +147,9 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("RECENT").font(.system(size: 9, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
             ForEach(spends.prefix(5)) { s in
-                HStack(spacing: 9) {
+                HStack(spacing: 8) {
                     VendorMark(name: s.vendorName ?? (s.spendDescription ?? "?"), size: 22)
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(s.vendorName ?? s.spendDescription ?? "Spend").font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Palette.textPrimary).lineLimit(1)
                         Text(s.spentAt.formatted(.relative(presentation: .named))).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)

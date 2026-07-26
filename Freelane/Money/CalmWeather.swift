@@ -91,16 +91,16 @@ struct CalmWeatherBanner: View {
                 LedgerMark(tone: band.color)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(band.label)
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(.system(size: 9, weight: .semibold))
                         .textCase(.uppercase).kerning(0.8)
                         .foregroundStyle(band.color)
                     Text(CalmWeather.line(band, safe: safe, base: base, overdrawn: overdrawn, runwayDays: runwayDays))
-                        .font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary).lineLimit(2)
+                        .font(.system(size: 12)).foregroundStyle(Palette.textPrimary).lineLimit(2)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.textTertiary)
             }
-            .padding(.horizontal, 16).padding(.vertical, 14)
+            .padding(.horizontal, 16).padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassCard(cornerRadius: Radii.tile)
             .contentShape(Rectangle())
@@ -136,9 +136,9 @@ struct WeatherDetailSheet: View {
                     Text("Your money weather").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.plain).keyboardShortcut(.cancelAction)
-            }.padding(18)
+            }.padding(20)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -160,7 +160,7 @@ struct WeatherDetailSheet: View {
                             Text(aiText).font(.system(size: 13)).foregroundStyle(Palette.textPrimary).fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                }.padding(18)
+                }.padding(20)
             }
         }
         .frame(width: 460, height: 560)
@@ -173,6 +173,6 @@ struct WeatherDetailSheet: View {
             Text(label).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
             Spacer()
             Text(value).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(color)
-        }.padding(.vertical, 3)
+        }.padding(.vertical, 4)
     }
 }

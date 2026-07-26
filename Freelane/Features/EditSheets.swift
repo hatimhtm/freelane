@@ -138,7 +138,7 @@ struct EditProjectSheet: View {
                              selection: $status, label: { $0.label })
             }
             Toggle(isOn: $delivered.animation()) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Work delivered").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                     Text("Starts the “waiting to be paid” clock here — not from when you took the job.")
                         .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
@@ -177,12 +177,12 @@ struct EditProjectSheet: View {
     private var milestoneSection: some View {
         let done = milestones.filter { $0.done }.count
         return LabeledField(milestones.isEmpty ? "Milestones" : "Milestones · \(done)/\(milestones.count) done") {
-            VStack(spacing: 7) {
+            VStack(spacing: 8) {
                 ForEach(milestones) { m in
-                    HStack(spacing: 9) {
+                    HStack(spacing: 8) {
                         Button { m.done.toggle(); m.doneAt = m.done ? .now : nil; m.dirty = true; try? context.save() } label: {
                             Image(systemName: m.done ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 16)).foregroundStyle(m.done ? Palette.positive : Palette.textTertiary)
+                                .font(.system(size: 15)).foregroundStyle(m.done ? Palette.positive : Palette.textTertiary)
                         }.buttonStyle(.iconPress)
                         .help(m.done ? "Mark “\(m.title)” unfinished" : "Mark “\(m.title)” finished")
                         Text(m.title).font(.system(size: 13)).foregroundStyle(m.done ? Palette.textTertiary : Palette.textPrimary)
@@ -193,7 +193,7 @@ struct EditProjectSheet: View {
                             .buttonStyle(.iconPress).foregroundStyle(Palette.negative)
                             .help("Remove “\(m.title)”").accessibilityLabel("Remove phase \(m.title)")
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
                     .insetRow(cornerRadius: Radii.row)
                 }
                 HStack(spacing: 8) {
@@ -285,7 +285,7 @@ struct EditWalletSheet: View {
             Toggle(isOn: $isHolding) { Text("Holding wallet (keeps a balance)").font(.system(size: 13)).foregroundStyle(Palette.textPrimary) }
                 .toggleStyle(.switch).tint(Palette.teal)
             Toggle(isOn: $excluded) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Ignore in totals & alerts").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                     Text("Keeps the balance visible here, but leaves it out of your available total and stops overdrawn warnings.")
                         .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)

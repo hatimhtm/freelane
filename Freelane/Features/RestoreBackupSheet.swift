@@ -17,7 +17,7 @@ struct RestoreBackupSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Restore from backup").font(Typo.title(20)).foregroundStyle(Palette.textPrimary)
+                    Text("Restore from backup").font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                     Text("Your current data is backed up first, so this is reversible.")
                         .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 }
@@ -35,7 +35,7 @@ struct RestoreBackupSheet: View {
                     .frame(maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 7) {
+                    LazyVStack(spacing: 8) {
                         ForEach(items) { item in
                             backupRow(item)
                         }
@@ -79,7 +79,7 @@ struct RestoreBackupSheet: View {
             }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: "externaldrive.fill").font(.system(size: 14))
+                Image(systemName: "externaldrive.fill").font(.system(size: 13))
                     .foregroundStyle(isSel ? Palette.teal : Palette.textTertiary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.date.formatted(date: .abbreviated, time: .shortened))
@@ -91,7 +91,7 @@ struct RestoreBackupSheet: View {
                 if isSel && loadingPreview { ProgressView().controlSize(.small) }
                 else if isSel { Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.teal) }
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
+            .padding(.horizontal, 12).padding(.vertical, 12)
             .background(isSel ? Palette.teal.opacity(0.12) : Palette.card, in: RoundedRectangle(cornerRadius: Radii.field, style: .continuous))
         }
         .buttonStyle(.cardPress)

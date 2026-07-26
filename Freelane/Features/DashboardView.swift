@@ -297,7 +297,7 @@ struct DashboardView: View {
     }
 
     private func signalRow(_ sig: FocusSignal) -> some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 9, style: .continuous).fill(sig.tint.opacity(0.16))
                     .frame(width: 30, height: 30)
@@ -368,7 +368,7 @@ struct DashboardView: View {
     }
 
     private func grid(_ m: DashboardMetrics, _ safe: SafeBreakdown) -> some View {
-        let cols = [GridItem(.adaptive(minimum: 158), spacing: 14)]
+        let cols = [GridItem(.adaptive(minimum: 158), spacing: 16)]
         let specs = tileSpecs(m, safe)
         let byKey = Dictionary(uniqueKeysWithValues: specs.map { ($0.key, $0.view) })
         // Stored order, then any new tiles appended in their natural order.
@@ -377,8 +377,8 @@ struct DashboardView: View {
         let tiles = order.compactMap { key in byKey[key].map { Tile(id: key, view: $0) } }
         // macOS 27's native reorder API — replaces the old onDrag/DropDelegate machinery, and
         // gets the system pickup/settle animation + Golden Gate drop styling for free.
-        return GlassGroup(spacing: 14) {
-            LazyVGrid(columns: cols, spacing: 14) {
+        return GlassGroup(spacing: 16) {
+            LazyVGrid(columns: cols, spacing: 16) {
                 ForEach(tiles) { $0.view }
                     .reorderable()
             }
@@ -426,7 +426,7 @@ struct DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                VStack(alignment: .leading, spacing: 11) {
+                VStack(alignment: .leading, spacing: 12) {
                     ForEach(shown) { ins in
                         ObservationRow(
                             text: ins.text,
@@ -546,7 +546,7 @@ private struct CashFlowCard: View {
                         PointMark(x: .value("Date", last.date), y: .value("Balance", last.cumulative))
                             .foregroundStyle(last.cumulative >= 0 ? Palette.positive : Palette.negative)
                             .symbolSize(64)
-                            .annotation(position: .top, spacing: 5, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                            .annotation(position: .top, spacing: 6, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                                 Text(CurrencyFormat.abbreviated(last.cumulative, base))
                                     .font(Typo.rowFigure(11)).monospacedDigit()
                                     .foregroundStyle(Palette.textSecondary)
@@ -558,7 +558,7 @@ private struct CashFlowCard: View {
                             .lineStyle(StrokeStyle(lineWidth: 1))
                             .foregroundStyle(Palette.textTertiary.opacity(0.4))
                             .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                                VStack(alignment: .leading, spacing: 1) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text(s.date, format: .dateTime.month(.abbreviated).day())
                                         .font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                                     Text(CurrencyFormat.string(s.cumulative, base, compact: true))
@@ -582,7 +582,7 @@ private struct CashFlowCard: View {
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
                                 Text(CurrencyFormat.abbreviated(v, base))
-                                    .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                                    .font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                             }
                         }
                     }
@@ -590,11 +590,11 @@ private struct CashFlowCard: View {
                 .chartXAxis {
                     AxisMarks(values: .stride(by: .day, count: 30)) { _ in
                         AxisValueLabel(format: .dateTime.month(.abbreviated))
-                            .font(.system(size: 9.5))
+                            .font(.system(size: 9))
                             .foregroundStyle(Palette.textTertiary)
                     }
                 }
-                .chartPlotStyle { $0.padding(.top, 18).padding(.bottom, 2) }
+                .chartPlotStyle { $0.padding(.top, 20).padding(.bottom, 2) }
                 .frame(height: 220)
             }
         }
@@ -615,13 +615,13 @@ private struct ObservationRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
+        HStack(alignment: .top, spacing: 12) {
             RoundedRectangle(cornerRadius: 1, style: .continuous)
                 .fill(pinned ? Palette.azure : Palette.textTertiary.opacity(0.45))
                 .frame(width: 2, height: 15)
-                .padding(.top, 3)
+                .padding(.top, 4)
             Text(text)
-                .font(.system(size: 12.5))
+                .font(.system(size: 12))
                 .foregroundStyle(Palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 6)
@@ -641,7 +641,7 @@ private struct ObservationRow: View {
                     }.buttonStyle(.iconPress).help("Dismiss")
                 }
             }
-            .padding(.top, 1)
+            .padding(.top, 2)
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

@@ -87,7 +87,7 @@ struct LoansView: View {
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(Palette.textTertiary)
                         }
-                        .padding(.vertical, 11)
+                        .padding(.vertical, 12)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -260,17 +260,17 @@ struct LoanPersonSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: "person.crop.circle.fill").font(.system(size: 22)).foregroundStyle(Palette.teal)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(person.name).font(Typo.title(16)).foregroundStyle(Palette.textPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(person.name).font(Typo.title(15)).foregroundStyle(Palette.textPrimary)
                     Text(summaryLine).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
                 Button { addMore = true } label: { Label("Lend / borrow more", systemImage: "plus") }.buttonStyle(.glass).controlSize(.small)
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction).help("Close")
-            }.padding(18)
+            }.padding(20)
             Divider().overlay(Palette.hairline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -298,7 +298,7 @@ struct LoanPersonSheet: View {
                             .foregroundStyle(Palette.textTertiary).padding(.top, 2)
                     }
                     ForEach(loans) { l in loanBlock(l) }
-                }.padding(18)
+                }.padding(20)
             }
         }
         .frame(width: 470, height: 600).flagshipSheet()
@@ -323,7 +323,7 @@ struct LoanPersonSheet: View {
                 .foregroundStyle(Palette.textTertiary)
             VStack(spacing: 6) {
                 ForEach(history) { e in
-                    HStack(spacing: 9) {
+                    HStack(spacing: 8) {
                         Image(systemName: e.amountBase >= 0 ? "arrow.down.left" : "arrow.up.right")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(e.amountBase >= 0 ? Palette.positive : Palette.negative).frame(width: 16)
@@ -337,12 +337,12 @@ struct LoanPersonSheet: View {
                             .foregroundStyle(e.amountBase >= 0 ? Palette.positive : Palette.negative)
                             .frame(width: 78, alignment: .trailing)
                     }
-                    .padding(.vertical, 7).padding(.horizontal, 10)
+                    .padding(.vertical, 8).padding(.horizontal, 12)
                     .insetRow(hoverable: false)
                 }
             }
         }
-        .padding(13).glassCard(cornerRadius: Radii.field)
+        .padding(12).glassCard(cornerRadius: Radii.field)
     }
 
     /// A compact loan card for management (edit / forgive / delete). Repayments live in the unified
@@ -374,7 +374,7 @@ struct LoanPersonSheet: View {
                     .buttonStyle(.iconPress).foregroundStyle(Palette.negative).help("Delete this loan")
             }.padding(.top, 2)
         }
-        .padding(13).glassCard(cornerRadius: Radii.field)
+        .padding(12).glassCard(cornerRadius: Radii.field)
     }
 }
 
@@ -501,7 +501,7 @@ struct BodyView: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(savedToday ? "Today's check-in" : "How are you right now?")
-                        .font(Typo.title(17)).foregroundStyle(Palette.textPrimary)
+                        .font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                     Text(savedToday ? "Tap any scale to adjust — it saves instantly." : "Three taps. That's the whole check-in.")
                         .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                 }
@@ -509,7 +509,7 @@ struct BodyView: View {
                 if savedToday {
                     Label("Logged", systemImage: "checkmark.seal.fill")
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.acidLime)
-                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Palette.acidLime.opacity(0.12), in: Capsule())
                         .overlay(Capsule().strokeBorder(Palette.acidLime.opacity(0.25), lineWidth: 0.7))
                         .transition(.opacity)
@@ -520,7 +520,7 @@ struct BodyView: View {
             sleepRow
             detailsSection
         }
-        .padding(18)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: Radii.card, elevated: true)
         .animation(Motion.snappy, value: savedToday)
@@ -530,14 +530,14 @@ struct BodyView: View {
         HStack(spacing: 12) {
             Image(systemName: icon).font(.system(size: 12, weight: .medium)).foregroundStyle(color)
                 .frame(width: 18)
-            Text(label).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
             if let v = value, (1...5).contains(v) {
                 Text(words[v - 1]).font(.system(size: 11, weight: .medium)).foregroundStyle(color)
             }
             Spacer()
             TapScale(value: value, color: color, onTap: onTap)
         }
-        .padding(.vertical, 8).padding(.horizontal, 10)
+        .padding(.vertical, 8).padding(.horizontal, 12)
         .insetRow(cornerRadius: Radii.field, hoverable: false)
         .animation(Motion.snappy, value: value)
     }
@@ -546,7 +546,7 @@ struct BodyView: View {
         HStack(spacing: 12) {
             Image(systemName: "bed.double.fill").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.indigo)
                 .frame(width: 18)
-            Text("Sleep").font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+            Text("Sleep").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
             Spacer()
             ForEach([6.0, 7.0, 8.0], id: \.self) { h in
                 Button(hoursFmt(h)) { sleepH = h; saveScales() }
@@ -565,7 +565,7 @@ struct BodyView: View {
             }
             .padding(.leading, 6)
         }
-        .padding(.vertical, 8).padding(.horizontal, 10)
+        .padding(.vertical, 8).padding(.horizontal, 12)
         .insetRow(cornerRadius: Radii.field, hoverable: false)
         .animation(Motion.snappy, value: sleepH)
     }
@@ -582,7 +582,7 @@ struct BodyView: View {
     }
 
     private var detailsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             Button { withAnimation(Motion.card) { showDetails.toggle() } } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
@@ -609,7 +609,7 @@ struct BodyView: View {
                     LabeledField("Weight (kg)") { TextField("optional", text: $weight).fieldWell().frame(width: 110) }
                 }
                 LabeledField("Notes") { TextField("How are you feeling?", text: $notes).fieldWell() }
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Button("Save details") { saveDetails() }.buttonStyle(.glass).controlSize(.small)
                     if detailsSaved {
                         Label("Saved", systemImage: "checkmark.circle.fill").font(.system(size: 12)).foregroundStyle(Palette.positive).transition(.opacity)
@@ -650,22 +650,22 @@ struct BodyView: View {
         HStack(spacing: 12) {
             Image(systemName: icon).font(.system(size: 12, weight: .medium)).foregroundStyle(color)
                 .frame(width: 18)
-            Text(label).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
             Spacer()
             if series.count >= 2 {
                 Sparkline(values: series, color: color).frame(width: 150, height: 28)
             } else {
                 Text("—").font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(width: 150)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(avg.map { String(format: "%.1f", $0) } ?? "—")
-                    .font(Typo.rowFigure(16)).monospacedDigit()
+                    .font(Typo.rowFigure(15)).monospacedDigit()
                     .foregroundStyle(avg == nil ? Palette.textTertiary : Palette.textPrimary)
                 Text(unit).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             .frame(width: 56, alignment: .trailing)
         }
-        .padding(.vertical, 8).padding(.horizontal, 10)
+        .padding(.vertical, 8).padding(.horizontal, 12)
         .insetRow(cornerRadius: Radii.field, hoverable: false)
     }
 
@@ -676,7 +676,7 @@ struct BodyView: View {
                 EmptyStateCard(icon: "heart.text.square", title: "No check-ins yet",
                                message: "Tap the scales above — your first check-in takes five seconds, and the trends build from there.")
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
                     ForEach(logs) { recentCell($0) }
                 }
             }
@@ -698,7 +698,7 @@ struct BodyView: View {
                 Text(extras).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }
         }
-        .padding(11)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .insetRow(cornerRadius: Radii.field, hoverable: false)
     }
@@ -766,7 +766,7 @@ private struct TapScale: View {
     @State private var hover: Int?
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             ForEach(1...5, id: \.self) { i in
                 let filled = (value ?? 0) >= i
                 Button { onTap(i) } label: {
@@ -850,7 +850,7 @@ struct LettersView: View {
 
     var body: some View {
         Page("Journal", subtitle: "Your private space — every answer teaches it what to ask next.", toolbar: AnyView(
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Menu {
                     Button("This month") { write("month") }
                     Button("This week") { write("week") }
@@ -900,7 +900,7 @@ struct LettersView: View {
                             Text("Reading the last eight weeks…").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                         }
                         ForEach(mindMoney, id: \.self) { line in
-                            HStack(alignment: .top, spacing: 9) {
+                            HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "waveform.path.ecg").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.teal).padding(.top, 2)
                                 Text(line).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -911,18 +911,18 @@ struct LettersView: View {
             }
 
             if !letters.isEmpty {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     SearchField(text: $searchQuery, placeholder: "Search your journal")
                     Button { showCalendar = true } label: {
                         Label(searchDate.map { $0.formatted(.dateTime.month().day()) } ?? "Any day", systemImage: "calendar")
                             .font(.system(size: 12))
                     }.buttonStyle(.glass)
                         .popover(isPresented: $showCalendar) {
-                            VStack(spacing: 10) {
+                            VStack(spacing: 12) {
                                 MonthCalendar(entryCounts: entryCounts, selected: searchDate,
                                               onSelect: { searchDate = $0; showCalendar = false })
                                 Button("Show all days") { searchDate = nil; showCalendar = false }.buttonStyle(.glass).controlSize(.small)
-                            }.padding(14).frame(width: 268)
+                            }.padding(16).frame(width: 268)
                         }
                     if searchDate != nil {
                         Button { searchDate = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress)
@@ -960,18 +960,18 @@ struct LettersView: View {
         .sheet(item: $activeEntry) { AddLetterSheet(seedPrompt: $0.text, promptId: $0.promptId) }
         .sheet(item: $reading) { l in
             VStack(alignment: .leading, spacing: 0) {
-                Text(l.title).font(Typo.title(20)).foregroundStyle(Palette.textPrimary).padding(.horizontal, 22).padding(.top, 22)
+                Text(l.title).font(Typo.title(18)).foregroundStyle(Palette.textPrimary).padding(.horizontal, 24).padding(.top, 24)
                 if l.sentiment != nil || !l.themes.isEmpty {
                     HStack(spacing: 6) {
                         if let s = l.sentiment {
                             Label(s, systemImage: "sparkle").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.indigo)
-                                .padding(.horizontal, 8).padding(.vertical, 3).background(Palette.indigo.opacity(0.16), in: Capsule())
+                                .padding(.horizontal, 8).padding(.vertical, 4).background(Palette.indigo.opacity(0.16), in: Capsule())
                         }
                         ForEach(l.themes, id: \.self) { t in
                             Text(t).font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
-                                .padding(.horizontal, 8).padding(.vertical, 3).background(Palette.hairline, in: Capsule())
+                                .padding(.horizontal, 8).padding(.vertical, 4).background(Palette.hairline, in: Capsule())
                         }
-                    }.padding(.horizontal, 22).padding(.top, 8)
+                    }.padding(.horizontal, 24).padding(.top, 8)
                 }
                 // Your own writing, set as writing: the editorial serif at a readable size with real
             // line spacing and a measure that stops around 62 characters. It was 14pt system text
@@ -979,12 +979,12 @@ struct LettersView: View {
             // table cell, for the one content in this app that is actually prose.
             ScrollView {
                 Text(l.body)
-                    .font(.system(size: 15.5, design: .serif))
+                    .font(.system(size: 15, design: .serif))
                     .lineSpacing(7)
                     .foregroundStyle(Palette.textPrimary)
                     .frame(maxWidth: 560, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 26).padding(.vertical, 24)
+                    .padding(.horizontal, 24).padding(.vertical, 24)
             }
                 Divider().overlay(Palette.hairline)
                 HStack {
@@ -1001,26 +1001,26 @@ struct LettersView: View {
     /// One compact card per day, listing that day's entries (stays small as days accumulate).
     /// Small, fully-clickable square card for a day — keeps the page compact as days pile up.
     private func dayMiniCard(_ g: (day: Date, entries: [Letter])) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
                 Text(dayTitle(g.day)).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                if g.entries.contains(where: { $0.pinned }) { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(Palette.indigo) }
+                if g.entries.contains(where: { $0.pinned }) { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Palette.indigo) }
                 Spacer()
             }
             Text(dayDate(g.day)).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
             Text(g.entries.first?.body ?? "")
-                .font(.system(size: 11.5, design: .serif))
+                .font(.system(size: 11, design: .serif))
                 .lineSpacing(2)
                 .foregroundStyle(Palette.textSecondary)
                 .lineLimit(3).multilineTextAlignment(.leading)
             Spacer(minLength: 2)
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Text("\(g.entries.count) \(g.entries.count == 1 ? "entry" : "entries")").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.indigo)
                 if let s = g.entries.first?.sentiment { Text("· \(s)").font(.system(size: 9)).foregroundStyle(Palette.textTertiary).lineLimit(1) }
                 Spacer()
             }
         }
-        .padding(13).frame(minHeight: 122, alignment: .topLeading)
+        .padding(12).frame(minHeight: 122, alignment: .topLeading)
         .glassCard(cornerRadius: Radii.tile, interactive: true)
         .contentShape(Rectangle())
     }
@@ -1029,12 +1029,12 @@ struct LettersView: View {
     private func journalDaySheet(_ day: JournalDayGroup) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(dayTitle(day.id)).font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                     Text(dayDate(day.id)).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
-                Button { selectedDay = nil } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
+                Button { selectedDay = nil } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
             }.padding(16)
             Divider().overlay(Palette.hairline)
@@ -1042,14 +1042,14 @@ struct LettersView: View {
                 VStack(spacing: 0) {
                     ForEach(day.entries) { l in
                         Button { selectedDay = nil; reading = l } label: {
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text(l.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(2).multilineTextAlignment(.leading)
                                     Spacer()
                                     Text(l.createdAt, format: .dateTime.hour().minute()).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                                 }
                                 Text(l.body).font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(3).multilineTextAlignment(.leading)
-                            }.padding(.vertical, 11).contentShape(Rectangle())
+                            }.padding(.vertical, 12).contentShape(Rectangle())
                         }.buttonStyle(.plain)
                         .contextMenu {
                             Button(l.pinned ? "Unpin" : "Pin", systemImage: l.pinned ? "pin.slash" : "pin") { l.pinned.toggle(); l.dirty = true; try? context.save() }
@@ -1057,7 +1057,7 @@ struct LettersView: View {
                         }
                         if l.id != day.entries.last?.id { Divider().overlay(Palette.hairline) }
                     }
-                }.padding(.horizontal, 18)
+                }.padding(.horizontal, 20)
             }
         }
         .frame(width: 520, height: 560).flagshipSheet()
@@ -1165,7 +1165,7 @@ private struct PromptRow: View {
             Image(systemName: icon)
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.violet.opacity(0.85))
-                .frame(width: 16).padding(.top, 3)
+                .frame(width: 16).padding(.top, 4)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(prompt.text)
@@ -1203,7 +1203,7 @@ private struct PromptRow: View {
             .padding(.top, 2)
             .animation(.easeOut(duration: 0.12), value: hover)
         }
-        .padding(.vertical, 12).padding(.horizontal, 14)
+        .padding(.vertical, 12).padding(.horizontal, 16)
         .background(RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
             .fill(hover ? Palette.wellFillHover : Palette.wellFill))
         .overlay(RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
@@ -1232,21 +1232,21 @@ struct AddLetterSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // The question, set like a chapter opening — serif, roomy, pinned while you write.
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     Text(Date().formatted(.dateTime.weekday(.wide).month().day()))
                         .font(.system(size: 10, weight: .semibold)).kerning(1.2).textCase(.uppercase)
                         .foregroundStyle(Palette.textTertiary)
                     Spacer()
-                    Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
+                    Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                         .buttonStyle(.iconPress).keyboardShortcut(.cancelAction).help("Close (Esc)")
                 }
                 HStack(alignment: .top, spacing: 12) {
                     if !seedPrompt.isEmpty {
-                        Capsule().fill(Palette.indigo).frame(width: 3).padding(.vertical, 3)
+                        Capsule().fill(Palette.indigo).frame(width: 3).padding(.vertical, 4)
                     }
                     Text(seedPrompt.isEmpty ? "Whatever's on your mind." : seedPrompt)
-                        .font(Typo.title(19)).foregroundStyle(Palette.textPrimary)
+                        .font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1254,7 +1254,7 @@ struct AddLetterSheet: View {
                 // and drags a wall of empty space between the question and the page.
                 .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 26).padding(.top, 20).padding(.bottom, 16)
+            .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 16)
 
             // The page — a quiet paper well that fills the sheet; the question never moves.
             // Placeholder paddings mirror the editor's REAL text origin (its NSTextView adds
@@ -1265,21 +1265,21 @@ struct AddLetterSheet: View {
                 // one used for table cells and buttons — for the only place in the app you write
                 // prose.
                 TextEditor(text: $body0)
-                    .font(.system(size: 15.5, design: .serif))
+                    .font(.system(size: 15, design: .serif))
                     .lineSpacing(7)
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 18).padding(.vertical, 16)
+                    .padding(.horizontal, 20).padding(.vertical, 16)
                     .focused($focused)
                 if body0.isEmpty {
                     Text("Start writing — nobody reads this but you…")
-                        .font(.system(size: 15.5, design: .serif))
+                        .font(.system(size: 15, design: .serif))
                         .foregroundStyle(Palette.textTertiary)
-                        .padding(.leading, 23).padding(.top, 16)
+                        .padding(.leading, 24).padding(.top, 16)
                         .allowsHitTesting(false)
                 }
             }
             .insetRow(cornerRadius: Radii.tile, hoverable: false)
-            .padding(.horizontal, 22)
+            .padding(.horizontal, 24)
             .onTapGesture { focused = true }   // the whole page is the click target
 
             // Footer — word count grows as you do; Save lights up with real content.
@@ -1294,7 +1294,7 @@ struct AddLetterSheet: View {
                     .disabled(body0.trimmingCharacters(in: .whitespaces).isEmpty).keyboardShortcut(.defaultAction)
                     .help("Save this entry (⏎)")
             }
-            .padding(.horizontal, 22).padding(.vertical, 16)
+            .padding(.horizontal, 24).padding(.vertical, 16)
         }
         .frame(width: 580, height: 620)
         .flagshipSheet()
@@ -1371,7 +1371,7 @@ struct MonthCalendar: View {
             }
             HStack(spacing: 2) { ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { Text($0).font(.system(size: 9)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity) } }
             let days = monthDays()
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7), spacing: 4) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
                 ForEach(days.indices, id: \.self) { i in
                     if let d = days[i] {
                         let (fill, written) = cell(d)
@@ -1523,9 +1523,9 @@ struct FaithView: View {
                 ForEach(SunnahPrayer.allCases) { p in
                     let done = prayed(p.rawValue)
                     Button { toggle(p.rawValue) } label: {
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 17)).foregroundStyle(done ? Palette.positive : Palette.textTertiary)
+                                .font(.system(size: 18)).foregroundStyle(done ? Palette.positive : Palette.textTertiary)
                                 .frame(width: 20)
                             Image(systemName: p.icon).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(width: 15)
                             Text(p.rawValue).font(.system(size: 13, weight: done ? .semibold : .medium))
@@ -1533,7 +1533,7 @@ struct FaithView: View {
                             Spacer()
                             Text(p.note).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                         }
-                        .padding(.vertical, 8).padding(.horizontal, 11)
+                        .padding(.vertical, 8).padding(.horizontal, 12)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -1545,7 +1545,7 @@ struct FaithView: View {
 
     private var tasbihCard: some View {
         SectionCard(title: "Tasbih", subtitle: "\(tasbihCount) / \(tasbihTarget)", accent: Palette.teal) {
-            VStack(spacing: 10) {
+            VStack(spacing: 12) {
                 Button {
                     tasbihCount += 1
                     if tasbihCount >= tasbihTarget { /* keep showing the completed count until reset */ }
@@ -1590,7 +1590,7 @@ struct FaithView: View {
                 .buttonStyle(.iconPress).foregroundStyle(Palette.warning)
                 .help("One more to make up").accessibilityLabel("Increase \(label) owed")
         }
-        .padding(.vertical, 7).padding(.horizontal, 11)
+        .padding(.vertical, 8).padding(.horizontal, 12)
         .insetRow(cornerRadius: Radii.field, hoverable: false)
     }
 
@@ -1602,7 +1602,7 @@ struct FaithView: View {
                 if let n = next {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(n.label.uppercased()).font(.system(size: 9, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
-                        Text(n.target, style: .timer).font(Typo.rowFigure(26, .bold)).foregroundStyle(Palette.indigo)
+                        Text(n.target, style: .timer).font(Typo.rowFigure(28, .bold)).foregroundStyle(Palette.indigo)
                         Text("at \(n.target.formatted(date: .omitted, time: .shortened))").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
                 }
@@ -1647,9 +1647,9 @@ struct FaithView: View {
         return Group {
             if r.obligatory {
                 Button { toggle(r.name) } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 17))
+                            .font(.system(size: 18))
                             .foregroundStyle(done ? Palette.positive : (isNow ? Palette.violet : Palette.textTertiary))
                             .frame(width: 20)
                         Text(r.name).font(.system(size: 13, weight: done || isNow ? .semibold : .medium))
@@ -1659,7 +1659,7 @@ struct FaithView: View {
                         Text(r.time).font(Typo.rowFigure(13)).monospacedDigit()
                             .foregroundStyle(isNow ? Palette.textPrimary : Palette.textSecondary)
                     }
-                    .padding(.vertical, 8).padding(.horizontal, 11)
+                    .padding(.vertical, 8).padding(.horizontal, 12)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1672,14 +1672,14 @@ struct FaithView: View {
                 }
             } else {
                 // Sunrise — informational, quiet, not loggable.
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Image(systemName: r.icon).font(.system(size: 12)).foregroundStyle(Palette.textTertiary).frame(width: 20)
                     Text(r.name).font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                     Spacer()
                     Text(r.time).font(Typo.rowFigure(12, .medium)).monospacedDigit()
                         .foregroundStyle(Palette.textTertiary)
                 }
-                .padding(.vertical, 4).padding(.horizontal, 11)
+                .padding(.vertical, 4).padding(.horizontal, 12)
             }
         }
     }
@@ -1687,20 +1687,20 @@ struct FaithView: View {
     private var fastingCard: some View {
         SectionCard(title: ramadan ? "Ramadan fasting" : "Fasting", subtitle: "\(fastedThisMonth) days this month", accent: Palette.teal) {
             Button { toggleFast() } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Image(systemName: fastedToday ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 17)).foregroundStyle(fastedToday ? Palette.teal : Palette.textTertiary)
+                        .font(.system(size: 18)).foregroundStyle(fastedToday ? Palette.teal : Palette.textTertiary)
                         .frame(width: 20)
                     Text(fastedToday ? "Fasted today" : "Mark today as fasted")
                         .font(.system(size: 13, weight: fastedToday ? .semibold : .medium))
                         .foregroundStyle(fastedToday ? Palette.teal : Palette.textPrimary)
                     Spacer()
                     if ramadan {
-                        Text("\(fastedThisMonth)/30").font(Typo.rowFigure(17))
+                        Text("\(fastedThisMonth)/30").font(Typo.rowFigure(18))
                             .monospacedDigit().foregroundStyle(Palette.teal)
                     }
                 }
-                .padding(.vertical, 8).padding(.horizontal, 11)
+                .padding(.vertical, 8).padding(.horizontal, 12)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1728,7 +1728,7 @@ struct FaithView: View {
             }
             Divider().overlay(Palette.hairline)
             if editingLoc {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     LabeledField("Latitude") { TextField("14.0667", text: $latStr).fieldWell() }
                     LabeledField("Longitude") { TextField("121.3250", text: $lngStr).fieldWell() }
                 }
@@ -1756,7 +1756,7 @@ struct FaithView: View {
 
     private var qiblaCard: some View {
         SectionCard(title: "Qibla", subtitle: "True north", accent: Palette.indigo) {
-            VStack(spacing: 10) {
+            VStack(spacing: 12) {
                 ZStack {
                     Circle().stroke(Palette.wellStroke, lineWidth: 1).frame(width: 130, height: 130)
                     ForEach([0, 90, 180, 270], id: \.self) { a in
@@ -1764,7 +1764,7 @@ struct FaithView: View {
                             .offset(y: -61).rotationEffect(.degrees(Double(a)))
                     }
                     Image(systemName: "location.north.fill")
-                        .font(.system(size: 30, weight: .bold)).foregroundStyle(Palette.acidLime)
+                        .font(.system(size: 28, weight: .bold)).foregroundStyle(Palette.acidLime)
                         .rotationEffect(.degrees(bearing))
                         .shadow(color: Palette.acidLime.opacity(0.5), radius: 6)
                 }
@@ -1808,14 +1808,14 @@ private struct LoanBalanceBeam: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(net >= 0 ? "You're owed, on balance" : "You owe, on balance")
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .textCase(.uppercase).kerning(1.1)
                     .foregroundStyle(Palette.textTertiary)
                 Spacer()
                 Text("\(openCount) still open")
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                    .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
 
             CountUpMoney(amount: abs(net), code: base, size: 44,
@@ -1846,26 +1846,26 @@ private struct LoanBalanceBeam: View {
                 }
             }
             .frame(height: 20)
-            .padding(.top, 18)
+            .padding(.top, 20)
 
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("OUT TO OTHERS").font(.system(size: 8.5, weight: .semibold)).kerning(0.7)
+                    Text("OUT TO OTHERS").font(.system(size: 9, weight: .semibold)).kerning(0.7)
                         .foregroundStyle(Palette.positive)
                     Text(CurrencyFormat.string(lentOut, base, compact: true))
-                        .font(Typo.rowFigure(14)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                        .font(Typo.rowFigure(13)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("YOU OWE").font(.system(size: 8.5, weight: .semibold)).kerning(0.7)
+                    Text("YOU OWE").font(.system(size: 9, weight: .semibold)).kerning(0.7)
                         .foregroundStyle(Palette.warning)
                     Text(CurrencyFormat.string(borrowed, base, compact: true))
-                        .font(Typo.rowFigure(14)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                        .font(Typo.rowFigure(13)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                 }
             }
-            .padding(.top, 10)
+            .padding(.top, 12)
         }
-        .padding(.horizontal, 22).padding(.vertical, 20)
+        .padding(.horizontal, 24).padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: Radii.card, elevated: true)
         .pointerLight(net >= 0 ? Palette.positive : Palette.warning, radius: 340)

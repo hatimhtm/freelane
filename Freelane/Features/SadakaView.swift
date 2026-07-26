@@ -57,7 +57,7 @@ struct SadakaView: View {
 
     private var zakatCard: some View {
         SectionCard(title: "Zakat", subtitle: "2.5% on wealth held a full lunar year, above nisab", accent: Palette.teal) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 zakatRow("Cash across wallets", zakatCash, auto: true)
                 zakatRow("Receivables (loans out)", zakatReceivables, auto: true)
                 zakatField("Gold / silver / investments", $zakatGold)
@@ -65,12 +65,12 @@ struct SadakaView: View {
                 zakatField("Nisab threshold (value of 595g silver)", $zakatNisab)
                 Divider().overlay(Palette.hairline)
                 HStack {
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Zakatable wealth").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                         Text(CurrencyFormat.string(zakatNet, base)).font(Typo.rowFigure(15)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 1) {
+                    VStack(alignment: .trailing, spacing: 2) {
                         Text(zakatNisab > 0 && zakatNet >= zakatNisab ? "ZAKAT DUE (2.5%)" : (zakatNisab > 0 ? "BELOW NISAB — none due" : "SET NISAB ABOVE")).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                         Text(CurrencyFormat.string(zakatDue, base)).font(Typo.rowFigure(22, .bold)).monospacedDigit().foregroundStyle(zakatDue > 0 ? Palette.teal : Palette.textTertiary)
                     }
@@ -85,7 +85,7 @@ struct SadakaView: View {
     private func zakatRow(_ label: String, _ value: Double, auto: Bool) -> some View {
         HStack {
             Text(label).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
-            if auto { Text("auto").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.teal).padding(.horizontal, 5).padding(.vertical, 1).background(Palette.teal.opacity(0.16), in: Capsule()) }
+            if auto { Text("auto").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.teal).padding(.horizontal, 6).padding(.vertical, 2).background(Palette.teal.opacity(0.16), in: Capsule()) }
             Spacer()
             Text(CurrencyFormat.string(value, base, compact: true)).font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(Palette.textPrimary)
         }
@@ -109,25 +109,25 @@ struct SadakaView: View {
     private var suggestionHero: some View {
         VStack(spacing: 0) {
             Text("Given this month")
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
                 .textCase(.uppercase).kerning(1.4)
                 .foregroundStyle(Palette.textTertiary)
 
             CountUpMoney(amount: givenMonth, code: base, size: 52,
                          color: givenMonth > 0 ? Palette.violet : Palette.textSecondary)
-                .padding(.top, 14)
+                .padding(.top, 16)
 
             if let last = daysSinceLast {
                 Text(last == 0 ? "You gave today." : "Last time was \(last) \(last == 1 ? "day" : "days") ago.")
-                    .font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
-                    .padding(.top, 10)
+                    .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
+                    .padding(.top, 12)
             }
 
             Button { giveOpen = true } label: { Label("Give", systemImage: "heart.fill") }
                 .buttonStyle(.glassProminent).tint(Palette.violet)
-                .padding(.top, 22)
+                .padding(.top, 24)
         }
-        .padding(.horizontal, 24).padding(.top, 44).padding(.bottom, 46)
+        .padding(.horizontal, 24).padding(.top, 48).padding(.bottom, 48)
         .frame(maxWidth: .infinity)
         .background {
             RadialGradient(colors: [Palette.violet.opacity(0.10), .clear],
@@ -143,18 +143,18 @@ struct SadakaView: View {
             Rectangle().fill(Palette.hairline).frame(width: 1, height: 34)
             givenStat("All-time", givenLife, tone: Palette.textPrimary)
         }
-        .padding(.vertical, 18)
+        .padding(.vertical, 20)
         .frame(maxWidth: .infinity)
         .glassCard(cornerRadius: Radii.card)
     }
 
     private func givenStat(_ label: String, _ value: Double, tone: Color) -> some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 6) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold)).textCase(.uppercase).kerning(0.9)
                 .foregroundStyle(Palette.textTertiary)
             Text(CurrencyFormat.string(value, base, compact: true))
-                .font(Typo.figure(20)).monospacedDigit().foregroundStyle(tone)
+                .font(Typo.figure(18)).monospacedDigit().foregroundStyle(tone)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
@@ -162,7 +162,7 @@ struct SadakaView: View {
 
     private var anchorCard: some View {
         SectionCard(title: "Your anchor", subtitle: "Roughly how much of income to lean toward giving", accent: Palette.negative) {
-            HStack(spacing: 14) {
+            HStack(spacing: 16) {
                 Text(String(format: "%.1f%%", anchorPct)).font(Typo.rowFigure(22)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                 Stepper("", value: Binding(
                     get: { anchorPct },
@@ -225,8 +225,8 @@ struct SadakaView: View {
     private func line(title: String, date: Date, amount: Double, badge: String, badgeColor: Color) -> some View {
         HStack(spacing: 12) {
             LedgerMark(tone: badgeColor)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                 HStack(spacing: 6) {
                     StatusBadge(text: badge, color: badgeColor)
                     Text(date, format: .dateTime.month().day().year())
@@ -236,7 +236,7 @@ struct SadakaView: View {
             Spacer(minLength: 10)
             LedgerAmount(amount: CurrencyFormat.string(amount, base), tone: Palette.violet)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .hoverRow()
     }
 

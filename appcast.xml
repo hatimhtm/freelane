@@ -4,29 +4,22 @@
         <title>Freelane</title>
         <item>
             <description><![CDATA[
-<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.5</h3>
+<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.6</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>A pass over the whole app: the last streak, the button that did nothing, and every number that was printed twice.</li>
-  <li>**The last two streaks are gone.** The journal's streak system was removed in 1.0 because a counter that can only be broken turns a habit into a debt. Two survived on other pages: a flame on "Spent today" counting consecutive days of logging, and — in the prayer tracker, of all places — a chain that reset to zero the first day you missed one. Prayer now shows how many complete days you've had this month: a number that only goes up, where a missed day costs you the day and not the month.</li>
-  <li>**The "Budgets" button on Spending did nothing.** It set the flag that opens the budgets sheet, but the only place that sheet was attached was a card that stopped being rendered when the category rail replaced it. Clicking it was a no-op. The presentation now lives on the page.</li>
-  <li>**Sheets are the size of what they hold.** All twenty-four were locked to 540×600 whatever was in them, so "New client" — one text field — opened at full height with four hundred points of empty scroll under it and a fade mask hinting at content that wasn't there. Forms now take the height they need and only start scrolling once they'd outgrow the old size.</li>
-  <li>**Project cards stopped printing the same number three times.** An untouched project showed its fee as the headline, again as "₱X left", and a third time inverted as "₱0 received", over a progress bar pinned at zero. A settled one showed it twice. Money in flight is the only state where the split tells you something you don't already have, so it's the only state that shows one.</li>
-  <li>**The front page no longer previews itself.** The lead figure's sub-line read "Safe ₱X today · 19-day runway · 3 open projects" directly above cards headed "Safe to spend" and "Active projects" holding those exact figures. It now says what the grid has no card for: how the total is spread across wallets, and how long it lasts at your pace. Today lost the same kind of echo, and Insights stopped printing its fee total twice within a hundred points.</li>
-  <li>**Amounts in People, search results and the mood/money read were hardcoded to pesos.** They're base-currency figures being drawn with a ₱ sign, so switching base relabelled every total in the app except those. Every payment form also opened with PHP pre-selected regardless of your base.</li>
-  <li>**The base-currency picker stopped offering dead ends.** Choosing a currency with no exchange rate walked you through a red destructive confirmation, took a full backup, and then failed. Those currencies aren't listed.</li>
-  <li>**Snoozing a notification told you nothing.** It removed the row from both tabs — no longer unread, no longer live — with no confirmation and no way back until the snooze expired. Snooze and "stop showing these" both offer an undo now. The dot on the leading edge of a notification means unread again, the way it does everywhere else on the Mac; it was drawn on every row of the Read tab too.</li>
-  <li>**Quick capture can be undone, and says so when it fails.** A failed save used to clear the field and report nothing, so the only sign was a number that never appeared. Every one-tap log from the menu bar — including the ↺ button sitting inches from the amount you meant to click — now offers an undo.</li>
-  <li>**One progress bar, not five.** Four screens drew a meter with the stock AppKit control, each squashed by its own scale factor to fight its thickness, none of them matching the one the project card drew by hand.</li>
-  <li>**Nineteen icon-only buttons had no tooltip at all**, and lists that showed the first six of nine said "9" in the header with nothing to say the rest existed.</li>
-  <li>Removed the suggested-question pills' fake wrapping (a stack pretending to be a flow layout), five dead view components including a whole unrendered Settings card, and two full-table fetches that ran on every journal save and were thrown away.</li>
+  <li>The app finally uses its own design system — and categories get a face.</li>
+  <li>**Every gap in the app is now one of thirteen numbers, and every piece of text one of ten.** There was a `Spacing` scale in the design system, written during the v1 audit specifically to stop screens hand-tuning magic numbers. It was used **seven times**, against 893 hardcoded values that had grown to fifty-one distinct gaps — including 7.5, 23, 41 and 46 — and twenty-eight font sizes, seven of which differed from their neighbour by half a point. Half a point is invisible; what it isn't is free, because it guarantees nothing ever shares a baseline. That is the entire reason the app read as assembled rather than composed, and 586 sites have been snapped to the ladder.</li>
+  <li>**Spending categories have a mark now.** Vendors have had real logos since 1.5, but categories — the thing you actually budget by, sort by, and filter the ledger with — had a hashed colour smeared along a 4pt bar. Groceries are a green basket, fuel a red pump, transport a cyan car, rent an indigo house; anything unrecognised still gets a stable colour and a tag glyph, so every category has a face. Categories are a small set you see daily, and after a week you stop reading the word and just look for the shape.</li>
+  <li>**Category colour means something.** It was picked by hashing the name, so "Fuel" was whatever hue the hash landed on. Where the category is recognisable the hue now comes from meaning, and the hash is only the fallback.</li>
+  <li>**Spends with no vendor stopped all looking identical.** Rent, a bus fare and a doctor's bill were three of the same amber blob; each now wears its category's mark.</li>
+  <li>**Dashboard card labels were being cut off** — "Landed this month" shipped as "LANDED THIS MO…" on a card whose only job is to be read at a glance. Labels wrap to two lines, and the space is reserved whether they need it or not, so the figures across a row stay on one baseline instead of three.</li>
 </ul>
             ]]></description>
-            <title>2.5</title>
-            <pubDate>Sun, 26 Jul 2026 12:29:28 +0800</pubDate>
-            <sparkle:version>36</sparkle:version>
-            <sparkle:shortVersionString>2.5</sparkle:shortVersionString>
+            <title>2.6</title>
+            <pubDate>Sun, 26 Jul 2026 12:45:56 +0800</pubDate>
+            <sparkle:version>37</sparkle:version>
+            <sparkle:shortVersionString>2.6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.5/Freelane.zip" length="13585980" type="application/octet-stream" sparkle:edSignature="4M0slopbIp1V5G/TKMH2MyaVoDX8D8/Cay79wgFFw/rCSjj45a5jBq/eOy7h2T8EFC2jaJqOwkJtZKuP5TLLDA=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.6/Freelane.zip" length="13596716" type="application/octet-stream" sparkle:edSignature="IzQFZ2nQvmXhjcVTt5FUw+1Np7ln43j/OlxLM50mkGR152xF8aH5hGnjgsLpZbCFSX6HlvZQD6qPW082A337DQ=="/>
         </item>
     </channel>
 </rss>

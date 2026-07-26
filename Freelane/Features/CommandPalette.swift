@@ -57,10 +57,10 @@ struct CommandPalette: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.textTertiary)
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                 TextField("Jump to a page or action…", text: $query)
-                    .textFieldStyle(.plain).font(.system(size: 16))
+                    .textFieldStyle(.plain).font(.system(size: 15))
                     .focused($focused)
                     .onSubmit { act() }
                     .onChange(of: query) { _, _ in selected = 0 }
@@ -70,7 +70,7 @@ struct CommandPalette: View {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress).help("Clear")
                 }
                 Text("⌘K").font(Typo.rowFigure(11)).foregroundStyle(Palette.textTertiary)
-                    .padding(.horizontal, 6).padding(.vertical, 3).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.horizontal, 6).padding(.vertical, 4).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))
             }
             .padding(16)
             Divider().overlay(Palette.hairline)
@@ -118,7 +118,7 @@ struct CommandPalette: View {
                     Image(systemName: row.icon).font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(row.accent).frame(width: 30, height: 30)
                         .background(row.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(row.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
                         Text(row.subtitle).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
@@ -126,7 +126,7 @@ struct CommandPalette: View {
                     if isTop { Text("return").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.textTertiary) }
                     else { Image(systemName: "arrow.right").font(.system(size: 10)).foregroundStyle(Palette.textTertiary).opacity(hover ? 1 : 0) }
                 }
-                .padding(.horizontal, 10).padding(.vertical, 8)
+                .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: Radii.row, style: .continuous)
                     .fill(hover || isTop ? Palette.hairline : .clear))
             }
@@ -154,9 +154,9 @@ struct ShortcutsHUD: View {
     ]
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: "command").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.cyan)
-                Text("Keyboard shortcuts").font(Typo.title(16)).foregroundStyle(Palette.textPrimary)
+                Text("Keyboard shortcuts").font(Typo.title(15)).foregroundStyle(Palette.textPrimary)
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
@@ -164,16 +164,16 @@ struct ShortcutsHUD: View {
             Divider().overlay(Palette.hairline)
             VStack(spacing: 2) {
                 ForEach(shortcuts, id: \.0) { s in
-                    HStack(spacing: 14) {
+                    HStack(spacing: 16) {
                         Text(s.0).font(Typo.rowFigure(12)).foregroundStyle(Palette.textPrimary)
                             .frame(width: 92, alignment: .leading)
-                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .padding(.horizontal, 8).padding(.vertical, 6)
                             .background(Palette.hairline, in: RoundedRectangle(cornerRadius: 7))
                         Text(s.1).font(.system(size: 13)).foregroundStyle(Palette.textSecondary)
                         Spacer()
-                    }.padding(.horizontal, 16).padding(.vertical, 3)
+                    }.padding(.horizontal, 16).padding(.vertical, 4)
                 }
-            }.padding(.vertical, 10)
+            }.padding(.vertical, 12)
         }
         .frame(width: 420)
         .flagshipSheet()

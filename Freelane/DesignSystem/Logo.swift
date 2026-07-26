@@ -51,13 +51,13 @@ struct LaunchSplash: View {
     var body: some View {
         ZStack {
             AppBackground()
-            VStack(spacing: 18) {
+            VStack(spacing: 20) {
                 LogoMark(size: 104)
                     .scaleEffect(appear ? 1 : 0.86)
                     .opacity(appear ? 1 : 0)
                     .offset(y: appear ? 0 : 8)
                 Text("Freelane")
-                    .font(Typo.display(36)).foregroundStyle(Palette.textPrimary).tracking(-0.5)
+                    .font(Typo.display(34)).foregroundStyle(Palette.textPrimary).tracking(-0.5)
                     .opacity(appear ? 1 : 0)
             }
         }
@@ -71,7 +71,7 @@ struct Wordmark: View {
     var subtitle: String? = "on this Mac"
 
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 12) {
             LogoMark(size: 34)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Freelane").font(Typo.title(18)).foregroundStyle(Palette.textPrimary)

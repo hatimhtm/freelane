@@ -141,7 +141,7 @@ struct SheetScaffold<Content: View>: View {
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                     .fill(accent)
                     .frame(width: 3, height: 22)
-                Text(title).font(Typo.title(19)).foregroundStyle(Palette.textPrimary)
+                Text(title).font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: 8)
                 Button { dismiss() } label: {
                     Image(systemName: "xmark")
@@ -151,12 +151,12 @@ struct SheetScaffold<Content: View>: View {
                         .contentShape(Rectangle())
                 }.buttonStyle(.iconPress).keyboardShortcut(.cancelAction).help("Close (Esc)")
             }
-            .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 16)
+            .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 16)
             .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 1) }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20, content: content)
-                    .padding(.horizontal, 22).padding(.vertical, 22)
+                    .padding(.horizontal, 24).padding(.vertical, 24)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { formHeight = $0 }
             }
             .frame(height: formHeightClamped)
@@ -173,13 +173,13 @@ struct SheetScaffold<Content: View>: View {
             )
 
             // Glass footer
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 if let onDelete, let deleteLabel {
                     Button { onDelete() } label: { Label(deleteLabel, systemImage: "trash") }
                         .buttonStyle(.destructive)
                 }
                 if !canSave, let hint {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
                         Image(systemName: "info.circle").font(.system(size: 10))
                         Text(hint).font(.system(size: 11)).lineLimit(2)
                     }
@@ -192,7 +192,7 @@ struct SheetScaffold<Content: View>: View {
                     .buttonStyle(.glassProminent).tint(accent).disabled(!canSave)
                     .keyboardShortcut(.defaultAction)   // ⏎ saves from anywhere in the sheet
             }
-            .padding(14)
+            .padding(16)
             .background(Palette.wellFill)
             .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
         }
@@ -214,9 +214,9 @@ struct GlassFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .textFieldStyle(.plain)
-            .font(.system(size: 14))
+            .font(.system(size: 13))
             .foregroundStyle(Palette.textPrimary)
-            .padding(.horizontal, 13).padding(.vertical, 11)
+            .padding(.horizontal, 12).padding(.vertical, 12)
             .background(Palette.fieldFill, in: RoundedRectangle(cornerRadius: Radii.field, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Radii.field, style: .continuous).strokeBorder(Palette.fieldStroke, lineWidth: 1))
     }
@@ -228,7 +228,7 @@ struct DestructiveButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(Palette.negative)
-            .padding(.horizontal, 14).padding(.vertical, 8)
+            .padding(.horizontal, 16).padding(.vertical, 8)
             .background(Palette.negative.opacity(configuration.isPressed ? 0.24 : 0.14), in: Capsule())
             .overlay(Capsule().strokeBorder(Palette.negative.opacity(0.36), lineWidth: 1))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
@@ -273,7 +273,7 @@ struct GlassDateField: View {
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.textTertiary)
                     .rotationEffect(.degrees(open ? 180 : 0))
             }
-            .padding(.horizontal, 11).padding(.vertical, 9)
+            .padding(.horizontal, 12).padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -281,7 +281,7 @@ struct GlassDateField: View {
         .animation(Motion.snappy, value: open)
         .popover(isPresented: $open, arrowEdge: .bottom) {
             GlassCalendar(date: $date) { open = false }
-                .padding(14).frame(width: 264)
+                .padding(16).frame(width: 264)
                 .appAppearance()
         }
     }
@@ -316,7 +316,7 @@ struct GlassCalendar: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             HStack {
                 monthNav("chevron.left", -1)
                 Spacer()
@@ -333,7 +333,7 @@ struct GlassCalendar: View {
                 }
             }
             let cols = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
-            LazyVGrid(columns: cols, spacing: 3) {
+            LazyVGrid(columns: cols, spacing: 4) {
                 ForEach(Array(monthDays.enumerated()), id: \.offset) { _, d in
                     if let d {
                         dayCell(d)
@@ -396,7 +396,7 @@ struct GlassMenuPicker<T: Hashable>: View {
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.textTertiary)
                     .rotationEffect(.degrees(open ? 180 : 0))
             }
-            .padding(.horizontal, 11).padding(.vertical, 9)
+            .padding(.horizontal, 12).padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -431,7 +431,7 @@ struct GlassMenuPicker<T: Hashable>: View {
                     Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.acidLime)
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 7)
+            .padding(.horizontal, 12).padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -481,7 +481,7 @@ struct GlassSegment<T: Hashable>: View {
                 Text(label(opt))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(sel ? Palette.ink : Palette.textSecondary)
-                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
                     .background {
                         if sel { Capsule().fill(Palette.acidLime).matchedGeometryEffect(id: "seg", in: ns) }
                     }
@@ -510,7 +510,7 @@ struct SearchField: View {
                     .buttonStyle(.iconPress).help("Clear search")
             }
         }
-        .padding(.horizontal, 11).padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Palette.hairline, in: Capsule())
         .overlay(Capsule().strokeBorder(Palette.wellStroke, lineWidth: 0.8))
     }
@@ -549,7 +549,7 @@ struct LabeledField<Content: View>: View {
             // app, one step quieter than the value they describe — they were the same weight and
             // nearly the same size as the content, so a form read as a wall of equal text.
             Text(label)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
                 .textCase(.uppercase).kerning(0.8)
                 .foregroundStyle(Palette.textTertiary)
             content()
@@ -579,19 +579,19 @@ struct AmountField: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(CurrencyFormat.symbol(code))
                     .font(Typo.figure(18))
                     .foregroundStyle(Palette.textTertiary)
                 TextField(placeholder, text: $text)
                     .textFieldStyle(.plain)
-                    .font(Typo.figure(26))
+                    .font(Typo.figure(28))
                     .monospacedDigit()
                     .foregroundStyle(tone)
                     .focused($focused)
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
+            .padding(.horizontal, 16).padding(.vertical, 12)
             .background {
                 let shape = RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
                 ZStack {
@@ -606,7 +606,7 @@ struct AmountField: View {
 
             if let footnote {
                 Text(footnote)
-                    .font(.system(size: 10.5)).monospacedDigit()
+                    .font(.system(size: 10)).monospacedDigit()
                     .foregroundStyle(Palette.textTertiary)
             }
         }
@@ -633,10 +633,10 @@ struct TextWell: View {
             }
         }
         .textFieldStyle(.plain)
-        .font(.system(size: 14))
+        .font(.system(size: 13))
         .foregroundStyle(Palette.textPrimary)
         .focused($focused)
-        .padding(.horizontal, 13).padding(.vertical, 11)
+        .padding(.horizontal, 12).padding(.vertical, 12)
         .background {
             let shape = RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
             ZStack {
@@ -669,10 +669,10 @@ struct FieldWell: ViewModifier {
     func body(content: Content) -> some View {
         content
             .textFieldStyle(.plain)
-            .font(.system(size: 14))
+            .font(.system(size: 13))
             .foregroundStyle(Palette.textPrimary)
             .focused($focused)
-            .padding(.horizontal, 13).padding(.vertical, multiline ? 10 : 11)
+            .padding(.horizontal, 12).padding(.vertical, multiline ? 10 : 11)
             .background {
                 let shape = RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
                 ZStack {

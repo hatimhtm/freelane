@@ -80,7 +80,7 @@ struct PeopleView: View {
     private func dupeRow(_ g: Brain.DupeGroup) -> some View {
         let keep = entity(g.keep)
         let members = g.merge.compactMap(entity)
-        return HStack(spacing: 10) {
+        return HStack(spacing: 12) {
             Image(systemName: "person.2.badge.gearshape").font(.system(size: 13)).foregroundStyle(Palette.warning)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(members.map { "“\($0.name)”" }.joined(separator: ", ")) → “\(keep?.name ?? "?")”")
@@ -95,7 +95,7 @@ struct PeopleView: View {
                 .buttonStyle(.glassProminent).tint(Palette.azure).controlSize(.small)
                 .disabled(keep == nil || members.isEmpty)
         }
-        .padding(.vertical, 7).padding(.horizontal, 10)
+        .padding(.vertical, 8).padding(.horizontal, 12)
         .insetRow(cornerRadius: Radii.field, hoverable: false)
     }
 
@@ -130,9 +130,9 @@ struct PeopleView: View {
     }
 
     private func grid(_ items: [Entity]) -> some View {
-        let cols = [GridItem(.adaptive(minimum: 200), spacing: 14)]
-        return GlassGroup(spacing: 14) {
-            LazyVGrid(columns: cols, spacing: 14) {
+        let cols = [GridItem(.adaptive(minimum: 200), spacing: 16)]
+        return GlassGroup(spacing: 16) {
+            LazyVGrid(columns: cols, spacing: 16) {
                 ForEach(items) { e in
                     Button { selected = e } label: { card(e) }.buttonStyle(.cardPress)
                         .contextMenu {
@@ -153,14 +153,14 @@ struct PeopleView: View {
     private func card(_ e: Entity) -> some View {
         let hits = EntityMoney.matchCount(for: e, in: allSpends)
         let flow = hits >= 2 ? EntityMoney.total(for: e, in: allSpends) : 0
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: e.kind.icon).font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Palette.violet).frame(width: 30, height: 30)
                     .background(Palette.violet.opacity(0.16), in: RoundedRectangle(cornerRadius: Radii.row, style: .continuous))
                 Spacer()
                 Text(e.kind.label).font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                    .padding(.horizontal, 7).padding(.vertical, 3).background(Palette.hairline, in: Capsule())
+                    .padding(.horizontal, 8).padding(.vertical, 4).background(Palette.hairline, in: Capsule())
             }
             Text(e.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
             Text((e.relationship?.isEmpty == false ? e.relationship! : "Tap to tell me more"))
@@ -171,7 +171,7 @@ struct PeopleView: View {
             Text(flow > 0 ? CurrencyFormat.string(flow, base, compact: true) + " flowed" : " ")
                 .font(.system(size: 10)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
         }
-        .padding(14).frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)   // equal, no clip
+        .padding(16).frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)   // equal, no clip
         .glassCard(cornerRadius: Radii.tile, interactive: true, morphID: "ent.\(e.id)")
     }
 
@@ -296,28 +296,28 @@ struct EntityDetailSheet: View {
                         .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                 }
                 Spacer()
-                Button { showEdit = true } label: { Image(systemName: "pencil").font(.system(size: 14)) }.buttonStyle(.glass)
+                Button { showEdit = true } label: { Image(systemName: "pencil").font(.system(size: 13)) }.buttonStyle(.glass)
                     .help("Edit")
                     .accessibilityLabel("Edit \(entity.name)")
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
                     .help("Close (Esc)")
                     .accessibilityLabel("Close")
-            }.padding(18)
+            }.padding(20)
             .sheet(isPresented: $showEdit) { EditEntitySheet(entity: entity) }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if flowTotal > 0 {
                         SectionCard(title: "Money flow", subtitle: "\(flowSpends.count) spends mention \(entity.name)", accent: Palette.violet) {
-                            Text(CurrencyFormat.string(flowTotal, base)).font(Typo.rowFigure(24)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                            Text(CurrencyFormat.string(flowTotal, base)).font(Typo.rowFigure(22)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                             VStack(spacing: 0) {
                                 ForEach(Array(flowSpends.prefix(8))) { s in
                                     HStack {
                                         Text(s.spendDescription ?? s.vendorName ?? "Spend").font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1)
                                         Spacer()
                                         Text(CurrencyFormat.string(s.amountBase, base, compact: true)).font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(Palette.textPrimary)
-                                    }.padding(.vertical, 5)
+                                    }.padding(.vertical, 6)
                                 }
                                 if flowSpends.count > 8 {
                                     Text("+\(flowSpends.count - 8) more")
@@ -353,7 +353,7 @@ struct EntityDetailSheet: View {
                                 entity.dirty = true; try? context.save()
                             }
                         if hasImportantDate {
-                            HStack(spacing: 10) {
+                            HStack(spacing: 12) {
                                 GlassMenuPicker(selection: $importantLabel, options: ["Birthday", "Anniversary", "Other"], label: { $0 })
                                     .frame(width: 130)
                                     .onChange(of: importantLabel) { _, v in entity.importantDateLabel = v; entity.dirty = true; try? context.save() }
@@ -379,7 +379,7 @@ struct EntityDetailSheet: View {
                     } label: { Label("Remove from People", systemImage: "trash") }
                         .buttonStyle(.destructive)
                 }
-                .padding(18)
+                .padding(20)
             }
         }
         .frame(width: 480, height: 620).flagshipSheet()

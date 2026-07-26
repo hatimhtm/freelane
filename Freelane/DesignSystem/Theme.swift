@@ -223,7 +223,7 @@ struct HoverRowModifier: ViewModifier {
     @State private var hover = false
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .background(RoundedRectangle(cornerRadius: Radii.row, style: .continuous)
                 .fill(hover ? Palette.wellFillHover : Color.clear))
             .padding(.horizontal, -10)
@@ -287,17 +287,37 @@ enum Radii {
     static func inner(_ parent: CGFloat, pad: CGFloat) -> CGFloat { max(4, parent - pad) }
 }
 
-/// The spacing scale — one source for gaps and padding so screens stop hand-tuning magic
-/// numbers (the v1 audit found 8/12/14/18/20pt scattered everywhere). 4pt rhythm.
+/// The spacing scale. Every gap and every padding in the app is one of these — no exceptions,
+/// no hand-tuning.
+///
+/// This scale has existed since the v1 audit, which found "8/12/14/18/20pt scattered everywhere"
+/// and wrote a fix nobody adopted: it was used **seven times** against 893 hardcoded numbers, and
+/// those numbers had grown to fifty-one distinct values including 7.5, 23, 41 and 46. That is the
+/// whole reason the app read as assembled rather than composed — an interface feels intentional
+/// when its measurements repeat, and none of these did. Every site is now snapped to this ladder.
+///
+/// 4pt rhythm, with 2 and 6 kept for gaps *inside* a component (a label above its figure) where
+/// a 4pt step is already too loose.
 enum Spacing {
+    /// Hairline separation — a caption riding under its own value.
     static let xxs: CGFloat = 2
+    /// Inside a single element.
     static let xs: CGFloat = 4
+    /// Between tightly related elements.
+    static let tight: CGFloat = 6
+    /// The default gap between items in a row or list.
     static let s: CGFloat = 8
+    /// The default gap between distinct elements in a card.
     static let m: CGFloat = 12
+    /// Between cards, and a card's own inner padding.
     static let l: CGFloat = 16
+    /// A roomy card's inner padding.
     static let xl: CGFloat = 20
-    static let xxl: CGFloat = 28
-    static let xxxl: CGFloat = 40
+    /// Between sections of a page.
+    static let xxl: CGFloat = 24
+    /// Page margins and major breaks.
+    static let xxxl: CGFloat = 32
+    static let huge: CGFloat = 40
 }
 
 /// The app's motion vocabulary — a few distinct spring curves instead of one. Heroes are bouncier,
@@ -379,7 +399,7 @@ extension Text {
             .foregroundStyle(Palette.textSecondary)
     }
     func sectionTitle() -> some View {
-        self.font(Typo.title(17)).foregroundStyle(Palette.textPrimary)
+        self.font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
     }
 }
 
@@ -466,12 +486,12 @@ struct StatTile: View {
         // Same anatomy as MiniWidget: an inline label line, then the figure. Was a tinted glyph
         // square with the number underneath at 23pt — the badge outweighed the data.
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Image(systemName: systemImage)
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(accent)
                 Text(label)
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .textCase(.uppercase).kerning(0.6)
                     .foregroundStyle(Palette.textTertiary)
                     .lineLimit(1)
@@ -481,7 +501,7 @@ struct StatTile: View {
             Spacer(minLength: 8)
             MoneyText(amount: value, code: code, size: 26)
         }
-        .padding(.horizontal, 15).padding(.vertical, 14)
+        .padding(.horizontal, 16).padding(.vertical, 16)
         .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
         .glassCard(cornerRadius: Radii.tile)
     }
@@ -519,7 +539,7 @@ struct HeroTile: View {
             Sparkline(values: spark, color: accent)
                 .frame(width: 200, height: 66)
         }
-        .padding(18)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: Radii.card, tint: accent, elevated: true)
         .parallaxTilt(4)
@@ -586,10 +606,10 @@ struct SectionCard<Content: View>: View {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 // No per-card coloured dot: content cards stay calm and neutral (section identity
                 // lives in the sidebar). `accent` is kept for call-site compat + trailing tints.
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(Typo.title(19)).foregroundStyle(Palette.textPrimary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                     if let subtitle {
-                        Text(subtitle).font(.system(size: 11.5))
+                        Text(subtitle).font(.system(size: 11))
                             .foregroundStyle(Palette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -622,10 +642,10 @@ struct StatusBadge: View {
         // fill it read as a coloured blob on a small card. Small caps on a faint ground is quieter
         // and, being tracked and uppercase, is actually easier to read at this size.
         Text(text)
-            .font(.system(size: 9.5, weight: .semibold))
+            .font(.system(size: 9, weight: .semibold))
             .textCase(.uppercase).kerning(0.5)
             .foregroundStyle(color)
-            .padding(.horizontal, 7).padding(.vertical, 3)
+            .padding(.horizontal, 8).padding(.vertical, 4)
             .background(color.opacity(0.12), in: Capsule())
             .fixedSize()
     }
@@ -677,19 +697,19 @@ struct MiniWidget: View {
                 // Label line. The icon sits INLINE at text size, not inside a tinted rounded
                 // square — that motif, repeated across a grid of a dozen tiles, is the single
                 // biggest reason a layout like this reads as a template rather than a product.
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Image(systemName: systemImage)
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(accent)
                     Text(label)
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(.system(size: 9, weight: .semibold))
                         .textCase(.uppercase).kerning(0.6)
                         .foregroundStyle(Palette.textTertiary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     if destination != nil {
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Palette.textTertiary)
                             .opacity(hover ? 1 : 0)
                     }
@@ -703,7 +723,7 @@ struct MiniWidget: View {
                 // value with no digits in it drops to sans at a size that fits a name.
                 let isFigure = value.contains(where: \.isNumber)
                 Text(value)
-                    .font(isFigure ? Typo.figure(27) : .system(size: 17, weight: .semibold))
+                    .font(isFigure ? Typo.figure(28) : .system(size: 18, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(tone ?? Palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.7)
@@ -715,7 +735,7 @@ struct MiniWidget: View {
                         .lineLimit(1).padding(.top, 2)
                 }
             }
-            .padding(.horizontal, 15).padding(.vertical, 14)
+            .padding(.horizontal, 16).padding(.vertical, 16)
             .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
             .glassCard(cornerRadius: Radii.tile, tint: hover && destination != nil ? accent : nil,
                        interactive: destination != nil, morphID: morphID)
@@ -957,7 +977,7 @@ extension Color {
 
 extension Text {
     func displayNumber() -> some View {
-        self.font(.system(size: 32, weight: .semibold, design: .rounded)).monospacedDigit()
+        self.font(.system(size: 34, weight: .semibold, design: .rounded)).monospacedDigit()
             .foregroundStyle(Palette.textPrimary)
     }
 }

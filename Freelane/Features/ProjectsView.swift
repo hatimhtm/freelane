@@ -293,7 +293,7 @@ struct ProjectsView: View {
     // Grouped, collapsible spreadsheet — Unpaid first, then Partially paid, Paid last
     // (collapsed by default, since you care about what's still owed).
     private var groupedTable: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             tableHeaderRow
             tableGroup("Unpaid", oldestFirst(.unpaid), Palette.cyan, .unpaid)
             tableGroup("Partially paid", oldestFirst(.partiallyPaid), Palette.warning, .partiallyPaid)
@@ -302,7 +302,7 @@ struct ProjectsView: View {
     }
 
     private var tableHeaderRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Text("PROJECT").frame(maxWidth: .infinity, alignment: .leading)
             Text("CLIENT").frame(width: 140, alignment: .leading)
             Text("AMOUNT").frame(width: 90, alignment: .trailing)
@@ -310,7 +310,7 @@ struct ProjectsView: View {
             Text("DUE").frame(width: 84, alignment: .trailing)
         }
         .font(.system(size: 9, weight: .semibold)).kerning(0.5).foregroundStyle(Palette.textTertiary)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
     }
 
     @ViewBuilder private func tableGroup(_ title: String, _ items: [Project], _ accent: Color, _ status: ProjectStatus) -> some View {
@@ -324,11 +324,11 @@ struct ProjectsView: View {
                     Text("\(items.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                         .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.hairline, in: Capsule())
                     Spacer()
-                }.padding(.horizontal, 12).padding(.vertical, 9).contentShape(Rectangle())
+                }.padding(.horizontal, 12).padding(.vertical, 8).contentShape(Rectangle())
             }.buttonStyle(.plain)
             if !isCollapsed {
                 if items.isEmpty {
-                    Text("None").font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 8)
+                    Text("None").font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 8)
                 } else {
                     ForEach(items) { p in
                         tableRow(p)
@@ -343,13 +343,13 @@ struct ProjectsView: View {
     private func tableRow(_ p: Project) -> some View {
         let out = ProjectMath.outstandingNative(project: p, allocations: allocations, rates: rates)
         return Button { editing = p } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Text(p.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                 Text(clientName(p)).font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1).frame(width: 140, alignment: .leading)
                 Text(CurrencyFormat.string(p.amount, p.currency, compact: true)).font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(Palette.textPrimary).lineLimit(1).frame(width: 90, alignment: .trailing)
                 Text(out > 0 ? CurrencyFormat.string(out, p.currency, compact: true) : "—").font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(out > 0 ? Palette.warning : Palette.textTertiary).lineLimit(1).frame(width: 100, alignment: .trailing)
                 Text(p.dueDate.map { $0.formatted(.dateTime.month().day()) } ?? "—").font(.system(size: 11)).foregroundStyle(Palette.textTertiary).frame(width: 84, alignment: .trailing)
-            }.padding(.horizontal, 14).padding(.vertical, 9).contentShape(Rectangle())
+            }.padding(.horizontal, 16).padding(.vertical, 8).contentShape(Rectangle())
         }.buttonStyle(.plain)
         .contextMenu {
             // NOTE: merged with the delivered-toggle that used to live on `draggableCard`. Two
@@ -428,7 +428,7 @@ struct ProjectsView: View {
             if !collapsible || expanded {
                 if items.isEmpty {
                     Text("Nothing here").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                        .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 14)
+                        .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 16)
                 } else {
                     ForEach(items) { p in draggableCard(p) }
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -449,8 +449,8 @@ struct ProjectsView: View {
 
     private func columnHeader(_ title: String, _ items: [Project], _ accent: Color,
                               showChevron: Bool, expanded: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
                 if showChevron {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.textTertiary)
@@ -465,7 +465,7 @@ struct ProjectsView: View {
                 Spacer(minLength: 0)
             }
             Text(CurrencyFormat.string(columnTotal(items), base, compact: true))
-                .font(Typo.figure(20)).monospacedDigit()
+                .font(Typo.figure(18)).monospacedDigit()
                 .foregroundStyle(items.isEmpty ? Palette.textTertiary : Palette.textPrimary)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
@@ -573,10 +573,10 @@ struct ProjectsView: View {
             // Client identity is carried by ONE spine down the card's leading edge. It used to be a
             // spine AND a dot beside the name — the same information twice, and the dot competed
             // with the status badge on a card only 170pt wide.
-            HStack(alignment: .top, spacing: 9) {
+            HStack(alignment: .top, spacing: 8) {
                 Capsule().fill(clientColor).frame(width: 3, height: 30)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(p.title).font(Typo.title(14)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                    Text(p.title).font(Typo.title(13)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                     Text(clientName).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
@@ -599,7 +599,7 @@ struct ProjectsView: View {
             let settled = p.amount > 0.01 && out <= 0.01
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(CurrencyFormat.string(p.amount, p.currency, compact: true))
-                    .font(Typo.figure(23)).monospacedDigit()
+                    .font(Typo.figure(22)).monospacedDigit()
                     .foregroundStyle(Palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.6)
                 Spacer(minLength: 4)
@@ -640,7 +640,7 @@ struct ProjectsView: View {
                 let age = PHT.calendar.dateComponents([.day], from: p.agingAnchor, to: .now).day ?? 0
                 let delivered = p.workCompletedAt != nil
                 let tone: Color = age >= 30 ? Palette.negative : (age >= 14 ? Palette.warning : Palette.textTertiary)
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Image(systemName: delivered ? "checkmark.seal.fill" : "clock")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(delivered ? Palette.positive : tone)
@@ -654,7 +654,7 @@ struct ProjectsView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(.top, 1)
+                .padding(.top, 2)
             }
         }
         .padding(16)

@@ -65,7 +65,7 @@ struct FreelaneWidgetView: View {
     var body: some View {
         let s = entry.snap
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Image(systemName: "shield.lefthalf.filled").font(.system(size: 11, weight: .bold)).foregroundStyle(lime)
                 Text("SAFE TO SPEND").font(.system(size: 9, weight: .semibold)).kerning(0.4).foregroundStyle(.secondary)
             }
@@ -77,7 +77,7 @@ struct FreelaneWidgetView: View {
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                 if family != .systemSmall {
                     Spacer(minLength: 2)
-                    HStack(spacing: 14) {
+                    HStack(spacing: 16) {
                         stat("Landed", fmtMoney(s.landedMTD, s.symbol))
                         stat("Owed me", fmtMoney(s.outstanding, s.symbol))
                         stat("Wallets", fmtMoney(s.walletTotal, s.symbol))
@@ -85,11 +85,11 @@ struct FreelaneWidgetView: View {
                 }
                 if family == .systemLarge, let bills = s.bills, !bills.isEmpty {
                     Divider().padding(.vertical, 4)
-                    Text("UPCOMING BILLS").font(.system(size: 8.5, weight: .semibold)).kerning(0.4).foregroundStyle(.tertiary)
+                    Text("UPCOMING BILLS").font(.system(size: 9, weight: .semibold)).kerning(0.4).foregroundStyle(.tertiary)
                     ForEach(Array(bills.enumerated()), id: \.offset) { _, b in
                         HStack {
                             Text(b.label).font(.system(size: 11)).foregroundStyle(.primary).lineLimit(1)
-                            Text(b.due).font(.system(size: 9.5)).foregroundStyle(.tertiary)
+                            Text(b.due).font(.system(size: 9)).foregroundStyle(.tertiary)
                             Spacer()
                             Text(fmtMoney(b.amount, s.symbol)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(.secondary)
                         }
@@ -104,8 +104,8 @@ struct FreelaneWidgetView: View {
     }
 
     private func stat(_ l: String, _ v: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(l).font(.system(size: 8, weight: .semibold)).foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(l).font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
             Text(v).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.primary)
         }
     }
@@ -130,20 +130,20 @@ struct NextIncomeView: View {
     var body: some View {
         let s = entry.snap
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Image(systemName: "arrow.down.left.circle.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(lime)
                 Text("NEXT INCOME").font(.system(size: 9, weight: .semibold)).kerning(0.4).foregroundStyle(.secondary)
             }
             if let s, let label = s.nextPayLabel, let amt = s.nextPayAmount {
                 Text(fmtMoney(amt, s.symbol))
-                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .foregroundStyle(lime).minimumScaleFactor(0.6).lineLimit(1)
                 Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
                 if let due = s.nextPayDue {
                     Text("due \(due)").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             } else {
-                Text("—").font(.system(size: 30, weight: .semibold, design: .rounded)).foregroundStyle(.secondary)
+                Text("—").font(.system(size: 28, weight: .semibold, design: .rounded)).foregroundStyle(.secondary)
                 Text(s == nil ? "Open Freelane once to sync." : "No scheduled income.")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
             }
@@ -221,7 +221,7 @@ struct NextPrayerView: View {
     @Environment(\.widgetFamily) private var family
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Image(systemName: "moon.stars.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(lime)
                 Text("NEXT PRAYER").font(.system(size: 9, weight: .semibold)).kerning(0.4).foregroundStyle(.secondary)
             }

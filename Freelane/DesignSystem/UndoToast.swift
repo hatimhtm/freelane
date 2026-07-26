@@ -61,7 +61,7 @@ struct UndoToastOverlay: View {
         VStack {
             Spacer()
             if let t = undo.toast {
-                HStack(spacing: 14) {
+                HStack(spacing: 16) {
                     Image(systemName: t.icon)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Palette.textSecondary)
@@ -78,11 +78,11 @@ struct UndoToastOverlay: View {
                             .foregroundStyle(Palette.textTertiary)
                     }.buttonStyle(.iconPress)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 11)
+                .padding(.horizontal, 16).padding(.vertical, 12)
                 .glassEffect(Glass.regular, in: Capsule())
                 .overlay(Capsule().strokeBorder(Palette.wellStroke, lineWidth: 1))
                 .shadow(color: .black.opacity(0.28), radius: 18, y: 8)
-                .padding(.bottom, 22)
+                .padding(.bottom, 24)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }

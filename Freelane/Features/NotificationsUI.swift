@@ -168,9 +168,9 @@ struct BellButton: View {
         let count = unread.count
         let hasUnread = count > 0
         Button { open.toggle() } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Image(systemName: hasUnread ? "bell.fill" : "bell")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(hasUnread ? Palette.azure : Palette.textTertiary)
                 if hasUnread {
                     Text(count > 9 ? "9+" : "\(count)")
@@ -207,7 +207,7 @@ struct BellButton: View {
                 Text("Notifications").font(Typo.title(15)).foregroundStyle(Palette.textPrimary)
                 Spacer()
                 if !unread.isEmpty { Button("Mark all read") { unread.forEach { $0.readAt = .now }; try? context.save() }.font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Palette.azure) }
-            }.padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
+            }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
 
             GlassSegment(options: [0, 1], selection: $tab,
                          label: { $0 == 0 ? "Inbox (\(unread.count))" : "Read" })
@@ -241,12 +241,12 @@ struct BellButton: View {
                     Button("Show all again") { mutedRaw = "" }
                         .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Palette.azure)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 9)
+                .padding(.horizontal, 12).padding(.vertical, 8)
             }
             if tab == 1 && !read.isEmpty {
                 Divider().overlay(Palette.hairline)
                 Button("Clear read") { read.forEach { $0.dismissedAt = .now }; try? context.save() }
-                    .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Palette.textTertiary).padding(10)
+                    .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Palette.textTertiary).padding(12)
             }
         }
         .frame(width: 384, height: 486)
@@ -255,7 +255,7 @@ struct BellButton: View {
 
     private func row(_ n: AppNotification) -> some View {
         Button { tapped(n) } label: {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
                 // A filled dot on the leading edge of a list row means UNREAD everywhere else on
                 // this Mac. Here it meant priority, and it was drawn on every row of the Read tab
                 // too — so a list of things you had already dealt with looked like a list of things
@@ -263,13 +263,13 @@ struct BellButton: View {
                 // aligned. Priority is carried by the colour, which is what colour is for.
                 Circle()
                     .fill(n.readAt == nil ? (n.priority >= 1 ? Palette.warning : Palette.azure) : .clear)
-                    .frame(width: 7, height: 7).padding(.top, 5)
-                VStack(alignment: .leading, spacing: 3) {
+                    .frame(width: 7, height: 7).padding(.top, 6)
+                VStack(alignment: .leading, spacing: 4) {
                     Text(n.subject).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary).multilineTextAlignment(.leading)
                     if let b = n.body { Text(b).font(.system(size: 11)).foregroundStyle(Palette.textSecondary).lineLimit(3).multilineTextAlignment(.leading) }
                     if let a = n.answer, !a.isEmpty {
                         Label(a, systemImage: "checkmark.circle.fill")
-                            .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Palette.positive)
+                            .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.positive)
                     } else if n.isQuestion {
                         // Was the grey hint "Tap to answer" — wrong verb for macOS, redundant on an
                         // already-tappable row, and describing a mechanic rather than naming an
@@ -301,7 +301,7 @@ struct BellButton: View {
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 16)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 11).frame(maxWidth: .infinity, alignment: .leading).hoverRow()
+            .padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading).hoverRow()
         }.buttonStyle(.cardPress)
     }
 
@@ -353,15 +353,15 @@ struct AnswerSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: "sparkles").foregroundStyle(Palette.azure)
-                Text("A quick question").font(Typo.title(16)).foregroundStyle(Palette.textPrimary)
+                Text("A quick question").font(Typo.title(15)).foregroundStyle(Palette.textPrimary)
                 Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction).help("Close without answering")
-            }.padding(18)
+            }.padding(20)
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     Text(note.subject).font(.system(size: 15, weight: .medium)).foregroundStyle(Palette.textPrimary)
                     if let b = note.body { Text(b).font(.system(size: 12)).foregroundStyle(Palette.textSecondary) }
                     ForEach(note.choices, id: \.self) { c in
@@ -375,10 +375,10 @@ struct AnswerSheet: View {
                             HStack { TextField("Answer…", text: $text).fieldWell(); Button("Send") { submit(text) }.buttonStyle(.glass).disabled(text.isEmpty) }
                         }
                     }
-                }.padding(18)
+                }.padding(20)
             }
             Divider().overlay(Palette.hairline)
-            HStack { Spacer(); Button("Don't ask again") { Curiosity.dismissQuestion(context, note: note); dismiss() }.buttonStyle(.glass) }.padding(14)
+            HStack { Spacer(); Button("Don't ask again") { Curiosity.dismissQuestion(context, note: note); dismiss() }.buttonStyle(.glass) }.padding(16)
         }
         .frame(width: 440, height: 480).flagshipSheet()
     }

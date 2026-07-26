@@ -169,13 +169,13 @@ struct AgendaView: View {
     private func flowColumn(_ label: String, icon: String, tint: Color, text: String, valueColor: Color) -> some View {
         // Same anatomy as every other figure in the app: inline label line, then the number in the
         // editorial serif. Was a tinted glyph square beside a 16pt rounded figure.
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
                 Image(systemName: icon).font(.system(size: 9, weight: .semibold)).foregroundStyle(tint)
-                Text(label).font(.system(size: 9.5, weight: .semibold)).textCase(.uppercase).kerning(0.6)
+                Text(label).font(.system(size: 9, weight: .semibold)).textCase(.uppercase).kerning(0.6)
                     .foregroundStyle(Palette.textTertiary)
             }
-            Text(text).font(Typo.figure(20)).monospacedDigit()
+            Text(text).font(Typo.figure(18)).monospacedDigit()
                 .foregroundStyle(valueColor)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
@@ -190,12 +190,12 @@ struct AgendaView: View {
                 }
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Image(systemName: "calendar").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                 Text("\(horizon) days").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textSecondary)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(Palette.textTertiary)
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.textTertiary)
             }
-            .padding(.horizontal, 10).padding(.vertical, 6)
+            .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Palette.hairline, in: Capsule())
             .overlay(Capsule().strokeBorder(Palette.wellStroke, lineWidth: 0.8))
             .contentShape(Capsule())
@@ -299,7 +299,7 @@ struct AgendaView: View {
                         AxisValueLabel {
                             if let d = v.as(Double.self) {
                                 Text(CurrencyFormat.abbreviated(d, base))
-                                    .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                                    .font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                             }
                         }
                     }
@@ -307,10 +307,10 @@ struct AgendaView: View {
                 .chartXAxis {
                     AxisMarks(values: .stride(by: .day, count: 14)) { _ in
                         AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                            .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                            .font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                     }
                 }
-                .chartPlotStyle { $0.padding(.top, 14).padding(.bottom, 2) }
+                .chartPlotStyle { $0.padding(.top, 16).padding(.bottom, 2) }
                 .frame(height: 180)
             }
         }
@@ -343,24 +343,24 @@ struct AgendaView: View {
                 ForEach(Array(periods.enumerated()), id: \.element.title) { pIdx, period in
                     if pIdx > 0 {
                         Rectangle().fill(Palette.hairline).frame(height: 1)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 16)
                     }
-                    HStack(spacing: 9) {
+                    HStack(spacing: 8) {
                         Text(period.title)
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                             .textCase(.uppercase).kerning(1.0)
                             .foregroundStyle(period.tone)
                         Text(period.summary)
-                            .font(.system(size: 10.5)).monospacedDigit()
+                            .font(.system(size: 10)).monospacedDigit()
                             .foregroundStyle(Palette.textTertiary)
                         Rectangle().fill(Palette.hairline).frame(height: 1)
                     }
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 12)
 
                     ForEach(Array(period.days.enumerated()), id: \.element.day) { idx, group in
                         dayRow(group)
                         if idx < period.days.count - 1 {
-                            Divider().overlay(Palette.hairline).padding(.leading, 78)
+                            Divider().overlay(Palette.hairline).padding(.leading, 80)
                         }
                     }
                 }
@@ -424,7 +424,7 @@ struct AgendaView: View {
             }
             .padding(.leading, 8)
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
     }
 
     /// The rail's left column: small weekday (or TODAY), big day number, small month.
@@ -433,9 +433,9 @@ struct AgendaView: View {
         let isToday = day == today
         let cal = PHT.calendar
         let isTomorrow = cal.date(byAdding: .day, value: 1, to: today) == day
-        return VStack(spacing: 1) {
+        return VStack(spacing: 2) {
             Text(isToday ? "TODAY" : (isTomorrow ? "TOMORROW" : day.formatted(.dateTime.weekday(.abbreviated)).uppercased()))
-                .font(.system(size: 8.5, weight: .bold)).kerning(0.5)
+                .font(.system(size: 9, weight: .bold)).kerning(0.5)
                 .foregroundStyle(tint ?? Palette.textTertiary)
                 .lineLimit(1).minimumScaleFactor(0.7)
             Text(day.formatted(.dateTime.day()))
@@ -446,15 +446,15 @@ struct AgendaView: View {
                 .foregroundStyle(Palette.textTertiary)
         }
         .frame(width: 52)
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
     }
 
     private func entryRow(_ i: Item, tint: Color?) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             LedgerMark(tone: i.color)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(i.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                Text(i.detail).font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                Text(i.detail).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }
             Spacer(minLength: 8)
             if i.warn {
@@ -477,7 +477,7 @@ struct AgendaView: View {
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 22)
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 7)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .insetRow()
     }
 
@@ -541,7 +541,7 @@ extension AgendaView {
     }
 
     private func goalRow(_ p: Plan) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(p.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                 if p.monthlySetAside > 0 {
@@ -556,7 +556,7 @@ extension AgendaView {
                     .foregroundStyle(Palette.textSecondary)
                 if p.remaining <= 0 {
                     Text("reached").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.positive)
-                        .padding(.horizontal, 5).padding(.vertical, 1).background(Palette.positive.opacity(0.16), in: Capsule())
+                        .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.positive.opacity(0.16), in: Capsule())
                 } else if p.monthlySetAside > 0 {
                     let months = Int((p.remaining / p.monthlySetAside).rounded(.up))
                     Text("≈\(months) mo left").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)

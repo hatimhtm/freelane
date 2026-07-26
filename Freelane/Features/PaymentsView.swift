@@ -84,7 +84,7 @@ struct PaymentsView: View {
             SectionCard(title: sub == 1 ? "Payments" : (sub == 2 ? "Withdrawals" : "History"),
                         subtitle: query.isEmpty ? "\(rows.count) entries" : "\(list.count) of \(rows.count)",
                         accent: Palette.positive) {
-                SearchField(text: $query, placeholder: "Search project, wallet, or amount").padding(.bottom, 10)
+                SearchField(text: $query, placeholder: "Search project, wallet, or amount").padding(.bottom, 12)
                 if rows.isEmpty {
                     EmptyStateCard(icon: "arrow.down.left.circle", title: "No payments yet",
                                    message: "Log a payment when money lands — Freelane tracks fees, routes, and what each client has paid.")
@@ -101,9 +101,9 @@ struct PaymentsView: View {
                     let groups = monthGroups(list)
                     LazyVStack(spacing: 0) {
                         ForEach(Array(groups.enumerated()), id: \.element.key) { gi, group in
-                            HStack(spacing: 9) {
+                            HStack(spacing: 8) {
                                 Text(group.title)
-                                    .font(.system(size: 9.5, weight: .semibold))
+                                    .font(.system(size: 9, weight: .semibold))
                                     .textCase(.uppercase).kerning(1.0)
                                     .foregroundStyle(Palette.textSecondary)
                                 Rectangle().fill(Palette.hairline).frame(height: 1)
@@ -160,9 +160,9 @@ struct PaymentsView: View {
                     ForEach(holding) { w in
                         let bal = WalletMath.balance(of: w, ledger: ledger)
                         Button { selectedWallet = w } label: {
-                            HStack(spacing: 10) {
+                            HStack(spacing: 12) {
                                 WalletGlyph(wallet: w, size: 30)
-                                VStack(alignment: .leading, spacing: 1) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text(w.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                     Text(CurrencyFormat.string(bal, base, compact: true))
                                         .font(Typo.rowFigure(13)).monospacedDigit()
@@ -171,7 +171,7 @@ struct PaymentsView: View {
                                 }
                                 Spacer()
                             }
-                            .padding(10).insetRow(cornerRadius: Radii.field)
+                            .padding(12).insetRow(cornerRadius: Radii.field)
                         }.buttonStyle(.plain)
                     }
                 }
@@ -180,7 +180,7 @@ struct PaymentsView: View {
     }
 
     private var toolbarButtons: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Menu {
                 Button("Add a wallet", systemImage: "wallet.bifold") { showAddWallet = true }
                 Button("Move money between wallets", systemImage: "arrow.left.arrow.right") { showWithdraw = true }
@@ -391,7 +391,7 @@ struct BulkPaymentSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
+            HStack(spacing: 12) {
                 GlyphChip(systemImage: "arrow.down.left.circle.fill", color: Palette.positive, size: 30)
                     .onAppear {
                         // Every currency default in this sheet was the literal "PHP" rather than
@@ -408,16 +408,16 @@ struct BulkPaymentSheet: View {
                         if let g = prefillGrossNative { r.gross = String(format: "%g", g) }
                         draftRows = [r]
                     }
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Log payment").font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                     Text("Enter what you RECEIVED — fees are figured out for you.").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
                     .help("Close (Esc)").accessibilityLabel("Close")
             }
-            .padding(.horizontal, 18).padding(.vertical, 14)
+            .padding(.horizontal, 20).padding(.vertical, 16)
             .background(Palette.wellFill)
             .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
 
@@ -425,14 +425,14 @@ struct BulkPaymentSheet: View {
                 VStack(spacing: 12) {
                     if draftRows.count > 1 {
                         Toggle(isOn: $merge.animation(Motion.snappy)) {
-                            VStack(alignment: .leading, spacing: 1) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text("Arrived together").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
                                 Text("One transfer covering all of these — enter the single amount you received.").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                             }
                         }.toggleStyle(.switch).tint(Palette.positive).padding(12).glassCard(cornerRadius: Radii.field)
                     }
                     if merge {
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             Text("Total received").font(.system(size: 13)).foregroundStyle(Palette.textSecondary)
                             TextField("0", text: $mergedAmount).fieldWell().frame(width: 110)
                                 .focused($mergedFocus)
@@ -451,17 +451,17 @@ struct BulkPaymentSheet: View {
 
             Divider().overlay(Palette.hairline)
             HStack {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Total landed").tileLabel()
                     Text(CurrencyFormat.string(totalNet, base))
-                        .font(Typo.rowFigure(16)).monospacedDigit()
+                        .font(Typo.rowFigure(15)).monospacedDigit()
                         .foregroundStyle(Palette.positive).lineLimit(1).minimumScaleFactor(0.7)
                 }
                 if totalFee > 0 {
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Fees (auto)").tileLabel()
-                        Text(CurrencyFormat.string(totalFee, base)).font(Typo.rowFigure(14)).monospacedDigit().foregroundStyle(Palette.negative).lineLimit(1)
-                    }.padding(.leading, 10)
+                        Text(CurrencyFormat.string(totalFee, base)).font(Typo.rowFigure(13)).monospacedDigit().foregroundStyle(Palette.negative).lineLimit(1)
+                    }.padding(.leading, 12)
                 }
                 if let result { Text(result).font(.caption).foregroundStyle(Palette.negative).padding(.leading, 8) }
                 Spacer()
@@ -481,7 +481,7 @@ struct BulkPaymentSheet: View {
 
     /// A tiny uppercase caption over a control — the row editor's labeling rhythm.
     private func field<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(label).font(.system(size: 9, weight: .semibold)).kerning(0.6)
                 .textCase(.uppercase).foregroundStyle(Palette.textTertiary)
             content()
@@ -495,7 +495,7 @@ struct BulkPaymentSheet: View {
         let r = row.wrappedValue
         let fee = rowFee(r)
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .bottom, spacing: 12) {
                 field("Project") {
                     GlassMenuPicker(selection: row.projectId,
                                     options: [nil] + openProjects.map { Optional($0.id) },
@@ -513,13 +513,13 @@ struct BulkPaymentSheet: View {
                 field("Date") { GlassDateField(date: row.date, compact: true).frame(width: 118) }
                 if draftRows.count > 1 {
                     Button { withAnimation(Motion.snappy) { draftRows.removeAll { $0.id == r.id } } } label: {
-                        Image(systemName: "minus.circle.fill").font(.system(size: 16)).foregroundStyle(Palette.negative.opacity(0.8))
+                        Image(systemName: "minus.circle.fill").font(.system(size: 15)).foregroundStyle(Palette.negative.opacity(0.8))
                     }
-                    .buttonStyle(.iconPress).padding(.bottom, 7)
+                    .buttonStyle(.iconPress).padding(.bottom, 8)
                     .help("Remove this payment").accessibilityLabel("Remove payment row")
                 }
             }
-            HStack(alignment: .bottom, spacing: 14) {
+            HStack(alignment: .bottom, spacing: 16) {
                 field("Owed (gross)") {
                     HStack(spacing: 6) {
                         TextField("0", text: row.gross).fieldWell().frame(width: 100)
@@ -532,7 +532,7 @@ struct BulkPaymentSheet: View {
                         Text("≈ " + CurrencyFormat.string(rowNet(r), base, compact: true))
                             .font(Typo.rowFigure(13)).monospacedDigit()
                             .foregroundStyle(Palette.positive).lineLimit(1)
-                            .padding(.horizontal, 11).padding(.vertical, 9)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
                             .insetRow(cornerRadius: Radii.field, hoverable: false)
                     }
                 } else {
@@ -554,11 +554,11 @@ struct BulkPaymentSheet: View {
                 if fee > 0.005 {
                     MetricChip(text: "fee " + CurrencyFormat.string(fee, base, compact: true),
                                systemImage: "scissors", color: Palette.negative)
-                        .padding(.bottom, 7)
+                        .padding(.bottom, 8)
                 }
             }
         }
-        .padding(14)
+        .padding(16)
         .glassCard(cornerRadius: Radii.tile)
         .animation(Motion.snappy, value: fee > 0.005)
     }

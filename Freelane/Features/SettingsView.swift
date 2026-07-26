@@ -93,15 +93,15 @@ struct SettingsView: View {
         SectionCard(title: "Recalibrate wallets",
                     subtitle: "Set a wallet to its real balance, in any currency — recorded as an adjustment, not a spend",
                     accent: Palette.warning) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
                 ForEach(wallets.filter { $0.isHolding && !$0.archived }) { w in
                     let currentBase = WalletMath.balance(of: w, ledger: ledger)
                     let cur = chosenCurrency(w)
                     let currentNative = cur == base ? currentBase : currentBase / rates.rate(for: cur)
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
                             WalletGlyph(wallet: w, size: 26)
-                            VStack(alignment: .leading, spacing: 1) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(w.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                 Text("now \(CurrencyFormat.string(currentNative, cur, compact: true))" + (cur != base ? " · \(CurrencyFormat.string(currentBase, base, compact: true))" : ""))
                                     .font(.system(size: 10)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
@@ -158,9 +158,9 @@ struct SettingsView: View {
     // MARK: Integrations
 
     private var integrationsCard: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 20) {
             SectionCard(title: "Apple integrations", subtitle: "All off until you turn them on — access is requested here", accent: Palette.cyan) {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     integToggle($remindersOn, "Reminders", "See and complete your Apple Reminders alongside Tasks. Also feeds the AI's awareness below.", "checklist") {
                         await EventBridge.requestReminders()
                     }
@@ -190,7 +190,7 @@ struct SettingsView: View {
     private var personalContextCard: some View {
         SectionCard(title: "Personal context",
                     subtitle: "Make the AI aware of your life outside the app — on-device only, always") {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
                 Text("Once a day, the on-device model reads the enabled sources and keeps only THEMES — \"apartment hunting\", \"in touch with Sarah a lot\" — never quotes. Those themes make journal questions, insights, and chat aware of your actual life. This digest is produced by the on-device model and never leaves this Mac — not even to the local model.")
                     .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
                 signalToggle($sigMessages, "Messages", "Who you're in touch with and what's going on — from your iMessage history.", "message")
@@ -229,7 +229,7 @@ struct SettingsView: View {
                     }
                     Group {
                         if let d = LifeSignals.digest(context) {
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 if !d.doing.isEmpty { digestLine("Life", d.doing.joined(separator: " · ")) }
                                 if !d.reading.isEmpty { digestLine("Reading about", d.reading.joined(separator: " · ")) }
                                 if !d.people.isEmpty { digestLine("In touch with", d.people.joined(separator: ", ")) }
@@ -252,7 +252,7 @@ struct SettingsView: View {
     private func digestLine(_ label: String, _ value: String) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Text(label.uppercased()).font(.system(size: 9, weight: .bold)).kerning(0.4)
-                .foregroundStyle(Palette.textTertiary).frame(width: 88, alignment: .leading).padding(.top, 1)
+                .foregroundStyle(Palette.textTertiary).frame(width: 88, alignment: .leading).padding(.top, 2)
             Text(value).font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -264,8 +264,8 @@ struct SettingsView: View {
             flag.wrappedValue = on
             if on { Task { await LifeSignals.refresh(context, force: true) } }
         })) {
-            HStack(spacing: 10) {
-                Image(systemName: icon).font(.system(size: 14)).foregroundStyle(Palette.cyan).frame(width: 22)
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.system(size: 13)).foregroundStyle(Palette.cyan).frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
                     Text(desc).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
@@ -296,8 +296,8 @@ struct SettingsView: View {
                     denied.remove(title)
                 }
             })) {
-                HStack(spacing: 10) {
-                    Image(systemName: icon).font(.system(size: 14)).foregroundStyle(Palette.cyan).frame(width: 22)
+                HStack(spacing: 12) {
+                    Image(systemName: icon).font(.system(size: 13)).foregroundStyle(Palette.cyan).frame(width: 22)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
                         Text(desc).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
@@ -306,7 +306,7 @@ struct SettingsView: View {
             }.toggleStyle(.switch).tint(Palette.cyan)
 
             if denied.contains(title) {
-                HStack(spacing: 7) {
+                HStack(spacing: 8) {
                     Image(systemName: "hand.raised.fill").font(.system(size: 10)).foregroundStyle(Palette.warning)
                     Text("macOS has this blocked for Freelane.")
                         .font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
@@ -386,7 +386,7 @@ struct SettingsView: View {
                 }
                 .toggleStyle(.switch).tint(Palette.azure)
                 .disabled(!notifs.authorized)
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Button("Test in-app (bell)") {
                         Notify.post(context, kind: "info", subject: "Test notification",
                                     body: "This appeared in your inbox — open the bell, top-right.", feature: .dashboard)
@@ -410,7 +410,7 @@ struct SettingsView: View {
     // MARK: AI
 
     private var aiCard: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 20) {
             // Beliefs first: it is the thing a person actually opens this tab to check.
             memoryCard
             localModelCard
@@ -432,11 +432,11 @@ struct SettingsView: View {
                     accent: Palette.violet) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Two models share the work. Apple's built-in one handles the small, constant jobs — sorting a spend into a category, reading an entry you just wrote — because it answers instantly and costs nothing. The model you download writes the things you actually read: your journal questions, your reflections, and the chat.")
-                    .font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+                    .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text("Nothing you write is sent anywhere.")
-                    .font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
 
                 if !ai.onDeviceReady {
                     Label("Apple Intelligence is off, so the small jobs fall to the downloaded model too — everything still works, just a little slower.",
@@ -462,7 +462,7 @@ struct SettingsView: View {
                 case .onDisk:
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.down.circle.fill").foregroundStyle(Palette.textSecondary)
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text("\(LocalModelSpec.displayName) is downloaded")
                                 .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
                             Text("Not in memory right now — it loads itself the next time the app needs it.")
@@ -470,7 +470,7 @@ struct SettingsView: View {
                         }
                         Spacer()
                     }
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         Button("Load it now") { local.install() }.buttonStyle(.glass)
                         Button("Delete download", role: .destructive) { local.remove() }.buttonStyle(.glass)
                         Spacer()
@@ -500,14 +500,14 @@ struct SettingsView: View {
                 case .ready:
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.positive)
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text("\(LocalModelSpec.displayName) is ready").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
                             Text("Runs entirely on this Mac. No quota, no connection needed.")
                                 .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                         }
                         Spacer()
                     }
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         Button("Free up memory") { local.unload() }.buttonStyle(.glass)
                         Button("Delete download", role: .destructive) { local.remove() }.buttonStyle(.glass)
                         Spacer()
@@ -566,12 +566,12 @@ struct SettingsView: View {
     }
 
     private func beliefRow(_ f: AIFact, denied: Bool) -> some View {
-        HStack(alignment: .top, spacing: 9) {
+        HStack(alignment: .top, spacing: 8) {
             Image(systemName: denied ? "xmark.circle" : "circle.fill")
                 .font(.system(size: denied ? 11 : 6))
                 .foregroundStyle(denied ? Palette.negative : Palette.indigo)
                 .padding(.top, denied ? 2 : 5)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(f.value).font(.system(size: 12)).foregroundStyle(Palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(f.source == "user_answered" ? "You told it this" : "Picked up from your writing")
@@ -582,7 +582,7 @@ struct SettingsView: View {
                 Image(systemName: "trash").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }.buttonStyle(.iconPress).help("Forget this")
         }
-        .padding(.vertical, 7).padding(.horizontal, 10)
+        .padding(.vertical, 8).padding(.horizontal, 12)
         .insetRow(cornerRadius: Radii.field, hoverable: false)
     }
 
@@ -649,7 +649,7 @@ struct SettingsView: View {
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             Toggle(isOn: Binding(get: { captureHotkey }, set: { captureHotkey = $0; HotkeyManager.shared.apply() })) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Global capture hotkey (⌃⌥Space)").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                     Text("Pop up Log Spend from anywhere, even when Freelane is in the background.")
                         .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)

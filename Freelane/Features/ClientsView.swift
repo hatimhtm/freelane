@@ -56,7 +56,7 @@ struct ClientsView: View {
                 EmptyStateCard(icon: "person.crop.square", title: "No clients yet",
                                message: "Add a client to keep their projects, payments, notes, and history together.")
             } else {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     SearchField(text: $query, placeholder: "Search name or company")
                     GlassMenuPicker(selection: $sort, options: ClientSort.allCases, label: { $0.rawValue })
                         .frame(width: 150)
@@ -64,7 +64,7 @@ struct ClientsView: View {
                         Text("Owes me")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(owesOnly ? Palette.ink : Palette.textSecondary)
-                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
                             .background(owesOnly ? AnyShapeStyle(Palette.warning) : AnyShapeStyle(Palette.hairline), in: Capsule())
                             .overlay(Capsule().strokeBorder(owesOnly ? Palette.warning.opacity(0.45) : Palette.wellStroke, lineWidth: 0.8))
                             .contentShape(Capsule())
@@ -135,12 +135,12 @@ struct ClientsView: View {
         // they owe you; everything else is supporting detail on one quiet line beneath.
         let owes = outstanding > 0.005
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 11) {
+            HStack(alignment: .top, spacing: 12) {
                 // Each client gets a stable colour derived from their name, so the same person is
                 // the same colour every time you open the page and you learn to find them by it.
                 // A grid of identical grey initials taught you nothing and had to be read.
                 Text(String(c.name.prefix(1)).uppercased())
-                    .font(Typo.title(16))
+                    .font(Typo.title(15))
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
                     .background(
@@ -151,25 +151,25 @@ struct ClientsView: View {
                         .strokeBorder(.white.opacity(0.18), lineWidth: 0.8))
                     .shadow(color: clientTint(c).opacity(0.30), radius: 6, y: 2)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(c.name).font(Typo.title(15)).foregroundStyle(Palette.textPrimary)
                         .lineLimit(1).truncationMode(.tail)
                     Text(c.company ?? "\(ps.count) \(ps.count == 1 ? "project" : "projects")")
-                        .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 }
                 Spacer(minLength: 6)
             }
-            .padding(.bottom, 14)
+            .padding(.bottom, 16)
 
             // The hero figure: what they owe, or what they've paid you when they're square.
             Text(owes ? "Owes you" : "Earned")
                 .font(.system(size: 9, weight: .semibold)).textCase(.uppercase).kerning(0.6)
                 .foregroundStyle(Palette.textTertiary)
             Text(CurrencyFormat.abbreviated(owes ? outstanding : earned, base))
-                .font(Typo.figure(25)).monospacedDigit()
+                .font(Typo.figure(22)).monospacedDigit()
                 .foregroundStyle(owes ? Palette.warning : Palette.textPrimary)
                 .lineLimit(1).minimumScaleFactor(0.7)
-                .padding(.top, 1)
+                .padding(.top, 2)
 
             // Supporting detail, one line, deliberately quiet.
             Text(owes
@@ -180,7 +180,7 @@ struct ClientsView: View {
 
             if !fx.isEmpty {     // AI-learned info pills — most important first, not a cluttered wall
                 ClientPills(facts: fx.sorted { factWeight($0) > factWeight($1) }, total: fx.count)
-                    .padding(.top, 11)
+                    .padding(.top, 12)
             }
         }
         .padding(16).frame(minHeight: 132, alignment: .topLeading)
@@ -224,7 +224,7 @@ struct FlowChips: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, t in
                 Text(t).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.teal)
                     .lineLimit(1).truncationMode(.tail).frame(maxWidth: 110, alignment: .leading)
-                    .padding(.horizontal, 7).padding(.vertical, 3).background(Palette.teal.opacity(0.14), in: Capsule())
+                    .padding(.horizontal, 8).padding(.vertical, 4).background(Palette.teal.opacity(0.14), in: Capsule())
             }
             if more > 0 { Text("+\(more)").font(.system(size: 9)).foregroundStyle(Palette.textTertiary) }
             Spacer(minLength: 0)
@@ -381,7 +381,7 @@ struct ClientDetailSheet: View {
                 .frame(width: 46, height: 46)
                 .background(LinearGradient(colors: [Palette.cyan, Palette.azure], startPoint: .topLeading, endPoint: .bottomTrailing),
                             in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(client.name).font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                 if let c = client.company { Text(c).font(.system(size: 12)).foregroundStyle(Palette.textTertiary) }
                 HStack(spacing: 6) {
@@ -396,7 +396,7 @@ struct ClientDetailSheet: View {
                 }
             }
             Spacer()
-            Button { showEdit = true } label: { Image(systemName: "pencil").font(.system(size: 14)) }.buttonStyle(.glass)
+            Button { showEdit = true } label: { Image(systemName: "pencil").font(.system(size: 13)) }.buttonStyle(.glass)
                 .help("Edit client")
                 .accessibilityLabel("Edit client")
             // A menu holding a single item is a button wearing a disguise: two clicks, an
@@ -406,11 +406,11 @@ struct ClientDetailSheet: View {
             }.buttonStyle(.glass)
                 .help("Delete client")
                 .accessibilityLabel("Delete client")
-            Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
+            Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                 .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
                 .help("Close (Esc)")
                 .accessibilityLabel("Close")
-        }.padding(18)
+        }.padding(20)
         .confirmationDialog("Delete \(client.name)?", isPresented: $confirmDelete) {
             Button("Delete client", role: .destructive) {
                 for p in projects where p.clientId == client.id { p.clientId = nil; p.dirty = true }  // keep projects, unlink
@@ -493,7 +493,7 @@ struct ClientDetailSheet: View {
                         Text(f.prettyKey).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textSecondary).frame(width: 130, alignment: .leading)
                         Text(f.value).font(.system(size: 12)).foregroundStyle(Palette.textPrimary)
                         Spacer()
-                    }.padding(.vertical, 5)
+                    }.padding(.vertical, 6)
                 }
             }
         }
@@ -504,7 +504,7 @@ struct ClientDetailSheet: View {
             LazyVStack(spacing: 0) {
                 ForEach(clientPayments) { p in
                     HStack {
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(projects.first { $0.id == p.projectId }?.title ?? "Payment").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                             Text(p.paidAt, format: .dateTime.month().day().year()).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                         }
@@ -551,7 +551,7 @@ struct ClientDetailSheet: View {
                     Text(row.0).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textSecondary).frame(width: 84, alignment: .leading)
                     Text(row.1 ?? "").font(.system(size: 12)).foregroundStyle(Palette.textPrimary).textSelection(.enabled)
                     Spacer()
-                }.padding(.vertical, 3)
+                }.padding(.vertical, 4)
             }
         }
     }
@@ -572,10 +572,10 @@ struct NudgeSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack { Image(systemName: "paperplane.fill").foregroundStyle(Palette.cyan); Text("Draft nudge").font(Typo.title(16)).foregroundStyle(Palette.textPrimary); Spacer() }
+        VStack(alignment: .leading, spacing: 16) {
+            HStack { Image(systemName: "paperplane.fill").foregroundStyle(Palette.cyan); Text("Draft nudge").font(Typo.title(15)).foregroundStyle(Palette.textPrimary); Spacer() }
             Text(text).font(.system(size: 13)).foregroundStyle(Palette.textPrimary).textSelection(.enabled)
-                .padding(14).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: Radii.tile)
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: Radii.tile)
             HStack {
                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string); copied = true } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
@@ -610,21 +610,21 @@ struct EditClientSheet: View {
         SheetScaffold(title: "Edit client", accent: Palette.cyan, canSave: !name.isEmpty, onSave: save) {
             LabeledField("Name") { TextField("Name", text: $name).textFieldStyle(GlassFieldStyle()).focused($nameFocused) }
             LabeledField("Company") { TextField("optional", text: $company).fieldWell() }
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 LabeledField("Email") { TextField("optional", text: $email).fieldWell() }
                 LabeledField("Phone") { TextField("optional", text: $phone).fieldWell() }
             }
             LabeledField("Address") { TextField("optional", text: $address).fieldWell() }
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 LabeledField("City") { TextField("optional", text: $city).fieldWell() }
                 LabeledField("Country") { TextField("optional", text: $country).fieldWell() }
             }
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 LabeledField("IBAN") { TextField("optional", text: $iban).fieldWell() }
                 LabeledField("SWIFT") { TextField("optional", text: $swift).fieldWell() }
             }
             LabeledField("Default currency") { CurrencyMenu(selection: Binding(get: { defaultCurrency.isEmpty ? (settings.first?.baseCurrency ?? "PHP") : defaultCurrency }, set: { defaultCurrency = $0 })) }
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 LabeledField("Time zone") {
                     GlassMenuPicker(selection: $timeZoneId, options: zones,
                                     label: { $0.isEmpty ? "—" : $0.replacingOccurrences(of: "_", with: " ") })

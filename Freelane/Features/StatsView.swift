@@ -155,11 +155,11 @@ struct StatsView: View {
                 // columns instead of end to end.
                 hero
                 ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 18) {
+                    HStack(alignment: .top, spacing: 20) {
                         trendCard
                         pulseRail.frame(width: 262)
                     }
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 20) {
                         trendCard
                         pulseRail
                     }
@@ -167,7 +167,7 @@ struct StatsView: View {
                 // SMALL MULTIPLES. Four analyses at equal size in a grid, so you compare them by
                 // scanning rather than by scrolling — which is the entire point of an analytics
                 // page and impossible when each one is a full-width card stacked on the last.
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 18)], spacing: 18) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 20)], spacing: 20) {
                     clientsCard.riseIn(0)
                     railsCard.riseIn(1)
                     feeLeaderCard.riseIn(2)
@@ -238,7 +238,7 @@ struct StatsView: View {
                         Text(p.month.formatted(.dateTime.month(.abbreviated).year()))
                             .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textSecondary)
                         Text(CurrencyFormat.string(p.total, base))
-                            .font(Typo.rowFigure(14)).foregroundStyle(Palette.positive)
+                            .font(Typo.rowFigure(13)).foregroundStyle(Palette.positive)
                     } else {
                         Text("Green months beat your 12-month average.").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
@@ -269,7 +269,7 @@ struct StatsView: View {
                             .foregroundStyle(Palette.textTertiary.opacity(0.35))
                     }
                 }
-                .chartPlotStyle { $0.padding(.top, 10) }
+                .chartPlotStyle { $0.padding(.top, 12) }
                 .chartYScale(domain: 0...(maxV * 1.08))
                 .chartXSelection(value: $selMonth)
                 .chartYAxis { AxisMarks(position: .leading) { v in
@@ -305,9 +305,9 @@ struct StatsView: View {
                 let maxEarned = max(1, topClients.first?.earned ?? 1)
                 VStack(spacing: 8) {
                     ForEach(Array(topClients.enumerated()), id: \.element.id) { i, c in
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             rank(i)
-                            VStack(alignment: .leading, spacing: 5) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 HStack(spacing: 8) {
                                     Text(c.name).font(.system(size: 12, weight: .medium))
                                         .foregroundStyle(Palette.textPrimary).lineLimit(1)
@@ -329,7 +329,7 @@ struct StatsView: View {
                                 }.frame(height: 4)
                             }
                         }
-                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
                         .insetRow(cornerRadius: Radii.row, hoverable: false)
                     }
                 }
@@ -348,9 +348,9 @@ struct StatsView: View {
                     }
                     VStack(spacing: 8) {
                         ForEach(Array(routeRows.enumerated()), id: \.element.id) { i, r in
-                            HStack(spacing: 10) {
+                            HStack(spacing: 12) {
                                 rank(i)
-                                VStack(alignment: .leading, spacing: 5) {
+                                VStack(alignment: .leading, spacing: 6) {
                                     HStack(spacing: 8) {
                                         Text(r.currency).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                                         Text("keeps \(Int(r.netPct * 100))%").font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
@@ -369,7 +369,7 @@ struct StatsView: View {
                                     }.frame(height: 4)
                                 }
                             }
-                            .padding(.horizontal, 12).padding(.vertical, 9)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
                             .insetRow(cornerRadius: Radii.row, hoverable: false)
                         }
                     }
@@ -384,9 +384,9 @@ struct StatsView: View {
                 SectionCard(title: "Fee leaderboard", subtitle: "Your priciest payments by effective fee %", accent: Palette.negative) {
                     VStack(spacing: 8) {
                         ForEach(Array(feeLeaders.enumerated()), id: \.offset) { i, row in
-                            HStack(spacing: 10) {
+                            HStack(spacing: 12) {
                                 rank(i)
-                                VStack(alignment: .leading, spacing: 1) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text(payerName(row.payment))
                                         .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                     Text(row.payment.paidAt.formatted(.dateTime.month().day().year()))
@@ -415,7 +415,7 @@ struct StatsView: View {
                 SectionCard(title: "Payment latency", subtitle: "Average days from quote to fully paid — slowest first", accent: Palette.indigo) {
                     VStack(spacing: 8) {
                         ForEach(Array(paymentLatency.enumerated()), id: \.element.id) { i, r in
-                            HStack(spacing: 10) {
+                            HStack(spacing: 12) {
                                 rank(i)
                                 Text(r.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                 Text("\(r.n) paid").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
@@ -423,7 +423,7 @@ struct StatsView: View {
                                 Text("\(r.avgDays)d").font(Typo.rowFigure(13))
                                     .foregroundStyle(r.avgDays >= 30 ? Palette.negative : (r.avgDays >= 14 ? Palette.warning : Palette.positive))
                             }
-                            .padding(.horizontal, 12).padding(.vertical, 9)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
                             .insetRow(cornerRadius: Radii.row, hoverable: false)
                         }
                     }

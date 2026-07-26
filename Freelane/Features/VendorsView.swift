@@ -77,7 +77,7 @@ struct VendorsView: View {
             SectionCard(title: "By spend",
                         subtitle: query.isEmpty ? "\(rolls.count) vendors" : "\(list.count) of \(rolls.count)",
                         accent: Palette.warning) {
-                SearchField(text: $query, placeholder: "Search vendor").padding(.bottom, 10)
+                SearchField(text: $query, placeholder: "Search vendor").padding(.bottom, 12)
                 if list.isEmpty {
                     Text("No matches for “\(query)”.").font(.system(size: 13)).foregroundStyle(Palette.textTertiary)
                         .frame(maxWidth: .infinity, minHeight: 60)
@@ -95,7 +95,7 @@ struct VendorsView: View {
                                 Text(CurrencyFormat.string(r.total, base, compact: true))
                                     .font(Typo.rowFigure(13)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                             }
-                            .padding(.vertical, 9)
+                            .padding(.vertical, 8)
                             .contextMenu {
                                 Button("Rename / merge…", systemImage: "arrow.triangle.merge") { renameTo = r.name; renaming = r.name }
                                 Button("Stop using", systemImage: "hand.raised") { toggleStopped(r.name) }
@@ -119,7 +119,7 @@ struct VendorsView: View {
                                 Button("Resume") { toggleStopped(r.name) }.buttonStyle(.glass).controlSize(.small)
                                     .help("Move \(r.name) back to active vendors")
                             }
-                            .padding(.vertical, 9)
+                            .padding(.vertical, 8)
                             if r.id != quitRolls.last?.id { Divider().overlay(Palette.hairline) }
                         }
                     }
@@ -137,12 +137,12 @@ struct VendorsView: View {
     @ViewBuilder private func trendChip(_ delta: Double?) -> some View {
         if let d = delta {
             let up = d > 0
-            HStack(spacing: 3) {
+            HStack(spacing: 4) {
                 Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
                 Text("\(abs(Int((d * 100).rounded())))%").font(.system(size: 10, weight: .semibold)).monospacedDigit()
             }
             .foregroundStyle(up ? Palette.negative : Palette.positive)
-            .padding(.horizontal, 6).padding(.vertical, 3)
+            .padding(.horizontal, 6).padding(.vertical, 4)
             .background(Capsule().fill((up ? Palette.negative : Palette.positive).opacity(0.14)))
             .help(up ? "Up vs last month" : "Down vs last month")
         }

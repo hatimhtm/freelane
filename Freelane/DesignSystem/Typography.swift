@@ -10,7 +10,29 @@ import SwiftUI
 ///
 /// (This replaced an all-sans "pro tool" system inherited from the Nordic palette. The app is a
 /// journal that happens to do money, not a terminal.)
+/// ### The ramp
+///
+/// Ten sizes, and every piece of text in the app is one of them. It was twenty-eight — including
+/// 8.5, 9.5, 10.5, 11.5, 12.5, 13.5 and 15.5, half-point steps that are invisible on screen and
+/// yet guarantee that no two things ever share a baseline. Neighbouring steps here are at least
+/// a full point apart, so a size change always *reads* as a change of rank rather than as drift.
+///
+/// | pt | role |
+/// |----|------|
+/// | 9  | eyebrow — uppercase, tracked, above a figure |
+/// | 10 | caption, footnote, timestamp |
+/// | 11 | secondary row text, chips |
+/// | 12 | dense row text |
+/// | 13 | body — the app's default |
+/// | 15 | emphasised body, small card titles |
+/// | 18 | card and sheet titles (serif) |
+/// | 22 | section headings, small heroes (serif) |
+/// | 28 | figures (serif) |
+/// | 34 | page mastheads, the lead figure (serif) |
 enum Typo {
+    /// The ramp itself, for anything that needs to pick a step programmatically.
+    static let ramp: [CGFloat] = [9, 10, 11, 12, 13, 15, 18, 22, 28, 34]
+
     // MARK: Editorial — New York
 
     /// Page / hero titles. Tighten tracking at the call site via `displayStyle`.

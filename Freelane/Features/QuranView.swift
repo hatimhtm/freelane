@@ -31,14 +31,14 @@ struct QuranReaderSheet: View {
                     Text("Qur'an").font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                     Spacer()
                     Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }.help("Close (Esc)").accessibilityLabel("Close").buttonStyle(.iconPress)
-                }.padding(14)
+                }.padding(16)
                 SearchField(text: $query, placeholder: "Search surah").padding(.horizontal, 12)
                 ScrollView {
                     LazyVStack(spacing: 2) {
                         ForEach(filtered) { s in
                             Button { open(s) } label: { surahRow(s) }.buttonStyle(.plain)
                         }
-                    }.padding(10)
+                    }.padding(12)
                 }
             }
             .frame(minWidth: 220, maxWidth: 280)
@@ -69,7 +69,7 @@ struct QuranReaderSheet: View {
                                             Text("\(a.numberInSurah)").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.teal)
                                                 .frame(width: 22, height: 22).background(Palette.teal.opacity(0.14), in: Circle())
                                             Spacer()
-                                            Text(a.arabic).font(.system(size: 24, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                                            Text(a.arabic).font(.system(size: 22, weight: .medium)).foregroundStyle(Palette.textPrimary)
                                                 .multilineTextAlignment(.trailing).environment(\.layoutDirection, .rightToLeft).lineSpacing(8)
                                         }
                                         Text(a.translation).font(.system(size: 13)).foregroundStyle(Palette.textSecondary)
@@ -84,14 +84,14 @@ struct QuranReaderSheet: View {
                                 // end-of-ayah number stays anchored to its verse (one giant concatenated RTL
                                 // string makes the bidi algorithm scramble the markers + break words).
                                 ForEach(ayahs) { a in
-                                    Text("\(a.arabic)  \(Text("﴿\(arabicNumerals(a.numberInSurah))﴾").font(.system(size: 19)).foregroundStyle(Palette.teal))")
-                                        .font(.system(size: 27, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                                    Text("\(a.arabic)  \(Text("﴿\(arabicNumerals(a.numberInSurah))﴾").font(.system(size: 18)).foregroundStyle(Palette.teal))")
+                                        .font(.system(size: 28, weight: .medium)).foregroundStyle(Palette.textPrimary)
                                         .environment(\.layoutDirection, .rightToLeft)
                                         .multilineTextAlignment(.trailing)
                                         .lineSpacing(14)
                                         .frame(maxWidth: .infinity, alignment: .trailing)
                                         .textSelection(.enabled)
-                                        .padding(.vertical, 3)
+                                        .padding(.vertical, 4)
                                         .contentShape(Rectangle())
                                         .onTapGesture { QuranService.setPosition(surah: s.number, ayah: a.numberInSurah) }
                                 }
@@ -120,16 +120,16 @@ struct QuranReaderSheet: View {
 
     private func surahRow(_ s: Surah) -> some View {
         let isSel = selected?.number == s.number
-        return HStack(spacing: 10) {
+        return HStack(spacing: 12) {
             Text("\(s.number)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary).frame(width: 24)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(s.englishName).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
                 Text("\(s.ayahs) ayahs").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
             Spacer()
-            Text(s.name).font(.system(size: 14)).foregroundStyle(Palette.textSecondary)
+            Text(s.name).font(.system(size: 13)).foregroundStyle(Palette.textSecondary)
         }
-        .padding(.horizontal, 10).padding(.vertical, 7)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .background(isSel ? Palette.teal.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: Radii.row, style: .continuous))
     }
 

@@ -41,10 +41,10 @@ struct SearchPalette: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.textTertiary)
                 TextField("Search clients, projects, spends…", text: $query)
-                    .textFieldStyle(.plain).font(.system(size: 16)).focused($focused)
+                    .textFieldStyle(.plain).font(.system(size: 15)).focused($focused)
                     .onSubmit {
                         let list = hits
                         guard !list.isEmpty else { return }
@@ -54,7 +54,7 @@ struct SearchPalette: View {
                     .onKeyPress(.downArrow) { if !hits.isEmpty { selected = min(selected + 1, hits.count - 1) }; return .handled }
                     .onKeyPress(.upArrow) { if !hits.isEmpty { selected = max(selected - 1, 0) }; return .handled }
                 Text("⌘F").font(Typo.rowFigure(11)).foregroundStyle(Palette.textTertiary)
-                    .padding(.horizontal, 6).padding(.vertical, 3).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.horizontal, 6).padding(.vertical, 4).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))
             }.padding(16)
             Divider().overlay(Palette.hairline)
             ScrollViewReader { proxy in
@@ -70,14 +70,14 @@ struct SearchPalette: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: h.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(h.color)
                                         .frame(width: 30, height: 30).background(h.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                                    VStack(alignment: .leading, spacing: 1) {
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text(h.title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                                         Text(h.sub).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                                     }
                                     Spacer()
                                     if idx == selected { Text("return").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.textTertiary) }
                                 }
-                                .padding(.horizontal, 10).padding(.vertical, 8)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
                                 .background(RoundedRectangle(cornerRadius: Radii.row, style: .continuous)
                                     .fill(idx == selected ? Palette.hairline : .clear))
                                 .contentShape(Rectangle())

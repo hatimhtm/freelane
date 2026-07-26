@@ -103,7 +103,7 @@ struct TodayView: View {
 
     private var safeHero: some View {
         let s = safe
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 GlyphChip(systemImage: "shield.lefthalf.filled", color: Palette.positive, size: 28)
                 Text("Safe to spend today").tileLabel()
@@ -119,7 +119,7 @@ struct TodayView: View {
             }
             Sparkline(values: sparkline, color: Palette.positive).frame(height: 50)
         }
-        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: Radii.card, elevated: true)
     }
 
@@ -181,11 +181,11 @@ struct TodayView: View {
                     accent: Palette.indigo) {
             VStack(spacing: 0) {
                 ForEach(reminders.prefix(6)) { r in
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         Button {
                             EventBridge.completeReminder(r.id)
                             reminders.removeAll { $0.id == r.id }
-                        } label: { Image(systemName: "circle").font(.system(size: 16)).foregroundStyle(Palette.textTertiary) }
+                        } label: { Image(systemName: "circle").font(.system(size: 15)).foregroundStyle(Palette.textTertiary) }
                             .buttonStyle(.iconPress)
                             .help("Mark complete in Apple Reminders")
                             .accessibilityLabel("Mark reminder complete")
@@ -195,7 +195,7 @@ struct TodayView: View {
                             Text(d, format: .dateTime.month().day())
                                 .font(.system(size: 11)).foregroundStyle(d < PHT.startOfDay() ? Palette.negative : Palette.textTertiary)
                         }
-                    }.padding(.vertical, 7)
+                    }.padding(.vertical, 8)
                     if r.id != reminders.prefix(6).last?.id { Divider().overlay(Palette.hairline) }
                 }
             }
@@ -203,7 +203,7 @@ struct TodayView: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Button { showSpend = true } label: { Label("Log spend", systemImage: "cart") }.buttonStyle(.glass)
             Button { showPay = true } label: { Label("Log payment", systemImage: "plus") }
                 .buttonStyle(.glassProminent).tint(Palette.azure)
@@ -234,7 +234,7 @@ struct TodayView: View {
         return SectionCard(title: "Awaiting payment", subtitle: "\(open.count) open", accent: Palette.azure) {
             if open.isEmpty { hint("Nothing outstanding.") }
             else {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     ForEach(Array(open.prefix(5))) { p in
                         HStack {
                             Text(p.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
@@ -250,7 +250,7 @@ struct TodayView: View {
                         Button { navigate(.projects) } label: {
                             HStack(spacing: 4) {
                                 Text("\(open.count - 5) more on Projects").font(.system(size: 11))
-                                Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .bold))
+                                Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .bold))
                             }
                             .foregroundStyle(Palette.azure)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -293,10 +293,10 @@ struct TodayView: View {
     }
 
     private func line(icon: String, color: Color, title: String, date: Date, amount: String, amountColor: Color) -> some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 12) {
             Circle().fill(color.opacity(0.18)).frame(width: 30, height: 30)
                 .overlay(Image(systemName: icon).font(.system(size: 11, weight: .bold)).foregroundStyle(color))
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                 Text(date, format: .dateTime.month().day()).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
@@ -304,7 +304,7 @@ struct TodayView: View {
             Text(amount).font(Typo.rowFigure(12)).monospacedDigit()
                 .foregroundStyle(amountColor).lineLimit(1)
         }
-        .padding(.vertical, 7)
+        .padding(.vertical, 8)
     }
 
     private func hint(_ t: String) -> some View {

@@ -75,7 +75,7 @@ struct WalletsView: View {
     }
 
     private var toolbarButtons: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Button { showWithdraw = true } label: {
                 Label("Move money", systemImage: "arrow.left.arrow.right")
             }.buttonStyle(.glass)
@@ -132,10 +132,10 @@ struct WalletDetailSheet: View {
                 Spacer()
                 Button { onEdit() } label: { Image(systemName: "pencil") }.buttonStyle(.glass)
                     .help("Edit wallet").accessibilityLabel("Edit wallet")
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary) }
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary) }
                     .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
                     .help("Close (Esc)").accessibilityLabel("Close")
-            }.padding(18)
+            }.padding(20)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -173,7 +173,7 @@ struct WalletDetailSheet: View {
                             }
                         }
                     }
-                }.padding(18)
+                }.padding(20)
             }
         }
         .frame(width: 500, height: 640).flagshipSheet()
@@ -306,7 +306,7 @@ struct WithdrawalSheet: View {
                 Text(to == nil ? "Out of wallet" : "Moving").tileLabel()
                 Spacer()
                 Text(CurrencyFormat.string(receivedBase, base))
-                    .font(Typo.rowFigure(16)).monospacedDigit()
+                    .font(Typo.rowFigure(15)).monospacedDigit()
                     .foregroundStyle(Palette.warning).lineLimit(1).minimumScaleFactor(0.7)
                 if feeBase > 0 {
                     Text("· fee " + CurrencyFormat.string(feeBase, base, compact: true))
@@ -360,20 +360,20 @@ private struct WalletBalanceRow: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 11) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
                     WalletGlyph(wallet: wallet, size: 30)
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(wallet.name)
-                            .font(.system(size: 13.5, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Palette.textPrimary).lineLimit(1)
                         Text(wallet.kind.label)
-                            .font(.system(size: 10.5)).foregroundStyle(Palette.textTertiary)
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                     }
                     Spacer(minLength: 10)
                     if overdrawn { StatusBadge(text: "Overdrawn", color: Palette.negative) }
                     Text(CurrencyFormat.string(balance, base))
-                        .font(Typo.figure(19)).monospacedDigit()
+                        .font(Typo.figure(18)).monospacedDigit()
                         .foregroundStyle(overdrawn ? Palette.negative : Palette.textPrimary)
                         .lineLimit(1).minimumScaleFactor(0.7)
                     Image(systemName: "chevron.right")
@@ -389,9 +389,9 @@ private struct WalletBalanceRow: View {
                     }
                 }
                 .frame(height: 3)
-                .padding(.leading, 41)
+                .padding(.leading, 40)
             }
-            .padding(.vertical, 11)
+            .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -434,15 +434,15 @@ private struct WalletCardFace: View {
                             .foregroundStyle(.white)
                             .lineLimit(1)
                         Text(wallet.kind.label.uppercased())
-                            .font(.system(size: 8.5, weight: .semibold)).kerning(0.9)
+                            .font(.system(size: 9, weight: .semibold)).kerning(0.9)
                             .foregroundStyle(.white.opacity(0.55))
                     }
                     Spacer(minLength: 8)
                     if overdrawn {
                         Text("OVERDRAWN")
-                            .font(.system(size: 8, weight: .bold)).kerning(0.6)
+                            .font(.system(size: 9, weight: .bold)).kerning(0.6)
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .padding(.horizontal, 6).padding(.vertical, 4)
                             .background(Palette.negative, in: Capsule())
                     }
                 }
@@ -450,7 +450,7 @@ private struct WalletCardFace: View {
                 Spacer(minLength: 10)
 
                 Text(CurrencyFormat.string(balance, base))
-                    .font(Typo.figure(27))
+                    .font(Typo.figure(28))
                     .monospacedDigit()
                     .foregroundStyle(.white)
                     .lineLimit(1).minimumScaleFactor(0.6)
@@ -466,7 +466,7 @@ private struct WalletCardFace: View {
                     Spacer()
                     WalletGlyph(wallet: wallet, size: 26)
                 }
-                .padding(.top, 10)
+                .padding(.top, 12)
             }
             .padding(16)
             .frame(height: 158, alignment: .topLeading)

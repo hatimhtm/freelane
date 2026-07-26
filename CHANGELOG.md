@@ -3,6 +3,16 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.6
+
+The app finally uses its own design system — and categories get a face.
+
+- **Every gap in the app is now one of thirteen numbers, and every piece of text one of ten.** There was a `Spacing` scale in the design system, written during the v1 audit specifically to stop screens hand-tuning magic numbers. It was used **seven times**, against 893 hardcoded values that had grown to fifty-one distinct gaps — including 7.5, 23, 41 and 46 — and twenty-eight font sizes, seven of which differed from their neighbour by half a point. Half a point is invisible; what it isn't is free, because it guarantees nothing ever shares a baseline. That is the entire reason the app read as assembled rather than composed, and 586 sites have been snapped to the ladder.
+- **Spending categories have a mark now.** Vendors have had real logos since 1.5, but categories — the thing you actually budget by, sort by, and filter the ledger with — had a hashed colour smeared along a 4pt bar. Groceries are a green basket, fuel a red pump, transport a cyan car, rent an indigo house; anything unrecognised still gets a stable colour and a tag glyph, so every category has a face. Categories are a small set you see daily, and after a week you stop reading the word and just look for the shape.
+- **Category colour means something.** It was picked by hashing the name, so "Fuel" was whatever hue the hash landed on. Where the category is recognisable the hue now comes from meaning, and the hash is only the fallback.
+- **Spends with no vendor stopped all looking identical.** Rent, a bus fare and a doctor's bill were three of the same amber blob; each now wears its category's mark.
+- **Dashboard card labels were being cut off** — "Landed this month" shipped as "LANDED THIS MO…" on a card whose only job is to be read at a glance. Labels wrap to two lines, and the space is reserved whether they need it or not, so the figures across a row stay on one baseline instead of three.
+
 ## 2.5
 
 A pass over the whole app: the last streak, the button that did nothing, and every number that was printed twice.

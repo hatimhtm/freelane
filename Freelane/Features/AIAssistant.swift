@@ -13,13 +13,13 @@ struct FloatingAIButton: View {
         // quieter, and expands to name itself on hover, so it earns its place instead of blocking a
         // corner of every screen permanently.
         Button { open = true } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Palette.azure)
                 if hovering {
                     Text("Ask")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Palette.textPrimary)
                 }
             }
@@ -70,19 +70,19 @@ struct AIChatSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: "sparkles").foregroundStyle(Palette.azure)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Assistant").font(Typo.title(16)).foregroundStyle(Palette.textPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Assistant").font(Typo.title(15)).foregroundStyle(Palette.textPrimary)
                     Text("on \(page.title)").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
                 Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.textTertiary)
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.textTertiary)
                 }
                 .buttonStyle(.iconPress).keyboardShortcut(.cancelAction)
             }
-            .padding(18)
+            .padding(20)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -90,7 +90,7 @@ struct AIChatSheet: View {
                         if messages.isEmpty {
                             VStack(spacing: 16) {
                                 Text("What do you want to know about \(page.title.lowercased())?")
-                                    .font(Typo.title(17)).foregroundStyle(Palette.textPrimary)
+                                    .font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                                     .multilineTextAlignment(.center)
                                 FlowPills(pills: pills) { send($0) }
                             }
@@ -105,7 +105,7 @@ struct AIChatSheet: View {
                                 HStack(alignment: .top, spacing: 8) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .font(.system(size: 11)).foregroundStyle(Palette.warning)
-                                    Text(m.text).font(.system(size: 11.5)).foregroundStyle(Palette.textSecondary)
+                                    Text(m.text).font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                     Spacer(minLength: 0)
                                 }
@@ -117,7 +117,7 @@ struct AIChatSheet: View {
                                         .font(.system(size: 13))
                                         .textSelection(.enabled)
                                         .foregroundStyle(m.mine ? Palette.ink : Palette.textPrimary)
-                                        .padding(.horizontal, 12).padding(.vertical, 9)
+                                        .padding(.horizontal, 12).padding(.vertical, 8)
                                         .background {
                                             let shape = RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
                                             if m.mine { shape.fill(Palette.azure) }
@@ -143,10 +143,10 @@ struct AIChatSheet: View {
                                 .padding(.top, newTurn ? 18 : 6)
                             }
                         }
-                        if busy { ThinkingBubble(onStop: { job?.cancel(); job = nil; busy = false }).padding(.top, 18) }
+                        if busy { ThinkingBubble(onStop: { job?.cancel(); job = nil; busy = false }).padding(.top, 20) }
                         Color.clear.frame(height: 1).id("end")
                     }
-                    .padding(.horizontal, 18).padding(.bottom, 12)
+                    .padding(.horizontal, 20).padding(.bottom, 12)
                 }
                 .defaultScrollAnchor(.bottom)
                 // Without this the sheet simply never moved: you asked a question, waited, and the
@@ -160,14 +160,14 @@ struct AIChatSheet: View {
             }
 
             Divider().overlay(Palette.hairline)
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 TextField("Ask about your money…", text: $input, axis: .vertical)
                     .lineLimit(1...5)
                     .fieldWell()
                     .focused($composerFocused)
                     .onSubmit { send(input) }
                 Button { send(input) } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 24)).foregroundStyle(Palette.azure)
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 22)).foregroundStyle(Palette.azure)
                 }
                 .buttonStyle(.iconPress)
                 .help("Send (⏎)")
@@ -175,9 +175,9 @@ struct AIChatSheet: View {
                 // then do nothing when pressed.
                 .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
             }
-            .padding(14)
-            HStack(spacing: 5) {
-                Image(systemName: "lock.fill").font(.system(size: 8.5)).foregroundStyle(Palette.textTertiary)
+            .padding(16)
+            HStack(spacing: 6) {
+                Image(systemName: "lock.fill").font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                 Text("Answers come from a model running on this Mac.")
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 Spacer()
@@ -230,7 +230,7 @@ private struct FlowPills: View {
             ForEach(pills, id: \.self) { p in
                 Button { onTap(p) } label: {
                     Text(p).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.azure)
-                        .padding(.horizontal, 11).padding(.vertical, 7)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
                         .background(Palette.azure.opacity(0.14), in: Capsule())
                         .overlay(Capsule().strokeBorder(Palette.azure.opacity(0.3), lineWidth: 0.7))
                 }.buttonStyle(.plain)
@@ -302,7 +302,7 @@ private struct ThinkingBubble: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 12) {
             HStack(spacing: 4) {
                 ForEach(0..<3, id: \.self) { i in
                     Circle()
@@ -311,7 +311,7 @@ private struct ThinkingBubble: View {
                         .opacity(reduceMotion ? 0.6 : 0.35 + 0.65 * pulse(i))
                 }
             }
-            .padding(.horizontal, 13).padding(.vertical, 11)
+            .padding(.horizontal, 12).padding(.vertical, 12)
             .background {
                 let shape = RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
                 ZStack {

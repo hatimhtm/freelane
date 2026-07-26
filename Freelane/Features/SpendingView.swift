@@ -136,11 +136,11 @@ struct SpendingView: View {
         // right is the category breakdown — tapping a category filters the ledger, and a category
         // with a budget shows its cap in the same bar.
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: 20) {
                 spendLedger
                 categoryRail.frame(width: 268)
             }
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 20) {
                 categoryRail
                 spendLedger
             }
@@ -171,9 +171,9 @@ struct SpendingView: View {
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(days.enumerated()), id: \.element.day) { i, group in
-                        HStack(spacing: 9) {
+                        HStack(spacing: 8) {
                             Text(dayLabel(group.day))
-                                .font(.system(size: 9.5, weight: .semibold))
+                                .font(.system(size: 9, weight: .semibold))
                                 .textCase(.uppercase).kerning(0.9)
                                 .foregroundStyle(Palette.textSecondary)
                             Rectangle().fill(Palette.hairline).frame(height: 1)
@@ -273,7 +273,7 @@ struct SpendingView: View {
                 HStack(spacing: 8) {
                     if let p = selPt {
                         Text(p.label).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textSecondary)
-                        Text(CurrencyFormat.string(p.total, base)).font(Typo.rowFigure(14)).monospacedDigit().foregroundStyle(Palette.warning)
+                        Text(CurrencyFormat.string(p.total, base)).font(Typo.rowFigure(13)).monospacedDigit().foregroundStyle(Palette.warning)
                     } else {
                         Text("Hover a bar for the exact amount").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
@@ -307,22 +307,25 @@ struct SpendingView: View {
             if topCats.isEmpty {
                 Text("Nothing this month yet.").font(.system(size: 13)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 50)
             } else {
+                // Every bar was the same amber, so the ranking was carried entirely by length and
+                // you had to read each label to know what you were looking at. Each category now
+                // wears its own mark and its own hue, which is what makes a leaderboard scannable:
+                // you find the one you care about by colour and only then read the number.
                 let max = topCats.first?.total ?? 1
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     ForEach(topCats, id: \.name) { c in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Text(c.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-                                Spacer()
-                                Text(CurrencyFormat.string(c.total, base, compact: true))
-                                    .font(Typo.rowFigure(12)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                        let tone = CategoryBrand.color(for: c.name)
+                        HStack(alignment: .top, spacing: 8) {
+                            CategoryMark(name: c.name, size: 26)
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(c.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                                    Spacer()
+                                    Text(CurrencyFormat.string(c.total, base, compact: true))
+                                        .font(Typo.rowFigure(12)).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                                }
+                                MeterBar(value: max > 0 ? c.total / max : 0, tint: tone, height: 6)
                             }
-                            GeometryReader { geo in
-                                Capsule().fill(Palette.warning.opacity(0.25))
-                                    .overlay(alignment: .leading) {
-                                        Capsule().fill(Palette.warning).frame(width: geo.size.width * (max > 0 ? c.total / max : 0))
-                                    }
-                            }.frame(height: 6)
                         }
                     }
                 }
@@ -399,8 +402,12 @@ struct SpendingView: View {
 /// A spend, with the vendor's real logo as its mark where we have one.
 ///
 /// The logo is kept — unlike the coloured circles this replaced, a Jollibee or Lazada mark is
-/// genuine information and you can pick a row out of a list by it. Rows with no vendor fall back to
-/// the same hairline mark every other ledger uses, rather than inventing a badge to fill the space.
+/// genuine information and you can pick a row out of a list by it.
+///
+/// Rows with no vendor used to all get the same amber blob, which told you nothing: a rent
+/// payment, a bus fare and a doctor's bill were three identical marks. Where such a row has a
+/// category, it now wears the category's mark instead — still real information, just at one
+/// level up. Only a spend with neither vendor nor category falls back to the plain ledger tick.
 private struct SpendRow: View {
     let spend: Spend
     let title: String
@@ -415,6 +422,8 @@ private struct SpendRow: View {
         HStack(spacing: 12) {
             if let v = spend.vendorName, !v.isEmpty, !spend.isSadaka {
                 VendorMark(name: v, size: 30)
+            } else if !spend.isSadaka, let c = spend.category ?? spend.tags.first, !c.isEmpty {
+                CategoryMark(name: c, size: 30)
             } else {
                 LedgerMark(tone: spend.isSadaka ? Palette.violet : Palette.warning)
             }
@@ -426,7 +435,7 @@ private struct SpendRow: View {
                 Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .hoverRow()
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
@@ -562,7 +571,7 @@ struct AddSpendSheet: View {
                     if itemized {
                         Text(CurrencyFormat.string(itemizedTotal, currency)).font(Typo.rowFigure(15))
                             .foregroundStyle(Palette.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 13).padding(.vertical, 11)
+                            .padding(.horizontal, 12).padding(.vertical, 12)
                             .insetRow(cornerRadius: Radii.field, hoverable: false)
                     } else {
                         AmountField(code: currency, text: $amount)
@@ -585,7 +594,7 @@ struct AddSpendSheet: View {
                         ForEach(vendorSuggestions, id: \.self) { v in
                             Button { vendor = v } label: {
                                 Text(v).font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.warning)
-                                    .padding(.horizontal, 9).padding(.vertical, 4)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
                                     .background(Palette.warning.opacity(0.14), in: Capsule())
                             }.buttonStyle(.cardPress)
                         }
@@ -684,7 +693,7 @@ struct AddSpendSheet: View {
         let unitBase = parsed.qty > 0 ? rates.toBase(total, currency) / parsed.qty : 0
         let hist = PriceMemory.history(for: parsed.name, items: allItems)
         let deal = total > 0 ? PriceMemory.judge(unitPriceBase: unitBase, history: hist) : .firstTime
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 TextField("10 packs Camel", text: line.name).fieldWell()
                 TextField("qty", text: line.qty).fieldWell().frame(width: 46)
@@ -784,15 +793,15 @@ struct AddSpendSheet: View {
 struct FlexTags: View {
     var all: [String]
     @Binding var selected: Set<String>
-    private let cols = [GridItem(.adaptive(minimum: 84), spacing: 7, alignment: .leading)]
+    private let cols = [GridItem(.adaptive(minimum: 84), spacing: 8, alignment: .leading)]
     var body: some View {
-        LazyVGrid(columns: cols, alignment: .leading, spacing: 7) {
+        LazyVGrid(columns: cols, alignment: .leading, spacing: 8) {
             ForEach(all, id: \.self) { t in
                 let on = selected.contains(t)
                 Button { if on { selected.remove(t) } else { selected.insert(t) } } label: {
                     Text(t).font(.system(size: 11, weight: on ? .semibold : .medium))
                         .foregroundStyle(on ? Palette.ink : Palette.textSecondary)
-                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
                         .frame(maxWidth: .infinity)
                         .background(on ? AnyShapeStyle(Palette.acidLime) : AnyShapeStyle(Palette.hairline), in: Capsule())
                 }.buttonStyle(.cardPress)
@@ -845,7 +854,7 @@ struct PayRecurringSheet: View {
                             .font(.system(size: 11)).foregroundStyle(d <= 2 ? Palette.negative : Palette.textTertiary)
                     }
                     Spacer()
-                }.padding(11).glassCard(cornerRadius: Radii.field)
+                }.padding(12).glassCard(cornerRadius: Radii.field)
             }
             HStack(spacing: 12) {
                 LabeledField(recurring.isVariableAmount ? "Amount paid (the real bill)" : "Amount") {
@@ -866,10 +875,10 @@ struct PayRecurringSheet: View {
             LabeledField("Pay ahead") {
                 Stepper(value: $periods, in: 1...24) {
                     Text(periods == 1 ? "This \(unit)" : "\(periods) \(unit)s in advance")
-                        .font(.system(size: 14)).foregroundStyle(Palette.textPrimary)
+                        .font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 11).padding(.vertical, 8)
+                .padding(.horizontal, 12).padding(.vertical, 8)
                 .insetRow(cornerRadius: Radii.field, hoverable: false)
             }
             LabeledField("Date") { GlassDateField(date: $date) }
@@ -1030,7 +1039,7 @@ struct AddRecurringSheet: View {
             LabeledField("Type") { GlassSegment(options: Array(RecurringKind.allCases), selection: $kind) { $0.label } }
             LabeledField("Cadence") { GlassSegment(options: Array(RecurringCadence.allCases), selection: $cadence) { $0.label } }
             Toggle(isOn: $isVariable.animation()) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Amount varies (electricity, water…)").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                     Text("Enter the real amount when you pay. The app learns a typical figure to reserve, and flags it if it's creeping up.")
                         .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
@@ -1045,10 +1054,10 @@ struct AddRecurringSheet: View {
             if cadence == .monthly {
                 LabeledField("Day of month") {
                     Stepper(value: $dayOfMonth, in: 1...28) {
-                        Text("Day \(dayOfMonth)").font(.system(size: 14)).foregroundStyle(Palette.textPrimary)
+                        Text("Day \(dayOfMonth)").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 11).padding(.vertical, 8)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
                     .insetRow(cornerRadius: Radii.field, hoverable: false)
                 }
             } else {
@@ -1131,8 +1140,11 @@ struct BudgetsSheet: View {
                       canSave: true, onSave: save) {
             Text("A cap is a quiet marker, not a lock — the bar turns amber at 80% and red when you pass it.")
                 .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+            // The same mark the category wears on the rail and in the ledger, so setting a cap
+            // for "Groceries" looks like the thing you'll later see it measured against.
             ForEach(candidates, id: \.self) { tag in
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    CategoryMark(name: tag, size: 26)
                     Text(tag).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(CurrencyFormat.symbol(base)).font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
@@ -1195,7 +1207,7 @@ private struct RecurringRow: View {
             LedgerMark(tone: recurring.active ? tone : Palette.textTertiary.opacity(0.5))
             VStack(alignment: .leading, spacing: 2) {
                 Text(recurring.label)
-                    .font(.system(size: 13.5, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(recurring.active ? Palette.textPrimary : Palette.textTertiary)
                     .lineLimit(1)
                 Text(meta).font(.system(size: 11)).foregroundStyle(metaTone).lineLimit(1)
@@ -1218,7 +1230,7 @@ private struct RecurringRow: View {
                 Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .hoverRow()
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
@@ -1245,15 +1257,10 @@ private struct CategoryRailRow: View {
 
     private var overCap: Double? { cap.map { $0 > 0 ? total / $0 : 0 } }
 
-    /// A stable colour per category name, so "Food" is the same hue every time you open the page
-    /// and you start finding it by sight. Hashed rather than `hashValue`, which is randomised per
-    /// launch and would repaint the whole page on every start.
-    private var categoryTone: Color {
-        let palette: [Color] = [Palette.indigo, Palette.violet, Palette.cyan, Palette.teal,
-                                Palette.warning, Palette.azure]
-        let idx = Int(StableHash.of(name.lowercased()).prefix(6), radix: 16).map { $0 % palette.count } ?? 0
-        return palette[idx]
-    }
+    /// Identity now comes from `CategoryBrand`, which gives a category a glyph as well as a hue,
+    /// and picks the hue by MEANING where it can — groceries green, fuel red, transport cyan —
+    /// instead of by hash. The hash is still the fallback for categories it doesn't recognise.
+    private var categoryTone: Color { CategoryBrand.color(for: name) }
 
     private var barTone: Color {
         // A budget overrides identity — going over is more urgent than knowing which category it is.
@@ -1266,39 +1273,46 @@ private struct CategoryRailRow: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(name)
-                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 6)
-                    Text(CurrencyFormat.string(total, base, compact: true))
-                        .font(Typo.rowFigure(12)).monospacedDigit()
-                        .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
-                }
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Palette.wellFill).frame(height: 4)
-                        Capsule().fill(barTone)
-                            .frame(width: max(3, geo.size.width * CGFloat(min(1, share))), height: 4)
-                        // The cap, as a tick on the track.
-                        if let r = overCap, r > 0, r < 1.6 {
-                            let x = geo.size.width * CGFloat(min(1, share / max(r, 0.0001)))
-                            Rectangle().fill(Palette.textTertiary)
-                                .frame(width: 1, height: 8)
-                                .offset(x: min(x, geo.size.width - 1))
+            // The mark sits in its own leading column with the bar and the caption indented to
+            // align under the NAME, not under the glyph — so the rail reads as a list of
+            // categories rather than a stack of unrelated rows.
+            HStack(alignment: .top, spacing: 8) {
+                CategoryMark(name: name, size: 26)
+                    .saturation(selected ? 1 : 0.9)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(name)
+                            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        Text(CurrencyFormat.string(total, base, compact: true))
+                            .font(Typo.rowFigure(12)).monospacedDigit()
+                            .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Palette.wellFill).frame(height: 4)
+                            Capsule().fill(barTone)
+                                .frame(width: max(3, geo.size.width * CGFloat(min(1, share))), height: 4)
+                            // The cap, as a tick on the track.
+                            if let r = overCap, r > 0, r < 1.6 {
+                                let x = geo.size.width * CGFloat(min(1, share / max(r, 0.0001)))
+                                Rectangle().fill(Palette.textTertiary)
+                                    .frame(width: 1, height: 8)
+                                    .offset(x: min(x, geo.size.width - 1))
+                            }
                         }
                     }
-                }
-                .frame(height: 8)
-                if let r = overCap {
-                    Text(r >= 1 ? "over budget" : "\(Int((r * 100).rounded()))% of cap")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(r >= 1 ? Palette.negative : Palette.textTertiary)
+                    .frame(height: 8)
+                    if let r = overCap {
+                        Text(r >= 1 ? "over budget" : "\(Int((r * 100).rounded()))% of cap")
+                            .font(.system(size: 9))
+                            .foregroundStyle(r >= 1 ? Palette.negative : Palette.textTertiary)
+                    }
                 }
             }
-            .padding(.horizontal, 2).padding(.vertical, 10)
+            .padding(.horizontal, 2).padding(.vertical, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

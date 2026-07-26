@@ -159,10 +159,10 @@ struct RootView: View {
             }
             .overlay(alignment: .topTrailing) {
                 BellButton(onOpenFeature: { f in withAnimation(Motion.page) { feature = f } })
-                    .padding(.top, 14).padding(.trailing, 20)
+                    .padding(.top, 16).padding(.trailing, 20)
             }
             .overlay(alignment: .bottomTrailing) {
-                FloatingAIButton(page: feature).padding(.trailing, 20).padding(.bottom, 18)
+                FloatingAIButton(page: feature).padding(.trailing, 20).padding(.bottom, 20)
             }
             .toolbar(removing: .title)
             .toolbarBackground(.hidden, for: .windowToolbar)
@@ -388,18 +388,18 @@ private struct Sidebar: View {
                         // the sidebar read as decoration, and decoration is what makes an app look
                         // cheap. Section colour survives on the selected row, where it means
                         // something.
-                        HStack(spacing: 9) {
+                        HStack(spacing: 8) {
                             Text(group.rawValue)
-                                .font(.system(size: 9.5, weight: .semibold))
+                                .font(.system(size: 9, weight: .semibold))
                                 .textCase(.uppercase).kerning(1.1)
                                 .foregroundStyle(Palette.textTertiary)
                             Rectangle().fill(Palette.hairline).frame(height: 1)
                         }
-                        .padding(.horizontal, 20).padding(.top, Spacing.l + 4).padding(.bottom, 7)
+                        .padding(.horizontal, 20).padding(.top, Spacing.l + 4).padding(.bottom, 8)
                         ForEach(items) { item in NavRow(item: item, selected: feature == item) { select(item) } }
                     }
                 }
-                Divider().overlay(Palette.hairline).padding(.horizontal, 14).padding(.vertical, 10)
+                Divider().overlay(Palette.hairline).padding(.horizontal, 16).padding(.vertical, 12)
                 NavRow(item: .settings, selected: feature == .settings) { select(.settings) }
                 Spacer(minLength: 8)
         }
@@ -407,7 +407,7 @@ private struct Sidebar: View {
 
     private var wordmark: some View {
         Wordmark()
-            .padding(.horizontal, 16).padding(.top, 34)   // clear the window traffic-light buttons
+            .padding(.horizontal, 16).padding(.top, 32)   // clear the window traffic-light buttons
     }
 
     private func select(_ item: Feature) {
@@ -419,15 +419,15 @@ private struct Sidebar: View {
             syncChip
         } else {
             // Cloud sync dormant — purely local, so the chip just says so.
-            HStack(spacing: 9) {
+            HStack(spacing: 8) {
                 Image(systemName: "internaldrive").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.teal)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Stored locally").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                     Text("No cloud · private").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
             }
-            .padding(11)
+            .padding(12)
             .glassCard(cornerRadius: Radii.tile)
         }
     }
@@ -445,16 +445,16 @@ private struct Sidebar: View {
             return sync.statusLine
         }()
         return Button { select(.settings) } label: {
-            HStack(spacing: 9) {
+            HStack(spacing: 8) {
                 Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
                     .symbolEffect(.rotate, options: .repeating, isActive: connected && sync.busy)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                     Text(subtitle).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 }
                 Spacer()
             }
-            .padding(11)
+            .padding(12)
             .contentShape(RoundedRectangle(cornerRadius: Radii.tile, style: .continuous))
             .glassCard(cornerRadius: Radii.tile)
         }
@@ -482,7 +482,7 @@ private struct NavRow: View {
         // what separates a considered interface from a decorated one.
         let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 // A COLOURED ICON TILE — the macOS sidebar convention (System Settings, Mail,
                 // Finder all do this), and I was wrong to strip it earlier.
                 //
@@ -506,7 +506,7 @@ private struct NavRow: View {
                                      : (hovering ? Palette.textSecondary : Palette.textTertiary))
                 Spacer(minLength: 4)
             }
-            .padding(.leading, 13).padding(.trailing, 10).padding(.vertical, 7.5)
+            .padding(.leading, 12).padding(.trailing, 12).padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(shape)
             .background {
@@ -522,13 +522,13 @@ private struct NavRow: View {
                     RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                         .fill(item.accent)
                         .frame(width: 2.5, height: 15)
-                        .padding(.leading, 3)
+                        .padding(.leading, 4)
                 }
             }
         }
         .buttonStyle(.plain)
         .pointerStyle(.link)
-        .padding(.horizontal, 12).padding(.vertical, 0.5)
+        .padding(.horizontal, 12).padding(.vertical, 0)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
     }
@@ -583,32 +583,32 @@ struct Page<Content: View>: View {
                     Spacer(minLength: 8)
                     if let toolbar { toolbar }
                 }
-                .padding(.trailing, 52)  // clear the global notification bell (top-trailing overlay)
+                .padding(.trailing, 48)  // clear the global notification bell (top-trailing overlay)
 
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 12.5))
+                        .font(.system(size: 12))
                         .foregroundStyle(Palette.textTertiary)
-                        .padding(.top, 5)
-                        .padding(.trailing, 52)
+                        .padding(.top, 6)
+                        .padding(.trailing, 48)
                 }
 
                 Rectangle().fill(Palette.hairline)
                     .frame(height: 1)
-                    .padding(.top, 15)
+                    .padding(.top, 16)
 
                 if !subtabs.isEmpty, let selection {
-                    SubtabBar(tabs: subtabs, selection: selection).padding(.top, 13)
+                    SubtabBar(tabs: subtabs, selection: selection).padding(.top, 12)
                 }
             }
-            .padding(.horizontal, 30).padding(.top, 24).padding(.bottom, 16)
+            .padding(.horizontal, 32).padding(.top, 24).padding(.bottom, 16)
             .frame(maxWidth: 1000, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)   // …but the COLUMN centers in wide windows (no dead right gutter)
 
             // Scrolling content with edge-fade. Each top-level section CASCADES in (staggered
             // spring) instead of the whole page appearing as one block.
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 20) {
                     if let selection {
                         staggered(content()).id(selection.wrappedValue)   // re-cascade when subtab changes
                             .transition(.opacity)
@@ -616,7 +616,7 @@ struct Page<Content: View>: View {
                         staggered(content())
                     }
                 }
-                .padding(.horizontal, 30).padding(.top, 4).padding(.bottom, 78)
+                .padding(.horizontal, 32).padding(.top, 4).padding(.bottom, 80)
                 .frame(maxWidth: 1000, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)   // …but the COLUMN centers in wide windows (no dead right gutter)
             }
@@ -675,7 +675,7 @@ struct SubtabBar: View {
                 Text(t)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(selection == i ? Palette.ink : (hovered == i ? Palette.textPrimary : Palette.textSecondary))
-                    .padding(.horizontal, 13).padding(.vertical, 7)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
                     .background {
                         if selection == i {
                             // Same amber pill as GlassSegment — ONE selected-state look app-wide.

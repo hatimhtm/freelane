@@ -104,9 +104,9 @@ struct TrashView: View {
     var body: some View {
         let items = rows
         return ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
                 Text("Recently deleted")
-                    .font(Typo.title(26)).foregroundStyle(Palette.textPrimary)
+                    .font(Typo.title(28)).foregroundStyle(Palette.textPrimary)
                 Text("Items stay here for 30 days, then delete permanently. Restore brings them — and their effect on your balances — back exactly.")
                     .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
 
@@ -131,7 +131,7 @@ struct TrashView: View {
                     Text("Recent activity")
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                         .padding(.top, 8)
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 6) {
                         ForEach(history) { h in
                             HStack(spacing: 8) {
                                 Image(systemName: icon(for: h.action)).font(.system(size: 10))
@@ -169,7 +169,7 @@ private struct TrashRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: row.icon).font(.system(size: 14, weight: .semibold))
+            Image(systemName: row.icon).font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(row.tint).frame(width: 30, height: 30)
                 .background(row.tint.opacity(0.14), in: RoundedRectangle(cornerRadius: Radii.row, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
@@ -187,7 +187,7 @@ private struct TrashRow: View {
                     Button("Cancel", role: .cancel) {}
                 }
         }
-        .padding(.horizontal, 12).padding(.vertical, 9)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .insetRow(cornerRadius: Radii.field, hoverable: false)
     }
 }

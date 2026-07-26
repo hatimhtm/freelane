@@ -41,7 +41,7 @@ struct LedgerAmount: View {
     var noteTone: Color = Palette.textTertiary
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 1) {
+        VStack(alignment: .trailing, spacing: 2) {
             Text(amount)
                 .font(Typo.rowFigure(15))
                 .monospacedDigit()
@@ -67,7 +67,7 @@ struct LedgerLabel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.system(size: 13.5, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(titleTone)
                 .lineLimit(1).truncationMode(.tail)
             if let meta, !meta.isEmpty {
@@ -129,7 +129,7 @@ struct LedgerRow<Menu: View>: View {
                          note: note, noteTone: noteTone)
             RowMenu(hovering: hovering, help: "Edit or delete", content: menu)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .hoverRow()
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
@@ -165,10 +165,10 @@ struct FigureRail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
                 .textCase(.uppercase).kerning(1.0)
                 .foregroundStyle(Palette.textTertiary)
-                .padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 11)
+                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 12)
 
             ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
                 if i > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 16) }
@@ -188,8 +188,8 @@ private struct RailRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.label)
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.textSecondary)
@@ -201,7 +201,7 @@ private struct RailRow: View {
             Spacer(minLength: 8)
             HStack(spacing: 6) {
                 Text(item.value)
-                    .font(Typo.figure(17))
+                    .font(Typo.figure(18))
                     .monospacedDigit()
                     .foregroundStyle(item.tone ?? Palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.7)
@@ -215,7 +215,7 @@ private struct RailRow: View {
                 }
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 9)
+        .padding(.horizontal, 16).padding(.vertical, 8)
         .background(hovering && item.destination != nil ? Palette.wellFill : .clear)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -254,14 +254,14 @@ struct LeadFigure: View {
                 DrawingSparkline(values: spark, color: accent, lineWidth: 2.2)
                     .frame(height: 118)
                     .opacity(dark ? 0.55 : 0.40)
-                    .padding(.bottom, 18)          // never let the trace touch the panel edge
+                    .padding(.bottom, 20)          // never let the trace touch the panel edge
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .allowsHitTesting(false)
             }
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(label)
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .textCase(.uppercase).kerning(1.2)
                     .foregroundStyle(Palette.textTertiary)
 
@@ -274,17 +274,17 @@ struct LeadFigure: View {
                             if i > 0 {
                                 Circle().fill(Palette.textTertiary.opacity(0.5))
                                     .frame(width: 2.5, height: 2.5)
-                                    .padding(.horizontal, 9)
+                                    .padding(.horizontal, 8)
                             }
                             Text(bit)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Palette.textSecondary)
                         }
                     }
-                    .padding(.top, 10)
+                    .padding(.top, 12)
                 }
             }
-            .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 26)
+            .padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 24)
         }
         // Only reserve chart height when there IS a chart — Loans and Wallets pass no series, and
         // the panel was holding 208pt open for a line that never arrives.
@@ -359,19 +359,35 @@ struct SignalCard: View {
     var body: some View {
         Button { if let d = destination { navigate(d) } } label: {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 5) {
+                // Baseline-aligned, so the glyph and the arrow sit with the label's FIRST line
+                // rather than floating to the vertical centre of a two-line label.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: icon)
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(mood == .neutral ? Palette.textTertiary : tone)
+                    // Two lines, wrapping at a word.
+                    //
+                    // At 9pt uppercase with 0.6 tracking, roughly fifteen characters fit across a
+                    // card in the adaptive grid — so "Landed this month" and "Sadaka this month"
+                    // both shipped as "LANDED THIS MO…". A truncated label on a card whose whole
+                    // job is to be legible at a glance is the one thing it can't afford. The grid
+                    // row sizes to its tallest card, so a second line costs nothing but air.
                     Text(label)
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(.system(size: 9, weight: .semibold))
                         .textCase(.uppercase).kerning(0.6)
                         .foregroundStyle(Palette.textTertiary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        // Two lines' worth of height whether the label needs them or not.
+                        // Letting it size naturally meant a two-line card pushed its figure ~11pt
+                        // below the figures either side of it, so a row of cards that exists to be
+                        // compared at a glance had its numbers on three different baselines.
+                        .frame(height: 22, alignment: .topLeading)
                     Spacer(minLength: 4)
                     if destination != nil {
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Palette.textTertiary)
                             .opacity(hovering ? 1 : 0)
                     }
@@ -381,7 +397,7 @@ struct SignalCard: View {
 
                 let isFigure = value.contains(where: \.isNumber)
                 Text(value)
-                    .font(isFigure ? Typo.figure(26) : .system(size: 16, weight: .semibold))
+                    .font(isFigure ? Typo.figure(28) : .system(size: 15, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(mood == .neutral ? Palette.textPrimary : tone)
                     .lineLimit(1).minimumScaleFactor(0.65)
@@ -392,7 +408,7 @@ struct SignalCard: View {
                         .lineLimit(1).padding(.top, 2)
                 }
             }
-            .padding(.horizontal, 15).padding(.vertical, 14)
+            .padding(.horizontal, 16).padding(.vertical, 16)
             .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
             .background {
                 let shape = RoundedRectangle(cornerRadius: Radii.tile, style: .continuous)

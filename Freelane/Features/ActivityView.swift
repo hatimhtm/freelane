@@ -70,7 +70,7 @@ struct ActivityFeed: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 GlassSegment(options: [0, 1, 2], selection: $filter) { ["All", "Money in", "Money out"][$0] }
                 SearchField(text: $query, placeholder: "Search vendor, project, amount…")
                 if !query.isEmpty { Text("\(events.count) match\(events.count == 1 ? "" : "es")").font(.system(size: 11)).foregroundStyle(Palette.textTertiary) }
@@ -110,7 +110,7 @@ struct ActivityFeed: View {
                                     .frame(width: 22, height: 22).contentShape(Rectangle())
                             }.buttonStyle(.iconPress).help(isOpen ? "Collapse this day" : "Expand this day"))) {
             if isOpen {
-                VStack(spacing: 5) {
+                VStack(spacing: 6) {
                     ForEach(group.items) { row($0) }
                 }
             }
@@ -189,25 +189,25 @@ struct ActivityFeed: View {
 
     private func row(_ e: Event) -> some View {
         let s = spec(e)
-        return HStack(spacing: 11) {
+        return HStack(spacing: 12) {
             Image(systemName: s.icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(s.tint)
                 .frame(width: 28, height: 28)
                 .background(s.tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(s.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                 if let d = s.detail, !d.isEmpty {
                     Text(d).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 1) {
+            VStack(alignment: .trailing, spacing: 2) {
                 Text(s.amount).font(Typo.rowFigure(12)).monospacedDigit()
                     .foregroundStyle(s.amountColor)
                 Text(e.date.formatted(.dateTime.hour().minute()))
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 7)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .insetRow()
     }
 }

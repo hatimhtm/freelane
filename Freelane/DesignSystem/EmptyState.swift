@@ -18,7 +18,7 @@ struct EmptyStateCard: View {
                 .frame(width: 70, height: 70)
                 .background(Palette.card.opacity(0.6), in: Circle())
             Text(title)
-                .font(Typo.title(17)).foregroundStyle(Palette.textPrimary)
+                .font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
             Text(message)
                 .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -30,6 +30,6 @@ struct EmptyStateCard: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 36)
+        .padding(.vertical, 40)
     }
 }
