@@ -58,7 +58,22 @@ enum Memory {
                          confidence: Double = 0.8, source: Source = .inferred,
                          subjectKind: String = "user", subjectId: String? = nil) {
         let value = fact.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard AIJSON.isRealText(value), value.count <= 240 else { return }
+        // WHAT COUNTS AS A REAL ANSWER DEPENDS ON WHO SAID IT.
+        //
+        // `isRealText` is a filter for model output: it rejects echoed schema placeholders and
+        // demands ten characters and eight letters, because a one-word "insight" from a language
+        // model is almost always junk. Applying it to a HUMAN's answer was catastrophic and
+        // completely silent — "Groceries" is nine characters, so tapping the app's own first
+        // choice chip stored nothing at all and the question came straight back. So did
+        // "Transport", "Bills", "Cat", "Dog", "Family", "Friend", "Work", "Home", "Person",
+        // "Pet", "Place" and the "skipped" marker a dismissal writes. Almost every button this
+        // app offers was under the limit, so almost no chip answer had ever been recorded.
+        //
+        // A person typing an answer has already decided it's worth saying. Take it as given.
+        let plausible = source == .userAnswered
+            ? !value.isEmpty
+            : AIJSON.isRealText(value)
+        guard plausible, value.count <= 240 else { return }
         // A sentence that NEGATES is not a fact, whatever the model labelled it. This is the guard
         // that would have caught "I never spoke those words to anyone" being stored as a belief.
         guard !readsAsDenial(value) else { deny(context, statement: value); return }
@@ -330,7 +345,7 @@ enum Memory {
     /// The canonical key form. Internal rather than private because callers that build a fact ID
     /// by hand MUST use the same one — `remember` slugs whatever topic it's given, so a caller
     /// slugging with a different rule (dashes, say) writes a row it can never find again.
-    static func slug(_ s: String) -> String {
+    nonisolated static func slug(_ s: String) -> String {
         let mapped = s.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "_" }
         return String(mapped).split(separator: "_").joined(separator: "_")
     }
@@ -341,7 +356,7 @@ enum Memory {
     /// on the way in while the hand-built readers didn't, so any key containing a space or a dash
     /// was written to one address and looked up at another. That is how a vendor could be answered
     /// twenty times and never once count as identified.
-    static func factID(_ kind: String, _ id: String?, _ key: String) -> String {
+    nonisolated static func factID(_ kind: String, _ id: String?, _ key: String) -> String {
         func esc(_ s: String) -> String { s.replacingOccurrences(of: ":", with: "_") }
         return "\(esc(kind)):\(esc(id ?? "_")):\(esc(slug(key)))"
     }

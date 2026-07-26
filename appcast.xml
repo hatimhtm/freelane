@@ -4,22 +4,21 @@
         <title>Freelane</title>
         <item>
             <description><![CDATA[
-<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.8</h3>
+<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.9</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>The question you answered twenty times finally stops.</li>
-  <li>**"What kind of place is Sari Sari store?" was unanswerable by design.** Your answer was filed as a fact about *you* — `user:_:vendor_sari_sari_store` — while the sweep that decides whether to ask looked under the vendor subject, at `vendor:sari_sari_store:sari_sari_store`. Two different addresses, so answering the question could not possibly satisfy it. Nor could dismissing it: "don't ask me again" was written to the same unread address.</li>
-  <li>**Even the AI's own identifications never landed.** `setVendorKind` slugged the name with one rule (spaces → "-"), handed it to the memory store, which slugged it again with a different rule (→ "_"), and saved it somewhere the reader never looked. A single-word shop happened to survive both rules and worked fine; anything with a space in its name — which is most shops — was permanently unidentifiable.</li>
-  <li>**Every one of those answers was going into the model's brief about you.** The vendor subject exists precisely so shop classifications don't show up in "what I know about them", and the answer path bypassed it. Twenty replies of "Groceries" and "Eating out" had been sitting in your belief store as things the app believed about *you*.</li>
-  <li>**A one-time repair moves them.** On first launch those answers are re-filed under the vendors they describe and retired from your beliefs, so the questions stop immediately rather than after one more ask. Questions already sitting in the inbox are recognised and handled correctly too.</li>
-  <li>**The address of a fact is now computed in exactly one place.** Three callers were building it by hand with three different rules; the one that slugged and the ones that didn't could never agree. That whole class of bug is gone.</li>
+  <li>The real reason the questions repeated: your answers were being thrown away for being too short.</li>
+  <li>**Every answer under ten characters was silently discarded.** `Memory.remember` validated all incoming facts with `isRealText` — a filter written to reject junk from a language model, which demands ten characters and eight letters. It was being applied to *your* answers. "Groceries" is nine characters. So was "Transport". "Bills" is five. Tapping the app's own choice chip stored nothing at all, and the question came straight back, forever. This was never about vendors: "Cat", "Dog", "Family", "Friend", "Work", "Home", "Person", "Pet", "Place" and the marker a dismissal writes were all under the limit too. Almost no chip answer in the entire app had ever been recorded. A person who taps an answer has already decided it's worth saying — it's taken as given now, and only model output is still filtered.</li>
+  <li>**The previous repair found nothing.** It skipped archived rows, and every one of the stored vendor answers had already been archived by the memory compactor. It also wrote the recovered rows to an address the lookup doesn't read, so what it did write was invisible. Rewritten: it now gathers every vendor identification the app has ever held — archived or live, under either naming rule — and re-files them at the one canonical address, keeping the most recent answer where several exist. Verified against a real store: 23 vendors recovered.</li>
+  <li>**A fact's address is computed in exactly one place.** `AIFact` built its own id inline while the readers built theirs separately, so the moment one of them started normalising keys and the others didn't, rows were written where nothing would ever look for them. Both now go through `Memory.factID`.</li>
+  <li>The repair only marks itself done once the save actually succeeds, so a failure retries next launch instead of being lost.</li>
 </ul>
             ]]></description>
-            <title>2.8</title>
-            <pubDate>Sun, 26 Jul 2026 13:47:03 +0800</pubDate>
-            <sparkle:version>39</sparkle:version>
-            <sparkle:shortVersionString>2.8</sparkle:shortVersionString>
+            <title>2.9</title>
+            <pubDate>Sun, 26 Jul 2026 18:43:48 +0800</pubDate>
+            <sparkle:version>40</sparkle:version>
+            <sparkle:shortVersionString>2.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.8/Freelane.zip" length="13622860" type="application/octet-stream" sparkle:edSignature="Sl++FEEBiN4lYWLhvKaQf0ZwDR3/y5DGfMNIPK8RcH3i6LRxs8LNJt48jXqr+F6WNNzCVOFHnUUOMGS6Ioi1AA=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.9/Freelane.zip" length="13627490" type="application/octet-stream" sparkle:edSignature="HNs8qjDphWuhLIZmq0wT/FH68FIWvdXaZfdGrfZ7UN9gM9LUiAcfo5+M8Hnc5NA8ON4Ily2JuEhdBOyxeYPjAQ=="/>
         </item>
     </channel>
 </rss>

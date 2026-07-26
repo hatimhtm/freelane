@@ -3,6 +3,15 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.9
+
+The real reason the questions repeated: your answers were being thrown away for being too short.
+
+- **Every answer under ten characters was silently discarded.** `Memory.remember` validated all incoming facts with `isRealText` — a filter written to reject junk from a language model, which demands ten characters and eight letters. It was being applied to *your* answers. "Groceries" is nine characters. So was "Transport". "Bills" is five. Tapping the app's own choice chip stored nothing at all, and the question came straight back, forever. This was never about vendors: "Cat", "Dog", "Family", "Friend", "Work", "Home", "Person", "Pet", "Place" and the marker a dismissal writes were all under the limit too. Almost no chip answer in the entire app had ever been recorded. A person who taps an answer has already decided it's worth saying — it's taken as given now, and only model output is still filtered.
+- **The previous repair found nothing.** It skipped archived rows, and every one of the stored vendor answers had already been archived by the memory compactor. It also wrote the recovered rows to an address the lookup doesn't read, so what it did write was invisible. Rewritten: it now gathers every vendor identification the app has ever held — archived or live, under either naming rule — and re-files them at the one canonical address, keeping the most recent answer where several exist. Verified against a real store: 23 vendors recovered.
+- **A fact's address is computed in exactly one place.** `AIFact` built its own id inline while the readers built theirs separately, so the moment one of them started normalising keys and the others didn't, rows were written where nothing would ever look for them. Both now go through `Memory.factID`.
+- The repair only marks itself done once the save actually succeeds, so a failure retries next launch instead of being lost.
+
 ## 2.8
 
 The question you answered twenty times finally stops.

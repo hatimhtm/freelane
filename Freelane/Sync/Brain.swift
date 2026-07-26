@@ -305,38 +305,73 @@ enum Brain {
 
     /// One-time repair for everyone who answered "what kind of place is X?" and got asked again.
     ///
-    /// The answer handler wrote the reply as a fact about the USER — `user:_:vendor_<slug>` — while
-    /// the sweep that decides whether to ask looked under the vendor subject. So the question could
-    /// not be satisfied by answering it, or by dismissing it, and every reply also landed in the
-    /// "what I know about them" brief as a freestanding belief, which is the exact thing the vendor
-    /// subject exists to prevent. This moves those answers where they belong and retires the
-    /// user-subject copies, so the questions stop on first launch instead of after one more ask.
+    /// Every vendor identification the app has ever recorded is gathered up and re-filed at the one
+    /// address `vendorIsIdentified` actually reads. There are three kinds of stray row, and the
+    /// first attempt at this repair only handled part of one of them:
+    ///
+    ///  · `user:_:vendor_<name>` — an answer filed as a belief about the USER, because the answer
+    ///    handler didn't know vendors had their own subject. All of these had also been archived by
+    ///    the memory compactor, and v1 of this repair skipped archived rows, so it found none of
+    ///    them. Archived or not, they are still the user's answers and they still count.
+    ///  · `vendor:<dashed>:<dashed>` — written by an older `setVendorKind`, or by v1 of this repair,
+    ///    under a key normalised with a different rule. Unreadable by the current lookup.
+    ///  · Correct rows, which are left alone.
+    ///
+    /// Re-runnable by design (`v2`), and it deliberately does NOT go through `Memory.remember` — a
+    /// migration is a data move, not a new claim, and it shouldn't be re-validated on the way.
     static func repairVendorFactsIfNeeded(_ context: ModelContext) {
-        let flag = "vendorFacts.repaired.v1"
+        let flag = "vendorFacts.repaired.v2"
         guard !UserDefaults.standard.bool(forKey: flag) else { return }
-        UserDefaults.standard.set(true, forKey: flag)
 
         let all = (try? context.fetch(FetchDescriptor<AIFact>())) ?? []
-        var moved = 0
-        for f in all where f.subjectKind == "user" && f.key.hasPrefix("vendor_") && f.archivedAt == nil {
-            // `vendor_sari_sari_store` → `sari_sari_store`, already in canonical form because
-            // Memory slugged it on the way in.
-            let key = String(f.key.dropFirst("vendor_".count))
-            guard !key.isEmpty else { continue }
-            let id = Memory.factID("vendor", key, key)
-            if (try? context.fetch(FetchDescriptor<AIFact>(predicate: #Predicate { $0.id == id })))?.isEmpty != false {
-                let row = AIFact(subjectKind: "vendor", subjectId: key, key: key,
-                                 value: f.value, confidence: 1.0,
+
+        // name-key → the best value we hold for it. A live row beats an archived one; otherwise
+        // the most recently updated wins, so the answer you gave last is the answer that sticks.
+        var best: [String: (value: String, stamp: Date, live: Bool)] = [:]
+        func offer(_ key: String, _ value: String, _ stamp: Date, _ live: Bool) {
+            let canon = Memory.slug(key)
+            guard !canon.isEmpty, !value.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+            if let cur = best[canon], (cur.live && !live) || (cur.live == live && cur.stamp >= stamp) { return }
+            best[canon] = (value, stamp, live)
+        }
+
+        var strays: [AIFact] = []
+        for f in all {
+            if f.subjectKind == "user", f.key.hasPrefix("vendor_") {
+                offer(String(f.key.dropFirst("vendor_".count)), f.value, f.updatedAt, f.archivedAt == nil)
+                strays.append(f)
+            } else if f.subjectKind == "vendor", let sid = f.subjectId {
+                offer(sid, f.value, f.updatedAt, f.archivedAt == nil)
+                if f.id != Memory.factID("vendor", Memory.slug(sid), Memory.slug(sid)) { strays.append(f) }
+            }
+        }
+
+        var written = 0
+        for (canon, entry) in best {
+            let id = Memory.factID("vendor", canon, canon)
+            if let existing = (try? context.fetch(FetchDescriptor<AIFact>(predicate: #Predicate { $0.id == id })))?.first {
+                existing.value = entry.value
+                existing.archivedAt = nil
+                existing.source = Memory.Source.userAnswered.rawValue
+            } else {
+                let row = AIFact(subjectKind: "vendor", subjectId: canon, key: canon,
+                                 value: entry.value, confidence: 1.0,
                                  source: Memory.Source.userAnswered.rawValue)
                 row.polarity = "affirm"
                 context.insert(row)
             }
-            f.archivedAt = .now        // out of the user brief, but not destroyed
-            moved += 1
+            written += 1
         }
-        if moved > 0 {
-            try? context.save()
-            moneyLog.notice("Repaired \(moved, privacy: .public) vendor answers stored as user beliefs.")
+        // Retire the strays only once the canonical rows exist — out of the user's belief brief,
+        // where shop classifications never belonged, but never destroyed.
+        for f in strays where f.archivedAt == nil { f.archivedAt = .now }
+
+        do {
+            try context.save()
+            UserDefaults.standard.set(true, forKey: flag)    // only once it actually landed
+            moneyLog.notice("Vendor facts repaired: \(written, privacy: .public) identifications re-filed.")
+        } catch {
+            moneyLog.error("Vendor fact repair failed, will retry next launch: \(error.localizedDescription, privacy: .public)")
         }
     }
 

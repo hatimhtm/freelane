@@ -28,10 +28,11 @@ final class AIFact {
     init(subjectKind: String = "user", subjectId: String? = nil, key: String,
          value: String, confidence: Double = 1.0, source: String = "user_answered",
          evidence: String? = nil) {
-        // ':' is the id separator — escape it in components so an AI-generated key/id containing
-        // a colon can't collide with (and clobber) an unrelated fact under the unique id.
-        func esc(_ s: String) -> String { s.replacingOccurrences(of: ":", with: "_") }
-        self.id = "\(esc(subjectKind)):\(esc(subjectId ?? "_")):\(esc(key))"
+        // ONE authority for the address, shared with every reader — see `Memory.factID`. This used
+        // to build the id inline, which was fine while the readers did the same thing inline, and
+        // stopped being fine the moment one of them started normalising the key and the others
+        // didn't. A row written to an address nobody looks up is a fact that silently doesn't exist.
+        self.id = Memory.factID(subjectKind, subjectId, key)
         self.subjectKind = subjectKind
         self.subjectId = subjectId
         self.key = key
