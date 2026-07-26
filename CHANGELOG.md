@@ -3,6 +3,16 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.14
+
+Gemini writes the journal now. The 4.3 GB local model is gone.
+
+- **The questions are a different category of thing.** Same prompt, same entries: the local Qwen3-8B wrote *"What else is in your purchasing history right now?"* and invented a team you have never had. Gemini writes *"How have things been with Celine lately?"* and *"What's your favorite thing about the new earbuds?"* — grounded in what you actually wrote, in a voice a person would use. An empty well refills to ten in eighty seconds.
+- **6 GB back.** The Qwen weights (4.3 GB) and a stale build directory holding the MLX checkouts (1.3 GB) are deleted, the MLX Swift package is out of the project, and the app itself is now 39 MB. Nothing left to download on a new machine, which also removes the biggest obstacle to a phone version.
+- **Your API key lives in the macOS Keychain** — never in the app's files, a backup, or an export. Settings → Intelligence takes it, tests it against the model you've chosen, and lets you pick quality: flash-lite, flash (default), or pro.
+- **Apple's on-device model stays, and keeps its job.** Sorting a spend into a category still happens on this Mac, instantly and free — none of that output is ever read as prose, so its weakness at writing costs nothing. Gemini backs it up. The journal chain now excludes it outright rather than demoting it: its safety filter refuses personal writing, so leaving it on the end only guaranteed a wasted refusal.
+- **The app stopped claiming your writing never leaves this Mac, because that is no longer true.** The sidebar chip said "No cloud · private"; Settings said "Nothing you write is sent anywhere"; the assistant said answers come from a model running on this Mac. All rewritten to say what actually happens: your money records never leave, your journal entries go to Google. A promise you have quietly broken is worse than one you never made.
+
 ## 2.13
 
 - **Two questions asking the same thing can no longer both sit in the well.** The writer had gained a containment test for rewordings; the sweep that re-checks questions already waiting compared each one to nothing, so a pair about faith that the writer would now reject stayed put. Both go through one named rule now, and when two match, the one you've had longest survives.

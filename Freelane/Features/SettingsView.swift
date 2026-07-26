@@ -14,7 +14,10 @@ struct SettingsView: View {
     @State private var recalFlash: String?
     @State private var notifs = NotificationManager()
     @State private var ai = AIManager()
-    @State private var local = LocalModelStore.shared
+    @State private var keyDraft = ""
+    @State private var testingKey = false
+    @State private var keyResult: (ok: Bool, message: String)?
+    @State private var modelTick = 0
     @State private var storeSize = "—"
     @State private var denied: Set<String> = []
     @State private var sub = 0
@@ -57,7 +60,7 @@ struct SettingsView: View {
         let current = sub < tabs.count ? tabs[sub] : (tabs.last ?? "General")
         let subtitle = (SyncManager.cloudSyncEnabled && sync.connected)
             ? "Synced to your private cloud — and fully usable offline."
-            : "All data lives on this Mac. No cloud, fully private."
+            : "Your records live on this Mac. Journalling asks Gemini."
         return Page("Settings", subtitle: subtitle, subtabs: tabs, selection: $sub) {
             switch current {
             case "General": generalCard; recalibrateCard
@@ -191,7 +194,7 @@ struct SettingsView: View {
         SectionCard(title: "Personal context",
                     subtitle: "Make the AI aware of your life outside the app — on-device only, always") {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Once a day, the on-device model reads the enabled sources and keeps only THEMES — \"apartment hunting\", \"in touch with Sarah a lot\" — never quotes. Those themes make journal questions, insights, and chat aware of your actual life. This digest is produced by the on-device model and never leaves this Mac — not even to the local model.")
+                Text("Once a day, the on-device model reads the enabled sources and keeps only THEMES — \"apartment hunting\", \"in touch with Sarah a lot\" — never quotes. Those themes make journal questions, insights, and chat aware of your actual life. This digest is produced by Apple's on-device model and stays on this Mac; only the themes it distils are ever included when Gemini writes a question.")
                     .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
                 signalToggle($sigMessages, "Messages", "Who you're in touch with and what's going on — from your iMessage history.", "message")
                 Divider().overlay(Palette.hairline)
@@ -413,7 +416,7 @@ struct SettingsView: View {
         VStack(spacing: 20) {
             // Beliefs first: it is the thing a person actually opens this tab to check.
             memoryCard
-            localModelCard
+            geminiCard
             brainsCard
         }
     }
@@ -428,18 +431,19 @@ struct SettingsView: View {
         // any of it. The honest content is two sentences: what runs where, and whether the part
         // you have to download is ready.
         SectionCard(title: "How Freelane thinks",
-                    subtitle: "Everything runs on this Mac",
+                    subtitle: "Where each kind of thinking happens",
                     accent: Palette.violet) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Two models share the work. Apple's built-in one handles the small, constant jobs — sorting a spend into a category, working out a bill increase — because it answers instantly and costs nothing. The model you download does everything that touches what you've written: your journal, your reflections, your questions, and the chat.")
+                Text("Two models share the work. Apple's built-in one stays on this Mac and handles the small, constant jobs — sorting a spend into a category, working out a bill increase — because it answers instantly and costs nothing. Gemini writes everything you actually read: your journal questions, your reflections, and the chat.")
                     .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Nothing you write is sent anywhere.")
+                Label("Your journal entries are sent to Google when the app writes a question or reads an entry. Your money records are not — those never leave this Mac.", systemImage: "arrow.up.forward.app")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if !ai.onDeviceReady {
-                    Label("Apple Intelligence is off, so the small jobs fall to the downloaded model too — everything still works, just a little slower.",
+                    Label("Apple Intelligence is off, so the small jobs go to Gemini too — everything still works, it just needs a connection.",
                           systemImage: "info.circle")
                         .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -464,7 +468,7 @@ struct SettingsView: View {
             Rectangle().fill(Palette.hairline).frame(height: 1).padding(.vertical, 2)
         }
         if refusedOnDevice > 0 {
-            Label("Apple's model has declined \(refusedOnDevice) \(refusedOnDevice == 1 ? "request" : "requests") on safety grounds — it won't read personal writing, which is why your journal goes to the downloaded model instead. Nothing is broken and there's nothing to change.",
+            Label("Apple's model has declined \(refusedOnDevice) \(refusedOnDevice == 1 ? "request" : "requests") on safety grounds — it won't read personal writing, which is why your journal goes to Gemini instead. Nothing is broken and there's nothing to change.",
                   systemImage: "hand.raised")
                 .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -485,78 +489,94 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: The local model
+    // MARK: Gemini
 
-    private var localModelCard: some View {
-        SectionCard(title: "Local model",
-                    subtitle: "So the app still thinks with the internet off",
+    private var geminiCard: some View {
+        SectionCard(title: "Gemini",
+                    subtitle: "The model that writes your questions",
                     accent: Palette.teal) {
             VStack(alignment: .leading, spacing: 12) {
-                switch local.state {
-                case .unavailable(let why):
-                    Text(why).font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
-
-                case .onDisk:
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.down.circle.fill").foregroundStyle(Palette.textSecondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(LocalModelSpec.displayName) is downloaded")
-                                .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
-                            Text("Not in memory right now — it loads itself the next time the app needs it.")
-                                .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                        }
-                        Spacer()
-                    }
-                    HStack(spacing: 12) {
-                        Button("Load it now") { local.install() }.buttonStyle(.glass)
-                        Button("Delete download", role: .destructive) { local.remove() }.buttonStyle(.glass)
-                        Spacer()
-                    }
-
-                case .notInstalled:
-                    Text("\(LocalModelSpec.displayName) — about \(LocalModelSpec.approxSizeLabel), downloaded once and then yours. It runs inside Freelane on the GPU; there's no separate app or server to keep alive.")
-                        .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button { local.install() } label: {
-                        Label("Download the local model", systemImage: "arrow.down.circle")
-                    }.buttonStyle(.glassProminent).tint(Palette.azure)
-
-                case .downloading(let p):
-                    VStack(alignment: .leading, spacing: 6) {
-                        MeterBar(value: p, tint: Palette.teal, height: 6)
-                        Text("Downloading — \(Int(p * 100))% of about \(LocalModelSpec.approxSizeLabel). You can keep using the app.")
-                            .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                    }
-
-                case .loading:
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Getting the local model ready…").font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
-                    }
-
-                case .ready:
+                if GeminiConfig.hasKey && keyDraft.isEmpty {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.positive)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(LocalModelSpec.displayName) is ready").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
-                            Text("Runs entirely on this Mac. No quota, no connection needed.")
+                            Text("Connected").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                            Text("Your key is in the macOS Keychain — not in the app's files, and never in a backup or export.")
                                 .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                     }
                     HStack(spacing: 12) {
-                        Button("Free up memory") { local.unload() }.buttonStyle(.glass)
-                        Button("Delete download", role: .destructive) { local.remove() }.buttonStyle(.glass)
+                        Button("Test") { testGemini() }.buttonStyle(.glass).disabled(testingKey)
+                        Button("Replace key") { keyDraft = " " }.buttonStyle(.glass)
+                        Button("Remove", role: .destructive) {
+                            GeminiConfig.apiKey = nil; keyResult = nil
+                        }.buttonStyle(.glass)
                         Spacer()
                     }
-
-                case .failed(let why):
-                    Label(why, systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 12)).foregroundStyle(Palette.negative)
+                } else {
+                    Text("Paste an API key from aistudio.google.com/apikey. It's stored in the macOS Keychain.")
+                        .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("Try again") { local.install() }.buttonStyle(.glass)
+                    HStack(spacing: 8) {
+                        SecureField("AIza…", text: $keyDraft).fieldWell()
+                        Button("Save") {
+                            GeminiConfig.apiKey = keyDraft
+                            keyDraft = ""
+                            testGemini()
+                        }
+                        .buttonStyle(.glassProminent).tint(Palette.azure)
+                        .disabled(keyDraft.trimmingCharacters(in: .whitespaces).count < 20)
+                    }
+                }
+
+                if testingKey {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Asking Gemini…").font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
+                    }
+                } else if let keyResult {
+                    Label(keyResult.ok ? keyResult.message : keyResult.message,
+                          systemImage: keyResult.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(keyResult.ok ? Palette.positive : Palette.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if GeminiConfig.hasKey {
+                    Divider().overlay(Palette.hairline).padding(.vertical, 2)
+                    LabeledField("Quality") {
+                        GlassSegment(options: GeminiConfig.Tier.allCases,
+                                     selection: Binding(get: { GeminiConfig.smartModel },
+                                                        set: { GeminiConfig.smartModel = $0; modelTick += 1 }),
+                                     label: { $0.label })
+                        Text("Used for journal questions, reflections and chat. Sorting a spend into a category always uses the cheapest tier — you never read that output.")
+                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .id(modelTick)
                 }
             }
+        }
+    }
+
+    /// Prove the key works, from the app, against the model actually configured — rather than
+    /// leaving the user to discover it doesn't the next time a question fails to appear.
+    private func testGemini() {
+        guard #available(macOS 26.0, *) else { return }
+        testingKey = true; keyResult = nil
+        Task {
+            let brain = GeminiBrain(tier: GeminiConfig.smartModel)
+            do {
+                let reply = try await brain.text(AIRequest("Reply with the single word: ready.",
+                                                           instructions: "You reply in one word.",
+                                                           temperature: 0))
+                keyResult = (true, "Working — \(GeminiConfig.smartModel.rawValue) answered “\(reply.prefix(24))”.")
+            } catch {
+                keyResult = (false, error.localizedDescription)
+            }
+            testingKey = false
         }
     }
 

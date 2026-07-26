@@ -6,33 +6,42 @@ import FoundationModels
 
 // MARK: - The brains
 //
-// Freelane has three, and they are tried in an order that depends on the job:
+//   cloud       Gemini, over the REST API. The writing brain: journal questions, letters, chat,
+//               anything a person reads. Needs a network and an API key, and this is the brain
+//               that sees journal entries — which is why the app no longer claims your writing
+//               never leaves the Mac.
+//   on-device   Apple's system foundation model. Instant, free, offline. Small: fine at tagging a
+//               spend, weak at writing, and its safety filter refuses personal writing outright.
+//               The offline fallback for cheap structured work, never for the journal.
+//   private     Apple Private Cloud Compute. Wired up, off by default — it reports itself available
+//               on this macOS build and then fails every call.
 //
-//   on-device   Apple's system foundation model. Instant, free, offline, private. Small — great at
-//               extraction and classification, weak at writing. First choice for the hundred little
-//               calls (tag this spend, read this entry), because they must not cost anything.
-//   private     Apple Private Cloud Compute. Server-scale quality with the same privacy contract as
-//               on-device — Apple cannot read or retain the prompt. Needs network, has a quota.
-//               First choice for anything a human will READ: questions, letters, observations, chat.
-//   local       A quantised model running in-process via MLX, downloaded on first use. No network,
-//               no quota, no Apple dependency. Covers the private brain when offline or over quota.
+// Three rules hold this together, each from a specific failure:
 //
-// Two rules hold this together, and both exist because of specific past failures:
-//
-//  1. STRUCTURE IS ENFORCED, NOT REQUESTED. Apple's brains decode against a `@Generable` schema, so
-//     the reply cannot be malformed. Only the local brain parses text, and only it needs repair.
+//  1. STRUCTURE IS ENFORCED, NOT REQUESTED. Apple's brains decode against a `@Generable` schema.
+//     Gemini is held to it by JSON mode plus the same parse-and-bridge the MLX brain used.
 //  2. A BRAIN THAT FAILS IS VISIBLE. Every attempt is recorded. A feature that produced nothing
 //     says so, naming the brain — silent empty states are what made the app feel broken.
+//  3. A REFUSAL IS NOT A FAILURE. A brain declining content has not malfunctioned; the fall-through
+//     to the next one is the whole remedy, and it is not worth a notification.
+//
+// Retired: a 4.3 GB Qwen3-8B via MLX. It owed nothing to a network, and on structured work it was
+// adequate — but it invented a team the user has never had, wrote "What else is in your purchasing
+// history right now?" as a journalling question, and was slow enough that questions had to be
+// generated a fortnight ahead to hide the wait.
 
 /// Which brain answered. Also the key used for health and usage accounting.
 enum AIBrainID: String, Sendable, CaseIterable {
-    case onDevice, privateCloud, local
+    /// `local` is retired — the 4.3 GB MLX model it named was removed in 2.14. The case survives
+    /// so stored health/usage rows keyed by its raw value still decode instead of being dropped.
+    case onDevice, privateCloud, local, cloud
 
     var label: String {
         switch self {
         case .onDevice:     return "On-device"
         case .privateCloud: return "Private Cloud"
         case .local:        return "Local model"
+        case .cloud:        return "Gemini"
         }
     }
     /// Shown when a feature has to explain which brain did the work.
@@ -41,8 +50,11 @@ enum AIBrainID: String, Sendable, CaseIterable {
         case .onDevice:     return "on-device"
         case .privateCloud: return "private cloud"
         case .local:        return "local model"
+        case .cloud:        return "Gemini"
         }
     }
+    /// Retired brains stay out of every chain and every status display.
+    var isRetired: Bool { self == .local }
 }
 
 enum AIError: LocalizedError {
@@ -54,13 +66,13 @@ enum AIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noBrainAvailable:
-            return "No AI brain is available. Turn on Apple Intelligence, or download the local model in Settings → Intelligence."
+            return "No AI brain is available. Add a Gemini API key in Settings → Intelligence."
         case .brainUnavailable(let id, let why):
             return "\(id.label) isn't available: \(why)"
         case .badResponse(let id):
             return "\(id.label) returned something unusable."
         case .quotaExhausted:
-            return "Private Cloud quota is used up for now — falling back to the local model."
+            return "Private Cloud quota is used up for now."
         }
     }
 }
@@ -100,8 +112,8 @@ protocol AIBrain: Sendable {
 
 @available(macOS 26.0, *)
 extension AIBrain {
-    /// Brains without tool support just answer from the prompt. Only the local MLX brain takes
-    /// this path — its answers are grounded in the snapshot instead of live lookups.
+    /// Brains without tool support just answer from the prompt — their answers are grounded in the
+    /// snapshot the caller already built, rather than in live lookups.
     func text(_ req: AIRequest, tools: [any Tool]) async throws -> String { try await text(req) }
 }
 
@@ -273,30 +285,27 @@ enum AIUsage {
 @MainActor
 @Observable
 final class AIManager {
-    /// Was the user offered the local model yet? Drives the Settings prompt, not availability.
-    var localModelState: LocalModelStore.State { LocalModelStore.shared.state }
-
     init() {}
 
     // MARK: Availability
 
+    var cloudReady: Bool { GeminiConfig.hasKey }
     var onDeviceReady: Bool { if #available(macOS 26.0, *) { return OnDeviceBrain.isReady } else { return false } }
     var privateCloudReady: Bool { if #available(macOS 27.0, *) { return PrivateCloudBrain.isReady } else { return false } }
-    var localReady: Bool { LocalModelStore.shared.isReady }
 
     /// True when SOMETHING can answer. Every AI feature checks this before it renders a control.
-    var isReady: Bool { onDeviceReady || privateCloudReady || localReady }
+    var isReady: Bool { cloudReady || onDeviceReady || privateCloudReady }
 
     /// Why nothing is available — shown verbatim in empty states so a dead control always explains
     /// itself. (The old build just disabled the button and left the user guessing.)
     var unavailableReason: String {
-        if !localReady {
-            return "Download the local model in Settings → Intelligence — it's what writes your questions."
+        if !cloudReady {
+            return "Add your Gemini API key in Settings → Intelligence — it's what writes your questions."
         }
         if #available(macOS 26.0, *), let r = OnDeviceBrain.unavailableReason {
             return "Apple Intelligence is unavailable — \(r)."
         }
-        return "No AI brain is available yet. Download the local model in Settings → Intelligence."
+        return "No AI brain is available yet. Add a Gemini API key in Settings → Intelligence."
     }
 
     /// May work be sent to Apple Private Cloud Compute?
@@ -311,27 +320,31 @@ final class AIManager {
 
     /// Should this brain be in a chain at all? Excludes anything the circuit breaker has tripped,
     /// so a brain that is present-but-broken can't sit at the head of the chain wasting every call.
-    private func usable(_ id: AIBrainID) -> Bool { !BrainHealth.shared.isBroken(id) }
+    private func usable(_ id: AIBrainID) -> Bool { !id.isRetired && !BrainHealth.shared.isBroken(id) }
 
     // MARK: Chains
 
-    /// Cheap, frequent, structural work — tagging, extraction, reading one entry. On-device leads:
-    /// it is instant and free, and these calls happen dozens of times a day.
+    /// Cheap, frequent, structural work — tagging, extraction, reading a receipt.
+    ///
+    /// Apple's on-device model LEADS here, and only here. It is instant and free, these calls
+    /// happen dozens of times a day, and none of their output is read as prose — so its weakness at
+    /// writing costs nothing and its being free costs nothing. Gemini backs it up, which also means
+    /// this tier keeps working with no network right up until Apple's model declines something.
     var fast: AIRouter {
         guard #available(macOS 26.0, *) else { return AIRouter(chain: []) }
         var chain: [any AIBrain] = []
         if usable(.onDevice) { chain.append(OnDeviceBrain()) }
-        if let local = LocalModelStore.shared.brain, usable(.local) { chain.append(local) }
+        if usable(.cloud), GeminiConfig.hasKey { chain.append(GeminiBrain(tier: GeminiConfig.fastModel)) }
         if usePrivateCloud, usable(.privateCloud), #available(macOS 27.0, *) { chain.append(PrivateCloudBrain()) }
         return AIRouter(chain: chain)
     }
 
-    /// Anything a person will actually read — questions, letters, chat. The local model leads: it
-    /// is the app's best writer and the only one that can't be taken away by a network or a quota.
+    /// Anything a person will actually read — questions, letters, chat. Gemini leads, because this
+    /// is the whole reason it's here.
     var smart: AIRouter {
         guard #available(macOS 26.0, *) else { return AIRouter(chain: []) }
         var chain: [any AIBrain] = []
-        if let local = LocalModelStore.shared.brain, usable(.local) { chain.append(local) }
+        if usable(.cloud), GeminiConfig.hasKey { chain.append(GeminiBrain(tier: GeminiConfig.smartModel)) }
         if usePrivateCloud, usable(.privateCloud), #available(macOS 27.0, *) { chain.append(PrivateCloudBrain()) }
         if usable(.onDevice) { chain.append(OnDeviceBrain()) }
         return AIRouter(chain: chain)
@@ -339,30 +352,21 @@ final class AIManager {
 
     /// Anything that reads what you WROTE about yourself — journal entries, reflections, moods.
     ///
-    /// Same ordering as `smart`, and it exists as a separate name so nobody optimises it back onto
-    /// the fast chain. Reading a journal entry looks like fast-tier extraction — short prompt,
-    /// structured output — and it was on the fast chain for exactly that reason. But the fast chain
-    /// leads with Apple's on-device model, whose safety filter cannot be configured and which
-    /// throws `guardrailViolation` on first-person emotional writing. A journal is first-person
-    /// emotional writing. So every nightly tagging pass sent eight private entries to a model that
-    /// was going to refuse them, fell through to the local model anyway, and left a "keeps failing"
-    /// warning behind.
-    ///
-    /// The local model has no such filter and reads the entry the app was built to read.
+    /// Deliberately EXCLUDES Apple's on-device model rather than merely demoting it. Its safety
+    /// filter cannot be configured and it throws `guardrailViolation` on first-person emotional
+    /// writing, which is what a journal is — so leaving it on the end of this chain only means a
+    /// guaranteed refusal on the way to somewhere useful. Offline, journal analysis simply waits.
     var personal: AIRouter {
         guard #available(macOS 26.0, *) else { return AIRouter(chain: []) }
         var chain: [any AIBrain] = []
-        if let local = LocalModelStore.shared.brain, usable(.local) { chain.append(local) }
+        if usable(.cloud), GeminiConfig.hasKey { chain.append(GeminiBrain(tier: GeminiConfig.smartModel)) }
         if usePrivateCloud, usable(.privateCloud), #available(macOS 27.0, *) { chain.append(PrivateCloudBrain()) }
-        // Kept last rather than dropped, so the feature still attempts something on a Mac with no
-        // local model downloaded. It will usually refuse, and refusing is now silent.
-        if usable(.onDevice) { chain.append(OnDeviceBrain()) }
         return AIRouter(chain: chain)
     }
 
     /// Which brain a smart request would hit right now — for the status line in Settings.
     var smartLead: AIBrainID? {
-        if localReady, usable(.local) { return .local }
+        if cloudReady, usable(.cloud) { return .cloud }
         if usePrivateCloud, privateCloudReady, usable(.privateCloud) { return .privateCloud }
         if onDeviceReady, usable(.onDevice) { return .onDevice }
         return nil

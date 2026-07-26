@@ -4,18 +4,22 @@
         <title>Freelane</title>
         <item>
             <description><![CDATA[
-<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.13</h3>
+<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.14</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>**Two questions asking the same thing can no longer both sit in the well.** The writer had gained a containment test for rewordings; the sweep that re-checks questions already waiting compared each one to nothing, so a pair about faith that the writer would now reject stayed put. Both go through one named rule now, and when two match, the one you've had longest survives.</li>
-  <li>**The similarity thresholds are measured, not guessed.** The first attempt at this shipped a bar the real duplicate didn't clear, and the pair stayed in the well. Scored against every pair actually sitting there: the two faith questions share four content words at 0.57 containment, while the closest pair that is genuinely two different questions manages 0.50 on two shared words. The bar sits at three shared words and 0.55 — which drops exactly the duplicate and nothing else.</li>
+  <li>Gemini writes the journal now. The 4.3 GB local model is gone.</li>
+  <li>**The questions are a different category of thing.** Same prompt, same entries: the local Qwen3-8B wrote *"What else is in your purchasing history right now?"* and invented a team you have never had. Gemini writes *"How have things been with Celine lately?"* and *"What's your favorite thing about the new earbuds?"* — grounded in what you actually wrote, in a voice a person would use. An empty well refills to ten in eighty seconds.</li>
+  <li>**6 GB back.** The Qwen weights (4.3 GB) and a stale build directory holding the MLX checkouts (1.3 GB) are deleted, the MLX Swift package is out of the project, and the app itself is now 39 MB. Nothing left to download on a new machine, which also removes the biggest obstacle to a phone version.</li>
+  <li>**Your API key lives in the macOS Keychain** — never in the app's files, a backup, or an export. Settings → Intelligence takes it, tests it against the model you've chosen, and lets you pick quality: flash-lite, flash (default), or pro.</li>
+  <li>**Apple's on-device model stays, and keeps its job.** Sorting a spend into a category still happens on this Mac, instantly and free — none of that output is ever read as prose, so its weakness at writing costs nothing. Gemini backs it up. The journal chain now excludes it outright rather than demoting it: its safety filter refuses personal writing, so leaving it on the end only guaranteed a wasted refusal.</li>
+  <li>**The app stopped claiming your writing never leaves this Mac, because that is no longer true.** The sidebar chip said "No cloud · private"; Settings said "Nothing you write is sent anywhere"; the assistant said answers come from a model running on this Mac. All rewritten to say what actually happens: your money records never leave, your journal entries go to Google. A promise you have quietly broken is worse than one you never made.</li>
 </ul>
             ]]></description>
-            <title>2.13</title>
-            <pubDate>Mon, 27 Jul 2026 05:24:27 +0800</pubDate>
-            <sparkle:version>45</sparkle:version>
-            <sparkle:shortVersionString>2.13</sparkle:shortVersionString>
+            <title>2.14</title>
+            <pubDate>Mon, 27 Jul 2026 06:10:52 +0800</pubDate>
+            <sparkle:version>46</sparkle:version>
+            <sparkle:shortVersionString>2.14</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.13/Freelane.zip" length="13639923" type="application/octet-stream" sparkle:edSignature="yCdJ4N6JpnWyM2d58CUpu9rxvtq8zam62/JYHAqK6kywY0kukzgI59FZdxddxT/a9b48BRHIx93blulL29qjAg=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.14/Freelane.zip" length="7757310" type="application/octet-stream" sparkle:edSignature="QaniHe/w/NpcVN4Nm1PQXTK9GWMoYOmYLFZJYHTcEgA+iv/ILeyqoljhO+mxlVqfEi5xJRyH6erc5G59mSfwCQ=="/>
         </item>
     </channel>
 </rss>

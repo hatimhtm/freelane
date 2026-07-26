@@ -155,7 +155,7 @@ struct WeatherDetailSheet: View {
                         if loading {
                             HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading your numbers…").font(.system(size: 12)).foregroundStyle(Palette.textTertiary) }
                         } else if aiText.isEmpty {
-                            Text("Download the local model in Settings → Intelligence for a deeper read.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+                            Text("Add a Gemini API key in Settings → Intelligence for a deeper read.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                         } else {
                             Text(aiText).font(.system(size: 13)).foregroundStyle(Palette.textPrimary).fixedSize(horizontal: false, vertical: true)
                         }

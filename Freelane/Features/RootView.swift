@@ -243,7 +243,7 @@ struct RootView: View {
             if !UserDefaults.standard.bool(forKey: "notif.seeded") {
                 UserDefaults.standard.set(true, forKey: "notif.seeded")
                 Notify.post(context, kind: "info", subject: "Welcome to Freelane",
-                            body: "Everything lives on this Mac. Tap the ✨ on any page to ask the assistant.", feature: .dashboard)
+                            body: "Your records live on this Mac. Tap the ✨ on any page to ask the assistant.", feature: .dashboard)
             }
             // Drop read/dismissed notifications past the retention window (default 3 days).
             Notify.purgeOld(context)
@@ -297,11 +297,6 @@ struct RootView: View {
             // point of the well: by the time the journal is opened, the questions are already there.
             JournalWell.shared.pruneStale(context)
             JournalWell.shared.topUp(context, ai: ai)
-            // Bring the local model up if the user has asked for it before. Deliberately NOT
-            // conditioned on the weights being present: if a download was interrupted — quit,
-            // sleep, dropped connection — this resumes it rather than leaving the app silently
-            // brainless with a half-finished file on disk.
-            if LocalModelStore.shared.autoLoad { LocalModelStore.shared.install() }
             // Learn the city's real cost of living so safe-to-spend stays relevant.
             Task { await Brain.refreshCostOfLiving(context, ai: ai) }
             // Live FX (frankfurter) + a non-pushy "good time to get paid" note.
@@ -430,7 +425,10 @@ private struct Sidebar: View {
                 Image(systemName: "internaldrive").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.teal)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Stored locally").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textPrimary)
-                    Text("No cloud · private").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                    // Was "No cloud · private". Your records still never leave this Mac — but the
+                    // journal is written with Gemini now, and a chip that says "no cloud" while
+                    // entries are being posted to Google is the app lying to you in its own margin.
+                    Text("Records on this Mac").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
             }
@@ -446,7 +444,7 @@ private struct Sidebar: View {
         let tint = connected ? Palette.positive : Palette.teal
         let title = connected ? "Cloud synced" : "Stored locally"
         let subtitle: String = {
-            if !connected { return "No cloud · private" }
+            if !connected { return "Records on this Mac" }
             if sync.busy { return "Syncing…" }
             if let d = sync.lastSync { return "Synced " + Self.relative(d) }
             return sync.statusLine

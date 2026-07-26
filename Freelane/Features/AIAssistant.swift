@@ -178,7 +178,7 @@ struct AIChatSheet: View {
             .padding(16)
             HStack(spacing: 6) {
                 Image(systemName: "lock.fill").font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
-                Text("Answers come from a model running on this Mac.")
+                Text("Your figures are read on this Mac; the answer is written by Gemini.")
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 Spacer()
             }

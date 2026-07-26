@@ -15,7 +15,8 @@ import FoundationModels
 // returned a stray fence, a truncated object, or an echoed placeholder, the parse failed, the
 // `try?` swallowed it, and the feature silently rendered nothing. Hence "it doesn't load".
 //
-// The `jsonShape` on each type is the fallback contract for the local MLX brain, which has no
+// The `jsonShape` on each type is the contract for any brain without schema-constrained decoding
+// — Gemini is held to it by JSON mode plus a parse — which has no
 // guided decoding — there the shape is described in words and the reply is parsed and validated.
 // Rule that keeps the two paths honest: **describe the shape, never show example values.** This
 // model family will copy a literal `"…"` out of a prompt and return it as content.
