@@ -290,6 +290,9 @@ struct RootView: View {
             // fed every question. This retires the guesses, keeps what was confirmed, and converts
             // the corrections into real denials. See `Memory.repairLegacyStoreIfNeeded`.
             Memory.repairLegacyStoreIfNeeded(context)
+            // One-time: move "what kind of place is X?" answers out of the user's beliefs and
+            // under the vendor subject, where the asker actually looks — see the method.
+            Brain.repairVendorFactsIfNeeded(context)
             // Bring the local model up if the user has asked for it before. Deliberately NOT
             // conditioned on the weights being present: if a download was interrupted — quit,
             // sleep, dropped connection — this resumes it rather than leaving the app silently

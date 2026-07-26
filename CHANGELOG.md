@@ -3,6 +3,16 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.8
+
+The question you answered twenty times finally stops.
+
+- **"What kind of place is Sari Sari store?" was unanswerable by design.** Your answer was filed as a fact about *you* — `user:_:vendor_sari_sari_store` — while the sweep that decides whether to ask looked under the vendor subject, at `vendor:sari_sari_store:sari_sari_store`. Two different addresses, so answering the question could not possibly satisfy it. Nor could dismissing it: "don't ask me again" was written to the same unread address.
+- **Even the AI's own identifications never landed.** `setVendorKind` slugged the name with one rule (spaces → "-"), handed it to the memory store, which slugged it again with a different rule (→ "_"), and saved it somewhere the reader never looked. A single-word shop happened to survive both rules and worked fine; anything with a space in its name — which is most shops — was permanently unidentifiable.
+- **Every one of those answers was going into the model's brief about you.** The vendor subject exists precisely so shop classifications don't show up in "what I know about them", and the answer path bypassed it. Twenty replies of "Groceries" and "Eating out" had been sitting in your belief store as things the app believed about *you*.
+- **A one-time repair moves them.** On first launch those answers are re-filed under the vendors they describe and retired from your beliefs, so the questions stop immediately rather than after one more ask. Questions already sitting in the inbox are recognised and handled correctly too.
+- **The address of a fact is now computed in exactly one place.** Three callers were building it by hand with three different rules; the one that slugged and the ones that didn't could never agree. That whole class of bug is gone.
+
 ## 2.7
 
 Stop telling you Apple's model is broken when it is working exactly as designed.

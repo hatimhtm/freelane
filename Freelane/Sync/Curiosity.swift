@@ -52,6 +52,26 @@ enum Curiosity {
         var d = denylist(); d.insert(name.lowercased()); UserDefaults.standard.set(Array(d), forKey: denyKey)
     }
 
+    /// A vendor question posted by an older build is tagged `"fact"` and has no `candidateName`,
+    /// so it would still take the old broken path. Recognise it by its key and treat it as what
+    /// it always was — otherwise the questions already sitting in the inbox keep coming back
+    /// even after the update.
+    private static func effectiveKind(_ note: AppNotification) -> String {
+        let kind = note.questionKind ?? "fact"
+        if kind == "fact", note.factKey?.hasPrefix("vendor_") == true { return "vendor_kind" }
+        return kind
+    }
+
+    /// The vendor's name, from a question posted either by this build or an older one. Old
+    /// questions carry it only in the subject: "What kind of place is Sari Sari store?".
+    private static func vendorName(_ note: AppNotification) -> String? {
+        if let c = note.candidateName, !c.isEmpty { return c }
+        let prefix = "What kind of place is "
+        guard note.subject.hasPrefix(prefix), note.subject.hasSuffix("?") else { return nil }
+        let name = note.subject.dropFirst(prefix.count).dropLast()
+        return name.isEmpty ? nil : String(name)
+    }
+
     /// The user dismissed/ignored a clarifying question WITHOUT answering it. Dismissing used
     /// to record nothing, so the very next sweep regenerated the identical question — that's why
     /// "what kind of place is <store>?" and "is <X> a person?" felt stuck on infinite repeat.
@@ -59,14 +79,22 @@ enum Curiosity {
     /// memory an answer would have, keyed by the question's kind.
     @MainActor
     static func dismissQuestion(_ context: ModelContext, note: AppNotification) {
-        switch note.questionKind {
+        switch effectiveKind(note) {
         case "entity_discovery":
             if let c = note.candidateName { deny(c) }   // never ask "who/what is X?" again
         case "entity_clarify":
             if let eid = note.entityId, let key = note.factKey {
                 Brain.upsertFact(context, subjectKind: "entity", subjectId: eid, key: key, value: "skipped")
             }
-        default:   // "fact" — includes the vendor_<slug> "what kind of place" question
+        case "vendor_kind":
+            // Dismissing has to land in the SAME place answering does, or "don't ask me again"
+            // is written somewhere the asker never reads — which is how this question survived
+            // both being answered and being dismissed, twenty times over.
+            if let name = vendorName(note) {
+                Brain.setVendorKind(context, name: name, kind: "skipped",
+                                    confidence: 1.0, source: .userAnswered)
+            }
+        default:   // "fact"
             if let key = note.factKey { Brain.upsertFact(context, key: key, value: "skipped") }
         }
         note.dismissedAt = .now
@@ -156,10 +184,17 @@ enum Curiosity {
 
         // 4) Identify a vendor we don't recognize.
         if let vendor = Brain.topUnidentifiedVendor(context) {
+            // Carries the vendor's REAL name, and a kind of its own.
+            //
+            // It used to be a generic "fact" question whose only handle on the vendor was a slug
+            // buried in `factKey` — so the answer handler, which knows nothing about vendors, filed
+            // the reply as a belief about the user and the vendor stayed unidentified forever.
             Notify.askQuestion(context, subject: "What kind of place is \(vendor)?",
                                body: "You've spent here a few times — tell me so I can group and recognize it.",
                                choices: ["Groceries", "Eating out", "Transport", "Bills"], freeText: true,
-                               questionKind: "fact", factKey: "vendor_" + Brain.slug(vendor))
+                               questionKind: "vendor_kind",
+                               factKey: "vendor_" + Brain.vendorFactKey(vendor),
+                               candidateName: vendor)
             return
         }
 
@@ -217,7 +252,7 @@ enum Curiosity {
     static func handleAnswer(_ context: ModelContext, note: AppNotification, answer raw: String) {
         let answer = raw.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        switch note.questionKind {
+        switch effectiveKind(note) {
         case "entity_discovery":
             let low = answer.lowercased()
             if low == "not important" || low == "skip" || isNonEntity(answer) {
@@ -247,6 +282,15 @@ enum Curiosity {
                                        factKey: key, factSubjectKind: "entity", entityId: eid)
                     try? context.save(); return
                 }
+            }
+
+        case "vendor_kind":
+            // Straight to the vendor subject, at user-answered confidence so a later inference
+            // can't quietly overwrite what you said. This is what makes the question stop.
+            if let name = vendorName(note) {
+                Brain.setVendorKind(context, name: name,
+                                    kind: answer.isEmpty ? "skipped" : answer,
+                                    confidence: 1.0, source: .userAnswered)
             }
 
         case "tag_spend":

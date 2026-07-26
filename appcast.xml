@@ -4,22 +4,22 @@
         <title>Freelane</title>
         <item>
             <description><![CDATA[
-<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.7</h3>
+<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.8</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>Stop telling you Apple's model is broken when it is working exactly as designed.</li>
-  <li>**"On-device keeps failing" was never a failure.** Apple's built-in model has a safety filter that can't be configured or turned off, and it refuses first-person emotional writing. The nightly pass that tags your journal entries was sending them to that model — up to eight private entries a night, each one certain to be refused — because reading an entry *looks* like the same kind of small extraction job as sorting a spend. It isn't. Journal reading now goes to the downloaded model, which was built to read it.</li>
-  <li>**A refusal is no longer counted as a fault.** Declining content is a policy outcome, not a malfunction: the app already falls through to the next brain, and that is the entire remedy. It's recorded, and it's silent.</li>
-  <li>**The warning could never stop.** The circuit breaker only ever tripped for a brain that had *never once* succeeded — so one that worked on short transactional prompts and refused long personal ones stayed at the head of the queue permanently, and each success re-armed the alert. That was an unbreakable loop about something you cannot fix. A brain now also drops out after eight consecutive genuine failures, whatever it managed last week.</li>
-  <li>**The notification pointed at a page with nothing on it.** "Check Settings → Intelligence" led to a card that never mentioned brains, because the health display had been written but never rendered. Settings → Intelligence now says the two things that can be true — Apple's model has declined N requests and that's fine, or a brain has been dropped and here's a button to try it again — and shows nothing when both are behaving.</li>
-  <li>Fixed the message reading "…safety guardrails were triggered.." with two full stops.</li>
+  <li>The question you answered twenty times finally stops.</li>
+  <li>**"What kind of place is Sari Sari store?" was unanswerable by design.** Your answer was filed as a fact about *you* — `user:_:vendor_sari_sari_store` — while the sweep that decides whether to ask looked under the vendor subject, at `vendor:sari_sari_store:sari_sari_store`. Two different addresses, so answering the question could not possibly satisfy it. Nor could dismissing it: "don't ask me again" was written to the same unread address.</li>
+  <li>**Even the AI's own identifications never landed.** `setVendorKind` slugged the name with one rule (spaces → "-"), handed it to the memory store, which slugged it again with a different rule (→ "_"), and saved it somewhere the reader never looked. A single-word shop happened to survive both rules and worked fine; anything with a space in its name — which is most shops — was permanently unidentifiable.</li>
+  <li>**Every one of those answers was going into the model's brief about you.** The vendor subject exists precisely so shop classifications don't show up in "what I know about them", and the answer path bypassed it. Twenty replies of "Groceries" and "Eating out" had been sitting in your belief store as things the app believed about *you*.</li>
+  <li>**A one-time repair moves them.** On first launch those answers are re-filed under the vendors they describe and retired from your beliefs, so the questions stop immediately rather than after one more ask. Questions already sitting in the inbox are recognised and handled correctly too.</li>
+  <li>**The address of a fact is now computed in exactly one place.** Three callers were building it by hand with three different rules; the one that slugged and the ones that didn't could never agree. That whole class of bug is gone.</li>
 </ul>
             ]]></description>
-            <title>2.7</title>
-            <pubDate>Sun, 26 Jul 2026 13:38:45 +0800</pubDate>
-            <sparkle:version>38</sparkle:version>
-            <sparkle:shortVersionString>2.7</sparkle:shortVersionString>
+            <title>2.8</title>
+            <pubDate>Sun, 26 Jul 2026 13:47:03 +0800</pubDate>
+            <sparkle:version>39</sparkle:version>
+            <sparkle:shortVersionString>2.8</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.7/Freelane.zip" length="13614448" type="application/octet-stream" sparkle:edSignature="u3iaZw/lKMnq7TSqd1nMYpSNfbKur5oJxPOY7p9OSKFKfVlG26nh0tXPCearYomi0zS2KCmeSYtroaYW3JNgBQ=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.8/Freelane.zip" length="13622860" type="application/octet-stream" sparkle:edSignature="Sl++FEEBiN4lYWLhvKaQf0ZwDR3/y5DGfMNIPK8RcH3i6LRxs8LNJt48jXqr+F6WNNzCVOFHnUUOMGS6Ioi1AA=="/>
         </item>
     </channel>
 </rss>

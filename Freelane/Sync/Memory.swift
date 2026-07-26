@@ -327,14 +327,23 @@ enum Memory {
         return union == 0 ? 0 : Double(a.intersection(b).count) / Double(union)
     }
 
-    private static func slug(_ s: String) -> String {
+    /// The canonical key form. Internal rather than private because callers that build a fact ID
+    /// by hand MUST use the same one — `remember` slugs whatever topic it's given, so a caller
+    /// slugging with a different rule (dashes, say) writes a row it can never find again.
+    static func slug(_ s: String) -> String {
         let mapped = s.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "_" }
         return String(mapped).split(separator: "_").joined(separator: "_")
     }
 
-    private static func factID(_ kind: String, _ id: String?, _ key: String) -> String {
+    /// The address of a fact. Internal, and the ONLY way anyone should compute one.
+    ///
+    /// It was private, so every reader built its own string instead — and `remember` slugs the key
+    /// on the way in while the hand-built readers didn't, so any key containing a space or a dash
+    /// was written to one address and looked up at another. That is how a vendor could be answered
+    /// twenty times and never once count as identified.
+    static func factID(_ kind: String, _ id: String?, _ key: String) -> String {
         func esc(_ s: String) -> String { s.replacingOccurrences(of: ":", with: "_") }
-        return "\(esc(kind)):\(esc(id ?? "_")):\(esc(key))"
+        return "\(esc(kind)):\(esc(id ?? "_")):\(esc(slug(key)))"
     }
 
     private static func fetch(_ context: ModelContext, id: String) -> AIFact? {

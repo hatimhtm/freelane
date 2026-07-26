@@ -275,18 +275,69 @@ enum Brain {
         try? context.save()
     }
 
+    /// How a vendor identification is addressed — ONE definition, used by the writer and the
+    /// reader, because they had drifted apart and nothing caught it.
+    ///
+    /// `setVendorKind` slugged the name with `Brain.slug` (non-alphanumerics → "-"), handed the
+    /// result to `Memory.remember`, which slugged it AGAIN with its own rule (→ "_"), and stored
+    /// `vendor:sari-sari-store:sari_sari_store`. `vendorIsIdentified` looked for
+    /// `vendor:sari-sari-store:sari-sari-store`. Those never match for any vendor whose name
+    /// contains a space — so a single-word shop worked and "Sari Sari store" was permanently
+    /// unidentifiable, and the app asked what kind of place it was forever.
+    static func vendorFactKey(_ name: String) -> String { Memory.slug(name) }
+
     /// Vendor identifications are app knowledge, not beliefs about the user — they live under
     /// their own subject so they never appear in the "what I know about them" brief.
-    static func setVendorKind(_ context: ModelContext, name: String, kind: String, confidence: Double) {
-        Memory.remember(context, topic: slug(name), fact: kind, confidence: confidence,
-                        source: .inferred, subjectKind: "vendor", subjectId: slug(name))
+    static func setVendorKind(_ context: ModelContext, name: String, kind: String,
+                              confidence: Double, source: Memory.Source = .inferred) {
+        let key = vendorFactKey(name)
+        Memory.remember(context, topic: key, fact: kind, confidence: confidence,
+                        source: source, subjectKind: "vendor", subjectId: key)
     }
 
     static func vendorIsIdentified(_ context: ModelContext, name: String) -> Bool {
-        let id = "vendor:\(slug(name)):\(slug(name))"
+        let key = vendorFactKey(name)
+        let id = Memory.factID("vendor", key, key)
         var d = FetchDescriptor<AIFact>(predicate: #Predicate { $0.id == id && $0.archivedAt == nil })
         d.fetchLimit = 1
         return ((try? context.fetch(d))?.isEmpty == false)
+    }
+
+    /// One-time repair for everyone who answered "what kind of place is X?" and got asked again.
+    ///
+    /// The answer handler wrote the reply as a fact about the USER — `user:_:vendor_<slug>` — while
+    /// the sweep that decides whether to ask looked under the vendor subject. So the question could
+    /// not be satisfied by answering it, or by dismissing it, and every reply also landed in the
+    /// "what I know about them" brief as a freestanding belief, which is the exact thing the vendor
+    /// subject exists to prevent. This moves those answers where they belong and retires the
+    /// user-subject copies, so the questions stop on first launch instead of after one more ask.
+    static func repairVendorFactsIfNeeded(_ context: ModelContext) {
+        let flag = "vendorFacts.repaired.v1"
+        guard !UserDefaults.standard.bool(forKey: flag) else { return }
+        UserDefaults.standard.set(true, forKey: flag)
+
+        let all = (try? context.fetch(FetchDescriptor<AIFact>())) ?? []
+        var moved = 0
+        for f in all where f.subjectKind == "user" && f.key.hasPrefix("vendor_") && f.archivedAt == nil {
+            // `vendor_sari_sari_store` → `sari_sari_store`, already in canonical form because
+            // Memory slugged it on the way in.
+            let key = String(f.key.dropFirst("vendor_".count))
+            guard !key.isEmpty else { continue }
+            let id = Memory.factID("vendor", key, key)
+            if (try? context.fetch(FetchDescriptor<AIFact>(predicate: #Predicate { $0.id == id })))?.isEmpty != false {
+                let row = AIFact(subjectKind: "vendor", subjectId: key, key: key,
+                                 value: f.value, confidence: 1.0,
+                                 source: Memory.Source.userAnswered.rawValue)
+                row.polarity = "affirm"
+                context.insert(row)
+            }
+            f.archivedAt = .now        // out of the user brief, but not destroyed
+            moved += 1
+        }
+        if moved > 0 {
+            try? context.save()
+            moneyLog.notice("Repaired \(moved, privacy: .public) vendor answers stored as user beliefs.")
+        }
     }
 
     /// Known person → link. Unknown → post ONE clarifying question so the user decides whether to
@@ -476,7 +527,8 @@ enum Brain {
     }
 
     static func hasFact(_ context: ModelContext, subjectKind: String = "user", subjectId: String? = nil, key: String) -> Bool {
-        let id = "\(subjectKind):\(subjectId ?? "_"):\(key)"
+        // Built by `Memory`, not by hand — see `Memory.factID`.
+        let id = Memory.factID(subjectKind, subjectId, key)
         var d = FetchDescriptor<AIFact>(predicate: #Predicate { $0.id == id && $0.archivedAt == nil })
         d.fetchLimit = 1
         return ((try? context.fetch(d))?.isEmpty == false)
