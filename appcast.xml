@@ -4,22 +4,17 @@
         <title>Freelane</title>
         <item>
             <description><![CDATA[
-<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.12</h3>
+<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.13</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>The questions themselves, now that they arrive on time.</li>
-  <li>**It invented a team, and its own invention was the proof.** "How does managing your team during payment delays affect your focus?" — for someone who has never written the word "team". There is a check for exactly this, and it was consulting the wrong evidence: the stored belief digest, which on this store contains "Managing a team at a company" and "Team management", both inferred by the model from entries where the word never appears. A fabrication got written to memory and then vouched for itself. The same door had already been closed once for the ask-history, and reopened through entry titles — an entry's title *is* the question that prompted it. The check now trusts one thing: sentences you typed yourself.</li>
-  <li>**One territory could come up twice in a single fill.** Rotation only excluded the previous round's topics, which was fine when a fill was one round and wrong the moment it became four — so a top-up could ask about your faith twice, minutes apart, in slightly different words. It's a proper cycle now: all eight topics before any repeats.</li>
-  <li>**Facts bolted onto the end of a question are rejected.** "What would make the new phone feel like an upgrade, given you already have it?" answers itself. Two connectives were blocked before; there are seventeen now, because the model reaches for a different one each time it wants to prove it read your file.</li>
-  <li>**Near-rewordings are caught.** Two questions about faith shared four content words out of ten — too low for the similarity threshold, obviously the same question to a human. Containment catches what overlap misses.</li>
-  <li>**Questions already waiting are re-checked on launch.** A gate only ever ran at the moment a question was written, so tightening one did nothing about what was already in the well. The invented-team question was still sitting there. Retired ones don't count as your dismissal, since you never saw them.</li>
+  <li>**Two questions asking the same thing can no longer both sit in the well.** The writer had gained a containment test for rewordings; the sweep that re-checks questions already waiting still compared each one to nothing, so a pair about faith that the writer would now reject stayed put. Both go through one named rule now, and when two match, the one you've had longest is the one that survives.</li>
 </ul>
             ]]></description>
-            <title>2.12</title>
-            <pubDate>Mon, 27 Jul 2026 05:14:44 +0800</pubDate>
-            <sparkle:version>43</sparkle:version>
-            <sparkle:shortVersionString>2.12</sparkle:shortVersionString>
+            <title>2.13</title>
+            <pubDate>Mon, 27 Jul 2026 05:19:26 +0800</pubDate>
+            <sparkle:version>44</sparkle:version>
+            <sparkle:shortVersionString>2.13</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.12/Freelane.zip" length="13637845" type="application/octet-stream" sparkle:edSignature="Eomji9n7m4ugv2LHMoNvaqHxbzip+zUobPuJ56JrDaj0rFp6Hk6wTJ5uIF0r0TtxlDjadtSKW3ohZvSA4Lu5Bw=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.13/Freelane.zip" length="13639848" type="application/octet-stream" sparkle:edSignature="LrjreiqzYXerLj9rFGqmR/nOAhamAFeBctnfzgc8bCG+PVpTuljjcpcT00SLWMwtPz+BetkTFzv5CeYVIpOMCQ=="/>
         </item>
     </channel>
 </rss>

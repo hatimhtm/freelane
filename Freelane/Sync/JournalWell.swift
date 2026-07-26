@@ -116,13 +116,17 @@ final class JournalWell {
         let material = Brain.journalContext(context).ownWords
 
         var dropped = 0
-        for p in open {
+        var kept: [String] = []
+        // Oldest first, so when two are the same question the one you've had longest survives.
+        for p in open.sorted(by: { $0.createdAt < $1.createdAt }) {
             var reason: String?
             if !Brain.isHumanQuestion(p.text) { reason = "fails the style gate" }
             else if let invented = Brain.inventsCircumstance(p.text, material: material) {
                 reason = "invents '\(invented)'"
+            } else if kept.contains(where: { Brain.isReword($0, p.text) }) {
+                reason = "asks what another open question already asks"
             }
-            guard let reason else { continue }
+            guard let reason else { kept.append(p.text); continue }
             // Dismissed rather than deleted, and WITHOUT the "down" feedback a real dismissal
             // carries — the user never saw this one, so it shouldn't teach the model their taste.
             p.status = "dismissed"; p.resolvedAt = .now; p.dirty = true

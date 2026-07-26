@@ -1142,6 +1142,19 @@ enum Brain {
     private static func promptTokens(_ s: String) -> Set<String> { Memory.contentTokens(s) }
     private static func jaccard(_ a: Set<String>, _ b: Set<String>) -> Double { Memory.jaccard(a, b) }
 
+    /// Are these two questions the same question in different words?
+    ///
+    /// One rule, named once, so the gate that admits a question and the sweep that re-checks the
+    /// ones already waiting cannot disagree — which they did: the writer gained a containment test
+    /// while the pruner still compared nothing at all, so two questions about faith that the writer
+    /// would now reject sat in the well regardless.
+    static func isReword(_ a: String, _ b: String) -> Bool {
+        let x = promptTokens(a), y = promptTokens(b)
+        if jaccard(x, y) >= 0.55 { return true }
+        let shared = x.intersection(y).count
+        return shared >= 3 && Double(shared) / Double(max(1, min(x.count, y.count))) >= 0.7
+    }
+
     /// Self-heal at launch: delete stored questions (and dismiss observations) that are echoed
     /// placeholders or contain a leaked internal identifier.
     @discardableResult
@@ -1206,31 +1219,24 @@ enum Brain {
                                     sourceLetterId: UUID? = nil, sourceExcerpt: String? = nil) -> Int {
         let all = ((try? context.fetch(FetchDescriptor<JournalPrompt>())) ?? [])
         let existing = Set(all.map { $0.text.lowercased().trimmingCharacters(in: .whitespaces) })
-        var seenTokens = all.sorted { $0.createdAt > $1.createdAt }.prefix(150).map { promptTokens($0.text) }
+        var seenTexts = all.sorted { $0.createdAt > $1.createdAt }.prefix(150).map(\.text)
         var added = 0
         for t in texts {
             let key = t.lowercased().trimmingCharacters(in: .whitespaces)
             // Chokepoint: nothing that fails the human gate is ever stored, whichever path made it.
             guard isHumanQuestion(t), !existing.contains(key) else { continue }
-            let toks = promptTokens(t)
             // Jaccard alone misses rewordings, because padding words dilute it. These two both
             // shipped in one round: "How does your faith help you cope with recent stress and
             // financial challenges?" and "How has your faith been a source of strength amidst the
             // recent financial challenges?" — four shared content words out of ten, so Jaccard is
             // 0.4 and the gate opened. Containment asks the better question: is the shorter one's
             // subject already entirely inside the other's? Here it is.
-            let tooSimilar = seenTokens.contains { prev in
-                if jaccard(prev, toks) >= 0.55 { return true }
-                let shared = prev.intersection(toks).count
-                let smaller = max(1, min(prev.count, toks.count))
-                return shared >= 3 && Double(shared) / Double(smaller) >= 0.7
-            }
-            if tooSimilar { continue }
+            if seenTexts.contains(where: { isReword($0, t) }) { continue }
             let p = JournalPrompt(text: t, source: source); p.dirty = true
             p.sourceLetterId = sourceLetterId
             p.sourceExcerpt = sourceExcerpt
             context.insert(p); added += 1
-            seenTokens.append(toks)
+            seenTexts.append(t)
         }
         if added > 0 { try? context.save() }
         return added
