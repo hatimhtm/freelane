@@ -3,6 +3,16 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.4
+
+Cards that read themselves, and a sidebar that looks like the system it runs on.
+
+- **The dashboard figures are cards now, and the card carries the verdict.** The rail was better for dense comparison, but that density was exactly the problem: every number looked equally fine, so nothing on the front page told you where to look. Green ground means healthy, red means it wants you, plain grey means it's just a fact. You scan the colours and stop on what isn't grey. The tint is deliberately weak — 9–12% — because saturated blocks would make a money app feel like a game.
+- **Money owed to you reads as red**, not because it's a loss but because it's money that hasn't arrived. Fees read red for the same reason. Sadaka and money landed read green.
+- **One layout instead of two.** The rail was pinned at a fixed 262pt on wide windows with a separate stacked branch for narrow ones — two layouts to keep in sync, and on a wide Mac window it was a thin strip of text beside a mostly-empty column. The card grid reflows on its own and gets the full width.
+- **Sidebar icons are colour tiles**, the macOS 27 convention: a filled rounded square per destination with a white glyph, each a distinct hue, so you navigate by colour and shape before you read the word. A tinted square is decoration on a content grid — it's the convention on a navigation list, which is the opposite call from the one made in 1.8, and the right one here.
+- **"Stored on this Mac" floats at the bottom of the sidebar** above a hairline, instead of scrolling away with the list. It's a standing fact about the app, not the last item in the navigation.
+
 ## 2.3
 
 The charts, and the last of the Settings faults.

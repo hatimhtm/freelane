@@ -314,3 +314,104 @@ struct LeadFigure: View {
         .pointerLight(accent, radius: 380)
     }
 }
+
+// MARK: - Signal cards
+
+/// A figure card whose BACKGROUND carries the verdict.
+///
+/// The rail this sits beside is better for dense comparison — labels aligned, figures in one
+/// column — but it makes every number look equally fine, because a tinted row would be noise at
+/// that density. A card can afford a tinted ground, and that ground does the work: green means
+/// this is healthy, red means it needs you, neutral means it's just a fact. You skim the colours
+/// and only read the ones that aren't grey.
+struct SignalCard: View {
+    enum Mood { case good, bad, neutral }
+
+    var label: String
+    var value: String
+    var sub: String?
+    var mood: Mood
+    var icon: String
+    var destination: Feature?
+
+    @Environment(\.navigate) private var navigate
+    @Environment(\.colorScheme) private var scheme
+    @State private var hovering = false
+
+    private var tone: Color {
+        switch mood {
+        case .good:    return Palette.positive
+        case .bad:     return Palette.negative
+        case .neutral: return Palette.textSecondary
+        }
+    }
+
+    /// Deliberately weak — 9% in dark, 12% on the light ground. Strong enough to sort at a glance,
+    /// far short of the saturated blocks that make a money app feel like a game.
+    private var fill: Color {
+        let dark = scheme == .dark
+        switch mood {
+        case .neutral: return Palette.card
+        default:       return tone.opacity(dark ? 0.09 : 0.12)
+        }
+    }
+
+    var body: some View {
+        Button { if let d = destination { navigate(d) } } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 5) {
+                    Image(systemName: icon)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(mood == .neutral ? Palette.textTertiary : tone)
+                    Text(label)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .textCase(.uppercase).kerning(0.6)
+                        .foregroundStyle(Palette.textTertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if destination != nil {
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Palette.textTertiary)
+                            .opacity(hovering ? 1 : 0)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                let isFigure = value.contains(where: \.isNumber)
+                Text(value)
+                    .font(isFigure ? Typo.figure(26) : .system(size: 16, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(mood == .neutral ? Palette.textPrimary : tone)
+                    .lineLimit(1).minimumScaleFactor(0.65)
+                    .contentTransition(.numericText())
+
+                if let sub {
+                    Text(sub).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                        .lineLimit(1).padding(.top, 2)
+                }
+            }
+            .padding(.horizontal, 15).padding(.vertical, 14)
+            .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: Radii.tile, style: .continuous)
+                ZStack {
+                    shape.fill(Palette.card)
+                    shape.fill(fill)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: Radii.tile, style: .continuous)
+                    .strokeBorder(mood == .neutral ? Palette.cardEdge : tone.opacity(0.28), lineWidth: 0.9))
+            .shadow(color: .black.opacity(scheme == .dark ? 0.22 : 0.05),
+                    radius: hovering ? 12 : 8, y: hovering ? 4 : 3)
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(hovering && destination != nil ? 1.012 : 1)
+        .pointerStyle(destination != nil ? .link : .default)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.16), value: hovering)
+        .disabled(destination == nil)
+    }
+}

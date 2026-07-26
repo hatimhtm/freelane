@@ -67,68 +67,32 @@ struct DashboardView: View {
             } else {
                 // A FRONT PAGE, not a stack of cards.
                 //
-                // Every screen in this app was the same shape — full-width cards down a centred
-                // column — and the Dashboard was the worst case: a hero, then ten equal tiles, then
-                // a chart, all the same width, nothing leading. On a Mac window that also wastes
-                // half the horizontal space.
+                // Ordered by what you need, not by what's interesting: the balance you came for,
+                // then the figures you check daily, then anything needing a decision, then what
+                // the app noticed, then the shape of the quarter.
                 //
-                // Now it reads like a page: a narrow rail of figures on the right, and a lead
-                // column on the left carrying the one number that matters, what needs you, and what
-                // the app noticed. `ViewThatFits` stacks the two on a narrow window.
-                // Order by what you need, not by what's interesting.
-                //
-                // In the stacked (narrow-window) layout the rail used to come LAST, which put safe-
-                // to-spend — the number checked every single day — below the lead panel, the
-                // weather banner, the observations and the chart. You had to scroll past what the
-                // app noticed to reach what you actually came for. Beside the lead on a wide
-                // window; immediately under it when stacked.
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 18) {
-                        leadColumn(m, s, signals)
-                        rail(m, s).frame(width: 262)
-                    }
-                    VStack(alignment: .leading, spacing: 18) {
-                        LeadFigure(
-                            label: "Available across wallets",
-                            amount: m.available, code: base,
-                            context: leadContext(m, s),
-                            spark: Array(m.cashFlow.suffix(30).map { $0.cumulative }))
-                        rail(m, s)
-                        if signals.isEmpty {
-                            CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
-                        } else {
-                            needsYouCard(signals)
-                        }
-                        insightsCard
-                        CashFlowCard(points: m.cashFlow, base: base)
-                    }
+                // The figures used to be a rail pinned to the right at a fixed 262pt, with a second
+                // stacked branch for narrow windows. Two layouts to keep in sync, and on a wide
+                // Mac window the rail was a thin strip of text beside a mostly-empty column. The
+                // card grid reflows on its own — one layout, and the figures get the whole width.
+                LeadFigure(
+                    label: "Available across wallets",
+                    amount: m.available, code: base,
+                    context: leadContext(m, s),
+                    spark: Array(m.cashFlow.suffix(30).map { $0.cumulative }))
+                rail(m, s)
+                if signals.isEmpty {
+                    CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
+                } else {
+                    needsYouCard(signals)
                 }
+                insightsCard
+                CashFlowCard(points: m.cashFlow, base: base)
             }
         }
     }
 
     // MARK: The front page
-
-    /// The narrative column: the number that matters, then anything that needs a decision, then
-    /// what the app noticed, then the shape of the month.
-    @ViewBuilder
-    private func leadColumn(_ m: DashboardMetrics, _ s: SafeBreakdown, _ signals: [FocusSignal]) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            LeadFigure(
-                label: "Available across wallets",
-                amount: m.available, code: base,
-                context: leadContext(m, s),
-                spark: Array(m.cashFlow.suffix(30).map { $0.cumulative }))
-
-            if signals.isEmpty {
-                CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
-            } else {
-                needsYouCard(signals)
-            }
-            insightsCard
-            CashFlowCard(points: m.cashFlow, base: base)
-        }
-    }
 
     /// `runway` is optional (there's no runway without a spending pace) and returns a fractional
     /// Double — interpolating it raw once put "Optional(19.463007703879317)-day runway" on the
@@ -143,47 +107,71 @@ struct DashboardView: View {
         return bits
     }
 
-    /// The figure rail. Replaces the ten-tile grid — same numbers, a third of the width, and
-    /// actually scannable because the labels line up and the figures are in one column.
+    /// The signal cards. What used to be a rail of aligned rows.
+    ///
+    /// The rail was better for dense comparison, but it made every number look equally fine — a
+    /// tinted row at that density would have been noise, so nothing could carry a verdict. Cards
+    /// can hold a tinted ground, and that ground does the reading for you: green is healthy, red
+    /// needs you, plain is just a fact. You scan the colours and only stop on what isn't grey.
     private func rail(_ m: DashboardMetrics, _ s: SafeBreakdown) -> some View {
-        var items: [FigureRail.Item] = [
-            .init(id: "safe", label: "Safe to spend",
-                  value: CurrencyFormat.abbreviated(s.liveRemaining, base),
-                  sub: "of " + CurrencyFormat.abbreviated(s.initialForToday, base) + " today",
-                  destination: .spending),
-            .init(id: "spent", label: "Spent today",
-                  value: CurrencyFormat.abbreviated(s.spentToday, base), destination: .spending),
-            .init(id: "landed", label: "Landed this month",
-                  value: CurrencyFormat.abbreviated(m.landedMTD, base),
-                  sub: "YTD " + CurrencyFormat.abbreviated(m.landedYTD, base), destination: .payments),
-            .init(id: "out", label: "Outstanding",
-                  value: CurrencyFormat.abbreviated(m.outstandingBase, base),
-                  sub: "\(m.activeProjects) open", destination: .projects),
-            .init(id: "net", label: "Net · 30 days",
-                  value: CurrencyFormat.abbreviated(net30, base),
-                  tone: net30 < 0 ? Palette.negative : nil, destination: .stats),
-            .init(id: "fees", label: "Fees this month",
-                  value: CurrencyFormat.abbreviated(m.feesMTD, base), destination: .stats),
-            .init(id: "proj", label: "Active projects", value: "\(m.activeProjects)",
-                  sub: overdueProjects > 0 ? "\(overdueProjects) overdue" : nil,
-                  tone: overdueProjects > 0 ? Palette.warning : nil, destination: .projects),
-            .init(id: "sadaka", label: "Sadaka this month",
-                  value: CurrencyFormat.abbreviated(sadakaMTD, base), destination: .sadaka),
+        let safeMood: SignalCard.Mood =
+            s.liveRemaining <= 0 ? .bad : (s.liveRemaining < s.initialForToday * 0.25 ? .bad : .good)
+
+        var cards: [SignalCard] = [
+            SignalCard(label: "Safe to spend",
+                       value: CurrencyFormat.abbreviated(s.liveRemaining, base),
+                       sub: "of " + CurrencyFormat.abbreviated(s.initialForToday, base) + " today",
+                       mood: safeMood, icon: "shield.lefthalf.filled", destination: .spending),
+            SignalCard(label: "Spent today",
+                       value: CurrencyFormat.abbreviated(s.spentToday, base), sub: nil,
+                       mood: s.spentToday > s.initialForToday ? .bad : .neutral,
+                       icon: "cart", destination: .spending),
+            SignalCard(label: "Landed this month",
+                       value: CurrencyFormat.abbreviated(m.landedMTD, base),
+                       sub: "YTD " + CurrencyFormat.abbreviated(m.landedYTD, base),
+                       mood: m.landedMTD > 0 ? .good : .neutral,
+                       icon: "arrow.down.left", destination: .payments),
+            SignalCard(label: "Owed to you",
+                       value: CurrencyFormat.abbreviated(m.outstandingBase, base),
+                       sub: "\(m.activeProjects) open",
+                       mood: m.outstandingBase > 0 ? .bad : .neutral,
+                       icon: "hourglass", destination: .projects),
+            SignalCard(label: "Net · 30 days",
+                       value: CurrencyFormat.abbreviated(net30, base), sub: nil,
+                       mood: net30 < 0 ? .bad : .good,
+                       icon: "chart.line.uptrend.xyaxis", destination: .stats),
+            SignalCard(label: "Fees this month",
+                       value: CurrencyFormat.abbreviated(m.feesMTD, base), sub: nil,
+                       mood: m.feesMTD > 0 ? .bad : .neutral,
+                       icon: "scissors", destination: .stats),
+            SignalCard(label: "Active projects", value: "\(m.activeProjects)",
+                       sub: overdueProjects > 0 ? "\(overdueProjects) overdue" : nil,
+                       mood: overdueProjects > 0 ? .bad : .neutral,
+                       icon: "folder", destination: .projects),
+            SignalCard(label: "Sadaka this month",
+                       value: CurrencyFormat.abbreviated(sadakaMTD, base), sub: nil,
+                       mood: sadakaMTD > 0 ? .good : .neutral,
+                       icon: "heart.fill", destination: .sadaka),
         ]
         if loanOutstanding > 0 {
-            items.append(.init(id: "loans", label: "Loans out",
-                               value: CurrencyFormat.abbreviated(loanOutstanding, base),
-                               sub: "\(openLoanCount) open", destination: .loans))
+            cards.append(SignalCard(label: "Loans out",
+                                    value: CurrencyFormat.abbreviated(loanOutstanding, base),
+                                    sub: "\(openLoanCount) open", mood: .neutral,
+                                    icon: "arrow.left.arrow.right", destination: .loans))
         }
         if let mv = VendorTrends.biggest(spends), let d = mv.delta {
             let up = d > 0
-            items.append(.init(id: "vtrend", label: up ? "Biggest riser" : "Biggest faller",
-                               value: mv.name,
-                               sub: "\(abs(Int((d * 100).rounded())))% vs last month",
-                               tone: up ? Palette.negative : Palette.positive,
-                               destination: .spending))
+            cards.append(SignalCard(label: up ? "Biggest riser" : "Biggest faller",
+                                    value: mv.name,
+                                    sub: "\(abs(Int((d * 100).rounded())))% vs last month",
+                                    mood: up ? .bad : .good,
+                                    icon: up ? "arrow.up.right.circle" : "arrow.down.right.circle",
+                                    destination: .spending))
         }
-        return FigureRail(title: "At a glance", items: items)
+
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 12)], spacing: 12) {
+            ForEach(Array(cards.enumerated()), id: \.offset) { i, c in c.riseIn(i) }
+        }
     }
 
     // MARK: Needs you — the prioritized attention surface

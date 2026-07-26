@@ -79,6 +79,28 @@ enum Feature: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The sidebar tile colour. Distinct per destination — the point of a coloured tile is that
+    /// you learn where things are without reading the label, which only works if no two share a
+    /// hue. Section accent is still what marks the SELECTED row.
+    var tileColor: Color {
+        switch self {
+        case .dashboard: return Palette.azure
+        case .agenda:    return Palette.indigo
+        case .payments:  return Palette.positive
+        case .projects:  return Palette.cyan
+        case .spending:  return Palette.warning
+        case .loans:     return Palette.violet
+        case .clients:   return Palette.indigo
+        case .wallets:   return Palette.teal
+        case .sadaka:    return Palette.violet
+        case .body:      return Palette.negative
+        case .letters:   return Palette.violet
+        case .stats:     return Palette.warning
+        case .settings:  return Palette.textSecondary
+        default:         return Palette.textSecondary
+        }
+    }
+
     /// A feature inherits its section's accent — so all of Money reads mint, all of Life reads
     /// orchid, etc. Coherent section identity beats a per-screen rainbow (and kills the monotony).
     var accent: Color {
@@ -336,8 +358,25 @@ private struct Sidebar: View {
     @Environment(SyncManager.self) private var sync
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+        // The storage chip is OUTSIDE the scroll view now. It was the last child inside it, so on
+        // a short window it floated wherever the content happened to end, and on a long one it
+        // scrolled away entirely. A status chip belongs pinned to the bottom of the sidebar.
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    sidebarContent
+                }
+            }
+            .scrollIndicators(.never)
+
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+            storageChip.padding(12)
+        }
+    }
+
+    @ViewBuilder
+    private var sidebarContent: some View {
+        Group {
                 wordmark
                 ForEach(FeatureGroup.allCases) { group in
                     // Wallets live inside Payments now (not a separate sidebar item).
@@ -363,10 +402,7 @@ private struct Sidebar: View {
                 Divider().overlay(Palette.hairline).padding(.horizontal, 14).padding(.vertical, 10)
                 NavRow(item: .settings, selected: feature == .settings) { select(.settings) }
                 Spacer(minLength: 8)
-                storageChip.padding(12)
-            }
         }
-        .scrollIndicators(.never)
     }
 
     private var wordmark: some View {
@@ -446,11 +482,24 @@ private struct NavRow: View {
         // what separates a considered interface from a decorated one.
         let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
         Button(action: action) {
-            HStack(spacing: 11) {
+            HStack(spacing: 10) {
+                // A COLOURED ICON TILE — the macOS sidebar convention (System Settings, Mail,
+                // Finder all do this), and I was wrong to strip it earlier.
+                //
+                // The reason isn't inconsistency with the rest of the app: on a CONTENT surface a
+                // grid of tinted glyph squares is decoration repeated a dozen times, and removing
+                // it there was right. In a NAVIGATION list it is the opposite — the tile is how you
+                // find a destination without reading, and it's what every Mac user already expects
+                // a sidebar to look like. Same motif, different job.
                 Image(systemName: item.icon)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Palette.textPrimary : Palette.textTertiary)
-                    .frame(width: 19)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 20, height: 20)
+                    .background(
+                        LinearGradient(colors: [item.tileColor, item.tileColor.opacity(0.72)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 5.5, style: .continuous))
+                    .opacity(selected ? 1 : 0.9)
                 Text(item.title)
                     .font(.system(size: 13, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? Palette.textPrimary
