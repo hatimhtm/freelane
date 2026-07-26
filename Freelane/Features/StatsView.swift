@@ -240,23 +240,36 @@ struct StatsView: View {
                         Text(CurrencyFormat.string(p.total, base))
                             .font(Typo.rowFigure(14)).foregroundStyle(Palette.positive)
                     } else {
-                        Text("Hover a bar for the exact amount").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                        Text("Green months beat your 12-month average.").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
                     Spacer()
                 }
                 Chart(byMonth) { m in
+                    // Bars are coloured against the 12-month average, so the chart answers "was
+                    // that a good month" without you comparing heights. They were all one blue
+                    // gradient, which meant the average line was the only thing carrying that
+                    // information and you had to trace across to use it.
                     BarMark(x: .value("Month", m.month, unit: .month), y: .value("Net", m.total))
-                        .foregroundStyle(LinearGradient(colors: [Palette.azure, Palette.azure.opacity(0.22)],
-                                                        startPoint: .top, endPoint: .bottom))
-                        .cornerRadius(4)
-                        .opacity(selPt == nil || selPt?.month == m.month ? 1 : 0.35)
+                        .foregroundStyle(
+                            m.total >= monthlyAvg
+                                ? LinearGradient(colors: [Palette.positive, Palette.positive.opacity(0.45)],
+                                                 startPoint: .top, endPoint: .bottom)
+                                : LinearGradient(colors: [Palette.textSecondary.opacity(0.55), Palette.textSecondary.opacity(0.18)],
+                                                 startPoint: .top, endPoint: .bottom))
+                        .cornerRadius(5)
+                        .opacity(selPt == nil || selPt?.month == m.month ? 1 : 0.3)
                     RuleMark(y: .value("Average", monthlyAvg))
-                        .foregroundStyle(Palette.textTertiary.opacity(0.35))
+                        .foregroundStyle(Palette.textTertiary.opacity(0.45))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 4]))
+                        .annotation(position: .trailing, alignment: .leading, spacing: 4) {
+                            Text("avg").font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
+                        }
                     if let pt = selPt {
-                        RuleMark(x: .value("Month", pt.month, unit: .month)).foregroundStyle(Palette.textTertiary.opacity(0.45))
+                        RuleMark(x: .value("Month", pt.month, unit: .month))
+                            .foregroundStyle(Palette.textTertiary.opacity(0.35))
                     }
                 }
+                .chartPlotStyle { $0.padding(.top, 10) }
                 .chartYScale(domain: 0...(maxV * 1.08))
                 .chartXSelection(value: $selMonth)
                 .chartYAxis { AxisMarks(position: .leading) { v in

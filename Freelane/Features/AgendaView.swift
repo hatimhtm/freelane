@@ -261,25 +261,57 @@ struct AgendaView: View {
                     }
                 }
                 Chart {
+                    // Same language as the Dashboard's cash flow: the fill is split at zero and
+                    // coloured by side, so the moment the projection goes under is visible as a
+                    // change in the shape rather than as a number you have to read off an axis.
                     ForEach(pts) { p in
-                        AreaMark(x: .value("Date", p.date), y: .value("Balance", p.balance))
+                        AreaMark(x: .value("Date", p.date),
+                                 yStart: .value("Zero", 0),
+                                 yEnd: .value("Balance", p.balance))
                             .interpolationMethod(.stepEnd)
-                            .foregroundStyle(LinearGradient(colors: [Palette.azure.opacity(0.30), Palette.azure.opacity(0.02)], startPoint: .top, endPoint: .bottom))
-                        LineMark(x: .value("Date", p.date), y: .value("Balance", p.balance))
-                            .interpolationMethod(.stepEnd).lineStyle(StrokeStyle(lineWidth: 2))
-                            .foregroundStyle(Palette.azure)
+                            .foregroundStyle(
+                                p.balance >= 0
+                                    ? LinearGradient(colors: [Palette.positive.opacity(0.28), Palette.positive.opacity(0.02)],
+                                                     startPoint: .top, endPoint: .bottom)
+                                    : LinearGradient(colors: [Palette.negative.opacity(0.04), Palette.negative.opacity(0.30)],
+                                                     startPoint: .top, endPoint: .bottom))
                     }
-                    RuleMark(y: .value("Zero", 0)).foregroundStyle(Palette.negative.opacity(0.4)).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    ForEach(pts) { p in
+                        LineMark(x: .value("Date", p.date), y: .value("Balance", p.balance))
+                            .interpolationMethod(.stepEnd)
+                            .lineStyle(StrokeStyle(lineWidth: 1.8, lineJoin: .round))
+                            .foregroundStyle(Palette.textPrimary.opacity(0.7))
+                    }
+                    RuleMark(y: .value("Zero", 0))
+                        .foregroundStyle(Palette.textTertiary.opacity(0.5))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     if let low {
                         PointMark(x: .value("Date", low.date), y: .value("Balance", low.balance))
-                            .foregroundStyle(dipsNegative ? Palette.negative : Palette.warning).symbolSize(60)
+                            .foregroundStyle(dipsNegative ? Palette.negative : Palette.warning)
+                            .symbolSize(58)
+                            .annotation(position: .bottom, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                                Text("lowest").font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
+                            }
                     }
                 }
-                .chartYAxis { AxisMarks(position: .leading) { v in
-                    AxisGridLine().foregroundStyle(Palette.hairline)
-                    AxisValueLabel { if let d = v.as(Double.self) { Text(CurrencyFormat.abbreviated(d, base)).foregroundStyle(Palette.textTertiary) } }
-                } }
-                .frame(height: 170)
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { v in
+                        AxisValueLabel {
+                            if let d = v.as(Double.self) {
+                                Text(CurrencyFormat.abbreviated(d, base))
+                                    .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                            }
+                        }
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .day, count: 14)) { _ in
+                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                            .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                    }
+                }
+                .chartPlotStyle { $0.padding(.top, 14).padding(.bottom, 2) }
+                .frame(height: 180)
             }
         }
     }

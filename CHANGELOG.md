@@ -3,6 +3,22 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.3
+
+The charts, and the last of the Settings faults.
+
+You said what you like about Cashew isn't the colours — it's that everything looks intentionally placed, and the charts are genuinely well made. That's a fair reading of where this app was weakest: the charts worked but nothing about them was *considered*.
+
+- **Cash flow reads its own answer now.** The fill is split at zero and coloured by side — green above, oxblood below — so the single most important fact on a cumulative line, which side of zero you're on, is carried by the shape instead of by an axis you have to read. The zero rule only appears when the line actually crosses it (a baseline you never touch is furniture), today's position is marked with its figure, and the horizontal grid is gone — it was drawing rulings straight through a filled area and muddying it. Three axis labels instead of six.
+- **The cash-flow forecast on Agenda speaks the same language**, so the moment your projection dips under is a change in the shape, and the lowest point says "lowest".
+- **Income bars are coloured against your own average** — green months beat your 12-month average, grey months don't. The average line was previously the only thing carrying that, and you had to trace across the chart to use it.
+- **Categories have identity.** Every category bar was the same ochre, so ranking was carried by length alone and nothing was memorable between visits. Each now has a stable colour derived from its name — a budget going over still overrides it, because that's more urgent than knowing which category it is.
+
+### Settings
+
+- **Denied permissions explain themselves.** If macOS has Reminders or Contacts blocked, it shows no prompt at all — the switch just snapped back with no explanation, which reads as the app being broken. It now says so and opens the right pane.
+- **"Recalibrate wallets" moved out of Storage** — a tab about disk location and backups was hosting a control that writes real ledger adjustments, one stray click from someone who came to make a backup.
+
 ## 2.2
 
 Ordering, plain language, and a real Settings pass.

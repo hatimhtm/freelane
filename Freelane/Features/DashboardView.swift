@@ -523,51 +523,99 @@ private struct CashFlowCard: View {
                     .font(.system(size: 12)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 60)
             } else {
                 let scrubPt = scrubDate.flatMap { d in pts.min(by: { abs($0.date.timeIntervalSince(d)) < abs($1.date.timeIntervalSince(d)) }) }
+                let lo = pts.map(\.cumulative).min() ?? 0
+                let hi = pts.map(\.cumulative).max() ?? 0
+                let crossesZero = lo < 0 && hi > 0
+
                 Chart {
+                    // The fill is split at zero and coloured by SIDE, not by brand.
+                    //
+                    // It used to be one blue gradient regardless of whether you were up or under.
+                    // On a cumulative cash-flow line the single most important fact is which side
+                    // of zero you're on, and the chart was spending its only colour saying nothing.
                     ForEach(pts) { p in
-                        AreaMark(x: .value("Date", p.date), y: .value("Balance", p.cumulative))
+                        AreaMark(
+                            x: .value("Date", p.date),
+                            yStart: .value("Zero", 0),
+                            yEnd: .value("Balance", p.cumulative))
                             .interpolationMethod(.monotone)
-                            .foregroundStyle(LinearGradient(colors: [Palette.azure.opacity(0.45), Palette.azure.opacity(0.02)],
-                                                            startPoint: .top, endPoint: .bottom))
+                            .foregroundStyle(
+                                p.cumulative >= 0
+                                    ? LinearGradient(colors: [Palette.positive.opacity(0.34), Palette.positive.opacity(0.02)],
+                                                     startPoint: .top, endPoint: .bottom)
+                                    : LinearGradient(colors: [Palette.negative.opacity(0.04), Palette.negative.opacity(0.30)],
+                                                     startPoint: .top, endPoint: .bottom))
+                    }
+
+                    ForEach(pts) { p in
                         LineMark(x: .value("Date", p.date), y: .value("Balance", p.cumulative))
                             .interpolationMethod(.monotone)
-                            .lineStyle(StrokeStyle(lineWidth: 2.5))
-                            .foregroundStyle(LinearGradient(colors: [Palette.cyan, Palette.azure],
-                                                            startPoint: .leading, endPoint: .trailing))
+                            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                            .foregroundStyle(Palette.textPrimary.opacity(0.75))
                     }
-                    if let s = scrubPt {     // hover crosshair + value tooltip
-                        RuleMark(x: .value("Date", s.date)).foregroundStyle(Palette.textTertiary.opacity(0.45))
+
+                    // Zero, drawn only when the line actually crosses it — a baseline you never
+                    // touch is furniture.
+                    if crossesZero {
+                        RuleMark(y: .value("Zero", 0))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            .foregroundStyle(Palette.textTertiary.opacity(0.5))
+                    }
+
+                    // Where you are today — the chart's conclusion, marked.
+                    if let last = pts.last, scrubPt == nil {
+                        PointMark(x: .value("Date", last.date), y: .value("Balance", last.cumulative))
+                            .foregroundStyle(last.cumulative >= 0 ? Palette.positive : Palette.negative)
+                            .symbolSize(64)
+                            .annotation(position: .top, spacing: 5, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                                Text(CurrencyFormat.abbreviated(last.cumulative, base))
+                                    .font(Typo.rowFigure(11)).monospacedDigit()
+                                    .foregroundStyle(Palette.textSecondary)
+                            }
+                    }
+
+                    if let s = scrubPt {
+                        RuleMark(x: .value("Date", s.date))
+                            .lineStyle(StrokeStyle(lineWidth: 1))
+                            .foregroundStyle(Palette.textTertiary.opacity(0.4))
                             .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(s.date, format: .dateTime.month(.abbreviated).day()).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
-                                    Text(CurrencyFormat.string(s.cumulative, base, compact: true)).font(Typo.rowFigure(12)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                                    Text(s.date, format: .dateTime.month(.abbreviated).day())
+                                        .font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
+                                    Text(CurrencyFormat.string(s.cumulative, base, compact: true))
+                                        .font(Typo.rowFigure(12)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                                 }
-                                .padding(6)
+                                .padding(.horizontal, 8).padding(.vertical, 6)
                                 .background(Palette.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.cardEdge, lineWidth: 0.7))
-                                .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+                                .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
                             }
                         PointMark(x: .value("Date", s.date), y: .value("Balance", s.cumulative))
-                            .foregroundStyle(Palette.cyan).symbolSize(70)
+                            .foregroundStyle(s.cumulative >= 0 ? Palette.positive : Palette.negative)
+                            .symbolSize(64)
                     }
                 }
                 .chartXSelection(value: $scrubDate)
                 .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisGridLine().foregroundStyle(Palette.hairline)
+                    // Three labels, no grid. The old version drew a full horizontal grid behind a
+                    // filled area chart, so every ruling passed through the fill and muddied it.
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
-                                Text(CurrencyFormat.abbreviated(v, base)).foregroundStyle(Palette.textTertiary)
+                                Text(CurrencyFormat.abbreviated(v, base))
+                                    .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
                             }
                         }
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: 21)) { _ in
-                        AxisGridLine().foregroundStyle(Palette.hairline)
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).foregroundStyle(Palette.textTertiary)
+                    AxisMarks(values: .stride(by: .day, count: 30)) { _ in
+                        AxisValueLabel(format: .dateTime.month(.abbreviated))
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(Palette.textTertiary)
                     }
                 }
+                .chartPlotStyle { $0.padding(.top, 18).padding(.bottom, 2) }
                 .frame(height: 220)
             }
         }

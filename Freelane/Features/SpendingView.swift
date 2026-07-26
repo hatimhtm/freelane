@@ -1301,11 +1301,23 @@ private struct CategoryRailRow: View {
 
     private var overCap: Double? { cap.map { $0 > 0 ? total / $0 : 0 } }
 
+    /// A stable colour per category name, so "Food" is the same hue every time you open the page
+    /// and you start finding it by sight. Hashed rather than `hashValue`, which is randomised per
+    /// launch and would repaint the whole page on every start.
+    private var categoryTone: Color {
+        let palette: [Color] = [Palette.indigo, Palette.violet, Palette.cyan, Palette.teal,
+                                Palette.warning, Palette.azure]
+        let idx = Int(StableHash.of(name.lowercased()).prefix(6), radix: 16).map { $0 % palette.count } ?? 0
+        return palette[idx]
+    }
+
     private var barTone: Color {
-        guard let r = overCap else { return selected ? Palette.azure : Palette.textSecondary.opacity(0.55) }
-        if r >= 1 { return Palette.negative }
-        if r >= 0.8 { return Palette.warning }
-        return selected ? Palette.azure : Palette.positive
+        // A budget overrides identity — going over is more urgent than knowing which category it is.
+        if let r = overCap {
+            if r >= 1 { return Palette.negative }
+            if r >= 0.8 { return Palette.warning }
+        }
+        return categoryTone
     }
 
     var body: some View {

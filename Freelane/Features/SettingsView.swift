@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var ai = AIManager()
     @State private var local = LocalModelStore.shared
     @State private var storeSize = "—"
+    @State private var denied: Set<String> = []
     @State private var sub = 0
     @State private var pendingBase: String?
     @State private var baseError: String?
@@ -51,8 +52,8 @@ struct SettingsView: View {
             : "All data lives on this Mac. No cloud, fully private."
         return Page("Settings", subtitle: subtitle, subtabs: tabs, selection: $sub) {
             switch current {
-            case "General": generalCard
-            case "Storage": storageCard; recalibrateCard
+            case "General": generalCard; recalibrateCard
+            case "Storage": storageCard
             case "Notifications": notificationsCard
             case "Intelligence": aiCard
             case "Integrations": integrationsCard
@@ -265,19 +266,53 @@ struct SettingsView: View {
         }.toggleStyle(.switch).tint(Palette.cyan)
     }
 
-    private func integToggle(_ flag: Binding<Bool>, _ title: String, _ desc: String, _ icon: String, request: @escaping () async -> Bool) -> some View {
-        Toggle(isOn: Binding(get: { flag.wrappedValue }, set: { on in
-            if on { Task { let ok = await request(); flag.wrappedValue = ok } }   // only stays on if access granted
-            else { flag.wrappedValue = false }
-        })) {
-            HStack(spacing: 10) {
-                Image(systemName: icon).font(.system(size: 14)).foregroundStyle(Palette.cyan).frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
-                    Text(desc).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
+    /// A permission toggle that explains itself when macOS says no.
+    ///
+    /// If you've previously denied Reminders/Contacts/Calendar in System Settings, macOS shows no
+    /// prompt at all — the request returns false immediately and the switch just snapped back with
+    /// zero explanation, which reads as the app being broken. It now says what happened and offers
+    /// the one place you can undo it.
+    private func integToggle(_ flag: Binding<Bool>, _ title: String, _ desc: String, _ icon: String,
+                             pane: String = "Privacy_Reminders",
+                             request: @escaping () async -> Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: Binding(get: { flag.wrappedValue }, set: { on in
+                if on {
+                    Task {
+                        let ok = await request()
+                        flag.wrappedValue = ok
+                        if ok { denied.remove(title) } else { denied.insert(title) }
+                    }
+                } else {
+                    flag.wrappedValue = false
+                    denied.remove(title)
                 }
+            })) {
+                HStack(spacing: 10) {
+                    Image(systemName: icon).font(.system(size: 14)).foregroundStyle(Palette.cyan).frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textPrimary)
+                        Text(desc).font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }.toggleStyle(.switch).tint(Palette.cyan)
+
+            if denied.contains(title) {
+                HStack(spacing: 7) {
+                    Image(systemName: "hand.raised.fill").font(.system(size: 10)).foregroundStyle(Palette.warning)
+                    Text("macOS has this blocked for Freelane.")
+                        .font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
+                    Button("Open System Settings") {
+                        if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+                            NSWorkspace.shared.open(u)
+                        }
+                    }
+                    .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Palette.azure)
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 32)
             }
-        }.toggleStyle(.switch).tint(Palette.cyan)
+        }
     }
 
     // MARK: Storage
