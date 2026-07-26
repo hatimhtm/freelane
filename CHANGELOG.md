@@ -3,6 +3,16 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.12
+
+The questions themselves, now that they arrive on time.
+
+- **It invented a team, and its own invention was the proof.** "How does managing your team during payment delays affect your focus?" — for someone who has never written the word "team". There is a check for exactly this, and it was consulting the wrong evidence: the stored belief digest, which on this store contains "Managing a team at a company" and "Team management", both inferred by the model from entries where the word never appears. A fabrication got written to memory and then vouched for itself. The same door had already been closed once for the ask-history, and reopened through entry titles — an entry's title *is* the question that prompted it. The check now trusts one thing: sentences you typed yourself.
+- **One territory could come up twice in a single fill.** Rotation only excluded the previous round's topics, which was fine when a fill was one round and wrong the moment it became four — so a top-up could ask about your faith twice, minutes apart, in slightly different words. It's a proper cycle now: all eight topics before any repeats.
+- **Facts bolted onto the end of a question are rejected.** "What would make the new phone feel like an upgrade, given you already have it?" answers itself. Two connectives were blocked before; there are seventeen now, because the model reaches for a different one each time it wants to prove it read your file.
+- **Near-rewordings are caught.** Two questions about faith shared four content words out of ten — too low for the similarity threshold, obviously the same question to a human. Containment catches what overlap misses.
+- **Questions already waiting are re-checked on launch.** A gate only ever ran at the moment a question was written, so tightening one did nothing about what was already in the well. The invented-team question was still sitting there. Retired ones don't count as your dismissal, since you never saw them.
+
 ## 2.11
 
 Journal questions are written ahead of time, not while you wait for them.

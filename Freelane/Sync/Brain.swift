@@ -859,14 +859,32 @@ enum Brain {
         "their faith", "the near future", "their body and energy", "something small they enjoyed",
     ]
 
+    /// A shuffled queue walked to the end before it is refilled, so no territory can come up twice
+    /// until all eight have been used.
+    ///
+    /// This used to exclude only the territories from the PREVIOUS call. That was adequate when the
+    /// whole batch was one call, and wrong the moment the well started filling in rounds: four
+    /// rounds against eight territories means round three may reuse round one's, which is how a
+    /// single top-up produced "How does your faith help you cope with recent stress…" and "How has
+    /// your faith been a source of strength amidst…" — the same territory, twice, minutes apart.
     private static func rotateTerritories(_ count: Int) -> [String] {
-        let lastRaw = UserDefaults.standard.string(forKey: "journal.lastTerritories") ?? ""
-        let last = Set(lastRaw.split(separator: "|").map(String.init))
-        var pool = journalTerritories.filter { !last.contains($0) }
-        if pool.count < count { pool = journalTerritories }
-        let chosen = Array(pool.shuffled().prefix(count))
-        UserDefaults.standard.set(chosen.joined(separator: "|"), forKey: "journal.lastTerritories")
-        return chosen
+        let key = "journal.territoryQueue"
+        var queue = (UserDefaults.standard.string(forKey: key) ?? "")
+            .split(separator: "|").map(String.init)
+            .filter { journalTerritories.contains($0) }        // drop anything renamed since
+
+        var out: [String] = []
+        for _ in 0..<min(count, journalTerritories.count) {
+            if queue.isEmpty {
+                // Refill, keeping the one just used off the front so two cycles don't butt up.
+                var next = journalTerritories.shuffled()
+                if let last = out.last ?? nil, next.first == last, next.count > 1 { next.swapAt(0, 1) }
+                queue = next
+            }
+            out.append(queue.removeFirst())
+        }
+        UserDefaults.standard.set(queue.joined(separator: "|"), forKey: key)
+        return out
     }
 
     /// The gate a question must pass to be shown to a human.
@@ -887,8 +905,15 @@ enum Brain {
         // where the detail is decoration rather than the subject. The prompt forbids it; this is
         // the guarantee, because a style rule the model merely agrees with is not a rule.
         let lower = t.lowercased()
-        guard !lower.contains(", like the "), !lower.contains(", like your "),
-              !lower.contains(", like that "), !lower.contains(", such as ") else { return false }
+        // The graft comes in more shapes than "like". These all shipped: "What would make the new
+        // phone feel like an upgrade, given you already have it?" — a question that answers itself,
+        // because the fact was appended rather than asked about. Every one of these connectives
+        // introduces a clause that exists only to prove the model read the file.
+        let grafts = [", like the ", ", like your ", ", like that ", ", such as ",
+                      ", given you ", ", given your ", ", given the ", ", considering ",
+                      ", since you ", ", since your ", ", now that you ", ", especially with ",
+                      ", with your ", ", despite your ", ", amidst the ", ", amidst your "]
+        guard !grafts.contains(where: { lower.contains($0) }) else { return false }
         return true
     }
 
@@ -911,6 +936,10 @@ enum Brain {
         var mood = ""
         var beliefs = ""
         var recent = ""
+        /// ONLY sentences the user typed themselves — no titles, no stored beliefs, nothing the
+        /// model wrote. This is the evidence set for `inventsCircumstance`, and it is separate
+        /// from `recent` for one reason: see the note there.
+        var ownWords = ""
     }
 
     static func journalContext(_ context: ModelContext) -> JournalContext {
@@ -946,6 +975,13 @@ enum Brain {
         m.recent = letters.prefix(6).map { l in
             "[\(l.createdAt.formatted(.dateTime.month().day()))] asked: \(l.title)\n  they wrote: \(String(l.body.prefix(300)))"
         }.joined(separator: "\n")
+        // The bodies alone, and a lot of them — this is what the fabrication check is allowed to
+        // treat as true. Titles are excluded because an entry's title IS the question that
+        // prompted it, so a fabricated question, once answered, would otherwise become its own
+        // evidence. Beliefs are excluded for the same reason one step removed: they are the
+        // model's own inferences, and on this store they include "Managing a team at a company"
+        // for a person who has never written the word "team".
+        m.ownWords = letters.prefix(40).map { $0.body }.joined(separator: " ")
         return m
     }
 
@@ -1030,13 +1066,19 @@ enum Brain {
         \(avoid.isEmpty ? "(none yet)" : avoid)\(liked)\(refused)
         """
 
-        // What is actually KNOWN about them — beliefs, their own recent entries, their mood trail.
+        // WHAT THE USER HAS ACTUALLY SAID. Nothing else counts as evidence.
         //
-        // Deliberately excludes the ask-history. Past questions were in this set at first, and it
-        // defeated the whole check: one fabricated question mentioning "your team" became evidence
-        // that a team exists, so every later question about the team passed. Fiction can't be
-        // allowed to bootstrap itself into the evidence set.
-        let material = [ctx.beliefs, ctx.recent, ctx.mood].joined(separator: " ")
+        // This was `beliefs + recent + mood`, which let fiction bootstrap itself twice over. The
+        // ask-history had already been removed once for exactly that reason — but `recent` carries
+        // each entry's TITLE, and an entry's title is the question that prompted it, so an invented
+        // question that got answered walked straight back in. And `beliefs` is worse: the model's
+        // own inferences, stored permanently. This store holds "Managing a team at a company" and
+        // "Team management", inferred from entries in which the word "team" never appears — and
+        // those two rows were enough to wave through "How does managing your team during payment
+        // delays affect your focus?" for a person who has no team.
+        //
+        // Their own sentences are the only thing that can't be self-generated.
+        let material = ctx.ownWords
 
         for pass in 0..<2 {
             let req = AIRequest(pass == 0 ? prompt : prompt + "\n\nYour last attempt broke the rules or described a situation they never mentioned. Keep it under 15 words, plain words, and only about things written above.",
@@ -1171,7 +1213,19 @@ enum Brain {
             // Chokepoint: nothing that fails the human gate is ever stored, whichever path made it.
             guard isHumanQuestion(t), !existing.contains(key) else { continue }
             let toks = promptTokens(t)
-            if seenTokens.contains(where: { jaccard($0, toks) >= 0.6 }) { continue }
+            // Jaccard alone misses rewordings, because padding words dilute it. These two both
+            // shipped in one round: "How does your faith help you cope with recent stress and
+            // financial challenges?" and "How has your faith been a source of strength amidst the
+            // recent financial challenges?" — four shared content words out of ten, so Jaccard is
+            // 0.4 and the gate opened. Containment asks the better question: is the shorter one's
+            // subject already entirely inside the other's? Here it is.
+            let tooSimilar = seenTokens.contains { prev in
+                if jaccard(prev, toks) >= 0.55 { return true }
+                let shared = prev.intersection(toks).count
+                let smaller = max(1, min(prev.count, toks.count))
+                return shared >= 3 && Double(shared) / Double(smaller) >= 0.7
+            }
+            if tooSimilar { continue }
             let p = JournalPrompt(text: t, source: source); p.dirty = true
             p.sourceLetterId = sourceLetterId
             p.sourceExcerpt = sourceExcerpt

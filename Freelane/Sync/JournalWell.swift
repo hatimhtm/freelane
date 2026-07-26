@@ -101,4 +101,34 @@ final class JournalWell {
         exhaustedUntil = nil
         topUp(context, ai: ai)
     }
+
+    /// Re-apply the current gates to questions already in the well, and quietly retire the ones
+    /// that no longer pass.
+    ///
+    /// A question is only ever checked at the moment it's written, so tightening a gate does
+    /// nothing about what's already waiting for you. When the invented-circumstance check stopped
+    /// trusting the model's own stored beliefs, "How does managing your team during payment delays
+    /// affect your focus?" was still sitting in the well for a person with no team.
+    func pruneStale(_ context: ModelContext) {
+        let open = (try? context.fetch(FetchDescriptor<JournalPrompt>(
+            predicate: #Predicate { $0.status == "open" }))) ?? []
+        guard !open.isEmpty else { return }
+        let material = Brain.journalContext(context).ownWords
+
+        var dropped = 0
+        for p in open {
+            var reason: String?
+            if !Brain.isHumanQuestion(p.text) { reason = "fails the style gate" }
+            else if let invented = Brain.inventsCircumstance(p.text, material: material) {
+                reason = "invents '\(invented)'"
+            }
+            guard let reason else { continue }
+            // Dismissed rather than deleted, and WITHOUT the "down" feedback a real dismissal
+            // carries — the user never saw this one, so it shouldn't teach the model their taste.
+            p.status = "dismissed"; p.resolvedAt = .now; p.dirty = true
+            dropped += 1
+            moneyLog.notice("Retired a stale journal question — \(reason, privacy: .public).")
+        }
+        if dropped > 0 { try? context.save() }
+    }
 }
