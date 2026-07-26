@@ -170,6 +170,7 @@ struct AIChatSheet: View {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 24)).foregroundStyle(Palette.azure)
                 }
                 .buttonStyle(.iconPress)
+                .help("Send (⏎)")
                 // Trimmed, because `send` trims too — three spaces used to light the button up and
                 // then do nothing when pressed.
                 .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
@@ -215,12 +216,17 @@ struct AIChatSheet: View {
     }
 }
 
-/// Simple wrapping pill row.
+/// Suggested questions, wrapped.
+///
+/// This was named for wrapping and was a plain `VStack` — one pill per line, left-aligned, in a
+/// centred empty state, so three short questions came out as a ragged column against the middle
+/// of a 480pt sheet. `Layout` does the wrapping properly: pills sit side by side while they fit
+/// and break to a new line when they don't.
 private struct FlowPills: View {
     var pills: [String]
     var onTap: (String) -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        FlowLayout(spacing: 8, lineSpacing: 8) {
             ForEach(pills, id: \.self) { p in
                 Button { onTap(p) } label: {
                     Text(p).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.azure)
@@ -229,6 +235,57 @@ private struct FlowPills: View {
                         .overlay(Capsule().strokeBorder(Palette.azure.opacity(0.3), lineWidth: 0.7))
                 }.buttonStyle(.plain)
             }
+        }
+        .padding(.horizontal, 24)
+    }
+}
+
+/// A greedy line-breaking layout: place each subview at its ideal size, wrap when the row is full.
+/// Rows are centred, because every place this is used is a centred empty state.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 8
+
+    private func rows(_ subviews: Subviews, width: CGFloat) -> [[(index: Int, size: CGSize)]] {
+        var out: [[(index: Int, size: CGSize)]] = [[]]
+        var x: CGFloat = 0
+        for (i, s) in subviews.enumerated() {
+            let size = s.sizeThatFits(.unspecified)
+            if !out[out.count - 1].isEmpty, x + spacing + size.width > width {
+                out.append([]); x = 0
+            }
+            if !out[out.count - 1].isEmpty { x += spacing }
+            out[out.count - 1].append((i, size))
+            x += size.width
+        }
+        return out
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        let lines = rows(subviews, width: width)
+        let height = lines.reduce(0.0) { $0 + ($1.map(\.size.height).max() ?? 0) }
+            + lineSpacing * CGFloat(max(0, lines.count - 1))
+        let widest = lines.map { line in
+            line.reduce(0.0) { $0 + $1.size.width } + spacing * CGFloat(max(0, line.count - 1))
+        }.max() ?? 0
+        return CGSize(width: min(width, widest), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let lines = rows(subviews, width: bounds.width)
+        var y = bounds.minY
+        for line in lines {
+            let lineWidth = line.reduce(0.0) { $0 + $1.size.width } + spacing * CGFloat(max(0, line.count - 1))
+            let lineHeight = line.map(\.size.height).max() ?? 0
+            var x = bounds.minX + (bounds.width - lineWidth) / 2
+            for item in line {
+                subviews[item.index].place(
+                    at: CGPoint(x: x, y: y + (lineHeight - item.size.height) / 2),
+                    proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            y += lineHeight + lineSpacing
         }
     }
 }

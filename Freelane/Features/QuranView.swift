@@ -30,7 +30,7 @@ struct QuranReaderSheet: View {
                 HStack {
                     Text("Qur'an").font(Typo.title(18)).foregroundStyle(Palette.textPrimary)
                     Spacer()
-                    Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress)
+                    Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }.help("Close (Esc)").accessibilityLabel("Close").buttonStyle(.iconPress)
                 }.padding(14)
                 SearchField(text: $query, placeholder: "Search surah").padding(.horizontal, 12)
                 ScrollView {

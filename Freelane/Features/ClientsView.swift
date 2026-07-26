@@ -596,6 +596,7 @@ struct EditClientSheet: View {
     @State private var phone = ""; @State private var address = ""; @State private var city = ""
     @State private var country = ""; @State private var iban = ""; @State private var swift = ""
     @State private var defaultCurrency = ""
+    @Query private var settings: [AppSettings]
     @State private var timeZoneId = ""; @State private var nudgeTone = "warm"
     @State private var isRetainer = false; @State private var retainerBase = 0.0
     @FocusState private var nameFocused: Bool
@@ -622,7 +623,7 @@ struct EditClientSheet: View {
                 LabeledField("IBAN") { TextField("optional", text: $iban).fieldWell() }
                 LabeledField("SWIFT") { TextField("optional", text: $swift).fieldWell() }
             }
-            LabeledField("Default currency") { CurrencyMenu(selection: Binding(get: { defaultCurrency.isEmpty ? "PHP" : defaultCurrency }, set: { defaultCurrency = $0 })) }
+            LabeledField("Default currency") { CurrencyMenu(selection: Binding(get: { defaultCurrency.isEmpty ? (settings.first?.baseCurrency ?? "PHP") : defaultCurrency }, set: { defaultCurrency = $0 })) }
             HStack(spacing: 10) {
                 LabeledField("Time zone") {
                     GlassMenuPicker(selection: $timeZoneId, options: zones,

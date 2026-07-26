@@ -7,7 +7,8 @@ import SwiftData
 final class UndoCenter {
     struct Toast: Identifiable {
         let id = UUID()
-        let label: String          // e.g. "spend", "payment"
+        let message: String        // the whole sentence, e.g. "Deleted spend"
+        let icon: String
         let undo: () -> Void
     }
     private(set) var toast: Toast?
@@ -15,8 +16,17 @@ final class UndoCenter {
 
     /// Show a 10-second "Deleted {label} · Undo". The newest deletion replaces any prior toast.
     func offer(_ label: String, undo: @escaping () -> Void) {
+        announce("Deleted \(label)", icon: "trash", undo: undo)
+    }
+
+    /// The general form: any reversible action, stated in full.
+    ///
+    /// The toast could only ever say "Deleted …", so the actions that hide something without
+    /// deleting it — snoozing a notification, muting a whole kind of alert — had no way to use
+    /// it, and shipped with no feedback and no way back.
+    func announce(_ message: String, icon: String = "arrow.uturn.backward", undo: @escaping () -> Void) {
         timer?.cancel()
-        let shown = Toast(label: label, undo: undo)
+        let shown = Toast(message: message, icon: icon, undo: undo)
         toast = shown
         timer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(10))
@@ -52,10 +62,10 @@ struct UndoToastOverlay: View {
             Spacer()
             if let t = undo.toast {
                 HStack(spacing: 14) {
-                    Image(systemName: "trash")
+                    Image(systemName: t.icon)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Palette.textSecondary)
-                    Text("Deleted \(t.label)")
+                    Text(t.message)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Palette.textPrimary)
                     Divider().frame(height: 16)

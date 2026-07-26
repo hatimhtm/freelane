@@ -4,22 +4,29 @@
         <title>Freelane</title>
         <item>
             <description><![CDATA[
-<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.4</h3>
+<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.5</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>Cards that read themselves, and a sidebar that looks like the system it runs on.</li>
-  <li>**The dashboard figures are cards now, and the card carries the verdict.** The rail was better for dense comparison, but that density was exactly the problem: every number looked equally fine, so nothing on the front page told you where to look. Green ground means healthy, red means it wants you, plain grey means it's just a fact. You scan the colours and stop on what isn't grey. The tint is deliberately weak — 9–12% — because saturated blocks would make a money app feel like a game.</li>
-  <li>**Money owed to you reads as red**, not because it's a loss but because it's money that hasn't arrived. Fees read red for the same reason. Sadaka and money landed read green.</li>
-  <li>**One layout instead of two.** The rail was pinned at a fixed 262pt on wide windows with a separate stacked branch for narrow ones — two layouts to keep in sync, and on a wide Mac window it was a thin strip of text beside a mostly-empty column. The card grid reflows on its own and gets the full width.</li>
-  <li>**Sidebar icons are colour tiles**, the macOS 27 convention: a filled rounded square per destination with a white glyph, each a distinct hue, so you navigate by colour and shape before you read the word. A tinted square is decoration on a content grid — it's the convention on a navigation list, which is the opposite call from the one made in 1.8, and the right one here.</li>
-  <li>**"Stored on this Mac" floats at the bottom of the sidebar** above a hairline, instead of scrolling away with the list. It's a standing fact about the app, not the last item in the navigation.</li>
+  <li>A pass over the whole app: the last streak, the button that did nothing, and every number that was printed twice.</li>
+  <li>**The last two streaks are gone.** The journal's streak system was removed in 1.0 because a counter that can only be broken turns a habit into a debt. Two survived on other pages: a flame on "Spent today" counting consecutive days of logging, and — in the prayer tracker, of all places — a chain that reset to zero the first day you missed one. Prayer now shows how many complete days you've had this month: a number that only goes up, where a missed day costs you the day and not the month.</li>
+  <li>**The "Budgets" button on Spending did nothing.** It set the flag that opens the budgets sheet, but the only place that sheet was attached was a card that stopped being rendered when the category rail replaced it. Clicking it was a no-op. The presentation now lives on the page.</li>
+  <li>**Sheets are the size of what they hold.** All twenty-four were locked to 540×600 whatever was in them, so "New client" — one text field — opened at full height with four hundred points of empty scroll under it and a fade mask hinting at content that wasn't there. Forms now take the height they need and only start scrolling once they'd outgrow the old size.</li>
+  <li>**Project cards stopped printing the same number three times.** An untouched project showed its fee as the headline, again as "₱X left", and a third time inverted as "₱0 received", over a progress bar pinned at zero. A settled one showed it twice. Money in flight is the only state where the split tells you something you don't already have, so it's the only state that shows one.</li>
+  <li>**The front page no longer previews itself.** The lead figure's sub-line read "Safe ₱X today · 19-day runway · 3 open projects" directly above cards headed "Safe to spend" and "Active projects" holding those exact figures. It now says what the grid has no card for: how the total is spread across wallets, and how long it lasts at your pace. Today lost the same kind of echo, and Insights stopped printing its fee total twice within a hundred points.</li>
+  <li>**Amounts in People, search results and the mood/money read were hardcoded to pesos.** They're base-currency figures being drawn with a ₱ sign, so switching base relabelled every total in the app except those. Every payment form also opened with PHP pre-selected regardless of your base.</li>
+  <li>**The base-currency picker stopped offering dead ends.** Choosing a currency with no exchange rate walked you through a red destructive confirmation, took a full backup, and then failed. Those currencies aren't listed.</li>
+  <li>**Snoozing a notification told you nothing.** It removed the row from both tabs — no longer unread, no longer live — with no confirmation and no way back until the snooze expired. Snooze and "stop showing these" both offer an undo now. The dot on the leading edge of a notification means unread again, the way it does everywhere else on the Mac; it was drawn on every row of the Read tab too.</li>
+  <li>**Quick capture can be undone, and says so when it fails.** A failed save used to clear the field and report nothing, so the only sign was a number that never appeared. Every one-tap log from the menu bar — including the ↺ button sitting inches from the amount you meant to click — now offers an undo.</li>
+  <li>**One progress bar, not five.** Four screens drew a meter with the stock AppKit control, each squashed by its own scale factor to fight its thickness, none of them matching the one the project card drew by hand.</li>
+  <li>**Nineteen icon-only buttons had no tooltip at all**, and lists that showed the first six of nine said "9" in the header with nothing to say the rest existed.</li>
+  <li>Removed the suggested-question pills' fake wrapping (a stack pretending to be a flow layout), five dead view components including a whole unrendered Settings card, and two full-table fetches that ran on every journal save and were thrown away.</li>
 </ul>
             ]]></description>
-            <title>2.4</title>
-            <pubDate>Sun, 26 Jul 2026 10:50:55 +0800</pubDate>
-            <sparkle:version>35</sparkle:version>
-            <sparkle:shortVersionString>2.4</sparkle:shortVersionString>
+            <title>2.5</title>
+            <pubDate>Sun, 26 Jul 2026 12:29:28 +0800</pubDate>
+            <sparkle:version>36</sparkle:version>
+            <sparkle:shortVersionString>2.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.4/Freelane.zip" length="13533884" type="application/octet-stream" sparkle:edSignature="ohvpttYvVpgCkJZq4YYmhe66M5drH9jqPsRR2UjwBM5Pp/A7LciszGXOqn64TA4IkFiWw8kWYTYpKpoqLModBg=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.5/Freelane.zip" length="13585980" type="application/octet-stream" sparkle:edSignature="4M0slopbIp1V5G/TKMH2MyaVoDX8D8/Cay79wgFFw/rCSjj45a5jBq/eOy7h2T8EFC2jaJqOwkJtZKuP5TLLDA=="/>
         </item>
     </channel>
 </rss>

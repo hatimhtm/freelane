@@ -63,7 +63,6 @@ struct SpendingView: View {
     private var monthTotal: Double {
         spends.filter { $0.spentAt >= PHT.startOfMonth() }.reduce(0) { $0 + $1.amountBase }
     }
-    private var allTotal: Double { spends.reduce(0) { $0 + $1.amountBase } }
     private var monthSpends: [Spend] { spends.filter { $0.spentAt >= PHT.startOfMonth() } }
     private var investMonth: Double { monthSpends.filter { $0.isInvestment }.reduce(0) { $0 + $1.amountBase } }
     /// This month's spend per category (tags), biggest first.
@@ -81,6 +80,12 @@ struct SpendingView: View {
             if sub != 2 { spendHero }
             switch sub { case 0: spendsList; case 1: trends; default: recurringList }
         }
+        // The "Budgets" button in the category rail's header set `showBudgets`, but the only
+        // `.sheet(isPresented: $showBudgets)` in the file hung off `budgetsCard` — a card that
+        // stopped being rendered when the rail replaced it. So the button was live, hovered like
+        // a link, and did nothing at all. The presentation belongs on the page, not on a card
+        // that may or may not be on screen.
+        .sheet(isPresented: $showBudgets) { BudgetsSheet() }
         .sheet(isPresented: $showAdd) { AddSpendSheet() }
         .sheet(item: $editingSpend) { AddSpendSheet(existing: $0) }
         .sheet(isPresented: $showAddRecurring) { AddRecurringSheet() }
@@ -120,29 +125,6 @@ struct SpendingView: View {
         }
         return HeroTile(label: "Spent this month", value: monthTotal, code: base,
                         accent: Palette.azure, spark: spark.count > 1 ? spark : [0, 0], chips: chips)
-    }
-
-    @ViewBuilder private var categoryCard: some View {
-        SectionCard(title: "Spending by category", subtitle: "This month", accent: Palette.warning) {
-            if catData.isEmpty {
-                Text("Nothing this month yet.").font(.system(size: 13)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 40)
-            } else {
-                let maxC = catData.map(\.total).max() ?? 1
-                Chart(catData, id: \.name) { c in
-                    BarMark(x: .value("Spent", c.total), y: .value("Category", c.name))
-                        .foregroundStyle(LinearGradient(colors: [Palette.warning, Palette.warning.opacity(0.55)], startPoint: .leading, endPoint: .trailing))
-                        .cornerRadius(5)
-                        .annotation(position: .trailing, alignment: .leading, spacing: 6) {
-                            Text(CurrencyFormat.string(c.total, base, compact: true))
-                                .font(Typo.rowFigure(10)).monospacedDigit().foregroundStyle(Palette.textSecondary)
-                        }
-                }
-                .chartXScale(domain: 0...(maxC * 1.3))
-                .chartXAxis(.hidden)
-                .chartYAxis { AxisMarks(position: .leading) { AxisValueLabel().foregroundStyle(Palette.textSecondary) } }
-                .frame(height: CGFloat(catData.count) * 30 + 12)
-            }
-        }
     }
 
     @ViewBuilder private var spendsList: some View {
@@ -245,44 +227,6 @@ struct SpendingView: View {
     }
 
     // MARK: Budgets — gentle monthly caps per category
-
-    @ViewBuilder private var budgetsCard: some View {
-        let active = budgets.filter { $0.capBase > 0 }
-        SectionCard(title: "Budgets", subtitle: active.isEmpty ? "Gentle monthly caps per category" : "This month",
-                    trailing: AnyView(Button("Set budgets") { showBudgets = true }.buttonStyle(.glass).controlSize(.small))) {
-            if active.isEmpty {
-                Text("Give a category a monthly cap and its bar lives here — a quiet nudge, not an alarm.")
-                    .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
-            } else {
-                let totals = CategoryBudget.monthTotals(spends)
-                VStack(spacing: 10) {
-                    ForEach(active.sorted { ($0.capBase > 0 ? (totals[$0.tag.lowercased()] ?? 0) / $0.capBase : 0) > ($1.capBase > 0 ? (totals[$1.tag.lowercased()] ?? 0) / $1.capBase : 0) }) { b in
-                        budgetRow(b, spent: totals[b.tag.lowercased()] ?? 0)
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showBudgets) { BudgetsSheet() }
-    }
-
-    private func budgetRow(_ b: CategoryBudget, spent: Double) -> some View {
-        let frac = b.capBase > 0 ? spent / b.capBase : 0
-        let tint: Color = frac >= 1 ? Palette.negative : (frac >= 0.8 ? Palette.warning : Palette.positive)
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(b.tag).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary)
-                Spacer()
-                Text("\(CurrencyFormat.string(spent, base, compact: true)) of \(CurrencyFormat.string(b.capBase, base, compact: true))")
-                    .font(Typo.rowFigure(11, .medium)).monospacedDigit()
-                    .foregroundStyle(frac >= 1 ? Palette.negative : Palette.textSecondary)
-                if frac >= 1 {
-                    Text("over").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.negative)
-                        .padding(.horizontal, 5).padding(.vertical, 1).background(Palette.negative.opacity(0.16), in: Capsule())
-                }
-            }
-            ProgressView(value: min(frac, 1)).tint(tint).scaleEffect(x: 1, y: 0.7, anchor: .center)
-        }
-    }
 
     // MARK: Trends
 
@@ -888,7 +832,7 @@ struct PayRecurringSheet: View {
     private var daysUntilDue: Int? { nextDue.map { PHT.calendar.dateComponents([.day], from: PHT.startOfDay(), to: $0).day ?? 0 } }
 
     var body: some View {
-        SheetScaffold(title: "Pay “\(recurring.label)”", accent: Palette.warning, icon: "calendar.badge.checkmark",
+        SheetScaffold(title: "Pay “\(recurring.label)”", accent: Palette.warning,
                       canSave: walletId != nil && amt > 0,
                       hint: walletId == nil ? "Pick a wallet" : "Enter an amount above 0",
                       onSave: save) {
@@ -1183,7 +1127,7 @@ struct BudgetsSheet: View {
     }
 
     var body: some View {
-        SheetScaffold(title: "Monthly budgets", accent: Palette.azure, icon: "gauge.with.needle",
+        SheetScaffold(title: "Monthly budgets", accent: Palette.azure,
                       canSave: true, onSave: save) {
             Text("A cap is a quiet marker, not a lock — the bar turns amber at 80% and red when you pass it.")
                 .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)

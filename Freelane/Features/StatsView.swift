@@ -192,9 +192,9 @@ struct StatsView: View {
                           d.up ? Palette.positive : Palette.negative))
         }
         chips.append(("\(scopedPayments.count) payments", "arrow.down.left", Palette.textSecondary))
-        if fees > 0 {
-            chips.append(("Fees −" + CurrencyFormat.abbreviated(fees, base), "scissors", Palette.negative))
-        }
+        // No fees chip here. The rail directly below already says "Fees paid — X, N% of gross",
+        // which is the same figure with the context that makes it mean something; printing it
+        // twice within 100pt made the hero look padded rather than informative.
         return HeroTile(label: heroLabel, value: landed, code: base, accent: Palette.azure,
                         spark: spark.count > 1 ? spark : [0, 0], chips: chips)
     }

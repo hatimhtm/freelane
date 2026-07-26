@@ -23,7 +23,7 @@ struct RestoreBackupSheet: View {
                 }
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }
-                    .buttonStyle(.iconPress)
+                    .buttonStyle(.iconPress).help("Close (Esc)").accessibilityLabel("Close")
             }
             .padding(20)
 

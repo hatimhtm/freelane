@@ -20,6 +20,7 @@ struct RoutedPaymentSheet: View {
     @State private var hops: [Hop] = [Hop()]
     @State private var date = Date.now
     @State private var error: String?
+    @State private var seeded = false
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
     private var rates: Rates { Rates(base: base, rates: rateRows) }
@@ -41,6 +42,13 @@ struct RoutedPaymentSheet: View {
                       hint: (Double(gross) ?? 0) <= 0 ? "Enter what the client sent"
                             : "Every step needs a wallet and an amount",
                       onSave: save) {
+            // Both currency pickers opened on "PHP" no matter what your base currency was.
+            Color.clear.frame(height: 0).onAppear {
+                guard !seeded else { return }
+                seeded = true
+                grossCurrency = base
+                hops = [Hop(currency: base)]
+            }
             LabeledField("For project (optional)") {
                 GlassMenuPicker(selection: $projectId,
                                 options: [nil] + openProjects.map { Optional($0.id) },
@@ -64,6 +72,7 @@ struct RoutedPaymentSheet: View {
                             if hops.count > 1 {
                                 Button { hops.removeAll { $0.id == hop.id } } label: { Image(systemName: "minus.circle") }
                                     .buttonStyle(.iconPress).foregroundStyle(Palette.negative)
+                                    .help("Remove this step").accessibilityLabel("Remove this step")
                             }
                         }
                     }

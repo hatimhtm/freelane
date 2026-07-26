@@ -6,6 +6,10 @@ struct PeopleView: View {
     @Environment(UndoCenter.self) private var undo
     @Environment(AIManager.self) private var ai
     @Query(filter: #Predicate<Entity> { $0.deletedAt == nil }, sort: \Entity.createdAt, order: .reverse) private var entities: [Entity]
+    @Query private var settings: [AppSettings]
+    /// These figures are `amountBase` — they were being printed with a hardcoded "PHP"
+    /// symbol, so switching base currency relabelled every total in the app except these.
+    private var base: String { settings.first?.baseCurrency ?? "PHP" }
     @State private var showAdd = false
     @State private var selected: Entity?
     @State private var query = ""
@@ -164,7 +168,7 @@ struct PeopleView: View {
             Spacer(minLength: 6)
             // Always present (placeholder when no money) so every card is the SAME height
             // and nothing clips.
-            Text(flow > 0 ? CurrencyFormat.string(flow, "PHP", compact: true) + " flowed" : " ")
+            Text(flow > 0 ? CurrencyFormat.string(flow, base, compact: true) + " flowed" : " ")
                 .font(.system(size: 10)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
         }
         .padding(14).frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)   // equal, no clip
@@ -264,6 +268,7 @@ struct EntityDetailSheet: View {
     @Environment(UndoCenter.self) private var undo
     @Query private var facts: [AIFact]
     @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }) private var spends: [Spend]
+    @Query private var settings: [AppSettings]
     @State private var notes = ""
     @State private var showEdit = false
     @State private var saveTask: Task<Void, Never>?
@@ -277,6 +282,7 @@ struct EntityDetailSheet: View {
     }
     private var flowSpends: [Spend] { spends.filter { EntityMoney.matches(entity, $0) }.sorted { $0.spentAt > $1.spentAt } }
     private var flowTotal: Double { flowSpends.reduce(0) { $0 + $1.amountBase } }
+    private var base: String { settings.first?.baseCurrency ?? "PHP" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -304,14 +310,20 @@ struct EntityDetailSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if flowTotal > 0 {
                         SectionCard(title: "Money flow", subtitle: "\(flowSpends.count) spends mention \(entity.name)", accent: Palette.violet) {
-                            Text(CurrencyFormat.string(flowTotal, "PHP")).font(Typo.rowFigure(24)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                            Text(CurrencyFormat.string(flowTotal, base)).font(Typo.rowFigure(24)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                             VStack(spacing: 0) {
                                 ForEach(Array(flowSpends.prefix(8))) { s in
                                     HStack {
                                         Text(s.spendDescription ?? s.vendorName ?? "Spend").font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1)
                                         Spacer()
-                                        Text(CurrencyFormat.string(s.amountBase, "PHP", compact: true)).font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(Palette.textPrimary)
+                                        Text(CurrencyFormat.string(s.amountBase, base, compact: true)).font(Typo.rowFigure(12, .medium)).monospacedDigit().foregroundStyle(Palette.textPrimary)
                                     }.padding(.vertical, 5)
+                                }
+                                if flowSpends.count > 8 {
+                                    Text("+\(flowSpends.count - 8) more")
+                                        .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.top, 4)
                                 }
                             }
                         }

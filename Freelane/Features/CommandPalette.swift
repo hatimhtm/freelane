@@ -67,7 +67,7 @@ struct CommandPalette: View {
                     .onKeyPress(.downArrow) { if !rows.isEmpty { selected = min(selected + 1, rows.count - 1) }; return .handled }
                     .onKeyPress(.upArrow) { if !rows.isEmpty { selected = max(selected - 1, 0) }; return .handled }
                 if !query.isEmpty {
-                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress)
+                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress).help("Clear")
                 }
                 Text("⌘K").font(Typo.rowFigure(11)).foregroundStyle(Palette.textTertiary)
                     .padding(.horizontal, 6).padding(.vertical, 3).background(Palette.hairline, in: RoundedRectangle(cornerRadius: 6))

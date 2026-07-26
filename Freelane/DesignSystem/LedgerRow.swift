@@ -415,3 +415,35 @@ struct SignalCard: View {
         .disabled(destination == nil)
     }
 }
+
+/// The app's progress bar. One shape, one track, one height, everywhere.
+///
+/// Four screens drew a meter with the stock `ProgressView`, each squashed by its own
+/// `.scaleEffect(y:)` to fight AppKit's default thickness — so the budget bar, the savings-goal
+/// bar, the tasbih bar and the model download were four different weights with four different
+/// corner treatments, none of which matched the capsule the project card already drew by hand.
+/// `ProgressView` also ignores the palette below the tint: its track is a system grey that reads
+/// as a hole punched in a card.
+struct MeterBar: View {
+    var value: Double            // 0…1; clamped here so callers don't have to
+    var tint: Color
+    var height: CGFloat = 5
+
+    private var fraction: Double { min(1, max(0, value.isFinite ? value : 0)) }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Palette.wellFill)
+                Capsule().fill(tint)
+                    // A sliver rather than nothing at the very start, so a bar that has just
+                    // begun looks begun. Exactly zero stays empty.
+                    .frame(width: fraction <= 0 ? 0 : max(height, geo.size.width * fraction))
+            }
+        }
+        .frame(height: height)
+        .animation(Motion.snappy, value: fraction)
+        .accessibilityElement()
+        .accessibilityValue(Text("\(Int(fraction * 100)) percent"))
+    }
+}

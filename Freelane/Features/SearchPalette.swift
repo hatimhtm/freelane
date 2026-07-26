@@ -7,6 +7,7 @@ struct SearchPalette: View {
     var onNavigate: (Feature) -> Void
     @Environment(\.dismiss) private var dismiss
     @Query(filter: #Predicate<Client> { $0.deletedAt == nil }) private var clients: [Client]
+    @Query private var settings: [AppSettings]
     @Query(filter: #Predicate<Project> { $0.deletedAt == nil }) private var projects: [Project]
     @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }, sort: \Spend.spentAt, order: .reverse) private var spends: [Spend]
     @State private var query = ""
@@ -33,7 +34,7 @@ struct SearchPalette: View {
             }
         }
         for s in spends.prefix(400) where (s.spendDescription?.lowercased().contains(q) ?? false) {
-            out.append(Hit(title: s.spendDescription ?? "Spend", sub: "Spend · \(CurrencyFormat.string(s.amountBase, "PHP", compact: true))", icon: "cart", color: Palette.warning, feature: .spending))
+            out.append(Hit(title: s.spendDescription ?? "Spend", sub: "Spend · \(CurrencyFormat.string(s.amountBase, settings.first?.baseCurrency ?? "PHP", compact: true))", icon: "cart", color: Palette.warning, feature: .spending))
         }
         return Array(out.prefix(40))
     }

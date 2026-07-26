@@ -3,6 +3,23 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.5
+
+A pass over the whole app: the last streak, the button that did nothing, and every number that was printed twice.
+
+- **The last two streaks are gone.** The journal's streak system was removed in 1.0 because a counter that can only be broken turns a habit into a debt. Two survived on other pages: a flame on "Spent today" counting consecutive days of logging, and — in the prayer tracker, of all places — a chain that reset to zero the first day you missed one. Prayer now shows how many complete days you've had this month: a number that only goes up, where a missed day costs you the day and not the month.
+- **The "Budgets" button on Spending did nothing.** It set the flag that opens the budgets sheet, but the only place that sheet was attached was a card that stopped being rendered when the category rail replaced it. Clicking it was a no-op. The presentation now lives on the page.
+- **Sheets are the size of what they hold.** All twenty-four were locked to 540×600 whatever was in them, so "New client" — one text field — opened at full height with four hundred points of empty scroll under it and a fade mask hinting at content that wasn't there. Forms now take the height they need and only start scrolling once they'd outgrow the old size.
+- **Project cards stopped printing the same number three times.** An untouched project showed its fee as the headline, again as "₱X left", and a third time inverted as "₱0 received", over a progress bar pinned at zero. A settled one showed it twice. Money in flight is the only state where the split tells you something you don't already have, so it's the only state that shows one.
+- **The front page no longer previews itself.** The lead figure's sub-line read "Safe ₱X today · 19-day runway · 3 open projects" directly above cards headed "Safe to spend" and "Active projects" holding those exact figures. It now says what the grid has no card for: how the total is spread across wallets, and how long it lasts at your pace. Today lost the same kind of echo, and Insights stopped printing its fee total twice within a hundred points.
+- **Amounts in People, search results and the mood/money read were hardcoded to pesos.** They're base-currency figures being drawn with a ₱ sign, so switching base relabelled every total in the app except those. Every payment form also opened with PHP pre-selected regardless of your base.
+- **The base-currency picker stopped offering dead ends.** Choosing a currency with no exchange rate walked you through a red destructive confirmation, took a full backup, and then failed. Those currencies aren't listed.
+- **Snoozing a notification told you nothing.** It removed the row from both tabs — no longer unread, no longer live — with no confirmation and no way back until the snooze expired. Snooze and "stop showing these" both offer an undo now. The dot on the leading edge of a notification means unread again, the way it does everywhere else on the Mac; it was drawn on every row of the Read tab too.
+- **Quick capture can be undone, and says so when it fails.** A failed save used to clear the field and report nothing, so the only sign was a number that never appeared. Every one-tap log from the menu bar — including the ↺ button sitting inches from the amount you meant to click — now offers an undo.
+- **One progress bar, not five.** Four screens drew a meter with the stock AppKit control, each squashed by its own scale factor to fight its thickness, none of them matching the one the project card drew by hand.
+- **Nineteen icon-only buttons had no tooltip at all**, and lists that showed the first six of nine said "9" in the header with nothing to say the rest existed.
+- Removed the suggested-question pills' fake wrapping (a stack pretending to be a flow layout), five dead view components including a whole unrendered Settings card, and two full-table fetches that ran on every journal save and were thrown away.
+
 ## 2.4
 
 Cards that read themselves, and a sidebar that looks like the system it runs on.

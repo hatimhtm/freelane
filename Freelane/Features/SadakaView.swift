@@ -4,7 +4,6 @@ import SwiftData
 struct SadakaView: View {
     @Environment(\.modelContext) private var context
     @Query private var settings: [AppSettings]
-    @Query private var rateRows: [ExchangeRate]
     @Query(filter: #Predicate<Payment> { $0.deletedAt == nil }, sort: \Payment.paidAt, order: .reverse) private var payments: [Payment]
     @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }, sort: \Spend.spentAt, order: .reverse) private var spends: [Spend]
     @Query(filter: #Predicate<Wallet> { $0.deletedAt == nil }) private var wallets: [Wallet]

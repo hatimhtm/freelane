@@ -277,7 +277,6 @@ struct WithdrawalSheet: View {
 
     var body: some View {
         SheetScaffold(title: existing == nil ? "Transfer / withdraw" : "Edit transfer", accent: Palette.warning,
-                      icon: "arrow.left.arrow.right",
                       canSave: from != nil && (parsedAmount(sent) ?? 0) > 0 && from != to,
                       hint: from == nil ? "Pick the wallet it leaves from"
                             : (from == to ? "From and To must be different wallets" : "Enter how much left the wallet"),
@@ -417,7 +416,6 @@ private struct WalletCardFace: View {
     let onTap: () -> Void
 
     @State private var hovering = false
-    @Environment(\.colorScheme) private var scheme
 
     private var brand: Brand.Info? { Brand.match(wallet.brandKey) ?? Brand.match(wallet.name) }
     private var tint: Color {

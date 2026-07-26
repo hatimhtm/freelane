@@ -185,7 +185,6 @@ struct AddJournalEntryIntent: AppIntent {
         let l = Letter(title: Date.now.formatted(.dateTime.weekday(.wide).month().day()), body: text, kind: "journal")
         l.dirty = true
         ctx.insert(l); try? ctx.save()
-        let all = ((try? ctx.fetch(FetchDescriptor<Letter>())) ?? []).filter { $0.deletedAt == nil }
         // Await the analysis (mood/themes/memory + maybe a follow-up). A detached Task would be
         // killed when this Shortcuts/Siri process tears down right after the result, so the
         // enrichment would silently never run.

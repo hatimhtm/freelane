@@ -348,6 +348,7 @@ struct BulkPaymentSheet: View {
     /// Optional pre-fill (e.g. dragged a project to "Paid") — seeds the first row.
     var prefillProjectId: UUID? = nil
     var prefillGrossNative: Double? = nil
+    /// Callers that know the project pass its own currency; "" means "use the base currency".
     var prefillCurrency: String = "PHP"
 
     @State private var draftRows: [DraftRow] = [DraftRow()]
@@ -393,9 +394,17 @@ struct BulkPaymentSheet: View {
             HStack(spacing: 11) {
                 GlyphChip(systemImage: "arrow.down.left.circle.fill", color: Palette.positive, size: 30)
                     .onAppear {
-                        guard !seeded, let pid = prefillProjectId else { return }
+                        // Every currency default in this sheet was the literal "PHP" rather than
+                        // YOUR base currency, so anyone who switched base had to correct the
+                        // picker on every row of every payment they logged.
+                        guard !seeded else { return }
                         seeded = true
-                        var r = DraftRow(); r.projectId = pid; r.currency = prefillCurrency; r.landedCurrency = prefillCurrency
+                        mergedCurrency = base
+                        guard let pid = prefillProjectId else {
+                            draftRows = [DraftRow(currency: base, landedCurrency: base)]
+                            return
+                        }
+                        var r = DraftRow(projectId: pid, currency: prefillCurrency, landedCurrency: prefillCurrency)
                         if let g = prefillGrossNative { r.gross = String(format: "%g", g) }
                         draftRows = [r]
                     }
@@ -433,7 +442,7 @@ struct BulkPaymentSheet: View {
                     }
                     ForEach($draftRows) { $row in rowEditor($row) }
                         .transition(.opacity.combined(with: .move(edge: .top)))
-                    Button { withAnimation(Motion.snappy) { draftRows.append(DraftRow()) } } label: {
+                    Button { withAnimation(Motion.snappy) { draftRows.append(DraftRow(currency: draftRows.last?.currency ?? base, landedCurrency: draftRows.last?.landedCurrency ?? base)) } } label: {
                         Label("Add another payment", systemImage: "plus").font(.system(size: 12, weight: .medium))
                     }.buttonStyle(.glass).padding(.top, 2)
                 }

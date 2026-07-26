@@ -90,10 +90,14 @@ extension View {
     }
 }
 
+/// The tallest a sheet's form gets before it starts scrolling — chosen so a full sheet is the
+/// same 600pt object it has always been, and only shorter ones change.
+private let sheetFormMaxHeight: CGFloat = 486
+private let sheetFormMinHeight: CGFloat = 88
+
 struct SheetScaffold<Content: View>: View {
     var title: String
     var accent: Color
-    var icon: String? = nil
     var canSave: Bool
     /// WHY you can't save yet, shown in the footer whenever `canSave` is false.
     ///
@@ -111,6 +115,18 @@ struct SheetScaffold<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     @Environment(\.dismiss) private var dismiss
+    /// Measured height of the form itself. Starts at the old fixed value so the first layout
+    /// pass is the previous behaviour, then settles to the real size — invisible, because
+    /// `sheetEntrance()` starts at opacity 0 and only fades in after that pass.
+    @State private var formHeight: CGFloat = sheetFormMaxHeight
+    /// Sheets were 540×600 whatever they contained. "New client" holds one text field and
+    /// still opened at full height, leaving ~400pt of empty scroll under it with a fade mask
+    /// hinting at content that wasn't there. The form now takes the height it needs and only
+    /// starts scrolling once it would outgrow the old size.
+    private var formHeightClamped: CGFloat {
+        min(max(formHeight, sheetFormMinHeight), sheetFormMaxHeight)
+    }
+    private var scrolls: Bool { formHeight > sheetFormMaxHeight }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -139,13 +155,20 @@ struct SheetScaffold<Content: View>: View {
             .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 1) }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20, content: content).padding(.horizontal, 22).padding(.vertical, 22)
+                VStack(alignment: .leading, spacing: 20, content: content)
+                    .padding(.horizontal, 22).padding(.vertical, 22)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { formHeight = $0 }
             }
+            .frame(height: formHeightClamped)
+            // The fade mask only makes sense where there IS more content — on a form that fits,
+            // it was dimming the top and bottom of the only thing on screen.
             .mask(
                 VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 12)
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: scrolls ? 12 : 0)
                     Color.black
-                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 12)
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: scrolls ? 12 : 0)
                 }
             )
 
@@ -173,7 +196,7 @@ struct SheetScaffold<Content: View>: View {
             .background(Palette.wellFill)
             .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 0.7) }
         }
-        .frame(width: 540, height: 600)
+        .frame(width: 540)
         .background(AppBackground())
         .appAppearance()
         .sheetEntrance()

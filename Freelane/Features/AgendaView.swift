@@ -562,8 +562,7 @@ extension AgendaView {
                     Text("≈\(months) mo left").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 }
             }
-            ProgressView(value: p.progress).tint(p.remaining <= 0 ? Palette.positive : Palette.azure)
-                .scaleEffect(x: 1, y: 0.7, anchor: .center)
+            MeterBar(value: p.progress, tint: p.remaining <= 0 ? Palette.positive : Palette.azure)
         }
         .padding(.vertical, 2)
         .hoverRow()
@@ -590,7 +589,7 @@ struct GoalSheet: View {
 
     var body: some View {
         SheetScaffold(title: existing == nil ? "New savings goal" : "Edit goal",
-                      accent: Palette.azure, icon: "target",
+                      accent: Palette.azure,
                       canSave: !title.trimmingCharacters(in: .whitespaces).isEmpty && (num(target) ?? 0) > 0,
                       hint: title.trimmingCharacters(in: .whitespaces).isEmpty ? "Name what you are saving for" : "Enter a target amount",
                       onSave: save,

@@ -3,8 +3,9 @@ import SwiftData
 import Charts
 import UniformTypeIdentifiers
 
-/// The main page: a bird's-eye over all of LifeOS in compact, tappable widgets
-/// (money → projects → giving → body), Watch-face density. No wide cards.
+/// The front page: one lead figure, a grid of signal cards whose ground says whether each
+/// number is fine, then anything wanting a decision, what the app noticed, and the shape of
+/// the quarter. Read top to bottom, it should answer "am I OK?" before you've clicked anything.
 struct DashboardView: View {
     @Environment(\.modelContext) private var context
     @Query private var settings: [AppSettings]
@@ -20,7 +21,6 @@ struct DashboardView: View {
     @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }, sort: \Spend.spentAt, order: .reverse) private var spends: [Spend]
     @Query(filter: #Predicate<Loan> { $0.deletedAt == nil }) private var loans: [Loan]
     @Query(filter: #Predicate<BodyLog> { $0.deletedAt == nil }) private var bodyLogs: [BodyLog]
-    @Query private var prayerLogs: [PrayerLog]
     @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
     @Query private var plans: [Plan]
     @Query private var budgets: [CategoryBudget]
@@ -94,15 +94,24 @@ struct DashboardView: View {
 
     // MARK: The front page
 
+    /// What the lead figure needs that the cards below it don't already say.
+    ///
+    /// This line used to read "Safe ₱X today · 19-day runway · 3 open projects" — and then the
+    /// very next thing on the page was a card headed "Safe to spend" holding ₱X and a card headed
+    /// "Active projects" holding 3. Two thirds of the sub-line was a preview of the row beneath
+    /// it. What's left is what the grid has no card for: how the total is spread, and how long it
+    /// lasts at your usual pace.
+    ///
     /// `runway` is optional (there's no runway without a spending pace) and returns a fractional
     /// Double — interpolating it raw once put "Optional(19.463007703879317)-day runway" on the
-    /// front page. Build the line from parts that are each already formatted, and drop any that
-    /// don't apply.
+    /// front page. Every part is formatted before it goes in, and parts that don't apply are
+    /// dropped rather than printed empty.
     private func leadContext(_ m: DashboardMetrics, _ s: SafeBreakdown) -> [String] {
-        var bits = ["Safe " + CurrencyFormat.abbreviated(s.liveRemaining, base) + " today"]
-        if let r = runway(s), r.isFinite, r > 0 { bits.append("\(Int(r.rounded()))-day runway") }
-        if m.activeProjects > 0 {
-            bits.append("\(m.activeProjects) open \(m.activeProjects == 1 ? "project" : "projects")")
+        var bits: [String] = []
+        let holding = wallets.filter { $0.isHolding && !$0.archived && !$0.excludedFromTotals }.count
+        if holding > 0 { bits.append("across \(holding) \(holding == 1 ? "wallet" : "wallets")") }
+        if let r = runway(s), r.isFinite, r > 0 {
+            bits.append("\(Int(r.rounded())) days at your usual pace")
         }
         return bits
     }
@@ -305,19 +314,6 @@ struct DashboardView: View {
 
     // MARK: Hero
 
-    private func hero(_ m: DashboardMetrics, _ safe: SafeBreakdown) -> some View {
-        let spark = Array(m.cashFlow.suffix(30).map { $0.cumulative })
-        return HeroTile(
-            label: "Available across wallets",
-            value: m.available, code: base, accent: Palette.azure,
-            spark: spark.isEmpty ? [0, 0] : spark,
-            chips: [
-                ("Landed " + CurrencyFormat.abbreviated(m.landedMTD, base) + " MTD", "arrow.down", Palette.positive),
-                ("Safe " + CurrencyFormat.abbreviated(safe.liveRemaining, base) + " today", "shield.lefthalf.filled", Palette.azure),
-                ("\(m.activeProjects) open projects", "folder", Palette.textSecondary),
-            ])
-    }
-
     // MARK: Cross-domain widget grid
 
     /// Each dashboard tile keyed by a stable id, so the grid can be reordered + persisted.
@@ -446,11 +442,6 @@ struct DashboardView: View {
         generatingInsights = true
         let ctx = context, mgr = ai
         Task { _ = await Brain.generateObservations(ctx, ai: mgr); await MainActor.run { generatingInsights = false } }
-    }
-
-    private var prayedToday: Int {
-        let key = PHT.dayKey()
-        return Set(prayerLogs.filter { $0.id.hasSuffix("|\(key)") }.map { $0.prayer }).count
     }
 
     // MARK: Derived values

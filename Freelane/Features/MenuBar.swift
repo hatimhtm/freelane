@@ -17,9 +17,19 @@ struct MenuBarView: View {
 
     @State private var capture = ""
     @State private var walletId: UUID?
-    @State private var note = ""
-    @State private var justLogged: String?
-    @State private var showDetail = false
+    /// The confirmation line above the capture field.
+    ///
+    /// It was a plain `String?` that could only ever say something worked. Two things needed it
+    /// to say more: a capture that fails validation used to clear the field and report nothing
+    /// at all, and every one-tap log — including the ↺ button sitting inches from the amount you
+    /// meant to click — created real money movement with no way back from this window, since the
+    /// app-wide UndoCenter lives in the main scene and not in the menu bar.
+    private struct Flash {
+        let text: String
+        let ok: Bool
+        var undo: (() -> Void)? = nil
+    }
+    @State private var justLogged: Flash?
     @State private var ai = AIManager()
     @State private var reminderCandidates: [RemindersCapture.Candidate] = []
     @State private var pendingReminderId: String?
@@ -93,9 +103,19 @@ struct MenuBarView: View {
             HStack {
                 Text("QUICK CAPTURE").font(.system(size: 9, weight: .semibold)).kerning(0.6).foregroundStyle(Palette.textTertiary)
                 Spacer()
-                if let msg = justLogged {
-                    Label(msg, systemImage: "checkmark.circle.fill").font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.positive).transition(.opacity)
+                if let f = justLogged {
+                    HStack(spacing: 7) {
+                        Label(f.text, systemImage: f.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(f.ok ? Palette.positive : Palette.warning)
+                        if let u = f.undo {
+                            Button("Undo") { u(); justLogged = nil }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Palette.teal)
+                        }
+                    }
+                    .transition(.opacity)
                 }
             }
             // One line, parsed: "450 jollibee", "5000 rent gcash", "30000 client payment from acme USD wise"
@@ -171,19 +191,25 @@ struct MenuBarView: View {
             return
         }
         let wallet = d.walletId ?? walletId ?? defaultWallet
-        if let id = try? MoneyEngine(context: context).createSpend(
+        guard let id = try? MoneyEngine(context: context).createSpend(
             walletId: wallet, amount: d.amount, currency: d.currency, description: d.description,
-            vendorName: d.vendor, category: nil, isSadaka: false, spentAt: .now) {
-            let ctx = context, mgr = ai
-            Task { await Brain.onSpendLogged(ctx, ai: mgr, spendId: id) }
-            WidgetBridge.update(context)
-            flash("Logged \(CurrencyFormat.string(d.amount, d.currency, compact: true))")
-            // If this capture came from a "log …" reminder, mark it done in Apple Reminders.
-            if let rid = pendingReminderId {
-                EventBridge.completeReminder(rid)
-                reminderCandidates.removeAll { $0.id == rid }
-                pendingReminderId = nil
-            }
+            vendorName: d.vendor, category: nil, isSadaka: false, spentAt: .now) else {
+            // The field used to be cleared here regardless: a spend that failed to save took your
+            // typing with it and said nothing, so the only sign was a number that never appeared.
+            flash("Couldn't save that — opening the full form", ok: false)
+            NSApp.activate(ignoringOtherApps: true)
+            NotificationCenter.default.post(name: .flLogSpend, object: nil)
+            return
+        }
+        let ctx = context, mgr = ai
+        Task { await Brain.onSpendLogged(ctx, ai: mgr, spendId: id) }
+        WidgetBridge.update(context)
+        flash("Logged \(CurrencyFormat.string(d.amount, d.currency, compact: true))", undo: undoSpend(id))
+        // If this capture came from a "log …" reminder, mark it done in Apple Reminders.
+        if let rid = pendingReminderId {
+            EventBridge.completeReminder(rid)
+            reminderCandidates.removeAll { $0.id == rid }
+            pendingReminderId = nil
         }
         capture = ""
     }
@@ -201,7 +227,7 @@ struct MenuBarView: View {
                 WidgetBridge.update(context)
                 EventBridge.completeReminder(c.id)
                 reminderCandidates.removeAll { $0.id == c.id }
-                flash("Logged \(c.prefill)")
+                flash("Logged \(c.prefill)", undo: undoSpend(id))
             }
         } else {
             capture = c.prefill
@@ -217,12 +243,24 @@ struct MenuBarView: View {
             let ctx = context, mgr = ai
             Task { await Brain.onSpendLogged(ctx, ai: mgr, spendId: id) }
             WidgetBridge.update(context)
-            flash("Logged \(s.vendorName ?? "spend") again")
+            flash("Logged \(s.vendorName ?? "spend") again", undo: undoSpend(id))
         }
     }
 
-    private func flash(_ msg: String) {
-        withAnimation { justLogged = msg }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { withAnimation { justLogged = nil } }
+    /// An undoable log stays up long enough to actually be undone; a bare confirmation doesn't
+    /// need to linger.
+    private func flash(_ msg: String, ok: Bool = true, undo: (() -> Void)? = nil) {
+        let f = Flash(text: msg, ok: ok, undo: undo)
+        withAnimation { justLogged = f }
+        let life: Double = undo != nil ? 8 : (ok ? 1.6 : 4)
+        DispatchQueue.main.asyncAfter(deadline: .now() + life) {
+            withAnimation { if justLogged?.text == f.text { justLogged = nil } }
+        }
+    }
+
+    /// Undo for anything this window just created: soft-delete it, so it lands in Trash rather
+    /// than disappearing, and every balance it touched recomputes through the engine.
+    private func undoSpend(_ id: UUID) -> () -> Void {
+        { try? MoneyEngine(context: context).deleteSpend(id); WidgetBridge.update(context) }
     }
 }

@@ -117,6 +117,7 @@ enum Notify {
 struct BellButton: View {
     var onOpenFeature: (Feature) -> Void
     @Environment(\.modelContext) private var context
+    @Environment(UndoCenter.self) private var undo
     @Query private var all: [AppNotification]
     @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
     @State private var open = false
@@ -255,7 +256,14 @@ struct BellButton: View {
     private func row(_ n: AppNotification) -> some View {
         Button { tapped(n) } label: {
             HStack(alignment: .top, spacing: 10) {
-                Circle().fill(n.priority >= 1 ? Palette.warning : Palette.azure).frame(width: 7, height: 7).padding(.top, 5)
+                // A filled dot on the leading edge of a list row means UNREAD everywhere else on
+                // this Mac. Here it meant priority, and it was drawn on every row of the Read tab
+                // too — so a list of things you had already dealt with looked like a list of things
+                // you hadn't. Unread rows keep the dot; read ones hold the space so the text stays
+                // aligned. Priority is carried by the colour, which is what colour is for.
+                Circle()
+                    .fill(n.readAt == nil ? (n.priority >= 1 ? Palette.warning : Palette.azure) : .clear)
+                    .frame(width: 7, height: 7).padding(.top, 5)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(n.subject).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary).multilineTextAlignment(.leading)
                     if let b = n.body { Text(b).font(.system(size: 11)).foregroundStyle(Palette.textSecondary).lineLimit(3).multilineTextAlignment(.leading) }
@@ -283,11 +291,12 @@ struct BellButton: View {
                         if n.isQuestion { Curiosity.dismissQuestion(context, note: n) }   // records "don't re-ask" so it can't loop back
                         else { n.dismissedAt = .now; n.readAt = n.readAt ?? .now; try? context.save() }
                     } label: { Image(systemName: "xmark").font(.system(size: 9)).foregroundStyle(Palette.textTertiary) }.buttonStyle(.iconPress)
+                    .help(n.isQuestion ? "Dismiss — and don't ask this again" : "Dismiss")
                     Menu {
                         Button("Snooze to tomorrow", systemImage: "clock") { snooze(n, days: 1) }
                         Button("Snooze a week", systemImage: "clock") { snooze(n, days: 7) }
                         Divider()
-                        Button("Stop showing \(Self.kindLabel(n.kind))", systemImage: "bell.slash") { toggleMute(n.kind); try? context.save() }
+                        Button("Stop showing \(Self.kindLabel(n.kind))", systemImage: "bell.slash") { mute(n.kind) }
                     } label: { Image(systemName: "ellipsis").font(.system(size: 10)).foregroundStyle(Palette.textTertiary) }
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 16)
                 }
@@ -305,10 +314,28 @@ struct BellButton: View {
         return recurrings.first { $0.id == id && $0.active }
     }
 
+    /// Snoozing removes the row from BOTH tabs — it isn't unread any more and it isn't live —
+    /// so without this it was a click that made something vanish with no confirmation, no
+    /// record, and no way back until the snooze expired on its own.
     private func snooze(_ n: AppNotification, days: Int) {
+        let prevSnooze = n.snoozedUntil
+        let prevRead = n.readAt
         n.snoozedUntil = PHT.calendar.date(byAdding: .day, value: days, to: PHT.startOfDay())
         n.readAt = n.readAt ?? .now    // clear the unread badge while snoozed
         try? context.save()
+        undo.announce(days == 1 ? "Snoozed until tomorrow" : "Snoozed for a week", icon: "clock") {
+            n.snoozedUntil = prevSnooze; n.readAt = prevRead
+            try? context.save()
+        }
+    }
+
+    /// Muting a kind hides every alert of that kind, forever, from one menu click. The footer
+    /// in the popover is the permanent way back; this is the immediate one.
+    private func mute(_ kind: String) {
+        let previous = mutedRaw
+        toggleMute(kind)
+        try? context.save()
+        undo.announce("Hiding \(Self.kindLabel(kind))", icon: "bell.slash") { mutedRaw = previous }
     }
 
     private func tapped(_ n: AppNotification) {

@@ -30,7 +30,15 @@ struct SettingsView: View {
     @State private var showTrash = false
     @State private var showRestore = false
 
-    private let baseCurrencies = CurrencyFormat.supported
+    /// Only currencies the app can actually convert into.
+    ///
+    /// The picker used to list all fourteen supported codes. Picking one with no stored FX rate
+    /// walked you through a red destructive confirmation, took a full database backup, and THEN
+    /// failed with "no exchange rate yet" — a dead end reached the long way round. A currency you
+    /// can't switch to doesn't belong in the menu.
+    private var baseCurrencies: [String] {
+        CurrencyFormat.supported.filter { $0 == base || rates.hasRate(for: $0) }
+    }
 
     private var lastBackup: String? {
         let fm = FileManager.default
@@ -440,21 +448,6 @@ struct SettingsView: View {
         }
     }
 
-    private func brainRow(title: String, detail: String, ready: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Circle().fill(ready ? Palette.positive : Palette.textTertiary.opacity(0.5))
-                .frame(width: 7, height: 7).padding(.top, 5)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textPrimary)
-                Text(detail).font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 8).padding(.horizontal, 10)
-        .insetRow(cornerRadius: Radii.field, hoverable: false)
-    }
-
     // MARK: The local model
 
     private var localModelCard: some View {
@@ -493,7 +486,7 @@ struct SettingsView: View {
 
                 case .downloading(let p):
                     VStack(alignment: .leading, spacing: 6) {
-                        ProgressView(value: p).tint(Palette.teal)
+                        MeterBar(value: p, tint: Palette.teal, height: 6)
                         Text("Downloading — \(Int(p * 100))% of about \(LocalModelSpec.approxSizeLabel). You can keep using the app.")
                             .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                     }
@@ -531,48 +524,6 @@ struct SettingsView: View {
     }
 
     // MARK: Brain health — see at a glance if any brain keeps failing
-
-    private var brainHealthCard: some View {
-        let health = BrainHealth.shared
-        let known = AIBrainID.allCases.map(\.rawValue).filter { health.stats[$0] != nil }
-        return Group {
-            if !known.isEmpty {
-                SectionCard(title: "Brain health", subtitle: "Every AI call is tracked — a failing brain can't hide", accent: Palette.indigo) {
-                    VStack(spacing: 8) {
-                        ForEach(known, id: \.self) { source in
-                            if let s = health.stats[source] { healthRow(source, s) }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func healthRow(_ source: String, _ s: BrainHealth.Stat) -> some View {
-        let total = s.ok + s.fail
-        let state: Color = s.consecutive >= 3 ? Palette.negative : (s.consecutive > 0 ? Palette.warning : Palette.positive)
-        return HStack(spacing: 10) {
-            Circle().fill(state).frame(width: 7, height: 7)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(BrainHealth.displayName(source)).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
-                if let err = s.lastError, s.consecutive > 0 {
-                    Text(err).font(.system(size: 10)).foregroundStyle(Palette.negative).lineLimit(2)
-                } else if let at = s.lastFailAt, s.fail > 0 {
-                    Text("Last failure \(at.formatted(.relative(presentation: .named)))").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                }
-            }
-            Spacer()
-            Text(total == 0 ? "—" : "\(s.ok)/\(total) ok")
-                .font(Typo.rowFigure(11)).monospacedDigit()
-                .foregroundStyle(s.fail == 0 ? Palette.positive : Palette.textSecondary)
-            if s.consecutive >= 3 {
-                Text("FAILING").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.negative)
-                    .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.negative.opacity(0.16), in: Capsule())
-            }
-        }
-        .padding(.vertical, 7).padding(.horizontal, 10)
-        .insetRow(cornerRadius: Radii.field, hoverable: false)
-    }
 
     // MARK: What the app believes about you
 
@@ -668,6 +619,12 @@ struct SettingsView: View {
                     }
                 if let baseError {
                     Text(baseError).font(.system(size: 10)).foregroundStyle(Palette.negative)
+                } else if baseCurrencies.count <= 1 {
+                    Text("Only \(base) is available until Freelane has exchange rates — they arrive with your first payment in another currency, or from the next rate refresh.")
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                } else {
+                    Text("Everything you've recorded is converted. Currencies without an exchange rate yet aren't listed.")
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 }
             }
             LabeledField("Appearance") {

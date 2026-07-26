@@ -184,12 +184,14 @@ struct EditProjectSheet: View {
                             Image(systemName: m.done ? "checkmark.circle.fill" : "circle")
                                 .font(.system(size: 16)).foregroundStyle(m.done ? Palette.positive : Palette.textTertiary)
                         }.buttonStyle(.iconPress)
+                        .help(m.done ? "Mark “\(m.title)” unfinished" : "Mark “\(m.title)” finished")
                         Text(m.title).font(.system(size: 13)).foregroundStyle(m.done ? Palette.textTertiary : Palette.textPrimary)
                             .strikethrough(m.done, color: Palette.textTertiary)
                         Spacer()
                         if m.amount > 0 { Text(CurrencyFormat.string(m.amount, currency, compact: true)).font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.textTertiary) }
                         Button { context.delete(m); try? context.save() } label: { Image(systemName: "minus.circle").font(.system(size: 13)) }
                             .buttonStyle(.iconPress).foregroundStyle(Palette.negative)
+                            .help("Remove “\(m.title)”").accessibilityLabel("Remove phase \(m.title)")
                     }
                     .padding(.horizontal, 10).padding(.vertical, 7)
                     .insetRow(cornerRadius: Radii.row)
@@ -199,6 +201,7 @@ struct EditProjectSheet: View {
                     TextField("₱", text: $newMilestoneAmount).fieldWell().frame(width: 80)
                     Button { addMilestone() } label: { Image(systemName: "plus.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.violet) }
                         .buttonStyle(.iconPress).disabled(newMilestone.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .help("Add this phase")
                 }
             }
         }

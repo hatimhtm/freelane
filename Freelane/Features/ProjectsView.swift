@@ -588,37 +588,48 @@ struct ProjectsView: View {
                     StatusBadge(text: p.status.label, color: p.status.color)
                 }
             }
+            // ONE number unless a second one says something new.
+            //
+            // An untouched project printed its fee three times — as the headline, again as
+            // "₱X left", and a third time inverted as "₱0 received" — over a progress bar
+            // pinned at zero. A settled one printed it twice. Money in flight is the only
+            // state where the split is a fact you don't already have, so it's the only state
+            // that shows one.
+            let started = paid > 0.01
+            let settled = p.amount > 0.01 && out <= 0.01
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(CurrencyFormat.string(p.amount, p.currency, compact: true))
                     .font(Typo.figure(23)).monospacedDigit()
                     .foregroundStyle(Palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.6)
                 Spacer(minLength: 4)
-                if out > 0 {
+                if started && !settled {
                     Text(CurrencyFormat.string(out, p.currency, compact: true) + " left")
                         .font(.system(size: 11, weight: .medium)).monospacedDigit()
                         .foregroundStyle(Palette.warning).lineLimit(1)
                 }
             }
-            // The app's own bar, not the stock ProgressView — which draws a system-blue capsule
-            // ignoring the palette entirely, and was the last piece of un-themed AppKit on screen.
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Palette.wellFill).frame(height: 4)
-                    Capsule().fill(p.status.color)
-                        .frame(width: max(2, geo.size.width * CGFloat(min(1, max(0, prog)))), height: 4)
-                }
+            // Only drawn once there's progress to draw: an empty track under every new project
+            // was decoration standing in for information.
+            if started || settled {
+                MeterBar(value: prog, tint: p.status.color, height: 4)
             }
-            .frame(height: 4)
 
-            HStack(spacing: 6) {
-                Text("\(CurrencyFormat.string(paid, p.currency, compact: true)) received")
-                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
-                Spacer(minLength: 4)
-                let ms = milestones.filter { $0.projectId == p.id && $0.deletedAt == nil }
-                if !ms.isEmpty {
-                    Text("\(ms.filter { $0.done }.count)/\(ms.count) phases")
-                        .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.violet)
+            let ms = milestones.filter { $0.projectId == p.id && $0.deletedAt == nil }
+            if started || !ms.isEmpty {
+                HStack(spacing: 6) {
+                    if settled {
+                        Label("Paid in full", systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.positive)
+                    } else if started {
+                        Text("\(CurrencyFormat.string(paid, p.currency, compact: true)) received")
+                            .font(.system(size: 11)).monospacedDigit().foregroundStyle(Palette.textTertiary).lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    if !ms.isEmpty {
+                        Text("\(ms.filter { $0.done }.count)/\(ms.count) phases")
+                            .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.violet)
+                    }
                 }
             }
 

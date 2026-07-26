@@ -108,7 +108,7 @@ struct ActivityFeed: View {
                                 Image(systemName: isOpen ? "chevron.up" : "chevron.down")
                                     .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
                                     .frame(width: 22, height: 22).contentShape(Rectangle())
-                            }.buttonStyle(.iconPress))) {
+                            }.buttonStyle(.iconPress).help(isOpen ? "Collapse this day" : "Expand this day"))) {
             if isOpen {
                 VStack(spacing: 5) {
                     ForEach(group.items) { row($0) }

@@ -453,6 +453,7 @@ struct BodyView: View {
     @Environment(\.modelContext) private var context
     @Query(filter: #Predicate<BodyLog> { $0.deletedAt == nil }, sort: \BodyLog.day, order: .reverse) private var logs: [BodyLog]
     @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }) private var spends: [Spend]
+    @Query private var settings: [AppSettings]
 
     // The 5-second check-in — nil until tapped (or until today's log fills them in).
     @State private var energy: Int?
@@ -721,7 +722,7 @@ struct BodyView: View {
         let low = withMood.filter { $0.mood! <= 2 }.map { daySpend($0.day) }
         let high = withMood.filter { $0.mood! >= 4 }.map { daySpend($0.day) }
         guard !low.isEmpty, !high.isEmpty, let lowAvg = avg(low), let highAvg = avg(high), lowAvg + highAvg > 0 else { return nil }
-        let base = "PHP"
+        let base = settings.first?.baseCurrency ?? "PHP"
         let lo = CurrencyFormat.string(lowAvg, base, compact: true), hi = CurrencyFormat.string(highAvg, base, compact: true)
         if lowAvg > highAvg * 1.25 { return "You tend to spend more on low-mood days (~\(lo)/day vs \(hi) on good days)." }
         if highAvg > lowAvg * 1.25 { return "You tend to spend more on good-mood days (~\(hi)/day vs \(lo) on low days)." }
@@ -838,7 +839,6 @@ struct LettersView: View {
     }
     private func dayDate(_ d: Date) -> String { d.formatted(.dateTime.month().day().year()) }
 
-    private var wroteToday: Bool { letters.contains { cal.isDateInToday($0.createdAt) } }
     /// Day key for the calendar heat map. (Was `JournalGame.dayKey` before the streak system was
     /// removed — journaling is no longer scored, so nothing but the calendar needs this.)
     static func dayKey(_ d: Date) -> String {
@@ -1312,7 +1312,6 @@ struct AddLetterSheet: View {
             p.status = "answered"; p.answeredLetterId = l.id; p.resolvedAt = .now; p.dirty = true
         }
         try? context.save()
-        let all = ((try? context.fetch(FetchDescriptor<Letter>())) ?? []).filter { $0.deletedAt == nil }
         // Quiet synthesis: tag mood/themes, fold durable facts into memory, and maybe — only when
         // the entry earns it — leave ONE follow-up question for another day.
         let ctx = context, mgr = AIManager()
@@ -1362,11 +1361,11 @@ struct MonthCalendar: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                navBox("chevron.left") { month = cal.date(byAdding: .month, value: -1, to: month) ?? month }
+                navBox("chevron.left", "Previous month") { month = cal.date(byAdding: .month, value: -1, to: month) ?? month }
                 Spacer()
                 Text(month.formatted(.dateTime.month(.wide).year())).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary)
                 Spacer()
-                navBox("chevron.right") { month = cal.date(byAdding: .month, value: 1, to: month) ?? month }
+                navBox("chevron.right", "Next month") { month = cal.date(byAdding: .month, value: 1, to: month) ?? month }
                     .opacity(cal.isDate(month, equalTo: Date(), toGranularity: .month) ? 0.35 : 1)
                     .disabled(cal.isDate(month, equalTo: Date(), toGranularity: .month))
             }
@@ -1391,17 +1390,11 @@ struct MonthCalendar: View {
         }
     }
 
-    private func navBox(_ icon: String, _ action: @escaping () -> Void) -> some View {
+    private func navBox(_ icon: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textSecondary)
                 .frame(width: 40, height: 30).insetRow(cornerRadius: Radii.row)
-        }.buttonStyle(.iconPress)
-    }
-    private func legend(_ c: Color, _ label: String) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 10, height: 10)
-            Text(label).font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
-        }
+        }.buttonStyle(.iconPress).help(help).accessibilityLabel(help)
     }
 }
 
@@ -1463,10 +1456,22 @@ struct FaithView: View {
         let logged = Set(prayerLogs.filter { $0.id.hasSuffix("|\(key)") }.map { $0.prayer })
         return obligatoryPrayers.allSatisfy { logged.contains($0) }
     }
-    private var streak: Int {
-        var n = 0; var d = PHT.startOfDay()
-        if !allFive(d) { d = PHT.calendar.date(byAdding: .day, value: -1, to: d) ?? d }  // don't penalize an in-progress today
-        while allFive(d), n < 400 { n += 1; d = PHT.calendar.date(byAdding: .day, value: -1, to: d) ?? d }
+    /// Full days this calendar month — a count, deliberately not a streak.
+    ///
+    /// This header used to read "streak 12d": a consecutive-day chain that resets to zero the
+    /// first day you miss one prayer. The journal's streak system was pulled for exactly that
+    /// reason — a counter that can only be broken turns a practice into a debt — and this was
+    /// the same mechanic in the one place in the app where it has the least business being. A
+    /// count of good days only ever goes up, and a missed day costs you that day, not the month.
+    private var fullDaysThisMonth: Int {
+        var n = 0
+        var d = PHT.startOfMonth()
+        let today = PHT.startOfDay()
+        while d <= today {
+            if allFive(d) { n += 1 }
+            guard let next = PHT.calendar.date(byAdding: .day, value: 1, to: d) else { break }
+            d = next
+        }
         return n
     }
     private var fastedToday: Bool { fastLogs.first { $0.id == todayKey }?.fasted ?? false }
@@ -1550,8 +1555,7 @@ struct FaithView: View {
                         .frame(maxWidth: .infinity, minHeight: 70)
                         .background(Palette.teal.opacity(tasbihCount >= tasbihTarget ? 0.22 : 0.12), in: RoundedRectangle(cornerRadius: Radii.tile, style: .continuous))
                 }.buttonStyle(.cardPress)
-                ProgressView(value: Double(min(tasbihCount, tasbihTarget)), total: Double(max(tasbihTarget, 1)))
-                    .progressViewStyle(.linear).tint(Palette.teal)
+                MeterBar(value: Double(min(tasbihCount, tasbihTarget)) / Double(max(tasbihTarget, 1)), tint: Palette.teal, height: 6)
                 HStack(spacing: 8) {
                     ForEach([33, 99], id: \.self) { t in
                         Button("\(t)") { tasbihTarget = t }.buttonStyle(.glass).controlSize(.small).tint(tasbihTarget == t ? Palette.teal : nil)
@@ -1579,10 +1583,12 @@ struct FaithView: View {
             Spacer()
             Button { value.wrappedValue = max(0, value.wrappedValue - 1) } label: { Image(systemName: "minus.circle.fill") }
                 .buttonStyle(.iconPress).foregroundStyle(value.wrappedValue == 0 ? Palette.textTertiary : Palette.positive)
+                .help("One fewer to make up").accessibilityLabel("Decrease \(label) owed")
             Text("\(value.wrappedValue)").font(Typo.rowFigure(15, .bold)).monospacedDigit()
                 .foregroundStyle(Palette.textPrimary).frame(minWidth: 24)
             Button { value.wrappedValue += 1 } label: { Image(systemName: "plus.circle.fill") }
                 .buttonStyle(.iconPress).foregroundStyle(Palette.warning)
+                .help("One more to make up").accessibilityLabel("Increase \(label) owed")
         }
         .padding(.vertical, 7).padding(.horizontal, 11)
         .insetRow(cornerRadius: Radii.field, hoverable: false)
@@ -1621,7 +1627,7 @@ struct FaithView: View {
             ("Maghrib", "sunset.fill", times?.maghrib ?? "—", true),
             ("Isha", "moon.stars.fill", times?.isha ?? "—", true),
         ]
-        let subtitle = loading ? "Loading…" : (failed ? "Offline — couldn't refresh" : (fromCache ? "Last known times" : "\(prayedCount)/5 prayed today · streak \(streak)d"))
+        let subtitle = loading ? "Loading…" : (failed ? "Offline — couldn't refresh" : (fromCache ? "Last known times" : "\(prayedCount)/5 prayed today · \(fullDaysThisMonth) complete \(fullDaysThisMonth == 1 ? "day" : "days") this month"))
         return SectionCard(title: "Today's prayers", subtitle: subtitle, accent: Palette.violet) {
             VStack(spacing: 6) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, r in prayerRow(r) }

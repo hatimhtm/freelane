@@ -16,16 +16,12 @@ struct TodayView: View {
     @State private var showPay = false
     @State private var showSpend = false
     @State private var reminders: [ReminderItem] = []
+    @Environment(\.navigate) private var navigate
 
-    /// Consecutive days (ending today, or yesterday if today's not logged yet) with at least one
-    /// spend logged — the gravity that makes you open it daily.
-    private var logStreak: Int {
-        let days = Set(spends.map { PHT.dayKey($0.spentAt) })
-        var n = 0, d = PHT.startOfDay()
-        if !days.contains(PHT.dayKey(d)) { d = PHT.calendar.date(byAdding: .day, value: -1, to: d) ?? d }
-        while days.contains(PHT.dayKey(d)), n < 500 { n += 1; d = PHT.calendar.date(byAdding: .day, value: -1, to: d) ?? d }
-        return n
-    }
+    // The last streak in the app. The journal's whole streak system was pulled because a counter
+    // that can only be broken turns a habit into a debt — and this one, a flame on "Spent today"
+    // counting consecutive days of logging a spend, was the same mechanic wearing a different
+    // label. It survived that removal only because it lived on a different page.
 
     private var safe: SafeBreakdown {
         SafeToSpend.compute(payments: payments, spends: spends, wallets: wallets, ledger: ledger, recurrings: recurrings, plans: plans)
@@ -50,9 +46,13 @@ struct TodayView: View {
     private var landedToday: Double { todayPayments.reduce(0) { $0 + ($1.netAmountBase ?? 0) } }
     private func projectTitle(_ p: Payment) -> String { projects.first { $0.id == p.projectId }?.title ?? "Payment" }
 
+    // These two cards used to be titled "Spent today" and "Money in today", directly under tiles
+    // titled "Spent today" and "Landed today" — the same two headings twice on one screen, and the
+    // second card even repeated the tile's figure in its subtitle. The tiles hold the totals; these
+    // hold the breakdown, so they're named for the breakdown.
     private var todayDetail: some View {
         HStack(alignment: .top, spacing: 16) {
-            SectionCard(title: "Spent today", subtitle: todaySpends.isEmpty ? nil : "\(todaySpends.count) item\(todaySpends.count == 1 ? "" : "s")", accent: Palette.warning) {
+            SectionCard(title: "Where it went", subtitle: todaySpends.isEmpty ? nil : "\(todaySpends.count) item\(todaySpends.count == 1 ? "" : "s")", accent: Palette.warning) {
                 if todaySpends.isEmpty {
                     Text("Nothing spent today.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                 } else {
@@ -67,11 +67,16 @@ struct TodayView: View {
                                     .foregroundStyle(Palette.textPrimary).lineLimit(1)
                             }
                         }
+                        if todaySpends.count > 6 {
+                            Text("+\(todaySpends.count - 6) more")
+                                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 }
             }.frame(maxWidth: .infinity)
 
-            SectionCard(title: "Money in today", subtitle: landedToday > 0 ? CurrencyFormat.string(landedToday, base, compact: true) : nil, accent: Palette.positive) {
+            SectionCard(title: "What came in", subtitle: todayPayments.isEmpty ? nil : "\(todayPayments.count) payment\(todayPayments.count == 1 ? "" : "s")", accent: Palette.positive) {
                 if todayPayments.isEmpty {
                     Text("No payments today.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                 } else {
@@ -84,6 +89,11 @@ struct TodayView: View {
                                     .font(Typo.rowFigure(12)).monospacedDigit()
                                     .foregroundStyle(Palette.positive).lineLimit(1)
                             }
+                        }
+                        if todayPayments.count > 6 {
+                            Text("+\(todayPayments.count - 6) more")
+                                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
@@ -128,9 +138,7 @@ struct TodayView: View {
                 safeHero.frame(maxWidth: .infinity)
                 VStack(spacing: 16) {
                     StatTile(label: "Spent today", value: safe.spentToday, code: base, systemImage: "cart",
-                             accent: Palette.warning,
-                             chip: logStreak >= 2 ? ("\(logStreak)-day logging streak", "flame.fill") : nil,
-                             chipColor: Palette.warning)
+                             accent: Palette.warning, chip: nil)
                     StatTile(label: "Landed today", value: landedToday, code: base, systemImage: "arrow.down.left",
                              accent: Palette.positive, chip: nil)
                 }
@@ -166,7 +174,11 @@ struct TodayView: View {
 
     // MARK: Apple Reminders (when the integration is on)
     private var remindersCard: some View {
-        SectionCard(title: "Reminders", subtitle: "\(reminders.count)", accent: Palette.indigo) {
+        // Subtitle counts what's SHOWN plus what isn't, rather than claiming a total the list
+        // below then contradicts.
+        SectionCard(title: "Reminders",
+                    subtitle: reminders.count > 6 ? "6 of \(reminders.count)" : "\(reminders.count)",
+                    accent: Palette.indigo) {
             VStack(spacing: 0) {
                 ForEach(reminders.prefix(6)) { r in
                     HStack(spacing: 10) {
@@ -220,7 +232,7 @@ struct TodayView: View {
             .sorted { rates.toBase(ProjectMath.outstandingNative(project: $0, allocations: liveAllocs, rates: rates), $0.currency)
                     > rates.toBase(ProjectMath.outstandingNative(project: $1, allocations: liveAllocs, rates: rates), $1.currency) }
         return SectionCard(title: "Awaiting payment", subtitle: "\(open.count) open", accent: Palette.azure) {
-            if open.isEmpty { hint("All caught up. ✨") }
+            if open.isEmpty { hint("Nothing outstanding.") }
             else {
                 VStack(spacing: 10) {
                     ForEach(Array(open.prefix(5))) { p in
@@ -231,6 +243,19 @@ struct TodayView: View {
                                 .font(Typo.rowFigure(12)).monospacedDigit()
                                 .foregroundStyle(Palette.warning).lineLimit(1)
                         }
+                    }
+                    // The header said "9 open" over a list of five, with nothing to say the
+                    // other four existed or where to find them.
+                    if open.count > 5 {
+                        Button { navigate(.projects) } label: {
+                            HStack(spacing: 4) {
+                                Text("\(open.count - 5) more on Projects").font(.system(size: 11))
+                                Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .bold))
+                            }
+                            .foregroundStyle(Palette.azure)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain).pointerStyle(.link)
                     }
                 }
             }

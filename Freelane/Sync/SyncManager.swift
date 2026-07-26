@@ -392,7 +392,6 @@ final class SyncManager {
 
     // MARK: Push (dirty local rows → PostgREST upsert)
 
-    private func iso(_ d: Date?) -> Any { d.map { DateParse.string($0) } ?? NSNull() }
 
     private func pushDirty(api: SupabaseAPI, from context: ModelContext) async throws {
         // Payments
