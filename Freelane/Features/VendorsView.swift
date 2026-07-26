@@ -157,6 +157,7 @@ struct VendorsView: View {
     private func renameSheet(_ old: String) -> some View {
         SheetScaffold(title: "Rename / merge", accent: Palette.warning,
                       canSave: !renameTo.trimmingCharacters(in: .whitespaces).isEmpty,
+                      hint: "Type the new name",
                       onSave: { merge(from: old, to: renameTo); renaming = nil }) {
             Text("Rewrites every spend tagged “\(old)”. Type an existing vendor's exact name to merge them (e.g. JolliBee → Jollibee).")
                 .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)

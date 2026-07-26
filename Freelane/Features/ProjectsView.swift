@@ -687,7 +687,9 @@ struct AddProjectSheet: View {
 
     var body: some View {
         SheetScaffold(title: "New project", accent: Palette.violet,
-                      canSave: !title.trimmingCharacters(in: .whitespaces).isEmpty && parsedAmount != nil, onSave: save) {
+                      canSave: !title.trimmingCharacters(in: .whitespaces).isEmpty && parsedAmount != nil,
+                      hint: title.trimmingCharacters(in: .whitespaces).isEmpty ? "Give the project a title" : "Enter the agreed amount",
+                      onSave: save) {
             LabeledField("Title") {
                 TextField("Project name", text: $title).textFieldStyle(GlassFieldStyle()).focused($titleFocus)
             }
@@ -697,7 +699,7 @@ struct AddProjectSheet: View {
                                 label: { id in id.flatMap { i in clients.first { $0.id == i }?.name } ?? "None" })
             }
             HStack(spacing: 12) {
-                LabeledField("Amount") { TextField("0", text: $amount).textFieldStyle(GlassFieldStyle()) }
+                LabeledField("Amount") { AmountField(code: currency, text: $amount) }
                 LabeledField("Currency") { CurrencyMenu(selection: $currency, options: currencies) }
             }
         }

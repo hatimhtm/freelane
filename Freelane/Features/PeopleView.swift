@@ -224,8 +224,8 @@ struct AddEntitySheet: View {
             LabeledField("Kind") {
                 GlassSegment(options: Array(EntityKind.allCases), selection: $kind, label: { $0.label })
             }
-            LabeledField("Connection (optional)") { TextField("e.g. my lola, the vet, our car", text: $relationship).textFieldStyle(GlassFieldStyle()) }
-            LabeledField("Notes (optional)") { TextField("Anything worth remembering", text: $notes, axis: .vertical).lineLimit(2...4).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Connection (optional)") { TextField("e.g. my lola, the vet, our car", text: $relationship).fieldWell() }
+            LabeledField("Notes (optional)") { TextField("Anything worth remembering", text: $notes, axis: .vertical).lineLimit(2...4).fieldWell() }
         }
         .onAppear { DispatchQueue.main.async { nameFocused = true } }
     }
@@ -244,7 +244,7 @@ struct EditEntitySheet: View {
             entity.kind = kind; entity.dirty = true; try? context.save(); dismiss()
         }) {
             LabeledField("Name") { TextField("Who or what", text: $name).textFieldStyle(GlassFieldStyle()).focused($nameFocused) }
-            LabeledField("Connection") { TextField("e.g. my lola, the vet, our car", text: $relationship).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Connection") { TextField("e.g. my lola, the vet, our car", text: $relationship).fieldWell() }
             LabeledField("Type") {
                 GlassMenuPicker(selection: $kind, options: Array(EntityKind.allCases), label: { $0.label })
             }

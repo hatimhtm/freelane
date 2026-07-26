@@ -244,7 +244,7 @@ struct AddClientSheet: View {
     var body: some View {
         SheetScaffold(title: "New client", accent: Palette.cyan, canSave: !name.isEmpty, onSave: save) {
             LabeledField("Name") { TextField("Client name", text: $name).textFieldStyle(GlassFieldStyle()).focused($nameFocused) }
-            LabeledField("Company") { TextField("optional", text: $company).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Company") { TextField("optional", text: $company).fieldWell() }
             LabeledField("Default currency") {
                 CurrencyMenu(selection: $defaultCurrency)
                 Text("Used as the default when you log their projects & payments — you can still change it per transaction.")
@@ -608,19 +608,19 @@ struct EditClientSheet: View {
     var body: some View {
         SheetScaffold(title: "Edit client", accent: Palette.cyan, canSave: !name.isEmpty, onSave: save) {
             LabeledField("Name") { TextField("Name", text: $name).textFieldStyle(GlassFieldStyle()).focused($nameFocused) }
-            LabeledField("Company") { TextField("optional", text: $company).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Company") { TextField("optional", text: $company).fieldWell() }
             HStack(spacing: 10) {
-                LabeledField("Email") { TextField("optional", text: $email).textFieldStyle(GlassFieldStyle()) }
-                LabeledField("Phone") { TextField("optional", text: $phone).textFieldStyle(GlassFieldStyle()) }
+                LabeledField("Email") { TextField("optional", text: $email).fieldWell() }
+                LabeledField("Phone") { TextField("optional", text: $phone).fieldWell() }
             }
-            LabeledField("Address") { TextField("optional", text: $address).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Address") { TextField("optional", text: $address).fieldWell() }
             HStack(spacing: 10) {
-                LabeledField("City") { TextField("optional", text: $city).textFieldStyle(GlassFieldStyle()) }
-                LabeledField("Country") { TextField("optional", text: $country).textFieldStyle(GlassFieldStyle()) }
+                LabeledField("City") { TextField("optional", text: $city).fieldWell() }
+                LabeledField("Country") { TextField("optional", text: $country).fieldWell() }
             }
             HStack(spacing: 10) {
-                LabeledField("IBAN") { TextField("optional", text: $iban).textFieldStyle(GlassFieldStyle()) }
-                LabeledField("SWIFT") { TextField("optional", text: $swift).textFieldStyle(GlassFieldStyle()) }
+                LabeledField("IBAN") { TextField("optional", text: $iban).fieldWell() }
+                LabeledField("SWIFT") { TextField("optional", text: $swift).fieldWell() }
             }
             LabeledField("Default currency") { CurrencyMenu(selection: Binding(get: { defaultCurrency.isEmpty ? "PHP" : defaultCurrency }, set: { defaultCurrency = $0 })) }
             HStack(spacing: 10) {
@@ -640,7 +640,7 @@ struct EditClientSheet: View {
                         HStack {
                             Text("Monthly").font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                             Spacer()
-                            TextField("0", value: $retainerBase, format: .number).textFieldStyle(GlassFieldStyle()).frame(width: 120).multilineTextAlignment(.trailing)
+                            TextField("0", value: $retainerBase, format: .number).fieldWell().frame(width: 120).multilineTextAlignment(.trailing)
                         }
                     }
                 }

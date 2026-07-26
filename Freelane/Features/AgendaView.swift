@@ -560,6 +560,7 @@ struct GoalSheet: View {
         SheetScaffold(title: existing == nil ? "New savings goal" : "Edit goal",
                       accent: Palette.azure, icon: "target",
                       canSave: !title.trimmingCharacters(in: .whitespaces).isEmpty && (num(target) ?? 0) > 0,
+                      hint: title.trimmingCharacters(in: .whitespaces).isEmpty ? "Name what you are saving for" : "Enter a target amount",
                       onSave: save,
                       deleteLabel: existing != nil ? "Delete goal" : nil,
                       onDelete: existing != nil ? remove : nil) {
@@ -568,14 +569,14 @@ struct GoalSheet: View {
             }
             HStack(spacing: 12) {
                 LabeledField("Target (\(CurrencyFormat.symbol(base)))") {
-                    TextField("0", text: $target).textFieldStyle(GlassFieldStyle())
+                    TextField("0", text: $target).fieldWell()
                 }
                 LabeledField("Saved so far") {
-                    TextField("0", text: $saved).textFieldStyle(GlassFieldStyle())
+                    TextField("0", text: $saved).fieldWell()
                 }
             }
             LabeledField("Set aside monthly") {
-                TextField("0", text: $setAside).textFieldStyle(GlassFieldStyle())
+                TextField("0", text: $setAside).fieldWell()
                 Text("Reserved out of safe-to-spend every month, like a bill — until the goal is reached.")
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }

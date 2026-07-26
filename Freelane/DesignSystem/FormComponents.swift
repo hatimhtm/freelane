@@ -95,6 +95,13 @@ struct SheetScaffold<Content: View>: View {
     var accent: Color
     var icon: String? = nil
     var canSave: Bool
+    /// WHY you can't save yet, shown in the footer whenever `canSave` is false.
+    ///
+    /// Across 22 sheets the only validation channel was `.disabled(!canSave)` — a greyed-out
+    /// button and no explanation. The withdrawal sheet gates on three separate conditions; the
+    /// routed-payment sheet gates on every hop in a repeating list having both a wallet and an
+    /// amount. In every case the user got a dead button and had to guess which field was wrong.
+    var hint: String? = nil
     var saveLabel: String = "Save"
     var onSave: () -> Void
     /// Optional destructive action (e.g. "Delete project") — renders bottom-left in the footer so
@@ -148,7 +155,15 @@ struct SheetScaffold<Content: View>: View {
                     Button { onDelete() } label: { Label(deleteLabel, systemImage: "trash") }
                         .buttonStyle(.destructive)
                 }
-                Spacer()
+                if !canSave, let hint {
+                    HStack(spacing: 5) {
+                        Image(systemName: "info.circle").font(.system(size: 10))
+                        Text(hint).font(.system(size: 11)).lineLimit(2)
+                    }
+                    .foregroundStyle(Palette.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
                 Button("Cancel") { dismiss() }.buttonStyle(.glass)
                 Button(saveLabel) { onSave() }
                     .buttonStyle(.glassProminent).tint(accent).disabled(!canSave)
@@ -168,11 +183,15 @@ struct SheetScaffold<Content: View>: View {
 
 /// The app's single input look — a roomy glass field. Replaces `.roundedBorder`
 /// everywhere so no form reads like an HTML page.
+/// Legacy field treatment, kept only for the handful of call sites that own their own
+/// `@FocusState` (a first-responder field in a sheet, a search box). Everything else uses
+/// `.fieldWell()`, which can show focus. Values here are kept in lockstep with `FieldWell` so the
+/// two are indistinguishable at rest.
 struct GlassFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .textFieldStyle(.plain)
-            .font(.system(size: 15))
+            .font(.system(size: 14))
             .foregroundStyle(Palette.textPrimary)
             .padding(.horizontal, 13).padding(.vertical, 11)
             .background(Palette.fieldFill, in: RoundedRectangle(cornerRadius: Radii.field, style: .continuous))
@@ -513,4 +532,139 @@ struct LabeledField<Content: View>: View {
             content()
         }
     }
+}
+
+// MARK: - Money entry
+
+/// The field you type an amount into.
+///
+/// This is the most-used control in the app and it was a plain `TextField` at 15pt system — the
+/// same treatment as "Reference number". Entering money is the primary act in a money app; it
+/// should look like the figure it's about to become. So: the currency symbol sits inline and
+/// dimmed, the number is set in the editorial serif at 26pt with tabular digits, and the well
+/// carries a real focus ring — the app's fields previously suppressed the system focus ring with
+/// `.textFieldStyle(.plain)` and drew nothing in its place, so in a five-field sheet you genuinely
+/// could not see which field had the keyboard.
+struct AmountField: View {
+    var code: String
+    @Binding var text: String
+    var placeholder: String = "0"
+    /// Shown under the field — a converted value, a fee, a running total.
+    var footnote: String? = nil
+    var tone: Color = Palette.textPrimary
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(CurrencyFormat.symbol(code))
+                    .font(Typo.figure(18))
+                    .foregroundStyle(Palette.textTertiary)
+                TextField(placeholder, text: $text)
+                    .textFieldStyle(.plain)
+                    .font(Typo.figure(26))
+                    .monospacedDigit()
+                    .foregroundStyle(tone)
+                    .focused($focused)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
+                ZStack {
+                    shape.fill(Palette.fieldFill)
+                    shape.strokeBorder(focused ? Palette.azure : Palette.fieldStroke,
+                                       lineWidth: focused ? 1.6 : 1)
+                }
+            }
+            .animation(.easeOut(duration: 0.14), value: focused)
+            .contentShape(Rectangle())
+            .onTapGesture { focused = true }
+
+            if let footnote {
+                Text(footnote)
+                    .font(.system(size: 10.5)).monospacedDigit()
+                    .foregroundStyle(Palette.textTertiary)
+            }
+        }
+    }
+}
+
+/// A normal text field with a visible focus state.
+///
+/// Same problem as the amount field: `GlassFieldStyle` draws a static stroke and the plain style
+/// removes the system ring, so focus was invisible. This wraps the field so it can own the state.
+struct TextWell: View {
+    var placeholder: String
+    @Binding var text: String
+    var multiline: Bool = false
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Group {
+            if multiline {
+                TextField(placeholder, text: $text, axis: .vertical).lineLimit(2...6)
+            } else {
+                TextField(placeholder, text: $text)
+            }
+        }
+        .textFieldStyle(.plain)
+        .font(.system(size: 14))
+        .foregroundStyle(Palette.textPrimary)
+        .focused($focused)
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
+            ZStack {
+                shape.fill(Palette.fieldFill)
+                shape.strokeBorder(focused ? Palette.azure : Palette.fieldStroke,
+                                   lineWidth: focused ? 1.6 : 1)
+            }
+        }
+        .animation(.easeOut(duration: 0.14), value: focused)
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+    }
+}
+
+// MARK: - The field well
+
+/// The app's text-field treatment, as a modifier that can see focus.
+///
+/// `GlassFieldStyle` couldn't. A `TextFieldStyle` is a plain struct with no view identity, so it
+/// can't own `@FocusState` — meanwhile `.textFieldStyle(.plain)` inside it suppressed the system
+/// focus ring and drew a static stroke in its place. Net result across ~100 fields: in any sheet
+/// with more than one input, nothing on screen told you where the keyboard was pointing.
+///
+/// A `ViewModifier` does have view identity, so it can hold the state and apply `.focused` to the
+/// field it wraps. Every call site upgrades by swapping one modifier.
+struct FieldWell: ViewModifier {
+    var multiline: Bool = false
+    @FocusState private var focused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .font(.system(size: 14))
+            .foregroundStyle(Palette.textPrimary)
+            .focused($focused)
+            .padding(.horizontal, 13).padding(.vertical, multiline ? 10 : 11)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: Radii.field, style: .continuous)
+                ZStack {
+                    shape.fill(Palette.fieldFill)
+                    shape.strokeBorder(focused ? Palette.azure : Palette.fieldStroke,
+                                       lineWidth: focused ? 1.6 : 1)
+                }
+            }
+            .animation(.easeOut(duration: 0.14), value: focused)
+            .contentShape(Rectangle())
+            .onTapGesture { focused = true }
+    }
+}
+
+extension View {
+    /// The standard input treatment: fill, hairline, and a brand-ink ring while focused.
+    func fieldWell(multiline: Bool = false) -> some View { modifier(FieldWell(multiline: multiline)) }
 }

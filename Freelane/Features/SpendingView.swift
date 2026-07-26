@@ -584,7 +584,9 @@ struct AddSpendSheet: View {
 
     var body: some View {
         SheetScaffold(title: existing == nil ? "Log spend" : "Edit spend", accent: Palette.warning,
-                      canSave: walletId != nil && effectiveAmount > 0, onSave: save) {
+                      canSave: walletId != nil && effectiveAmount > 0,
+                      hint: walletId == nil ? "Pick which wallet it came from" : "Enter an amount above 0",
+                      onSave: save) {
             if existing == nil {
                 Button {
                     scanning = true
@@ -619,7 +621,7 @@ struct AddSpendSheet: View {
                             .padding(.horizontal, 13).padding(.vertical, 11)
                             .insetRow(cornerRadius: Radii.field, hoverable: false)
                     } else {
-                        TextField("0", text: $amount).textFieldStyle(GlassFieldStyle())
+                        AmountField(code: currency, text: $amount)
                             .focused($amountFocused)
                     }
                 }
@@ -631,9 +633,9 @@ struct AddSpendSheet: View {
                 }.toggleStyle(.switch).tint(Palette.warning)
             }
             if itemized { itemizedSection }
-            LabeledField("Description") { TextField("What was it for?", text: $desc).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Description") { TextField("What was it for?", text: $desc).fieldWell() }
             LabeledField("Vendor") {
-                TextField("store / who you paid", text: $vendor).textFieldStyle(GlassFieldStyle())
+                TextField("store / who you paid", text: $vendor).fieldWell()
                 if !vendorSuggestions.isEmpty {     // autocomplete from your past vendors
                     HStack(spacing: 6) {
                         ForEach(vendorSuggestions, id: \.self) { v in
@@ -651,7 +653,7 @@ struct AddSpendSheet: View {
                 FlexTags(all: knownTags, selected: $tags)
             }
             HStack(spacing: 8) {
-                TextField("New tag", text: $newTag).textFieldStyle(GlassFieldStyle())
+                TextField("New tag", text: $newTag).fieldWell()
                     .onSubmit { addNewTag() }   // ⏎ here adds the tag instead of saving the sheet
                 Button("Add") { addNewTag() }
                     .buttonStyle(.glass).disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -740,9 +742,9 @@ struct AddSpendSheet: View {
         let deal = total > 0 ? PriceMemory.judge(unitPriceBase: unitBase, history: hist) : .firstTime
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
-                TextField("10 packs Camel", text: line.name).textFieldStyle(GlassFieldStyle())
-                TextField("qty", text: line.qty).textFieldStyle(GlassFieldStyle()).frame(width: 46)
-                TextField("price", text: line.price).textFieldStyle(GlassFieldStyle()).frame(width: 76)
+                TextField("10 packs Camel", text: line.name).fieldWell()
+                TextField("qty", text: line.qty).fieldWell().frame(width: 46)
+                TextField("price", text: line.price).fieldWell().frame(width: 76)
                 if lines.count > 1 {
                     Button { lines.removeAll { $0.id == l.id } } label: { Image(systemName: "minus.circle") }
                         .buttonStyle(.iconPress).foregroundStyle(Palette.negative)
@@ -887,7 +889,9 @@ struct PayRecurringSheet: View {
 
     var body: some View {
         SheetScaffold(title: "Pay “\(recurring.label)”", accent: Palette.warning, icon: "calendar.badge.checkmark",
-                      canSave: walletId != nil && amt > 0, onSave: save) {
+                      canSave: walletId != nil && amt > 0,
+                      hint: walletId == nil ? "Pick a wallet" : "Enter an amount above 0",
+                      onSave: save) {
             if let due = nextDue {
                 HStack(spacing: 8) {
                     Image(systemName: "calendar").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.warning)
@@ -901,10 +905,10 @@ struct PayRecurringSheet: View {
             }
             HStack(spacing: 12) {
                 LabeledField(recurring.isVariableAmount ? "Amount paid (the real bill)" : "Amount") {
-                    TextField(recurring.isVariableAmount ? "what was it this time?" : "0", text: $amount).textFieldStyle(GlassFieldStyle())
+                    TextField(recurring.isVariableAmount ? "what was it this time?" : "0", text: $amount).fieldWell()
                         .focused($amountFocused)
                 }
-                LabeledField("Fee (optional)") { TextField("wallet charge", text: $fee).textFieldStyle(GlassFieldStyle()) }
+                LabeledField("Fee (optional)") { TextField("wallet charge", text: $fee).fieldWell() }
             }
             if recurring.isVariableAmount, recurring.amount > 0 {
                 Text("Last time was about \(CurrencyFormat.string(recurring.amount, recurring.currency, compact: true)).")
@@ -1075,7 +1079,9 @@ struct AddRecurringSheet: View {
 
     var body: some View {
         SheetScaffold(title: existing == nil ? "New recurring" : "Edit recurring", accent: Palette.warning,
-                      canSave: !label.isEmpty && (isVariable || parseAmount(amount) != nil), onSave: save) {
+                      canSave: !label.isEmpty && (isVariable || parseAmount(amount) != nil),
+                      hint: label.isEmpty ? "Give it a name" : "Enter an amount, or mark it as varying",
+                      onSave: save) {
             LabeledField("Label") { TextField("e.g. Rent, Netflix, Electricity", text: $label).textFieldStyle(GlassFieldStyle()).focused($labelFocused) }
             LabeledField("Type") { GlassSegment(options: Array(RecurringKind.allCases), selection: $kind) { $0.label } }
             LabeledField("Cadence") { GlassSegment(options: Array(RecurringCadence.allCases), selection: $cadence) { $0.label } }
@@ -1088,7 +1094,7 @@ struct AddRecurringSheet: View {
             }.toggleStyle(.switch).tint(Palette.azure)
             HStack(spacing: 12) {
                 LabeledField(isVariable ? "Typical amount (estimate)" : "Amount") {
-                    TextField(isVariable ? "e.g. 470 — optional" : "0", text: $amount).textFieldStyle(GlassFieldStyle())
+                    TextField(isVariable ? "e.g. 470 — optional" : "0", text: $amount).fieldWell()
                 }
                 LabeledField("Currency") { CurrencyMenu(selection: $currency, options: currencies) }
             }
@@ -1189,7 +1195,7 @@ struct BudgetsSheet: View {
                     TextField("no cap", text: Binding(
                         get: { caps[tag] ?? "" },
                         set: { caps[tag] = $0 }))
-                        .textFieldStyle(GlassFieldStyle()).frame(width: 110)
+                        .fieldWell().frame(width: 110)
                 }
             }
         }

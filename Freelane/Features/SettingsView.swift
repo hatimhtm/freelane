@@ -105,7 +105,7 @@ struct SettingsView: View {
                             CurrencyMenu(selection: Binding(get: { chosenCurrency(w) }, set: { recalCurrency[w.id] = $0 }))
                             TextField("real balance", text: Binding(
                                 get: { recalAmounts[w.id] ?? "" },
-                                set: { recalAmounts[w.id] = $0 })).textFieldStyle(GlassFieldStyle())
+                                set: { recalAmounts[w.id] = $0 })).fieldWell()
                             Button("Fix") { recalibrate(w) }
                                 .buttonStyle(.glassProminent).tint(Palette.azure)
                                 .disabled(parseAmount(recalAmounts[w.id] ?? "") == nil || !rates.hasRate(for: cur))
@@ -178,7 +178,7 @@ struct SettingsView: View {
                         cloudField("Supabase URL", "https://xxxx.supabase.co", text: Binding(get: { sync.urlString }, set: { sync.urlString = $0 }))
                         cloudField("Anon key", "eyJhbGci…", text: Binding(get: { sync.anonKey }, set: { sync.anonKey = $0 }), secure: true)
                         cloudField("Email", "owner@freelane.local", text: Binding(get: { sync.email }, set: { sync.email = $0 }))
-                        SecureField("Password", text: $cloudPassword).textFieldStyle(GlassFieldStyle())
+                        SecureField("Password", text: $cloudPassword).fieldWell()
                         Button {
                             Task { await sync.connectAndImport(password: cloudPassword); cloudPassword = "" }
                         } label: {
@@ -202,9 +202,9 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textSecondary)
             if secure {
-                SecureField(placeholder, text: text).textFieldStyle(GlassFieldStyle())
+                SecureField(placeholder, text: text).fieldWell()
             } else {
-                TextField(placeholder, text: text).textFieldStyle(GlassFieldStyle())
+                TextField(placeholder, text: text).fieldWell()
             }
         }
     }
@@ -722,7 +722,7 @@ struct SettingsView: View {
             }
             LabeledField("Your city") {
                 TextField("e.g. Manila, Philippines", text: $city)
-                    .textFieldStyle(GlassFieldStyle())
+                    .fieldWell()
                     .onSubmit { saveCity() }
                         .focused($cityFocused)
                         // `onSubmit` alone meant typing a city and then clicking anywhere else —

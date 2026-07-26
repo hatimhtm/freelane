@@ -38,6 +38,8 @@ struct RoutedPaymentSheet: View {
     var body: some View {
         SheetScaffold(title: "Routed payment", accent: Palette.positive,
                       canSave: (Double(gross) ?? 0) > 0 && hops.allSatisfy { $0.walletId != nil && (Double($0.amount) ?? 0) > 0 },
+                      hint: (Double(gross) ?? 0) <= 0 ? "Enter what the client sent"
+                            : "Every step needs a wallet and an amount",
                       onSave: save) {
             LabeledField("For project (optional)") {
                 GlassMenuPicker(selection: $projectId,
@@ -45,7 +47,7 @@ struct RoutedPaymentSheet: View {
                                 label: { id in id.flatMap { i in projects.first { $0.id == i }?.title } ?? "Unassigned" })
             }
             HStack(spacing: 12) {
-                LabeledField("Gross sent") { TextField("0", text: $gross).textFieldStyle(GlassFieldStyle()) }
+                LabeledField("Gross sent") { AmountField(code: grossCurrency, text: $gross) }
                 LabeledField("Currency") { CurrencyMenu(selection: $grossCurrency, options: currencies) }
             }
             LabeledField("Route — each hop is where it landed, and how much arrived") {
@@ -57,7 +59,7 @@ struct RoutedPaymentSheet: View {
                                             options: [nil] + holding.map { Optional($0.id) },
                                             label: { id in id.flatMap { i in wallets.first { $0.id == i }?.name } ?? "Wallet…" })
                             .frame(width: 130)
-                            TextField("amount", text: $hop.amount).textFieldStyle(GlassFieldStyle()).frame(width: 90)
+                            TextField("amount", text: $hop.amount).fieldWell().frame(width: 90)
                             CurrencyMenu(selection: $hop.currency, options: currencies)
                             if hops.count > 1 {
                                 Button { hops.removeAll { $0.id == hop.id } } label: { Image(systemName: "minus.circle") }

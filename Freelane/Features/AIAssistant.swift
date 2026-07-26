@@ -163,7 +163,7 @@ struct AIChatSheet: View {
             HStack(spacing: 10) {
                 TextField("Ask about your money…", text: $input, axis: .vertical)
                     .lineLimit(1...5)
-                    .textFieldStyle(GlassFieldStyle())
+                    .fieldWell()
                     .focused($composerFocused)
                     .onSubmit { send(input) }
                 Button { send(input) } label: {

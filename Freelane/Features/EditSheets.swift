@@ -28,7 +28,7 @@ struct EditPaymentSheet: View {
     var body: some View {
         SheetScaffold(title: "Edit payment", accent: Palette.positive, canSave: true, onSave: save) {
             LabeledField("Net received (in \(base))") {
-                TextField("0", text: $net).textFieldStyle(GlassFieldStyle()).disabled(feeUnknown)
+                TextField("0", text: $net).fieldWell().disabled(feeUnknown)
             }
             Toggle(isOn: $feeUnknown) { Text("Fee unknown (net = gross)").font(.system(size: 13)).foregroundStyle(Palette.textPrimary) }
                 .toggleStyle(.switch).tint(Palette.warning)
@@ -37,8 +37,8 @@ struct EditPaymentSheet: View {
                                 options: [nil] + wallets.filter { !$0.archived }.map { Optional($0.id) },
                                 label: { id in id.flatMap { i in wallets.first { $0.id == i }?.name } ?? "None" })
             }
-            LabeledField("Reference") { TextField("invoice #, note to self…", text: $reference).textFieldStyle(GlassFieldStyle()) }
-            LabeledField("Notes") { TextField("optional", text: $notes).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Reference") { TextField("invoice #, note to self…", text: $reference).fieldWell() }
+            LabeledField("Notes") { TextField("optional", text: $notes).fieldWell() }
             if let error { Text(error).font(.caption).foregroundStyle(Palette.negative) }
         }
         .onAppear {
@@ -116,9 +116,11 @@ struct EditProjectSheet: View {
 
     var body: some View {
         SheetScaffold(title: "Edit project", accent: Palette.violet,
-                      canSave: !title.isEmpty && Double(amount) != nil, onSave: save,
+                      canSave: !title.isEmpty && Double(amount) != nil,
+                      hint: title.isEmpty ? "Give the project a title" : "Enter a valid amount",
+                      onSave: save,
                       deleteLabel: "Delete project", onDelete: { confirmDelete = true }) {
-            LabeledField("Title") { TextField("Title", text: $title).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Title") { TextField("Title", text: $title).fieldWell() }
             LabeledField("Client") {
                 GlassMenuPicker(selection: $clientId,
                                 options: [nil] + clients.map { Optional($0.id) },
@@ -128,7 +130,7 @@ struct EditProjectSheet: View {
                 }
             }
             HStack(spacing: 12) {
-                LabeledField("Amount") { TextField("0", text: $amount).textFieldStyle(GlassFieldStyle()) }
+                LabeledField("Amount") { AmountField(code: currency, text: $amount) }
                 LabeledField("Currency") { CurrencyMenu(selection: $currency, options: currencies) }
             }
             LabeledField("Status") {
@@ -148,7 +150,7 @@ struct EditProjectSheet: View {
                 .toggleStyle(.switch).tint(Palette.violet)
             if hasDue { LabeledField("Due") { GlassDateField(date: $due) } }
             milestoneSection
-            LabeledField("Notes") { TextField("optional", text: $notes).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Notes") { TextField("optional", text: $notes).fieldWell() }
         }
         .onAppear {
             title = project.title; amount = String(format: "%g", project.amount)
@@ -193,8 +195,8 @@ struct EditProjectSheet: View {
                     .insetRow(cornerRadius: Radii.row)
                 }
                 HStack(spacing: 8) {
-                    TextField("Add a phase (e.g. Design, Revisions)…", text: $newMilestone).textFieldStyle(GlassFieldStyle())
-                    TextField("₱", text: $newMilestoneAmount).textFieldStyle(GlassFieldStyle()).frame(width: 80)
+                    TextField("Add a phase (e.g. Design, Revisions)…", text: $newMilestone).fieldWell()
+                    TextField("₱", text: $newMilestoneAmount).fieldWell().frame(width: 80)
                     Button { addMilestone() } label: { Image(systemName: "plus.circle.fill").font(.system(size: 18)).foregroundStyle(Palette.violet) }
                         .buttonStyle(.iconPress).disabled(newMilestone.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -255,17 +257,17 @@ struct EditWalletSheet: View {
                 Text("The logo is matched automatically from the wallet name.")
                     .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
             }
-            LabeledField("Name") { TextField("Name", text: $name).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Name") { TextField("Name", text: $name).fieldWell() }
             LabeledField("Type") {
                 GlassMenuPicker(selection: $kind, options: Array(WalletKind.allCases), label: { $0.label })
             }
             LabeledField("Opening balance (base)") {
-                TextField("0", text: $opening).textFieldStyle(GlassFieldStyle())
+                TextField("0", text: $opening).fieldWell()
             }
             LabeledField("Reconcile — set the actual balance now") {
                 HStack(spacing: 8) {
                     TextField(CurrencyFormat.string(currentBalance, base, compact: true), text: $reconcileTo)
-                        .textFieldStyle(GlassFieldStyle())
+                        .fieldWell()
                     Button(reconciled ? "Done ✓" : "Reconcile") {
                         if let actual = Double(reconcileTo.trimmingCharacters(in: .whitespaces)) {
                             MoneyEngine(context: context).reconcileWallet(wallet.id, actualBase: actual)
@@ -276,7 +278,7 @@ struct EditWalletSheet: View {
                 Text("Book balance is \(CurrencyFormat.string(currentBalance, base)). Enter what's really there and we'll add one balancing entry — your history stays intact.")
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
             }
-            LabeledField("Notes") { TextField("optional", text: $notes).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Notes") { TextField("optional", text: $notes).fieldWell() }
             Toggle(isOn: $isHolding) { Text("Holding wallet (keeps a balance)").font(.system(size: 13)).foregroundStyle(Palette.textPrimary) }
                 .toggleStyle(.switch).tint(Palette.teal)
             Toggle(isOn: $excluded) {

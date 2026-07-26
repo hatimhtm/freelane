@@ -154,7 +154,7 @@ struct ReturnLoanSheet: View {
             }
             LabeledField("Amount (\(base))") {
                 TextField(CurrencyFormat.string(loan.outstandingBase, base, compact: true), text: $amount)
-                    .textFieldStyle(GlassFieldStyle())
+                    .fieldWell()
             }
             Text("Outstanding: \(CurrencyFormat.string(loan.outstandingBase, base))")
                 .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
@@ -199,7 +199,7 @@ struct PersonReturnSheet: View {
             }
             LabeledField("Amount (\(base))") {
                 TextField(CurrencyFormat.string(outstanding, base, compact: true), text: $amount)
-                    .textFieldStyle(GlassFieldStyle())
+                    .fieldWell()
             }
             Text("Total outstanding: \(CurrencyFormat.string(outstanding, base))")
                 .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
@@ -379,6 +379,8 @@ struct LoanPersonSheet: View {
 }
 
 struct AddLoanSheet: View {
+    @Query private var settings: [AppSettings]
+    private var base: String { settings.first?.baseCurrency ?? "PHP" }
     var prefillName: String = ""
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -395,7 +397,7 @@ struct AddLoanSheet: View {
             LoanEngine.onCreate(context, loan: l)   // moves the wallet
             dismiss()
         }) {
-            LabeledField("Person") { TextField("Who", text: $who).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Person") { TextField("Who", text: $who).fieldWell() }
             LabeledField("Direction") {
                 GlassSegment(options: [LoanDirection.given, .received], selection: $dir) { $0 == .given ? "I lent out" : "I borrowed" }
             }
@@ -404,7 +406,7 @@ struct AddLoanSheet: View {
                                 options: [UUID?.none] + wallets.filter { $0.isHolding && !$0.archived }.map { UUID?.some($0.id) },
                                 label: { id in id.flatMap { i in wallets.first(where: { $0.id == i })?.name } ?? "Select…" })
             }
-            LabeledField("Amount (base)") { TextField("0", text: $amount).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Amount") { AmountField(code: base, text: $amount) }
             LabeledField("Date") { GlassDateField(date: $date) }
             LabeledField("Expected return (optional)") {
                 GlassDateField(date: Binding(get: { due ?? date }, set: { due = $0 }))
@@ -429,11 +431,11 @@ struct EditLoanSheet: View {
             loan.counterparty = who; loan.notes = notes.isEmpty ? nil : notes
             loan.dueDate = hasDue ? due : nil; loan.dirty = true; try? context.save(); dismiss()
         }) {
-            LabeledField("Person") { TextField("Who", text: $who).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Person") { TextField("Who", text: $who).fieldWell() }
             Toggle(isOn: $hasDue.animation()) { Text("Expected return date").font(.system(size: 13)).foregroundStyle(Palette.textPrimary) }
                 .toggleStyle(.switch).tint(Palette.teal)
             if hasDue { LabeledField("Return by") { GlassDateField(date: $due) } }
-            LabeledField("Notes") { TextField("optional", text: $notes).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Notes") { TextField("optional", text: $notes).fieldWell() }
             Text("Amount, direction and wallet are locked once logged (they moved real money). Delete + re-add to change those.")
                 .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
         }
@@ -602,10 +604,10 @@ struct BodyView: View {
                     }
                 }
                 HStack(spacing: 12) {
-                    LabeledField("Workout (min)") { TextField("optional", text: $workout).textFieldStyle(GlassFieldStyle()).frame(width: 110) }
-                    LabeledField("Weight (kg)") { TextField("optional", text: $weight).textFieldStyle(GlassFieldStyle()).frame(width: 110) }
+                    LabeledField("Workout (min)") { TextField("optional", text: $workout).fieldWell().frame(width: 110) }
+                    LabeledField("Weight (kg)") { TextField("optional", text: $weight).fieldWell().frame(width: 110) }
                 }
-                LabeledField("Notes") { TextField("How are you feeling?", text: $notes).textFieldStyle(GlassFieldStyle()) }
+                LabeledField("Notes") { TextField("How are you feeling?", text: $notes).fieldWell() }
                 HStack(spacing: 10) {
                     Button("Save details") { saveDetails() }.buttonStyle(.glass).controlSize(.small)
                     if detailsSaved {
@@ -1258,13 +1260,22 @@ struct AddLetterSheet: View {
             // Placeholder paddings mirror the editor's REAL text origin (its NSTextView adds
             // a 5pt line-fragment inset) so the caret blinks exactly at the placeholder's "S".
             ZStack(alignment: .topLeading) {
+                // Set in the same editorial serif your finished entries are read in, so what you
+                // type looks like what you'll get back. It was 15pt system — the app's UI face, the
+                // one used for table cells and buttons — for the only place in the app you write
+                // prose.
                 TextEditor(text: $body0)
-                    .font(.system(size: 15)).lineSpacing(7).scrollContentBackground(.hidden)
-                    .padding(.horizontal, 16).padding(.vertical, 14).focused($focused)
+                    .font(.system(size: 15.5, design: .serif))
+                    .lineSpacing(7)
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 18).padding(.vertical, 16)
+                    .focused($focused)
                 if body0.isEmpty {
                     Text("Start writing — nobody reads this but you…")
-                        .font(.system(size: 15)).italic().foregroundStyle(Palette.textTertiary)
-                        .padding(.leading, 21).padding(.top, 14).allowsHitTesting(false)
+                        .font(.system(size: 15.5, design: .serif))
+                        .foregroundStyle(Palette.textTertiary)
+                        .padding(.leading, 23).padding(.top, 16)
+                        .allowsHitTesting(false)
                 }
             }
             .insetRow(cornerRadius: Radii.tile, hoverable: false)
@@ -1712,8 +1723,8 @@ struct FaithView: View {
             Divider().overlay(Palette.hairline)
             if editingLoc {
                 HStack(spacing: 10) {
-                    LabeledField("Latitude") { TextField("14.0667", text: $latStr).textFieldStyle(GlassFieldStyle()) }
-                    LabeledField("Longitude") { TextField("121.3250", text: $lngStr).textFieldStyle(GlassFieldStyle()) }
+                    LabeledField("Latitude") { TextField("14.0667", text: $latStr).fieldWell() }
+                    LabeledField("Longitude") { TextField("121.3250", text: $lngStr).fieldWell() }
                 }
                 LabeledField("Method") {
                     GlassMenuPicker(selection: $method,

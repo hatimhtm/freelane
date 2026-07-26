@@ -95,7 +95,7 @@ struct SadakaView: View {
         HStack {
             Text(label).font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
             Spacer()
-            TextField("0", value: value, format: .number).textFieldStyle(GlassFieldStyle()).frame(width: 120).multilineTextAlignment(.trailing)
+            TextField("0", value: value, format: .number).fieldWell().frame(width: 120).multilineTextAlignment(.trailing)
         }
     }
 
@@ -263,7 +263,9 @@ struct GiveSadakaSheet: View {
 
     var body: some View {
         SheetScaffold(title: "Give sadaka", accent: Palette.negative,
-                      canSave: walletId != nil && (parseAmount(amount) ?? 0) > 0, onSave: save) {
+                      canSave: walletId != nil && (parseAmount(amount) ?? 0) > 0,
+                      hint: walletId == nil ? "Pick which wallet it came from" : "Enter an amount above 0",
+                      onSave: save) {
             LabeledField("From wallet") {
                 GlassMenuPicker(selection: $walletId,
                                 options: [UUID?.none] + wallets.filter { $0.isHolding && !$0.archived }.map { UUID?.some($0.id) },
@@ -276,9 +278,9 @@ struct GiveSadakaSheet: View {
             Toggle(isOn: $anonymous) { Text("Keep the recipient anonymous").font(.system(size: 13)).foregroundStyle(Palette.textPrimary) }
                 .toggleStyle(.switch).tint(Palette.negative)
             if !anonymous {
-                LabeledField("Who (optional)") { TextField("name", text: $recipientName).textFieldStyle(GlassFieldStyle()) }
+                LabeledField("Who (optional)") { TextField("name", text: $recipientName).fieldWell() }
             }
-            LabeledField("Why I gave (optional)") { TextField("a quiet intention, only you see this…", text: $why, axis: .vertical).lineLimit(2...4).textFieldStyle(GlassFieldStyle()) }
+            LabeledField("Why I gave (optional)") { TextField("a quiet intention, only you see this…", text: $why, axis: .vertical).lineLimit(2...4).fieldWell() }
             Text("This logs a real outflow from the wallet and counts toward your giving.")
                 .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
             if let error { Text(error).font(.caption).foregroundStyle(Palette.negative) }

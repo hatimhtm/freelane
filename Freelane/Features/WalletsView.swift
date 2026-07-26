@@ -207,18 +207,23 @@ struct AddWalletSheet: View {
     @State private var kind: WalletKind = .wallet
     @State private var opening = ""
     @FocusState private var nameFocus: Bool
+    @Query private var settings: [AppSettings]
+    private var base: String { settings.first?.baseCurrency ?? "PHP" }
 
     var body: some View {
         SheetScaffold(title: "New wallet", accent: Palette.teal,
-                      canSave: !name.trimmingCharacters(in: .whitespaces).isEmpty, onSave: save) {
+                      canSave: !name.trimmingCharacters(in: .whitespaces).isEmpty,
+                      hint: "Give the wallet a name",
+                      onSave: save) {
             LabeledField("Name") {
                 TextField("e.g. GCash", text: $name).textFieldStyle(GlassFieldStyle()).focused($nameFocus)
             }
             LabeledField("Type") {
                 GlassMenuPicker(selection: $kind, options: Array(WalletKind.allCases), label: { $0.label })
             }
-            LabeledField("Opening balance (base)") {
-                TextField("0", text: $opening).textFieldStyle(GlassFieldStyle())
+            LabeledField("Opening balance") {
+                AmountField(code: base, text: $opening,
+                            footnote: "What the wallet already holds today. Leave at 0 for a new one.")
             }
         }
         .onAppear { DispatchQueue.main.async { nameFocus = true } }
@@ -274,6 +279,8 @@ struct WithdrawalSheet: View {
         SheetScaffold(title: existing == nil ? "Transfer / withdraw" : "Edit transfer", accent: Palette.warning,
                       icon: "arrow.left.arrow.right",
                       canSave: from != nil && (parsedAmount(sent) ?? 0) > 0 && from != to,
+                      hint: from == nil ? "Pick the wallet it leaves from"
+                            : (from == to ? "From and To must be different wallets" : "Enter how much left the wallet"),
                       saveLabel: existing == nil ? "Save" : "Update", onSave: save) {
             LabeledField("From wallet") {
                 GlassMenuPicker(selection: $from,
@@ -281,7 +288,7 @@ struct WithdrawalSheet: View {
                                 label: { id in id.flatMap { i in wallets.first { $0.id == i }?.name } ?? "Select…" })
             }
             HStack(spacing: 12) {
-                LabeledField("Amount sent") { TextField("0", text: $sent).textFieldStyle(GlassFieldStyle()).focused($sentFocus) }
+                LabeledField("Amount sent") { AmountField(code: base, text: $sent) }
                 LabeledField("Currency") { CurrencyMenu(selection: $sentCurrency, options: currencies) }
             }
             LabeledField("To wallet") {
@@ -291,7 +298,7 @@ struct WithdrawalSheet: View {
             }
             HStack(spacing: 12) {
                 LabeledField(to == nil ? "Received in hand" : "Landed in destination") {
-                    TextField("defaults to amount sent", text: $received).textFieldStyle(GlassFieldStyle())
+                    TextField("defaults to amount sent", text: $received).fieldWell()
                 }
                 LabeledField("Currency") { CurrencyMenu(selection: $receivedCurrency, options: currencies) }
             }

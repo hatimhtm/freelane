@@ -345,7 +345,7 @@ struct AnswerSheet: View {
                     }
                     if note.freeText {
                         LabeledField("Or type your own") {
-                            HStack { TextField("Answer…", text: $text).textFieldStyle(GlassFieldStyle()); Button("Send") { submit(text) }.buttonStyle(.glass).disabled(text.isEmpty) }
+                            HStack { TextField("Answer…", text: $text).fieldWell(); Button("Send") { submit(text) }.buttonStyle(.glass).disabled(text.isEmpty) }
                         }
                     }
                 }.padding(18)

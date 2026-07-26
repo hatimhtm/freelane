@@ -425,7 +425,7 @@ struct BulkPaymentSheet: View {
                     if merge {
                         HStack(spacing: 10) {
                             Text("Total received").font(.system(size: 13)).foregroundStyle(Palette.textSecondary)
-                            TextField("0", text: $mergedAmount).textFieldStyle(GlassFieldStyle()).frame(width: 110)
+                            TextField("0", text: $mergedAmount).fieldWell().frame(width: 110)
                                 .focused($mergedFocus)
                             CurrencyMenu(selection: $mergedCurrency, options: currencies)
                         }.padding(12).glassCard(cornerRadius: Radii.field)
@@ -513,7 +513,7 @@ struct BulkPaymentSheet: View {
             HStack(alignment: .bottom, spacing: 14) {
                 field("Owed (gross)") {
                     HStack(spacing: 6) {
-                        TextField("0", text: row.gross).textFieldStyle(GlassFieldStyle()).frame(width: 100)
+                        TextField("0", text: row.gross).fieldWell().frame(width: 100)
                             .focused($focusedAmount, equals: r.id)
                         CurrencyMenu(selection: row.currency, options: currencies)
                     }
@@ -529,7 +529,7 @@ struct BulkPaymentSheet: View {
                 } else {
                     field("Received (net)") {
                         HStack(spacing: 6) {
-                            TextField("same", text: row.landed).textFieldStyle(GlassFieldStyle()).frame(width: 100)
+                            TextField("same", text: row.landed).fieldWell().frame(width: 100)
                                 .help("What actually arrived — leave empty if no fee was taken.")
                             CurrencyMenu(selection: row.landedCurrency, options: currencies)
                         }

@@ -3,6 +3,17 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.1
+
+The forms — the part you actually type into.
+
+I'd restyled the sheet headers and called the sheets done. The fields inside them were untouched, and they're what you use every day.
+
+- **You can see where the keyboard is now.** Every field suppressed the system focus ring (`.textFieldStyle(.plain)`) and drew a static stroke in its place, so in any sheet with more than one input nothing told you which field had focus. The treatment is now a `ViewModifier` rather than a `TextFieldStyle` — a style struct has no view identity and literally cannot observe focus — so all ~100 fields across the app gained a brand-ink focus ring in one change.
+- **Entering an amount looks like money.** It was a plain 15pt text box, identical to "Reference number", for the primary act in a money app. The currency symbol now sits inline and dimmed and the figure is set in the editorial serif at 26pt with tabular digits — the same face the number will appear in once you've saved it.
+- **Sheets tell you why you can't save.** Across 22 sheets the only validation was a greyed-out button and silence. The withdrawal sheet gates on three separate conditions; the routed-payment sheet gates on every step in a repeating list. Eleven sheets now name the blocking field — *"Pick the wallet it leaves from"*, *"From and To must be different wallets"*, *"Every step needs a wallet and an amount"*.
+- **The journal writes in the face it reads in.** The composer was 15pt system — the app's UI type, used for table cells and buttons — for the only place in the app you write prose. It's now the same editorial serif your finished entries are set in.
+
 ## 2.0
 
 The drag pass — the four things I said were left.
