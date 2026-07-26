@@ -3,6 +3,18 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.15
+
+Refresh buttons that refresh, and a journal archive that folds.
+
+- **"What Freelane noticed" was frozen, and its numbers were wrong.** The refresh only ever *added* findings it hadn't seen. These findings are arithmetic over your own rows, so their key is stable for a whole month while the sentence attached to it changes every day — an existing key blocked the update, so the card sat on "₱853.15 so far" and "₱517.68 a day" for two days after those stopped being true, and pressing Refresh recomputed the same findings, matched the same keys, changed nothing. It now reconciles: the numbers are rewritten in place, findings the ledger no longer supports are removed, and what's stored is exactly the most significant four.
+- **The ranking had inverted.** `compute` returns findings most-significant-first and the card sorts by recency, so an insert-only refresh added the *next* four down the list on every launch and showed those. Left alone it would have led the front page with "Snacks is down 69%" while "you're spending ₱543 a day against ₱5,667 last month" fell off the bottom.
+- **Dismissing an insight now means something.** Retired findings are deleted rather than marked dismissed — they're derived data, recomputable instantly — so `dismissedAt` is once again a record of *your* decision, and something you dismissed stays gone for the life of that month or quarter instead of returning at the next launch.
+- **The two cards stopped printing the same line.** "Mind × money" claimed the `pattern` area as well as `life`, and the only thing in `pattern` is the day-of-week spending finding — money, with no mood in it. So "Wednesdays are your priciest day" appeared on the Dashboard *and* the Journal. Mind × money is mood, sleep and writing now; nothing else.
+- **Two functions took parameters they ignored.** `mindMoney` accepted an `ai` and a `force` it never used, and `generateObservations` accepted an `ai` after it stopped being an AI feature — which is why the Dashboard's Refresh was disabled whenever no model was configured, for a computation that needs no model. Both signatures now say what they do, and the button works with no key at all.
+- **A refresh that legitimately finds nothing says so.** Silence after a button press is indistinguishable from a button that doesn't work.
+- **The journal archive folds by month and by year.** It was one flat grid that only grew — fine for a fortnight, unusable for a year, and there was no way to reach last March except by scrolling past everything after it. This year and this month open by default; finished years start folded. Each heading carries its day and entry counts. Searching or picking a date opens everything, because a match hidden inside a collapsed month is a match you'll never find.
+
 ## 2.14
 
 Gemini writes the journal now. The 4.3 GB local model is gone.

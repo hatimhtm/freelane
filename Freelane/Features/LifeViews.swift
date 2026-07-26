@@ -804,6 +804,8 @@ struct LettersView: View {
     @State private var searchDate: Date?
     @State private var showCalendar = false
     @State private var selectedDay: JournalDayGroup?
+    @State private var openYears: Set<Int> = []
+    @State private var openMonths: Set<String> = []
     @State private var mindMoney: [String] = []
     @State private var loadingMM = false
 
@@ -830,6 +832,58 @@ struct LettersView: View {
             (day: d, entries: dict[d]!.sorted { ($0.pinned ? 1 : 0, $0.createdAt) > ($1.pinned ? 1 : 0, $1.createdAt) })
         }
     }
+    /// Days → months → years, newest first.
+    ///
+    /// The archive was one flat grid of day cards. That is fine for a fortnight and unusable for a
+    /// year: it only grows, and there is no way to get to last March except by scrolling past
+    /// everything after it. Grouping is the only thing that makes an archive that never shrinks
+    /// stay navigable.
+    struct JournalMonth: Identifiable {
+        let id: String              // "2026-07"
+        let start: Date
+        let days: [(day: Date, entries: [Letter])]
+        var entryCount: Int { days.reduce(0) { $0 + $1.entries.count } }
+    }
+    struct JournalYear: Identifiable {
+        let id: Int
+        let months: [JournalMonth]
+        var entryCount: Int { months.reduce(0) { $0 + $1.entryCount } }
+    }
+
+    private var groupedYears: [JournalYear] {
+        let byMonth = Dictionary(grouping: groupedDays) { g in
+            cal.date(from: cal.dateComponents([.year, .month], from: g.day)) ?? g.day
+        }
+        let months = byMonth.keys.sorted(by: >).map { start in
+            JournalMonth(id: Self.monthKey(start), start: start,
+                         days: byMonth[start]!.sorted { $0.day > $1.day })
+        }
+        let byYear = Dictionary(grouping: months) { cal.component(.year, from: $0.start) }
+        return byYear.keys.sorted(by: >).map { y in
+            JournalYear(id: y, months: byYear[y]!.sorted { $0.start > $1.start })
+        }
+    }
+
+    static func monthKey(_ d: Date) -> String {
+        let f = DateFormatter(); f.calendar = PHT.calendar; f.timeZone = PHT.zone; f.dateFormat = "yyyy-MM"
+        return f.string(from: d)
+    }
+
+    /// While a search or a date filter is on, everything is open. Folding is for browsing an
+    /// archive; when you've asked a question of it, a match hiding inside a collapsed month is a
+    /// match you will never find.
+    private var isFiltering: Bool {
+        !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty || searchDate != nil
+    }
+
+    /// Open by default: this year, and this month. Everything older starts folded — a finished
+    /// year is history, and history should be one click away rather than in your way.
+    private func seedArchiveOpenState() {
+        guard openYears.isEmpty, openMonths.isEmpty else { return }
+        openYears = [cal.component(.year, from: Date())]
+        openMonths = [Self.monthKey(Date())]
+    }
+
     private func dayTitle(_ d: Date) -> String {
         if cal.isDateInToday(d) { return "Today" }
         if cal.isDateInYesterday(d) { return "Yesterday" }
@@ -933,15 +987,12 @@ struct LettersView: View {
                 Text(searchDate != nil ? "No entries on \(searchDate!.formatted(.dateTime.month().day().year()))." : "No entries match “\(searchQuery)”.")
                     .font(.system(size: 13)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 60)
             }
-            let cols = [GridItem(.adaptive(minimum: 170), spacing: 12)]
-            LazyVGrid(columns: cols, spacing: 12) {
-                ForEach(groupedDays, id: \.day) { g in
-                    Button { selectedDay = JournalDayGroup(id: g.day, entries: g.entries) } label: { dayMiniCard(g) }
-                        .buttonStyle(.cardPress)
-                }
+            ForEach(groupedYears) { year in
+                yearSection(year)
             }
         }
         .task {
+            seedArchiveOpenState()
             // Mind × money: show what's cached instantly; quietly regenerate when stale.
             mindMoney = Brain.mindMoneyLines(context)
             if mindMoney.isEmpty, ai.isReady, letters.filter({ $0.sentiment != nil }).count >= 4 {
@@ -1021,6 +1072,79 @@ struct LettersView: View {
         .padding(12).frame(minHeight: 122, alignment: .topLeading)
         .glassCard(cornerRadius: Radii.tile, interactive: true)
         .contentShape(Rectangle())
+    }
+
+    // MARK: The archive, folded
+
+    @ViewBuilder private func yearSection(_ year: JournalYear) -> some View {
+        let open = isFiltering || openYears.contains(year.id)
+        let isCurrent = year.id == cal.component(.year, from: Date())
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(Motion.snappy) {
+                    if open { openYears.remove(year.id) } else { openYears.insert(year.id) }
+                }
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.textTertiary)
+                        .frame(width: 10)
+                    Text(String(year.id))
+                        .font(Typo.title(15)).foregroundStyle(Palette.textPrimary)
+                    Text("\(year.entryCount) \(year.entryCount == 1 ? "entry" : "entries")")
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                    Rectangle().fill(Palette.hairline).frame(height: 1)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).pointerStyle(.link)
+            .disabled(isFiltering)
+            .help(open ? "Fold \(year.id)" : "Unfold \(year.id)")
+
+            if open {
+                ForEach(year.months) { month in monthSection(month, currentYear: isCurrent) }
+            }
+        }
+        .padding(.top, isCurrent ? 0 : 4)
+    }
+
+    @ViewBuilder private func monthSection(_ month: JournalMonth, currentYear: Bool) -> some View {
+        let open = isFiltering || openMonths.contains(month.id)
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(Motion.snappy) {
+                    if open { openMonths.remove(month.id) } else { openMonths.insert(month.id) }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8, weight: .bold)).foregroundStyle(Palette.textTertiary)
+                        .frame(width: 10)
+                    Text(month.start.formatted(.dateTime.month(.wide)))
+                        .font(.system(size: 11, weight: .semibold))
+                        .textCase(.uppercase).kerning(0.8)
+                        .foregroundStyle(open ? Palette.textSecondary : Palette.textTertiary)
+                    Text("\(month.days.count) \(month.days.count == 1 ? "day" : "days") · \(month.entryCount)")
+                        .font(.system(size: 10)).monospacedDigit().foregroundStyle(Palette.textTertiary)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).pointerStyle(.link)
+            .disabled(isFiltering)
+
+            if open {
+                let cols = [GridItem(.adaptive(minimum: 170), spacing: 12)]
+                LazyVGrid(columns: cols, spacing: 12) {
+                    ForEach(month.days, id: \.day) { g in
+                        Button { selectedDay = JournalDayGroup(id: g.day, entries: g.entries) } label: { dayMiniCard(g) }
+                            .buttonStyle(.cardPress)
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .padding(.leading, 12)
     }
 
     /// A day's entries (opened by tapping a day card) — each row opens the full entry.
@@ -1107,12 +1231,12 @@ struct LettersView: View {
         try? context.save()
     }
 
-    private func refreshMindMoney(force: Bool) {
+    private func refreshMindMoney(force: Bool = false) {
         loadingMM = true
-        let mgr = ai, ctx = context
-        Task {
-            let lines = await Brain.mindMoney(ctx, ai: mgr, force: force)
-            await MainActor.run { mindMoney = lines; loadingMM = false }
+        let ctx = context
+        Task { @MainActor in
+            mindMoney = Brain.mindMoney(ctx)
+            loadingMM = false
         }
     }
 

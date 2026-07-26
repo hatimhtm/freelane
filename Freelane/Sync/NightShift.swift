@@ -76,8 +76,10 @@ enum NightShift {
         //    local model: mind×money patterns (journal/dashboard) and the accountant insights
         //    (dashboard). generateInsights builds on and de-dupes against prior ones, so a daily
         //    run only ever adds genuinely new insight (or nothing) — it never piles up noise.
-        _ = await Brain.mindMoney(context, ai: ai, force: true)
-        _ = await Brain.generateObservations(context, ai: ai)
+        await MainActor.run {
+            _ = Brain.mindMoney(context)
+            _ = Brain.generateObservations(context)
+        }
 
         // 3.5) Refill the journal question well while the Mac is idle — the questions are better
         //      here than anywhere else, because tonight's pass has just tagged the newest entries

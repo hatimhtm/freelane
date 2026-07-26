@@ -670,7 +670,10 @@ enum Brain {
     /// Kept as a function because callers (NightShift, the Dashboard refresh button) don't need to
     /// care that there is no longer any AI behind it — and it now works with no brain available.
     @discardableResult
-    static func generateObservations(_ context: ModelContext, ai: AIManager) async -> Int {
+    /// No `ai` parameter, because there is no AI in this feature. It took one for as long as it
+    /// was an AI feature, and kept taking one after it became arithmetic — so the Dashboard button
+    /// was disabled whenever no model was configured, for a computation that never needed a model.
+    static func generateObservations(_ context: ModelContext) -> Int {
         ObservationEngine.refresh(context)
     }
 
@@ -719,9 +722,16 @@ enum Brain {
     /// and it accepted: *"calories are currently your primary mood regulator"*. The engine now
     /// reports the two averages side by side and stops, which is the entire honest content of the
     /// comparison.
-    static func mindMoney(_ context: ModelContext, ai: AIManager, force: Bool = false) async -> [String] {
+    /// Neither `ai` nor `force` any more. Both were accepted and both were ignored: this is a
+    /// computation over the user's own rows, so there is nothing to force and nobody to ask. A
+    /// parameter a function ignores is a promise to the caller it doesn't keep.
+    static func mindMoney(_ context: ModelContext) -> [String] {
+        // "life" ONLY. This used to also take "pattern", which is the day-of-week spending
+        // finding — a money fact with no mood in it at all. So "Wednesdays are your priciest day"
+        // appeared on the Dashboard under "What Freelane noticed" AND on the Journal under
+        // "Mind × money", which made two cards look like one card printed twice.
         let lines = ObservationEngine.compute(context)
-            .filter { $0.area == "life" || $0.area == "pattern" }
+            .filter { $0.area == "life" }
             .prefix(3).map(\.text)
         if let d = try? JSONSerialization.data(withJSONObject: Array(lines)),
            let s = String(data: d, encoding: .utf8) {

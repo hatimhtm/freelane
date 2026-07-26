@@ -261,35 +261,76 @@ enum ObservationEngine {
         return out.sorted { $0.weight > $1.weight }
     }
 
-    /// Compute, then store anything new. Returns how many were added.
+    /// Reconcile the stored observations against what the numbers say NOW: update, insert, retire.
+    /// Returns how many rows changed. No AI, no network.
     ///
-    /// No AI, no network, no failure mode beyond "nothing changed enough to be worth saying" —
-    /// which is a normal, honest outcome and is what the Dashboard shows.
+    /// This used to only ever insert. An observation whose `dedupKey` already existed was skipped
+    /// entirely — and since these findings are arithmetic over the user's own rows, the key is
+    /// stable for a whole month while the sentence attached to it changes every single day. So the
+    /// Dashboard sat on "Spending tagged 'Wife' is down 96% — ₱853.15 so far" and "You're spending
+    /// ₱517.68 a day this month" for two days after those figures stopped being true, and pressing
+    /// Refresh recomputed the identical findings, matched the identical keys, added nothing, and
+    /// changed nothing on screen. The card looked frozen because it was.
+    ///
+    /// Three outcomes now, which is what "refresh" has to mean for computed content:
+    ///  · the finding still holds and its numbers moved → the row's text is rewritten in place,
+    ///    keeping `createdAt` so the card doesn't reshuffle under you;
+    ///  · the finding is new → inserted, up to `limit` per pass;
+    ///  · the engine no longer produces it at all (the month rolled over, the gap closed) → retired,
+    ///    unless you pinned it, because a pin means you want to keep looking at it.
     @discardableResult
     static func refresh(_ context: ModelContext, limit: Int = 4) -> Int {
-        let found = compute(context)
-        // Only LIVE rows block a re-add. Including dismissed ones meant that retiring a stale
-        // observation also permanently prevented the engine from recomputing it — the Dashboard
-        // went empty and stayed empty.
-        let existing = ((try? context.fetch(FetchDescriptor<InsightLog>())) ?? [])
-            .filter { $0.dismissedAt == nil }
-        // Dedup on what the finding is ABOUT, not on how it's worded. Keying off the sentence let
-        // a rephrasing become a second row — the Dashboard showed "Wife is down 96%…" directly
-        // above "Spending tagged 'Wife' is down 96%…". The key is month- or quarter-scoped, so a
-        // finding legitimately reappears when the period rolls over.
-        let seenKeys = Set(existing.compactMap { $0.key })
-        let seenText = Set(existing.map { $0.text.lowercased() })
-        var added = 0
-        for o in found.prefix(limit)
-        where !seenKeys.contains(o.dedupKey) && !seenText.contains(o.text.lowercased()) {
-            let row = InsightLog(text: o.text, category: o.area, key: o.dedupKey)
-            row.dirty = true
-            context.insert(row)
-            added += 1
+        // THE STORED SET *IS* THE TOP FINDINGS. Not "the top findings, plus everything that was
+        // ever a top finding".
+        //
+        // `compute` returns most-significant-first, and the Dashboard sorts what it shows by
+        // recency — so an insert-only refresh quietly inverted the ranking. Each pass added the
+        // next four findings down the list, they were the newest rows, and the card showed them.
+        // After two launches the front page led with "Snacks is down 69%" while "you are spending
+        // ₱543 a day against ₱5,667 last month" had been pushed off the bottom.
+        let top = Array(compute(context).prefix(limit))
+        let wanted = Set(top.map(\.dedupKey))
+        let all = ((try? context.fetch(FetchDescriptor<InsightLog>())) ?? [])
+        var live: [String: InsightLog] = [:]
+        var dismissedKeys = Set<String>()
+        for row in all {
+            guard let k = row.key else { continue }
+            if row.dismissedAt == nil { live[k] = row } else { dismissedKeys.insert(k) }
         }
-        if added > 0 { try? context.save() }
+
+        var changed = 0
+        for o in top {
+            if let row = live[o.dedupKey] {
+                // Same finding, new numbers. Rewritten in place, keeping `createdAt` so the card
+                // doesn't reshuffle under someone who is reading it.
+                guard row.text != o.text else { continue }
+                row.text = o.text; row.category = o.area; row.dirty = true
+                changed += 1
+            } else if !dismissedKeys.contains(o.dedupKey) {
+                // Not re-added if you dismissed it. Dismissal now means something for the life of
+                // the key (a month, a quarter), because the engine no longer needs `dismissedAt`
+                // as its own bookkeeping — see below.
+                let row = InsightLog(text: o.text, category: o.area, key: o.dedupKey)
+                row.dirty = true
+                context.insert(row)
+                changed += 1
+            }
+        }
+
+        // Anything that is no longer a top finding is DELETED, not dismissed. These rows are
+        // derived data — recomputable from the ledger in microseconds — so there is nothing to
+        // preserve, and using `dismissedAt` for engine bookkeeping is what made a user's dismissal
+        // indistinguishable from the engine's own housekeeping. Pins survive: a pin is a request.
+        var removed = 0
+        for row in all where row.dismissedAt == nil && !row.pinned {
+            guard let k = row.key, !wanted.contains(k) else { continue }
+            context.delete(row)
+            removed += 1
+        }
+
+        if changed + removed > 0 { try? context.save() }
         UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: "insights.lastAt")
-        return added
+        return changed + removed
     }
 
     // MARK: Helpers

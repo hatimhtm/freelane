@@ -4,22 +4,24 @@
         <title>Freelane</title>
         <item>
             <description><![CDATA[
-<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.14</h3>
+<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.15</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>Gemini writes the journal now. The 4.3 GB local model is gone.</li>
-  <li>**The questions are a different category of thing.** Same prompt, same entries: the local Qwen3-8B wrote *"What else is in your purchasing history right now?"* and invented a team you have never had. Gemini writes *"How have things been with Celine lately?"* and *"What's your favorite thing about the new earbuds?"* — grounded in what you actually wrote, in a voice a person would use. An empty well refills to ten in eighty seconds.</li>
-  <li>**6 GB back.** The Qwen weights (4.3 GB) and a stale build directory holding the MLX checkouts (1.3 GB) are deleted, the MLX Swift package is out of the project, and the app itself is now 39 MB. Nothing left to download on a new machine, which also removes the biggest obstacle to a phone version.</li>
-  <li>**Your API key lives in the macOS Keychain** — never in the app's files, a backup, or an export. Settings → Intelligence takes it, tests it against the model you've chosen, and lets you pick quality: flash-lite, flash (default), or pro.</li>
-  <li>**Apple's on-device model stays, and keeps its job.** Sorting a spend into a category still happens on this Mac, instantly and free — none of that output is ever read as prose, so its weakness at writing costs nothing. Gemini backs it up. The journal chain now excludes it outright rather than demoting it: its safety filter refuses personal writing, so leaving it on the end only guaranteed a wasted refusal.</li>
-  <li>**The app stopped claiming your writing never leaves this Mac, because that is no longer true.** The sidebar chip said "No cloud · private"; Settings said "Nothing you write is sent anywhere"; the assistant said answers come from a model running on this Mac. All rewritten to say what actually happens: your money records never leave, your journal entries go to Google. A promise you have quietly broken is worse than one you never made.</li>
+  <li>Refresh buttons that refresh, and a journal archive that folds.</li>
+  <li>**"What Freelane noticed" was frozen, and its numbers were wrong.** The refresh only ever *added* findings it hadn't seen. These findings are arithmetic over your own rows, so their key is stable for a whole month while the sentence attached to it changes every day — an existing key blocked the update, so the card sat on "₱853.15 so far" and "₱517.68 a day" for two days after those stopped being true, and pressing Refresh recomputed the same findings, matched the same keys, changed nothing. It now reconciles: the numbers are rewritten in place, findings the ledger no longer supports are removed, and what's stored is exactly the most significant four.</li>
+  <li>**The ranking had inverted.** `compute` returns findings most-significant-first and the card sorts by recency, so an insert-only refresh added the *next* four down the list on every launch and showed those. Left alone it would have led the front page with "Snacks is down 69%" while "you're spending ₱543 a day against ₱5,667 last month" fell off the bottom.</li>
+  <li>**Dismissing an insight now means something.** Retired findings are deleted rather than marked dismissed — they're derived data, recomputable instantly — so `dismissedAt` is once again a record of *your* decision, and something you dismissed stays gone for the life of that month or quarter instead of returning at the next launch.</li>
+  <li>**The two cards stopped printing the same line.** "Mind × money" claimed the `pattern` area as well as `life`, and the only thing in `pattern` is the day-of-week spending finding — money, with no mood in it. So "Wednesdays are your priciest day" appeared on the Dashboard *and* the Journal. Mind × money is mood, sleep and writing now; nothing else.</li>
+  <li>**Two functions took parameters they ignored.** `mindMoney` accepted an `ai` and a `force` it never used, and `generateObservations` accepted an `ai` after it stopped being an AI feature — which is why the Dashboard's Refresh was disabled whenever no model was configured, for a computation that needs no model. Both signatures now say what they do, and the button works with no key at all.</li>
+  <li>**A refresh that legitimately finds nothing says so.** Silence after a button press is indistinguishable from a button that doesn't work.</li>
+  <li>**The journal archive folds by month and by year.** It was one flat grid that only grew — fine for a fortnight, unusable for a year, and there was no way to reach last March except by scrolling past everything after it. This year and this month open by default; finished years start folded. Each heading carries its day and entry counts. Searching or picking a date opens everything, because a match hidden inside a collapsed month is a match you'll never find.</li>
 </ul>
             ]]></description>
-            <title>2.14</title>
-            <pubDate>Mon, 27 Jul 2026 06:10:52 +0800</pubDate>
-            <sparkle:version>46</sparkle:version>
-            <sparkle:shortVersionString>2.14</sparkle:shortVersionString>
+            <title>2.15</title>
+            <pubDate>Mon, 27 Jul 2026 06:28:18 +0800</pubDate>
+            <sparkle:version>47</sparkle:version>
+            <sparkle:shortVersionString>2.15</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.14/Freelane.zip" length="7757310" type="application/octet-stream" sparkle:edSignature="QaniHe/w/NpcVN4Nm1PQXTK9GWMoYOmYLFZJYHTcEgA+iv/ILeyqoljhO+mxlVqfEi5xJRyH6erc5G59mSfwCQ=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.15/Freelane.zip" length="7798018" type="application/octet-stream" sparkle:edSignature="1GvIH2JQJJWzMUj77iYw56m8siIczYc9pcRJnQHmuvk8NbEH+vv+kEsVjfnbuP6XtAL07DTkbb1jGb3LDEEaDQ=="/>
         </item>
     </channel>
 </rss>

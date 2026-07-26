@@ -28,6 +28,7 @@ struct DashboardView: View {
     @Environment(AIManager.self) private var ai
     @Environment(\.navigate) private var navigate
     @State private var generatingInsights = false
+    @State private var insightNote: String?
     @AppStorage("dash.tileOrder") private var tileOrderRaw = ""
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
@@ -411,10 +412,12 @@ struct DashboardView: View {
         SectionCard(title: "What Freelane noticed", subtitle: "Only patterns it can point at in your own numbers",
                     accent: Palette.violet,
                     trailing: AnyView(
-                        Button { refreshInsights() } label: {
+                        Button { insightNote = nil; refreshInsights() } label: {
                             Label(generatingInsights ? "Thinking…" : "Refresh", systemImage: "sparkles").font(.system(size: 11))
                         }.buttonStyle(.plain).foregroundStyle(Palette.violet)
-                            .disabled(generatingInsights || !ai.isReady)
+                            // NOT gated on an AI key: this feature is arithmetic over your own
+                            // rows, so a missing key has nothing to do with whether it can run.
+                            .disabled(generatingInsights)
                             .opacity(generatingInsights ? 0.45 : 1)
                             .help("Recompute from your latest rows"))) {
             if shown.isEmpty {
@@ -434,14 +437,26 @@ struct DashboardView: View {
                             onPin: { ins.pinned.toggle(); ins.dirty = true; try? context.save() },
                             onDismiss: { ins.dismissedAt = .now; ins.dirty = true; try? context.save() })
                     }
+                    if let insightNote {
+                        Text(insightNote)
+                            .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                    }
                 }
             }
         }
     }
     private func refreshInsights() {
         generatingInsights = true
-        let ctx = context, mgr = ai
-        Task { _ = await Brain.generateObservations(ctx, ai: mgr); await MainActor.run { generatingInsights = false } }
+        let ctx = context
+        Task {
+            let changed = Brain.generateObservations(ctx)
+            await MainActor.run {
+                // Say when a refresh legitimately found nothing. Silence after a button press is
+                // indistinguishable from a button that doesn't work.
+                insightNote = changed > 0 ? nil : "Recomputed — nothing has moved since the last check."
+                generatingInsights = false
+            }
+        }
     }
 
     // MARK: Derived values
