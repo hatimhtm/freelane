@@ -28,7 +28,6 @@ struct SettingsView: View {
     @State private var backedUp = false
     @State private var showTrash = false
     @State private var showRestore = false
-    @State private var cloudPassword = ""
 
     private let baseCurrencies = CurrencyFormat.supported
 
@@ -57,7 +56,6 @@ struct SettingsView: View {
             case "Notifications": notificationsCard
             case "Intelligence": aiCard
             case "Integrations": integrationsCard
-            case "Cloud": cloudCard
             default: aboutCard
             }
         }
@@ -143,71 +141,10 @@ struct SettingsView: View {
 
     // MARK: Cloud sync
 
-    @ViewBuilder private var cloudCard: some View {
-        SectionCard(title: "Cloud sync", subtitle: sync.connected
-                    ? "Your data syncs to your private Supabase. Everything still works offline — changes queue and sync when you're back online."
-                    : "Optional. Sync this Mac to your own private Supabase so your data is backed up and ready for other devices. Off by default.",
-                    accent: Palette.section(.overview)) {
-            VStack(alignment: .leading, spacing: 14) {
-                // Live status line.
-                HStack(spacing: 10) {
-                    Image(systemName: sync.connected ? "checkmark.icloud.fill" : "icloud.slash")
-                        .font(.system(size: 15)).foregroundStyle(sync.connected ? Palette.positive : Palette.textTertiary).frame(width: 22)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(sync.statusLine).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary)
-                        if let d = sync.lastSync {
-                            Text("Last synced \(d.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                        }
-                    }
-                    Spacer()
-                    if sync.busy { ProgressView().controlSize(.small) }
-                }
-
-                if sync.connected {
-                    HStack(spacing: 10) {
-                        Button { Task { await sync.syncNow() } } label: {
-                            Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
-                        }.buttonStyle(.glassProminent).tint(Palette.azure).disabled(sync.busy)
-                        Button(role: .destructive) { sync.disconnect() } label: {
-                            Label("Disconnect", systemImage: "xmark.icloud")
-                        }.buttonStyle(.glass)
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 9) {
-                        cloudField("Supabase URL", "https://xxxx.supabase.co", text: Binding(get: { sync.urlString }, set: { sync.urlString = $0 }))
-                        cloudField("Anon key", "eyJhbGci…", text: Binding(get: { sync.anonKey }, set: { sync.anonKey = $0 }), secure: true)
-                        cloudField("Email", "owner@freelane.local", text: Binding(get: { sync.email }, set: { sync.email = $0 }))
-                        SecureField("Password", text: $cloudPassword).fieldWell()
-                        Button {
-                            Task { await sync.connectAndImport(password: cloudPassword); cloudPassword = "" }
-                        } label: {
-                            Label(sync.busy ? "Connecting…" : "Connect & import", systemImage: "icloud.and.arrow.down")
-                        }
-                        .buttonStyle(.glassProminent).tint(Palette.azure)
-                        .disabled(sync.busy || !sync.isConfigured || cloudPassword.isEmpty)
-                    }
-                }
-
-                if let err = sync.lastError {
-                    Text(err).font(.system(size: 11)).foregroundStyle(Palette.negative).fixedSize(horizontal: false, vertical: true)
-                }
-                Text("Your password is never stored — only a refresh token, in the macOS Keychain. Data lives in your own Supabase project.")
-                    .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func cloudField(_ label: String, _ placeholder: String, text: Binding<String>, secure: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textSecondary)
-            if secure {
-                SecureField(placeholder, text: text).fieldWell()
-            } else {
-                TextField(placeholder, text: text).fieldWell()
-            }
-        }
-    }
+    // The Cloud settings card lived here: ~65 lines of Supabase URL / anon key / password UI
+    // behind `SyncManager.cloudSyncEnabled`, which is a compile-time `false`. The tab was never
+    // built, the switch case was unreachable, and the state backing it was dead. Deleted; the
+    // sync engine itself stays, ready for the day a companion app needs it.
 
     // MARK: Integrations
 
@@ -357,7 +294,14 @@ struct SettingsView: View {
                     }.buttonStyle(.glass)
                     Button {
                         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmm"
-                        if DataBackup.backupNow(stamp: f.string(from: .now)) != nil { backedUp = true; DataBackup.reveal() }
+                        if DataBackup.backupNow(stamp: f.string(from: .now)) != nil {
+                            backedUp = true
+                            storeSize = computeStoreSize()
+                            // "Backed up ✓" used to latch for the rest of the session, so a second
+                            // backup gave no feedback at all — you couldn't tell it had run.
+                            Task { try? await Task.sleep(for: .seconds(2)); backedUp = false }
+                            DataBackup.reveal()
+                        }
                     } label: { Label(backedUp ? "Backed up ✓" : "Back up now", systemImage: "externaldrive.badge.checkmark") }
                         .buttonStyle(.glassProminent).tint(Palette.azure)
                     Button { DataExport.save(context) } label: { Label("Export CSV", systemImage: "tablecells") }
@@ -424,67 +368,38 @@ struct SettingsView: View {
 
     private var aiCard: some View {
         VStack(spacing: 18) {
-            brainsCard
-            localModelCard
+            // Beliefs first: it is the thing a person actually opens this tab to check.
             memoryCard
-            brainHealthCard
+            localModelCard
+            brainsCard
         }
     }
 
     // MARK: The three brains
 
     private var brainsCard: some View {
-        SectionCard(title: "Intelligence",
-                    subtitle: "Three brains, tried in the order that suits the job",
+        // WHAT THIS DOES, not which engine is up.
+        //
+        // This was three status rows with dots, a Private Cloud toggle, a token meter and a
+        // failure table — an operations dashboard for a system with one user, who cannot act on
+        // any of it. The honest content is two sentences: what runs where, and whether the part
+        // you have to download is ready.
+        SectionCard(title: "How Freelane thinks",
+                    subtitle: "Everything runs on this Mac",
                     accent: Palette.violet) {
             VStack(alignment: .leading, spacing: 12) {
-                brainRow(title: "On-device",
-                         detail: ai.onDeviceReady
-                            ? "Apple's system model. Instant, free, works offline. Handles tagging and reading your entries."
-                            : "Unavailable — turn on Apple Intelligence in System Settings.",
-                         ready: ai.onDeviceReady)
+                Text("Two models share the work. Apple's built-in one handles the small, constant jobs — sorting a spend into a category, reading an entry you just wrote — because it answers instantly and costs nothing. The model you download writes the things you actually read: your journal questions, your reflections, and the chat.")
+                    .font(.system(size: 12.5)).foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                brainRow(title: "Apple Private Cloud Compute",
-                         detail: ai.privateCloudReady
-                            ? "Server-scale quality with Apple's privacy guarantee — they can't read or keep what's sent. Writes your questions, letters and observations."
-                            : "Unavailable on this Mac right now.",
-                         ready: ai.privateCloudReady && ai.usePrivateCloud)
+                Text("Nothing you write is sent anywhere.")
+                    .font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.textPrimary)
 
-                brainRow(title: "Local model",
-                         detail: ai.localReady
-                            ? "\(LocalModelSpec.displayName), running on this Mac. Covers the cloud when you're offline."
-                            : "Not downloaded. Without it, AI needs a connection.",
-                         ready: ai.localReady)
-
-                Divider().overlay(Palette.hairline)
-
-                Toggle(isOn: Binding(get: { ai.usePrivateCloud }, set: { ai.usePrivateCloud = $0 })) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Use Apple Private Cloud Compute").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
-                        Text("On: the app writes noticeably better. Apple's guarantee is the same as on-device — nothing is retained and nobody, including Apple, can read it. Off: everything stays on this Mac.")
-                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                    }
-                }.toggleStyle(.switch).tint(Palette.violet)
-
-                if let lead = ai.smartLead {
-                    Label("Writing tasks are going to \(lead.label) right now.", systemImage: "arrow.turn.down.right")
-                        .font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
-                } else {
-                    Label(ai.unavailableReason, systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 11)).foregroundStyle(Palette.warning)
+                if !ai.onDeviceReady {
+                    Label("Apple Intelligence is off, so the small jobs fall to the downloaded model too — everything still works, just a little slower.",
+                          systemImage: "info.circle")
+                        .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-
-                let usage = AIUsage.thisWeek()
-                if !usage.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "gauge.with.dots.needle.bottom.50percent").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                        Text("~\(AIUsage.totalThisWeek().formatted()) tokens this week")
-                            .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(Palette.textSecondary)
-                        Text("(" + usage.map { "\($0.brain.shortLabel) \($0.tokens.formatted())" }.joined(separator: " · ") + ")")
-                            .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
-                        Spacer()
-                    }
                 }
             }
         }
@@ -642,12 +557,19 @@ struct SettingsView: View {
                                : "\(affirmed.count) things it thinks are true · \(denied.count) it knows aren't",
                            accent: Palette.indigo) {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(affirmed.prefix(12)) { f in beliefRow(f, denied: false) }
-                if !denied.isEmpty {
-                    Text("KNOWN NOT TO BE TRUE").font(.system(size: 9, weight: .semibold))
-                        .kerning(0.5).foregroundStyle(Palette.textTertiary).padding(.top, 4)
-                    ForEach(denied.prefix(8)) { f in beliefRow(f, denied: true) }
+                // Scrolls instead of truncating. Showing 12 of 47 with no count and no way to see
+                // the rest leaves 35 beliefs exactly as invisible as before this card existed.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(affirmed) { f in beliefRow(f, denied: false) }
+                        if !denied.isEmpty {
+                            Text("THINGS YOU'VE CORRECTED IT ON").font(.system(size: 9, weight: .semibold))
+                                .kerning(0.5).foregroundStyle(Palette.textTertiary).padding(.top, 6)
+                            ForEach(denied) { f in beliefRow(f, denied: true) }
+                        }
+                    }
                 }
+                .frame(maxHeight: 340)
                 if affirmed.isEmpty && denied.isEmpty {
                     Text("As you journal, anything durable it picks up will show here — and you can delete any of it.")
                         .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)

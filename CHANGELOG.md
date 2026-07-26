@@ -3,6 +3,23 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.2
+
+Ordering, plain language, and a real Settings pass.
+
+- **Safe to spend comes before what the AI noticed.** On a narrow window the figure rail was rendered last, so the number you check every day sat below the lead panel, the weather banner, the observations and the chart — you had to scroll past what the app *thought* to reach what you came for. It now sits immediately under the balance.
+- **"Net cash flow · Cumulative across all wallets · 90 days" is gone.** That's a title written by someone who already knows what the chart shows. It now says **"You're up over 90 days"** with the actual figure and one line explaining what rising means.
+- **The balance line no longer touches the panel edge** — it read as clipped rather than as a chart with a floor.
+
+### Settings
+
+- **The Intelligence tab was an operations dashboard for a system with one user.** Three brain rows with status dots, a Private Cloud toggle, a token meter and a failure table with a red FAILING badge — none of which you can act on. Replaced with two sentences saying what actually runs where, and *"Nothing you write is sent anywhere."* Your beliefs — the thing people open that tab to check — now come first.
+- **The belief list scrolls instead of truncating.** It showed 12 of however many you have, with no count and no way to see the rest, on the one card whose entire purpose is that you can see and correct what the app thinks it knows.
+- **65 lines of unreachable Cloud settings deleted** — the tab was gated behind a compile-time `false`, so the UI, its switch case and its state could never run.
+- **"Backed up ✓" no longer latches** for the rest of the session, so a second backup actually tells you it happened, and the store size beside it refreshes.
+
+**On Apple Intelligence:** keeping it, and here's the reasoning. It does the small constant jobs — sorting a spend, reading an entry — instantly and free. The downloaded model takes seconds for those. Removing it would make every spend you log slower for no gain. What was wrong wasn't that it exists; it was being *presented* to you as a decision you had to understand.
+
 ## 2.1
 
 The forms — the part you actually type into.

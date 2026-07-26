@@ -252,8 +252,9 @@ struct LeadFigure: View {
             // in the data rather than on top of a chart in a box.
             if spark.count > 1 {
                 DrawingSparkline(values: spark, color: accent, lineWidth: 2.2)
-                    .frame(height: 128)
+                    .frame(height: 118)
                     .opacity(dark ? 0.55 : 0.40)
+                    .padding(.bottom, 18)          // never let the trace touch the panel edge
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .allowsHitTesting(false)
             }

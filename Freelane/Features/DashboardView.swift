@@ -75,14 +75,32 @@ struct DashboardView: View {
                 // Now it reads like a page: a narrow rail of figures on the right, and a lead
                 // column on the left carrying the one number that matters, what needs you, and what
                 // the app noticed. `ViewThatFits` stacks the two on a narrow window.
+                // Order by what you need, not by what's interesting.
+                //
+                // In the stacked (narrow-window) layout the rail used to come LAST, which put safe-
+                // to-spend — the number checked every single day — below the lead panel, the
+                // weather banner, the observations and the chart. You had to scroll past what the
+                // app noticed to reach what you actually came for. Beside the lead on a wide
+                // window; immediately under it when stacked.
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 18) {
                         leadColumn(m, s, signals)
                         rail(m, s).frame(width: 262)
                     }
                     VStack(alignment: .leading, spacing: 18) {
-                        leadColumn(m, s, signals)
+                        LeadFigure(
+                            label: "Available across wallets",
+                            amount: m.available, code: base,
+                            context: leadContext(m, s),
+                            spark: Array(m.cashFlow.suffix(30).map { $0.cumulative }))
                         rail(m, s)
+                        if signals.isEmpty {
+                            CalmWeatherBanner(safe: s, base: base, overdrawn: overdrawn, runwayDays: runway(s))
+                        } else {
+                            needsYouCard(signals)
+                        }
+                        insightsCard
+                        CashFlowCard(points: m.cashFlow, base: base)
                     }
                 }
             }
@@ -99,20 +117,7 @@ struct DashboardView: View {
             LeadFigure(
                 label: "Available across wallets",
                 amount: m.available, code: base,
-                // `runway` is optional (there's no runway without a spending pace) and returns a
-                // fractional Double — interpolating it raw put "Optional(19.463007703879317)-day
-                // runway" on the front page. Build the line from parts that are each already
-                // formatted, and drop any that don't apply.
-                context: {
-                    var bits = ["Safe " + CurrencyFormat.abbreviated(s.liveRemaining, base) + " today"]
-                    if let r = runway(s), r.isFinite, r > 0 {
-                        bits.append("\(Int(r.rounded()))-day runway")
-                    }
-                    if m.activeProjects > 0 {
-                        bits.append("\(m.activeProjects) open \(m.activeProjects == 1 ? "project" : "projects")")
-                    }
-                    return bits
-                }(),
+                context: leadContext(m, s),
                 spark: Array(m.cashFlow.suffix(30).map { $0.cumulative }))
 
             if signals.isEmpty {
@@ -123,6 +128,19 @@ struct DashboardView: View {
             insightsCard
             CashFlowCard(points: m.cashFlow, base: base)
         }
+    }
+
+    /// `runway` is optional (there's no runway without a spending pace) and returns a fractional
+    /// Double — interpolating it raw once put "Optional(19.463007703879317)-day runway" on the
+    /// front page. Build the line from parts that are each already formatted, and drop any that
+    /// don't apply.
+    private func leadContext(_ m: DashboardMetrics, _ s: SafeBreakdown) -> [String] {
+        var bits = ["Safe " + CurrencyFormat.abbreviated(s.liveRemaining, base) + " today"]
+        if let r = runway(s), r.isFinite, r > 0 { bits.append("\(Int(r.rounded()))-day runway") }
+        if m.activeProjects > 0 {
+            bits.append("\(m.activeProjects) open \(m.activeProjects == 1 ? "project" : "projects")")
+        }
+        return bits
     }
 
     /// The figure rail. Replaces the ten-tile grid — same numbers, a third of the width, and
@@ -491,8 +509,15 @@ private struct CashFlowCard: View {
 
     var body: some View {
         let pts = points
-        return SectionCard(title: "Net cash flow", subtitle: "Cumulative across all wallets · 90 days",
-                           accent: Palette.azure) {
+        // What the line actually is, in a sentence, plus the one number it exists to give you.
+        let net = (pts.last?.cumulative ?? 0) - (pts.first?.cumulative ?? 0)
+        let up = net >= 0
+        return SectionCard(
+            title: up ? "You're up over 90 days" : "You're down over 90 days",
+            subtitle: pts.count < 2
+                ? "Every payment in and every spend out, added up day by day."
+                : "\(up ? "+" : "−")\(CurrencyFormat.string(abs(net), base, compact: true)) since \(pts.first?.date.formatted(.dateTime.month().day()) ?? ""). Rising means you took in more than you spent.",
+            accent: Palette.azure) {
             if pts.count < 2 {
                 Text("Log a few payments to see your trajectory.")
                     .font(.system(size: 12)).foregroundStyle(Palette.textTertiary).frame(maxWidth: .infinity, minHeight: 60)
