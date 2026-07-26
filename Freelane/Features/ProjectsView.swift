@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import QuartzCore
+import AppKit
 
 /// Physics-based kanban drag (Deck-style). A custom `DragGesture` feeds this controller, which
 /// tracks smoothed velocity and the hovered column, and drives a floating ghost card that tilts by
@@ -17,12 +18,29 @@ final class KanbanDrag {
     private var lastLocation: CGPoint = .zero
     private var targets: [ProjectStatus: CGRect] = [:]
     private var homes: [UUID: CGPoint] = [:]   // each card's global center, for the spring-back
+    /// Where you grabbed the card, relative to its centre. The ghost is drawn at
+    /// `location + grabOffset` so it stays under your fingers instead of snapping its centre to
+    /// the pointer — picking a 264×150 card up by its corner used to jerk it ~110pt before it
+    /// started moving.
+    private(set) var grabOffset: CGSize = .zero
+    /// The board's own rect, so a drop in the gutter between two columns still resolves to a lane.
+    var boardRect: CGRect = .zero
+
+    /// Where the ghost actually is — this, not the cursor, is what the drop is measured against.
+    var ghostPoint: CGPoint {
+        CGPoint(x: location.x + grabOffset.width, y: location.y + grabOffset.height)
+    }
 
     func register(_ status: ProjectStatus, _ rect: CGRect) { targets[status] = rect }
     func registerHome(_ id: UUID, _ center: CGPoint) { homes[id] = center }
 
     func begin(_ id: UUID, at p: CGPoint) {
         returning = false
+        if let home = homes[id] {
+            grabOffset = CGSize(width: home.x - p.x, height: home.y - p.y)
+        } else {
+            grabOffset = .zero
+        }
         dragged = id; location = p; lastLocation = p; lastTime = CACurrentMediaTime(); velocity = .zero
     }
 
@@ -40,7 +58,7 @@ final class KanbanDrag {
             velocity = CGVector(dx: velocity.dx * 0.4 + vx * 0.6, dy: velocity.dy * 0.4 + vy * 0.6)  // 60% new, smoothed
         }
         lastTime = now; lastLocation = p; location = p
-        hovered = bestTarget(for: p)
+        hovered = bestTarget(for: ghostPoint)
     }
 
     /// The column under the point — nearest centre wins when frames overlap.
@@ -51,10 +69,17 @@ final class KanbanDrag {
     /// columns along a boundary.
     private func bestTarget(for p: CGPoint) -> ProjectStatus? {
         let hits = targets.filter { $0.value.contains(p) }
-        guard !hits.isEmpty else { return nil }
-        return hits.min { a, b in
-            hypot(a.value.midX - p.x, a.value.midY - p.y) < hypot(b.value.midX - p.x, b.value.midY - p.y)
-        }?.key
+        if !hits.isEmpty {
+            return hits.min { a, b in
+                abs(a.value.midX - p.x) < abs(b.value.midX - p.x)
+            }?.key
+        }
+        // Anywhere over the board that isn't strictly inside a column — the 16pt gutters, the dead
+        // space below a short column, a slight overshoot past the last one — resolves to the
+        // NEAREST lane by x. Previously all of that was "no target", so the card sprang back and
+        // the drop felt like it had been rejected for no reason.
+        guard boardRect.contains(p), !targets.isEmpty else { return nil }
+        return targets.min { abs($0.value.midX - p.x) < abs($1.value.midX - p.x) }?.key
     }
 
     /// The (project, destination column) to commit — nil when dropped on no column, or back on the
@@ -90,7 +115,18 @@ final class KanbanDrag {
             withAnimation(Motion.snappy) { self.reset() }
         }
     }
-    private func reset() { dragged = nil; hovered = nil; velocity = .zero; lastTime = nil; returning = false }
+    private func reset() {
+        dragged = nil; hovered = nil; velocity = .zero; lastTime = nil; returning = false
+        grabOffset = .zero
+    }
+
+    /// Abandon a drag that will never get an `onEnded` — window deactivation, a cancelled gesture,
+    /// the view being torn down. Without this the source card stays frozen at 0.25 opacity with a
+    /// stranded ghost above it.
+    func cancel() {
+        guard dragged != nil else { return }
+        withAnimation(Motion.snappy) { reset() }
+    }
 }
 
 /// The floating drag ghost, isolated in its own view so per-frame `location`/`velocity` updates
@@ -108,9 +144,12 @@ private struct KanbanGhost<Content: View>: View {
             .scaleEffect(1.04 + speed * 0.03)
             .rotationEffect(.degrees(tilt), anchor: .top)
             .shadow(color: .black.opacity(0.30), radius: 16 + speed * 8, y: 7 + speed * 5)
-            .position(x: drag.location.x - boardOrigin.x, y: drag.location.y - boardOrigin.y)
+            .position(x: drag.ghostPoint.x - boardOrigin.x, y: drag.ghostPoint.y - boardOrigin.y)
             .allowsHitTesting(false)
-            .animation(.spring(response: 0.26, dampingFraction: 0.82), value: drag.location)
+            // Was .spring(response: 0.26), which lagged the pointer by ~150ms on a fast flick —
+            // long enough that you could cross into the next column and release while the ghost
+            // was visibly still over the previous one. The tilt already sells the physics.
+            .animation(.interactiveSpring(response: 0.12, dampingFraction: 0.86), value: drag.location)
     }
 }
 
@@ -133,6 +172,7 @@ struct ProjectsView: View {
     @State private var paidOpen = false
     @State private var mode = "Board"
     @State private var pendingDeleteProject: Project?
+    @State private var autoScrollX: CGFloat = 0
     @State private var payProject: Project?
     @State private var query = ""
 
@@ -204,11 +244,14 @@ struct ProjectsView: View {
                         HStack(alignment: .top, spacing: 16) {
                             column("Unpaid", oldestFirst(.unpaid), Palette.cyan, .unpaid)
                             column("Partially paid", oldestFirst(.partiallyPaid), Palette.warning, .partiallyPaid)
-                            paidColumn
+                            column("Paid", paid, Palette.positive, .paid, collapsible: true, expanded: paidOpen)
                         }
                         .padding(4)
                     }
                     .scrollPosition($scrollPos)
+                    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                        abandonDrag()
+                    }
                     .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.x }) { _, n in scrollX = n }
                     .onScrollGeometryChange(for: CGFloat.self, of: { max(0, $0.contentSize.width - $0.containerSize.width) }) { _, n in scrollMaxX = n }
                     // The floating physics ghost — follows the cursor, tilts by velocity. Isolated
@@ -221,8 +264,8 @@ struct ProjectsView: View {
                 }
                 .background(GeometryReader { g in
                     Color.clear
-                        .onAppear { boardFrame = g.frame(in: .global) }
-                        .onChange(of: g.frame(in: .global)) { _, n in boardFrame = n }
+                        .onAppear { boardFrame = g.frame(in: .global); drag.boardRect = boardFrame }
+                        .onChange(of: g.frame(in: .global)) { _, n in boardFrame = n; drag.boardRect = n }
                 })
             } else {
                 groupedTable
@@ -362,79 +405,78 @@ struct ProjectsView: View {
         }
     }
 
-    private func column(_ title: String, _ items: [Project], _ accent: Color, _ status: ProjectStatus) -> some View {
+    /// One component for all three lanes.
+    ///
+    /// Paid used to be a separate `paidColumn` and looked like it: 13pt sentence-case title against
+    /// the others' 10pt uppercase, a count in a capsule pill instead of a bare figure, a glowing
+    /// dot the other two had deliberately dropped, no money at all despite `columnTotal` already
+    /// having a `.paid` branch, and a width that jumped 200↔264 on expand and reflowed the board.
+    private func column(_ title: String, _ items: [Project], _ accent: Color, _ status: ProjectStatus,
+                        collapsible: Bool = false, expanded: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            // A column header that carries its MONEY, not just a count.
-            //
-            // "Unpaid 2" tells you nothing you care about — two unpaid projects could be ₱200 or
-            // ₱200,000, and the whole reason to look at this board is to know which. The total for
-            // the column now sits under the title, and the glowing dot is gone: a board of three
-            // columns doesn't need three glowing lights to tell them apart, it needs three numbers.
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 7) {
-                    Text(title)
-                        .font(.system(size: 10, weight: .semibold))
-                        .textCase(.uppercase).kerning(0.8)
-                        .foregroundStyle(accent)
-                    Text("\(items.count)")
-                        .font(.system(size: 10, weight: .semibold)).monospacedDigit()
-                        .foregroundStyle(Palette.textTertiary)
-                    Spacer(minLength: 0)
+            Group {
+                if collapsible {
+                    Button { withAnimation(Motion.snappy) { paidOpen.toggle() } } label: {
+                        columnHeader(title, items, accent, showChevron: true, expanded: expanded)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain).pointerStyle(.link)
+                } else {
+                    columnHeader(title, items, accent, showChevron: false, expanded: true)
                 }
-                Text(CurrencyFormat.string(columnTotal(items), base, compact: true))
-                    .font(Typo.figure(20)).monospacedDigit()
-                    .foregroundStyle(items.isEmpty ? Palette.textTertiary : Palette.textPrimary)
-                    .lineLimit(1).minimumScaleFactor(0.7)
             }
-            .padding(.bottom, 2)
-            if items.isEmpty {
-                Text("Nothing here").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 14)
-            } else {
-                ForEach(items) { p in draggableCard(p) }
+
+            if !collapsible || expanded {
+                if items.isEmpty {
+                    Text("Nothing here").font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 14)
+                } else {
+                    ForEach(items) { p in draggableCard(p) }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(12)
+        // maxHeight so the LANE fills the board. Columns used to be only as tall as their content,
+        // which made everything below the last card of a short column dead space that rejected
+        // drops — and collapsed Paid was a ~50pt strip you had to hit exactly.
         .frame(width: 264, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(columnBackground(accent, status))
         .background(targetReader(status))
         .animation(Motion.snappy, value: items.count)
     }
 
-    // Paid column is COLLAPSED by default (paid projects pile up forever).
-    private var paidColumn: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button { withAnimation(Motion.snappy) { paidOpen.toggle() } } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: paidOpen ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.textTertiary)
-                    Circle().fill(Palette.positive).frame(width: 7, height: 7).shadow(color: Palette.positive, radius: 3)
-                    Text("Paid").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.textPrimary)
-                    Text("\(paid.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textTertiary)
-                        .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.hairline, in: Capsule())
-                    Spacer()
-                }.contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            if paidOpen {
-                ForEach(paid) { p in draggableCard(p) }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+    private func columnHeader(_ title: String, _ items: [Project], _ accent: Color,
+                              showChevron: Bool, expanded: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 7) {
+                if showChevron {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.textTertiary)
+                }
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .textCase(.uppercase).kerning(0.8)
+                    .foregroundStyle(accent)
+                Text("\(items.count)")
+                    .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(Palette.textTertiary)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            Text(CurrencyFormat.string(columnTotal(items), base, compact: true))
+                .font(Typo.figure(20)).monospacedDigit()
+                .foregroundStyle(items.isEmpty ? Palette.textTertiary : Palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
         }
-        .padding(12)
-        .frame(width: paidOpen ? 264 : 200, alignment: .topLeading)
-        .background(columnBackground(Palette.positive, .paid))
-        .background(targetReader(.paid))
-        .animation(Motion.snappy, value: paid.count)
+        .padding(.bottom, 2)
     }
 
+    // Paid column is COLLAPSED by default (paid projects pile up forever).
     /// A card you tap to edit and drag to move. A physics `DragGesture` (min 10pt so a click is
     /// never mistaken for a drag) feeds the controller; the source dims while its ghost floats.
     private func draggableCard(_ p: Project) -> some View {
-        card(p)
-            .opacity(drag.dragged == p.id ? 0.25 : 1)
-            .animation(Motion.snappy, value: drag.dragged == p.id)
+        DraggableCardShell(isDragging: drag.dragged == p.id) { card(p) }
             .background(GeometryReader { g in
                 // Remember the card's slot so a missed drop can spring the ghost back home.
                 let c = g.frame(in: .global)
@@ -463,11 +505,20 @@ struct ProjectsView: View {
                         }
                     }
             )
-            .onDisappear { drag.pruneHomes(keeping: Set(projects.map(\.id))) }
+            .onDisappear { drag.pruneHomes(keeping: Set(projects.map(\.id))); abandonDrag() }
     }
 
     /// Edge auto-scroll: dragging a card within 56pt of the board's left/right edge scrolls the
     /// board toward it (faster the closer you get), so off-screen columns are reachable mid-drag.
+    /// Edge auto-scroll, driven from an internal position rather than the reported one.
+    ///
+    /// Three bugs lived in the old version. It computed the next offset from `scrollX`, which is
+    /// only updated by `onScrollGeometryChange` a frame or more after `scrollTo` is issued — so at
+    /// 60Hz `next == scrollX` came up constantly mid-scroll, and that branch called
+    /// `stopAutoScroll()`. Since the timer was only re-armed from `DragGesture.onChanged`, the
+    /// commonest case — hold a card at the edge and stop moving the mouse — killed auto-scroll for
+    /// the rest of the drag. It also ran on the default run-loop mode, which stalls entirely while
+    /// AppKit is tracking a mouse drag, and nothing invalidated it if the view went away mid-drag.
     private func updateAutoScroll(cursorX: CGFloat) {
         let zone: CGFloat = 56
         let leftDepth = (boardFrame.minX + zone) - cursorX
@@ -476,18 +527,31 @@ struct ProjectsView: View {
         guard scrollMaxX > 0, depth > 0, boardFrame.width > zone * 2 else { stopAutoScroll(); return }
         let dir: CGFloat = leftDepth > 0 ? -1 : 1
         autoScrollStep = dir * (4 + min(depth, zone) / zone * 10)   // 4–14pt per tick, deeper = faster
-        if autoScroll == nil {
-            autoScroll = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
-                MainActor.assumeIsolated {
-                    guard drag.dragged != nil, !drag.returning else { stopAutoScroll(); return }
-                    let next = min(max(scrollX + autoScrollStep, 0), scrollMaxX)
-                    if next == scrollX { stopAutoScroll(); return }
-                    scrollPos.scrollTo(x: next)
-                }
+        guard autoScroll == nil else { return }
+
+        autoScrollX = scrollX          // seed from reality once, then own it
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                guard drag.dragged != nil, !drag.returning else { stopAutoScroll(); return }
+                let next = min(max(autoScrollX + autoScrollStep, 0), scrollMaxX)
+                // Only stop at the ends of the board — never because a frame hasn't landed yet.
+                if next == autoScrollX { stopAutoScroll(); return }
+                autoScrollX = next
+                scrollPos.scrollTo(x: next)
             }
         }
+        // .common, so the timer keeps firing while AppKit tracks the mouse.
+        RunLoop.main.add(t, forMode: .common)
+        autoScroll = t
     }
     private func stopAutoScroll() { autoScroll?.invalidate(); autoScroll = nil }
+
+    /// Nothing guaranteed `onEnded` would ever arrive. Deactivate the window mid-drag and the card
+    /// stayed dimmed, the ghost hung in the air, and the 60Hz scroll timer kept running.
+    private func abandonDrag() {
+        stopAutoScroll()
+        drag.cancel()
+    }
 
     /// Mark the work delivered (or clear it) — starts the "waiting to be paid"
     /// clock from now instead of from when the deal was created.
@@ -653,5 +717,26 @@ struct AddProjectSheet: View {
         context.insert(p)
         try? context.save()
         dismiss()
+    }
+}
+
+/// Hover feedback for a card whose whole purpose is being picked up.
+///
+/// The board's primary interaction is grab-and-drag and the card had none: no lift, no cursor
+/// change, nothing. `glassCard(interactive: true)` looks like it would do this, but `Theme.swift`
+/// documents that parameter as accepted-for-compatibility and unused.
+private struct DraggableCardShell<Content: View>: View {
+    let isDragging: Bool
+    @ViewBuilder var content: () -> Content
+    @State private var hovering = false
+
+    var body: some View {
+        content()
+            .opacity(isDragging ? 0.25 : 1)
+            .scaleEffect(hovering && !isDragging ? 1.008 : 1)
+            .pointerStyle(.grabIdle)
+            .onHover { hovering = $0 }
+            .animation(Motion.snappy, value: isDragging)
+            .animation(.easeOut(duration: 0.14), value: hovering)
     }
 }

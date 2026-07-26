@@ -3,6 +3,17 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.0
+
+The drag pass — the four things I said were left.
+
+- **Auto-scroll no longer stalls.** It computed each step from `scrollX`, which only updates a frame *after* a scroll is issued, so at 60Hz "no change since last frame" came up constantly mid-scroll — and that branch stopped the timer. Since only mouse movement restarted it, the commonest case (hold a card at the board edge and stop moving) killed edge-scrolling for the rest of the drag. It now owns its own position and stops only at the actual ends of the board. It also runs on the `.common` run-loop mode, so it keeps firing while AppKit tracks the mouse — previously it was stalled by the very gesture it exists to serve.
+- **The card stays where you grabbed it.** Picking one up snapped its centre to the pointer, so grabbing by a corner jerked it ~110pt before it moved. The ghost now keeps your grab point, and the drop is measured from the ghost rather than the cursor — you could previously cross into the next column and release while the card was visibly still over the previous one.
+- **Lanes fill the board.** Columns were only as tall as their contents, so everything below a short column's last card was dead space that rejected drops, the 16pt gutters were dead, and collapsed Paid was a ~50pt strip you had to hit exactly. Anywhere over the board now resolves to the nearest lane.
+- **Paid is the same component as the other two columns.** It had a different title size and case, a count in a pill instead of a figure, a glowing dot the others had deliberately dropped, no money at all, and a width that jumped 200↔264 on expand and reflowed the whole board.
+
+Also: cards respond to hover and show a grab cursor, and a drag that never gets an end event — window deactivation, view teardown — no longer leaves a dimmed card, a stranded ghost and a 60Hz timer running.
+
 ## 1.9
 
 Three independent reviewers read the code cold. They found things I'd missed.
