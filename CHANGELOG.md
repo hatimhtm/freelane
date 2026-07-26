@@ -3,6 +3,10 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.10
+
+- **Questions the data has already answered now retire themselves.** A question posted before its subject became known sat in the inbox permanently: the sweep sees an open question and returns before it can notice the question is moot. So the fix that made "What kind of place is Sari Sari store?" answerable didn't clear the copy already waiting for you.
+
 ## 2.9
 
 The real reason the questions repeated: your answers were being thrown away for being too short.

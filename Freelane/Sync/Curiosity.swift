@@ -149,7 +149,30 @@ enum Curiosity {
 
     // MARK: The sweep — pick the next thing to ask, if nothing's open
 
+    /// Retire questions the data has answered since they were asked.
+    ///
+    /// Without this, a question posted before its subject became known sits in the inbox for good:
+    /// `sweep` sees an open question and returns immediately, so it never gets as far as noticing
+    /// the question is moot. That's how "What kind of place is Sari Sari store?" survived the fix
+    /// that made the app able to answer it.
+    private static func retireAnsweredQuestions(_ context: ModelContext) {
+        let openQ = FetchDescriptor<AppNotification>(predicate: #Predicate {
+            $0.isQuestion && $0.dismissedAt == nil && $0.answer == nil
+        })
+        guard let open = try? context.fetch(openQ), !open.isEmpty else { return }
+        var changed = false
+        for n in open where effectiveKind(n) == "vendor_kind" {
+            guard let name = vendorName(n), Brain.vendorIsIdentified(context, name: name) else { continue }
+            n.dismissedAt = .now
+            n.readAt = n.readAt ?? .now
+            changed = true
+        }
+        if changed { try? context.save() }
+    }
+
     static func sweep(_ context: ModelContext) {
+        retireAnsweredQuestions(context)
+
         let openQ = FetchDescriptor<AppNotification>(predicate: #Predicate {
             $0.isQuestion && $0.dismissedAt == nil && $0.answer == nil
         })

@@ -4,21 +4,17 @@
         <title>Freelane</title>
         <item>
             <description><![CDATA[
-<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.9</h3>
+<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane 2.10</h3>
 <ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">
-  <li>The real reason the questions repeated: your answers were being thrown away for being too short.</li>
-  <li>**Every answer under ten characters was silently discarded.** `Memory.remember` validated all incoming facts with `isRealText` — a filter written to reject junk from a language model, which demands ten characters and eight letters. It was being applied to *your* answers. "Groceries" is nine characters. So was "Transport". "Bills" is five. Tapping the app's own choice chip stored nothing at all, and the question came straight back, forever. This was never about vendors: "Cat", "Dog", "Family", "Friend", "Work", "Home", "Person", "Pet", "Place" and the marker a dismissal writes were all under the limit too. Almost no chip answer in the entire app had ever been recorded. A person who taps an answer has already decided it's worth saying — it's taken as given now, and only model output is still filtered.</li>
-  <li>**The previous repair found nothing.** It skipped archived rows, and every one of the stored vendor answers had already been archived by the memory compactor. It also wrote the recovered rows to an address the lookup doesn't read, so what it did write was invisible. Rewritten: it now gathers every vendor identification the app has ever held — archived or live, under either naming rule — and re-files them at the one canonical address, keeping the most recent answer where several exist. Verified against a real store: 23 vendors recovered.</li>
-  <li>**A fact's address is computed in exactly one place.** `AIFact` built its own id inline while the readers built theirs separately, so the moment one of them started normalising keys and the others didn't, rows were written where nothing would ever look for them. Both now go through `Memory.factID`.</li>
-  <li>The repair only marks itself done once the save actually succeeds, so a failure retries next launch instead of being lost.</li>
+  <li>**Questions the data has already answered now retire themselves.** A question posted before its subject became known sat in the inbox permanently: the sweep sees an open question and returns before it can notice the question is moot. So the fix that made "What kind of place is Sari Sari store?" answerable didn't clear the copy already waiting for you.</li>
 </ul>
             ]]></description>
-            <title>2.9</title>
-            <pubDate>Sun, 26 Jul 2026 18:43:48 +0800</pubDate>
-            <sparkle:version>40</sparkle:version>
-            <sparkle:shortVersionString>2.9</sparkle:shortVersionString>
+            <title>2.10</title>
+            <pubDate>Sun, 26 Jul 2026 18:47:28 +0800</pubDate>
+            <sparkle:version>41</sparkle:version>
+            <sparkle:shortVersionString>2.10</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.9/Freelane.zip" length="13627490" type="application/octet-stream" sparkle:edSignature="HNs8qjDphWuhLIZmq0wT/FH68FIWvdXaZfdGrfZ7UN9gM9LUiAcfo5+M8Hnc5NA8ON4Ily2JuEhdBOyxeYPjAQ=="/>
+            <enclosure url="https://github.com/hatimhtm/freelane/releases/download/v2.10/Freelane.zip" length="13628439" type="application/octet-stream" sparkle:edSignature="adqp/gAPj/S2sww3WdIFEv0DdeAohFD9EZBP0fUSobOkwlY13wI6RCo4ZJ5JAklZQ8mK3GrMwYC32zV77iO2Dw=="/>
         </item>
     </channel>
 </rss>
