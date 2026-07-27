@@ -195,8 +195,13 @@ struct SettingsView: View {
                             .disabled(cloud.email.isEmpty || cloudPassword.isEmpty)
                     }
 
-                    if let err = cloud.lastError, !cloud.isSignedIn {
-                        Text(err).font(.system(size: 11)).foregroundStyle(Palette.negative)
+                    if let err = cloud.lastError {
+                        // Always shown. A failure with the reason hidden is a failure you cannot act
+                        // on, and this is exactly the moment the detail matters.
+                        Text(err)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Palette.negative)
+                            .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

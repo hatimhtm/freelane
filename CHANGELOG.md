@@ -3,6 +3,14 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.17
+
+- **Fixed: sync failed after the first run.** The high-water mark was stored exactly as Postgres
+  sent it, offset and all — `+00:00`. In a URL a `+` means a space, so every pull after the first
+  asked the server for changes since a malformed timestamp and was refused. The first sync worked,
+  every one after it failed. Timestamps are now normalised to `Z` everywhere they are emitted.
+- Sync errors say which step failed and what the server replied, instead of only "Sync failed".
+
 ## 2.16
 
 **Your phone.** Freelane now runs on Android, and this is the half of it that lives here.

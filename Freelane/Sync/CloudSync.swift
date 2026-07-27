@@ -193,7 +193,9 @@ final class CloudSync {
         }
 
         do {
+            status = "Pushing…"
             try await push(context: context, token: token, uid: uid)
+            status = "Pulling…"
             try await pull(context: context, token: token, uid: uid)
             lastSync = .now
             lastError = nil
@@ -232,10 +234,12 @@ final class CloudSync {
         req.timeoutInterval = 30
 
         let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        guard (200..<300).contains(code) else {
             let text = String(data: data, encoding: .utf8) ?? ""
-            throw NSError(domain: "CloudSync", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "\(path): \(text.prefix(200))"])
+            throw NSError(domain: "CloudSync", code: code,
+                          userInfo: [NSLocalizedDescriptionKey:
+                                     "\(method) \(path) → \(code)  \(text.prefix(300))"])
         }
         return data
     }
@@ -253,7 +257,7 @@ final class CloudSync {
         let data = try await request(table, method: "GET", token: token, query: [
             URLQueryItem(name: "select", value: "*"),
             URLQueryItem(name: "user_id", value: "eq.\(uid)"),
-            URLQueryItem(name: "updated_at", value: "gt.\(since)"),
+            URLQueryItem(name: "updated_at", value: "gt.\(zulu(since))"),
             URLQueryItem(name: "order", value: "updated_at.asc"),
         ])
         return (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
@@ -265,8 +269,18 @@ final class CloudSync {
 private let isoFormatter: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    f.timeZone = TimeZone(secondsFromGMT: 0)
     return f
 }()
+
+/// Normalise any offset spelling to a literal `Z`.
+///
+/// `+00:00` and `Z` mean the same instant, but only one of them survives being put in a URL: `+`
+/// is a legal query character meaning space, so the server reads the timestamp as malformed and
+/// rejects the whole request. Everything this app emits ends in `Z`.
+private func zulu(_ s: String) -> String {
+    s.replacingOccurrences(of: "+00:00", with: "Z").replacingOccurrences(of: "+0000", with: "Z")
+}
 
 private let isoPlain: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
@@ -276,13 +290,16 @@ private let isoPlain: ISO8601DateFormatter = {
 
 func iso(_ d: Date?) -> Any {
     guard let d else { return NSNull() }
-    return isoFormatter.string(from: d)
+    return zulu(isoFormatter.string(from: d))
 }
 
 func parseDate(_ v: Any?) -> Date? {
     guard let s = v as? String else { return nil }
     return isoFormatter.date(from: s) ?? isoPlain.date(from: s)
 }
+
+/// Always UTC, always `Z`, never an offset — the form that survives a URL round trip.
+func isoString(_ d: Date) -> String { zulu(isoFormatter.string(from: d)) }
 
 func parseUUID(_ v: Any?) -> UUID? {
     guard let s = v as? String else { return nil }

@@ -203,21 +203,30 @@ extension CloudSync {
     // MARK: - Pull
 
     func pull(context ctx: ModelContext, token: String, uid: String) async throws {
-        var newest = watermarkValue
+        // Track the high-water mark as a DATE, not as the string Postgres sent.
+        //
+        // Postgres returns `2026-06-04T19:52:48.927989+00:00`. Stored verbatim and put back into a
+        // query, the `+` is read as a space by every URL parser on earth, so the server saw
+        // "…927989 00:00" and rejected it. The first sync worked because the initial watermark is
+        // Z-suffixed; every sync after it failed, permanently. Re-emitting through the formatter
+        // guarantees a `Z` and no offset.
+        var newestDate = parseDate(watermarkValue) ?? .distantPast
 
         for table in ["fl_wallets", "fl_clients", "fl_projects", "fl_payments", "fl_recurring",
                       "fl_loans", "fl_spends", "fl_ledger_entries"] {
             let rows = try await fetchRows(table, token: token, uid: uid, since: watermarkValue)
             for row in rows {
                 apply(table: table, row: row, ctx: ctx)
-                if let u = row["updated_at"] as? String, u > newest { newest = u }
+                if let d = parseDate(row["updated_at"]), d > newestDate { newestDate = d }
             }
         }
 
         try ctx.save()
         // Advance only once every table is in — a failure halfway would otherwise skip whatever the
         // later tables changed, permanently.
-        if newest != watermarkValue { setWatermark(newest) }
+        if newestDate > (parseDate(watermarkValue) ?? .distantPast) {
+            setWatermark(isoString(newestDate))
+        }
     }
 
     /// Write a server row into SwiftData, unless what we hold is newer.
