@@ -106,12 +106,11 @@ final class CloudSync {
     private func startTimer() {
         timer?.invalidate()
         // Frequent enough that the phone feels live, rare enough that it is invisible.
+        // Always, whether or not the window is in front. Skipping background windows meant an app
+        // sitting open on a second screen never noticed anything from the phone — the check is
+        // eight small requests, and being wrong about your balance costs more than the traffic.
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                // Nothing to see in a background window, and local saves push on their own.
-                guard NSApplication.shared.isActive else { return }
-                await self?.syncNow()
-            }
+            Task { @MainActor in await self?.syncNow() }
         }
     }
 

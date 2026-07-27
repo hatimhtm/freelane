@@ -415,8 +415,57 @@ private struct Sidebar: View {
         withAnimation(Motion.page) { feature = item }
     }
 
+    /// Sync, where you can actually reach it.
+    ///
+    /// It lives pinned at the bottom of the sidebar rather than four clicks into Settings, and it
+    /// says what it knows: a green dot and the time of the last successful check when everything is
+    /// through, amber while it works, red with the reason when it fails. Click to sync now.
+    @ViewBuilder private var cloudChip: some View {
+        let cloud = CloudSync.shared
+        let tint: Color = cloud.lastError != nil ? Palette.negative
+            : cloud.busy ? Palette.warning : Palette.positive
+        Button {
+            Task { await CloudSync.shared.syncNow(userInitiated: true) }
+        } label: {
+            HStack(spacing: 8) {
+                if cloud.busy {
+                    ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 12, height: 12)
+                } else {
+                    Image(systemName: cloud.lastError != nil ? "exclamationmark.icloud" : "checkmark.icloud")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cloud.isSignedIn ? (cloud.busy ? "Syncing…" : "Phone sync") : "Not connected")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.textPrimary)
+                    Text(cloudSubtitle)
+                        .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .padding(12)
+            .glassCard(cornerRadius: Radii.tile)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(cloud.lastError ?? "Click to sync with your phone now")
+    }
+
+    private var cloudSubtitle: String {
+        let cloud = CloudSync.shared
+        if !cloud.isSignedIn { return "Settings → Cloud to sign in" }
+        if let e = cloud.lastError { return String(e.prefix(40)) }
+        guard let at = cloud.lastSync else { return "Not checked yet" }
+        let mins = Int(Date().timeIntervalSince(at) / 60)
+        if mins < 1 { return "Up to date · just now" }
+        if mins < 60 { return "Up to date · \(mins)m ago" }
+        return "Up to date · \(at.formatted(date: .omitted, time: .shortened))"
+    }
+
     @ViewBuilder private var storageChip: some View {
-        if SyncManager.cloudSyncEnabled {
+        if true {
+            cloudChip
+        } else if SyncManager.cloudSyncEnabled {
             syncChip
         } else {
             // Cloud sync dormant — purely local, so the chip just says so.

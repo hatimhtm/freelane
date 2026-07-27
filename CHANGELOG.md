@@ -3,6 +3,15 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.22
+
+- **Sync in the sidebar.** A chip pinned at the bottom, next to everything else you reach for:
+  green with the time of the last check when it is through, a spinner while it works, red with the
+  reason when it is not. Click it to sync now — no trip to Settings.
+- **Fixed: a background window stopped syncing.** 2.20 only checked while Freelane was the frontmost
+  app, so a window open on a second screen never noticed anything from the phone. It checks every
+  minute regardless now.
+
 ## 2.21
 
 - **Fixed: deleting a spend on the phone left its money behind.** The spend disappeared correctly,
