@@ -3,6 +3,13 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.21
+
+- **Fixed: deleting a spend on the phone left its money behind.** The spend disappeared correctly,
+  but its ledger entry did not — so the wallet balance still counted it. `LedgerEntry` has no
+  deleted-at of its own; this app retires a ledger row by ARCHIVING it, and a tombstone that only
+  said "deleted" meant nothing here. Either form is honoured now.
+
 ## 2.20
 
 - **The spinner has stopped.** 2.19 quietened the words but still flashed a progress spinner on

@@ -413,7 +413,11 @@ extension CloudSync {
             l.relatedKindRaw = row["related_kind"] as? String
             l.relatedId = parseUUID(row["related_id"])
             l.note = row["note"] as? String
-            l.archivedAt = parseDate(row["archived_at"])
+            // LedgerEntry has no deletedAt — this model retires a row by ARCHIVING it, and the
+            // balance skips archived rows. The phone marks a removed leg with deleted_at, so a
+            // tombstone that only set deleted_at left the money still counted here: the spend
+            // vanished from the list while the wallet balance never moved.
+            l.archivedAt = parseDate(row["archived_at"]) ?? parseDate(row["deleted_at"])
             l.dirty = false
 
         default:
