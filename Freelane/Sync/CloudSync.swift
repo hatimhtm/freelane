@@ -47,6 +47,8 @@ final class CloudSync {
     private var queued = false
     private var saveObserver: NSObjectProtocol?
     private var pendingPush: Task<Void, Never>?
+    /// True while sync is writing. Saves it makes must not trigger another sync.
+    private var applyingRemote = false
 
     private let watermarkKey = "cloud.watermark"
     /// How far the pull has got. Internal so the mapping extension can read and advance it.
@@ -91,7 +93,12 @@ final class CloudSync {
         saveObserver = NotificationCenter.default.addObserver(
             forName: ModelContext.didSave, object: nil, queue: .main
         ) { _ in
-            Task { @MainActor in CloudSync.shared.syncSoon() }
+            Task { @MainActor in
+                // Sync itself ends by saving. Without this guard that save re-triggers sync, which
+                // saves again — the app pulls forever and the status never leaves "Pulling…".
+                guard !CloudSync.shared.applyingRemote else { return }
+                CloudSync.shared.syncSoon()
+            }
         }
     }
 
@@ -192,14 +199,21 @@ final class CloudSync {
             if queued { queued = false; Task { await syncNow() } }
         }
 
+        applyingRemote = true
+        defer { applyingRemote = false }
+
         do {
-            status = "Pushing…"
-            try await push(context: context, token: token, uid: uid)
-            status = "Pulling…"
-            try await pull(context: context, token: token, uid: uid)
+            // A check that finds nothing says nothing. The poll runs every 20 seconds, so
+            // announcing each one made a resting app look like it was stuck in a loop — the
+            // status never settled on "Synced" long enough to read.
+            let pushed = try await push(context: context, token: token, uid: uid)
+            if pushed > 0 { status = "Sending \(pushed)…" }
+            let pulled = try await pull(context: context, token: token, uid: uid)
+            if pulled > 0 { status = "Receiving \(pulled)…" }
+
             lastSync = .now
             lastError = nil
-            status = "Synced"
+            status = pushed + pulled > 0 ? "Synced" : "Up to date"
         } catch {
             lastError = error.localizedDescription
             status = "Sync failed"

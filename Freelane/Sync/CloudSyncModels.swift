@@ -16,26 +16,30 @@ extension CloudSync {
 
     // MARK: - Push
 
-    func push(context: ModelContext, token: String, uid: String) async throws {
-        try await pushWallets(context, token, uid)
-        try await pushClients(context, token, uid)
-        try await pushProjects(context, token, uid)
-        try await pushPayments(context, token, uid)
-        try await pushRecurring(context, token, uid)
-        try await pushLoans(context, token, uid)
-        try await pushSpends(context, token, uid)
-        try await pushLedger(context, token, uid)
-        try await pushRates(context, token, uid)
-        try context.save()
+    /// Returns how many rows went up, so a no-op sync can stay silent.
+    @discardableResult
+    func push(context: ModelContext, token: String, uid: String) async throws -> Int {
+        var n = 0
+        n += try await pushWallets(context, token, uid)
+        n += try await pushClients(context, token, uid)
+        n += try await pushProjects(context, token, uid)
+        n += try await pushPayments(context, token, uid)
+        n += try await pushRecurring(context, token, uid)
+        n += try await pushLoans(context, token, uid)
+        n += try await pushSpends(context, token, uid)
+        n += try await pushLedger(context, token, uid)
+        n += try await pushRates(context, token, uid)
+        if n > 0 { try context.save() }
+        return n
     }
 
     private func dirty<T: PersistentModel>(_ context: ModelContext, _ predicate: Predicate<T>) -> [T] {
         (try? context.fetch(FetchDescriptor<T>(predicate: predicate))) ?? []
     }
 
-    private func pushWallets(_ ctx: ModelContext, _ token: String, _ uid: String) async throws {
+    private func pushWallets(_ ctx: ModelContext, _ token: String, _ uid: String) async throws -> Int {
         let rows: [Wallet] = dirty(ctx, #Predicate { $0.dirty == true })
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else { return 0 }
         try await upsert("fl_wallets", rows: rows.map { w in
             [
                 "id": w.id.uuidString.lowercased(), "user_id": uid,
@@ -51,11 +55,12 @@ extension CloudSync {
             ]
         }, token: token)
         rows.forEach { $0.dirty = false }
+        return rows.count
     }
 
-    private func pushClients(_ ctx: ModelContext, _ token: String, _ uid: String) async throws {
+    private func pushClients(_ ctx: ModelContext, _ token: String, _ uid: String) async throws -> Int {
         let rows: [Client] = dirty(ctx, #Predicate { $0.dirty == true })
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else { return 0 }
         try await upsert("fl_clients", rows: rows.map { c in
             [
                 "id": c.id.uuidString.lowercased(), "user_id": uid,
@@ -67,11 +72,12 @@ extension CloudSync {
             ]
         }, token: token)
         rows.forEach { $0.dirty = false }
+        return rows.count
     }
 
-    private func pushProjects(_ ctx: ModelContext, _ token: String, _ uid: String) async throws {
+    private func pushProjects(_ ctx: ModelContext, _ token: String, _ uid: String) async throws -> Int {
         let rows: [Project] = dirty(ctx, #Predicate { $0.dirty == true })
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else { return 0 }
         try await upsert("fl_projects", rows: rows.map { p in
             [
                 "id": p.id.uuidString.lowercased(), "user_id": uid,
@@ -85,11 +91,12 @@ extension CloudSync {
             ]
         }, token: token)
         rows.forEach { $0.dirty = false }
+        return rows.count
     }
 
-    private func pushPayments(_ ctx: ModelContext, _ token: String, _ uid: String) async throws {
+    private func pushPayments(_ ctx: ModelContext, _ token: String, _ uid: String) async throws -> Int {
         let rows: [Payment] = dirty(ctx, #Predicate { $0.dirty == true })
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else { return 0 }
         try await upsert("fl_payments", rows: rows.map { p in
             [
                 "id": p.id.uuidString.lowercased(), "user_id": uid,
@@ -104,11 +111,12 @@ extension CloudSync {
             ]
         }, token: token)
         rows.forEach { $0.dirty = false }
+        return rows.count
     }
 
-    private func pushRecurring(_ ctx: ModelContext, _ token: String, _ uid: String) async throws {
+    private func pushRecurring(_ ctx: ModelContext, _ token: String, _ uid: String) async throws -> Int {
         let rows: [Recurring] = dirty(ctx, #Predicate { $0.dirty == true })
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else { return 0 }
         try await upsert("fl_recurring", rows: rows.map { r in
             [
                 "id": r.id.uuidString.lowercased(), "user_id": uid,
@@ -124,11 +132,12 @@ extension CloudSync {
             ]
         }, token: token)
         rows.forEach { $0.dirty = false }
+        return rows.count
     }
 
-    private func pushLoans(_ ctx: ModelContext, _ token: String, _ uid: String) async throws {
+    private func pushLoans(_ ctx: ModelContext, _ token: String, _ uid: String) async throws -> Int {
         let rows: [Loan] = dirty(ctx, #Predicate { $0.dirty == true })
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else { return 0 }
         try await upsert("fl_loans", rows: rows.map { l in
             [
                 "id": l.id.uuidString.lowercased(), "user_id": uid,
@@ -145,11 +154,12 @@ extension CloudSync {
             ]
         }, token: token)
         rows.forEach { $0.dirty = false }
+        return rows.count
     }
 
-    private func pushSpends(_ ctx: ModelContext, _ token: String, _ uid: String) async throws {
+    private func pushSpends(_ ctx: ModelContext, _ token: String, _ uid: String) async throws -> Int {
         let rows: [Spend] = dirty(ctx, #Predicate { $0.dirty == true })
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else { return 0 }
         try await upsert("fl_spends", rows: rows.map { s in
             [
                 "id": s.id.uuidString.lowercased(), "user_id": uid,
@@ -166,11 +176,12 @@ extension CloudSync {
             ]
         }, token: token)
         rows.forEach { $0.dirty = false }
+        return rows.count
     }
 
-    private func pushLedger(_ ctx: ModelContext, _ token: String, _ uid: String) async throws {
+    private func pushLedger(_ ctx: ModelContext, _ token: String, _ uid: String) async throws -> Int {
         let rows: [LedgerEntry] = dirty(ctx, #Predicate { $0.dirty == true })
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else { return 0 }
         try await upsert("fl_ledger_entries", rows: rows.map { l in
             [
                 "id": l.id.uuidString.lowercased(), "user_id": uid,
@@ -184,11 +195,12 @@ extension CloudSync {
             ]
         }, token: token)
         rows.forEach { $0.dirty = false }
+        return rows.count
     }
 
-    private func pushRates(_ ctx: ModelContext, _ token: String, _ uid: String) async throws {
+    private func pushRates(_ ctx: ModelContext, _ token: String, _ uid: String) async throws -> Int {
         let rows: [ExchangeRate] = dirty(ctx, #Predicate { $0.dirty == true })
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else { return 0 }
         try await upsert("fl_exchange_rates", rows: rows.map { r in
             [
                 // No id on this model; the currency code is its natural key, so derive a stable one.
@@ -198,11 +210,14 @@ extension CloudSync {
             ]
         }, token: token)
         rows.forEach { $0.dirty = false }
+        return rows.count
     }
 
     // MARK: - Pull
 
-    func pull(context ctx: ModelContext, token: String, uid: String) async throws {
+    /// Returns how many rows came down, so a no-op sync can stay silent.
+    @discardableResult
+    func pull(context ctx: ModelContext, token: String, uid: String) async throws -> Int {
         // Track the high-water mark as a DATE, not as the string Postgres sent.
         //
         // Postgres returns `2026-06-04T19:52:48.927989+00:00`. Stored verbatim and put back into a
@@ -211,22 +226,25 @@ extension CloudSync {
         // Z-suffixed; every sync after it failed, permanently. Re-emitting through the formatter
         // guarantees a `Z` and no offset.
         var newestDate = parseDate(watermarkValue) ?? .distantPast
+        var received = 0
 
         for table in ["fl_wallets", "fl_clients", "fl_projects", "fl_payments", "fl_recurring",
                       "fl_loans", "fl_spends", "fl_ledger_entries"] {
             let rows = try await fetchRows(table, token: token, uid: uid, since: watermarkValue)
             for row in rows {
                 apply(table: table, row: row, ctx: ctx)
+                received += 1
                 if let d = parseDate(row["updated_at"]), d > newestDate { newestDate = d }
             }
         }
 
-        try ctx.save()
+        if received > 0 { try ctx.save() }
         // Advance only once every table is in — a failure halfway would otherwise skip whatever the
         // later tables changed, permanently.
         if newestDate > (parseDate(watermarkValue) ?? .distantPast) {
             setWatermark(isoString(newestDate))
         }
+        return received
     }
 
     /// Write a server row into SwiftData, unless what we hold is newer.
@@ -407,6 +425,11 @@ extension CloudSync {
         var d = FetchDescriptor<T>(predicate: p)
         d.fetchLimit = 1
         return (try? ctx.fetch(d))?.first
+    }
+
+    /// Save once, at the end. Saving inside the row loop turns one pull into hundreds of writes.
+    func saveQuietly(_ ctx: ModelContext) {
+        try? ctx.save()
     }
 }
 

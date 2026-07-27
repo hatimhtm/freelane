@@ -3,6 +3,19 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.19
+
+- **Sync is quiet when there is nothing to do.** It checks every 20 seconds, and it used to
+  announce each check — so a resting app cycled "Pushing… / Pulling… / Synced" forever and read as
+  stuck in a loop. It now says **Up to date** and only reports movement when rows actually move.
+
+## 2.18
+
+- **Fixed: stuck on "Pulling…".** Sync ends by saving, and the new push-on-save hook listened to
+  every save — including that one. Pull, save, sync, pull, save, forever. It never spun the CPU
+  because each lap waited on the network; it simply never finished. Sync's own writes no longer
+  trigger sync.
+
 ## 2.17
 
 - **Fixed: sync failed after the first run.** The high-water mark was stored exactly as Postgres
