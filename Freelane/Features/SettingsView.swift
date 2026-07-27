@@ -181,7 +181,7 @@ struct SettingsView: View {
                             .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 10) {
-                            Button("Sync now") { Task { await CloudSync.shared.syncNow() } }
+                            Button("Sync now") { Task { await CloudSync.shared.syncNow(userInitiated: true) } }
                             Button("Sign out") { CloudSync.shared.signOut() }
                                 .foregroundStyle(Palette.negative)
                         }

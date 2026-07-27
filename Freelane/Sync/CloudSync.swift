@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftData
 
@@ -105,8 +106,12 @@ final class CloudSync {
     private func startTimer() {
         timer?.invalidate()
         // Frequent enough that the phone feels live, rare enough that it is invisible.
-        timer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.syncNow() }
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                // Nothing to see in a background window, and local saves push on their own.
+                guard NSApplication.shared.isActive else { return }
+                await self?.syncNow()
+            }
         }
     }
 
@@ -188,11 +193,14 @@ final class CloudSync {
 
     /// Push, then pull. Push first so a change made here is on the server before we ask what moved —
     /// otherwise the watermark can jump past our own unsent row.
-    func syncNow() async {
+    /// `userInitiated` is the only thing that shows a spinner. A background poll that finds
+    /// nothing should be indistinguishable from the app doing nothing at all — showing progress for
+    /// it made a resting app look permanently busy, which is worse than not syncing.
+    func syncNow(userInitiated: Bool = false) async {
         guard let context, let token = accessToken, let uid = userId else { return }
         if running { queued = true; return }
         running = true
-        busy = true
+        if userInitiated { busy = true }
         defer {
             running = false
             busy = false

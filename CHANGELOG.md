@@ -3,6 +3,15 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.20
+
+- **The spinner has stopped.** 2.19 quietened the words but still flashed a progress spinner on
+  every background check, so the app still looked like it was working constantly. Only a sync you
+  ask for shows progress now.
+- **Less checking, not just quieter checking.** The poll went from every 20 seconds to every 60,
+  and it does not run at all while the window is in the background. Your own edits still push the
+  moment you make them, so nothing is slower — there is simply far less pointless traffic.
+
 ## 2.19
 
 - **Sync is quiet when there is nothing to do.** It checks every 20 seconds, and it used to
