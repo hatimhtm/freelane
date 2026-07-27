@@ -4,6 +4,7 @@ import AppKit
 
 struct SettingsView: View {
     @Environment(SyncManager.self) private var sync
+    @State private var cloudPassword = ""
     @Environment(\.modelContext) private var context
     @Query private var settings: [AppSettings]
     @Query(filter: #Predicate<Wallet> { $0.deletedAt == nil }, sort: \Wallet.name) private var wallets: [Wallet]
@@ -54,12 +55,10 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        let tabs = SyncManager.cloudSyncEnabled
-            ? ["General", "Storage", "Notifications", "Intelligence", "Integrations", "Cloud", "About"]
-            : ["General", "Storage", "Notifications", "Intelligence", "Integrations", "About"]
+        let tabs = ["General", "Storage", "Notifications", "Intelligence", "Integrations", "Cloud", "About"]
         let current = sub < tabs.count ? tabs[sub] : (tabs.last ?? "General")
-        let subtitle = (SyncManager.cloudSyncEnabled && sync.connected)
-            ? "Synced to your private cloud — and fully usable offline."
+        let subtitle = CloudSync.shared.isSignedIn
+            ? "Synced with your phone — and fully usable offline."
             : "Your records live on this Mac. Journalling asks Gemini."
         return Page("Settings", subtitle: subtitle, subtabs: tabs, selection: $sub) {
             switch current {
@@ -68,6 +67,7 @@ struct SettingsView: View {
             case "Notifications": notificationsCard
             case "Intelligence": aiCard
             case "Integrations": integrationsCard
+            case "Cloud": cloudCard
             default: aboutCard
             }
         }
@@ -153,10 +153,66 @@ struct SettingsView: View {
 
     // MARK: Cloud sync
 
-    // The Cloud settings card lived here: ~65 lines of Supabase URL / anon key / password UI
-    // behind `SyncManager.cloudSyncEnabled`, which is a compile-time `false`. The tab was never
-    // built, the switch case was unreachable, and the state backing it was dead. Deleted; the
-    // sync engine itself stays, ready for the day a companion app needs it.
+    /// Sign this Mac in to the same account as the phone. One account, one password — the URL and
+    /// key are compiled in, because there is exactly one project and asking for them was always
+    /// theatre.
+    private var cloudCard: some View {
+        @Bindable var cloud = CloudSync.shared
+        return VStack(spacing: 20) {
+            SectionCard(title: "Phone sync",
+                        subtitle: "Freelane on Android reads and writes the same data",
+                        accent: Palette.cyan) {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(cloud.isSignedIn ? Palette.positive : Palette.textTertiary)
+                            .frame(width: 8, height: 8)
+                        Text(cloud.status).font(.system(size: 13, weight: .medium))
+                        if cloud.busy { ProgressView().controlSize(.small) }
+                        Spacer()
+                        if let at = cloud.lastSync {
+                            Text(at.formatted(date: .omitted, time: .shortened))
+                                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                        }
+                    }
+
+                    if cloud.isSignedIn {
+                        Text("Changes here reach the phone in about a second; changes there come back on the next check.")
+                            .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 10) {
+                            Button("Sync now") { Task { await CloudSync.shared.syncNow() } }
+                            Button("Sign out") { CloudSync.shared.signOut() }
+                                .foregroundStyle(Palette.negative)
+                        }
+                    } else {
+                        TextField("Email", text: $cloud.email)
+                            .textFieldStyle(.roundedBorder)
+                        SecureField("Password", text: $cloudPassword)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { connectCloud() }
+                        Button("Connect") { connectCloud() }
+                            .disabled(cloud.email.isEmpty || cloudPassword.isEmpty)
+                    }
+
+                    if let err = cloud.lastError, !cloud.isSignedIn {
+                        Text(err).font(.system(size: 11)).foregroundStyle(Palette.negative)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func connectCloud() {
+        let pw = cloudPassword
+        Task {
+            // The password is never stored; only the refresh token goes to the Keychain.
+            if await CloudSync.shared.signIn(email: CloudSync.shared.email, password: pw) {
+                cloudPassword = ""
+            }
+        }
+    }
 
     // MARK: Integrations
 

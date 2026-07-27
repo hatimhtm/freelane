@@ -3,6 +3,17 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.16
+
+**Your phone.** Freelane now runs on Android, and this is the half of it that lives here.
+
+- **Two-way sync.** Every save pushes within a second; anything changed on the phone comes back on
+  the next check. It is local-first — SwiftData is still the source of truth and everything works
+  with no connection, exactly as before. The cloud is a courier, not a dependency.
+- **Settings → Cloud.** Sign in once. Status, last sync, and a manual Sync now.
+- Conflicts resolve last-write-wins on `updatedAt`, which is safe for one person with two devices.
+  Deletes travel as tombstones; a row that stops appearing is never treated as deleted.
+
 ## 2.15
 
 Refresh buttons that refresh, and a journal archive that folds.

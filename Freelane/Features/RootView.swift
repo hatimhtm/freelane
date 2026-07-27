@@ -211,8 +211,8 @@ struct RootView: View {
                 // Keep Freelane's nouns (projects/clients/wallets) in the system semantic index
                 // so the new Siri can reference and open them by name.
                 Task(priority: .background) { await SiriIndex.reindex() }
-                // Dormant until the Android companion (SyncManager.cloudSyncEnabled).
-                if SyncManager.cloudSyncEnabled { Task { await sync.autoSync() } }
+                // Belt and braces — saves already push on their own.
+                CloudSync.shared.syncSoon()
             } else {
                 WidgetBridge.update(context)   // keep the desktop widget fresh
             }
@@ -232,13 +232,12 @@ struct RootView: View {
     @MainActor
     private func runLaunchWork() async {
             sync.attach(context: context)
-            // Offline-first sync is built but DORMANT (SyncManager.cloudSyncEnabled) until the
-            // Android companion ships — until then nothing touches the network: no session restore,
-            // no auto-sync, no reachability monitor. The app is purely local.
-            if SyncManager.cloudSyncEnabled {
-                Reachability.shared.onBecameOnline = { Task { await sync.autoSync() } }
-                Task { await sync.restoreSession(); await sync.autoSync() }
-            }
+            // The old SyncManager spoke the retired web schema and stays dormant. CloudSync is the
+            // live path: it talks to the same fl_* tables the Android app uses, so a change here
+            // reaches the phone in about a second and a change there comes back on the next tick.
+            CloudSync.shared.attach(context)
+            Reachability.shared.onBecameOnline = { Task { await CloudSync.shared.syncNow() } }
+            Task { await CloudSync.shared.start() }
             SampleData.seedIfEmpty(context)
             if !UserDefaults.standard.bool(forKey: "notif.seeded") {
                 UserDefaults.standard.set(true, forKey: "notif.seeded")
