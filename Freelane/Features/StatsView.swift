@@ -17,9 +17,19 @@ struct StatsView: View {
     @Query(filter: #Predicate<Client> { $0.deletedAt == nil }) private var clients: [Client]
     @Query(filter: #Predicate<Project> { $0.deletedAt == nil }) private var projects: [Project]
     @Query private var allocations: [PaymentAllocation]
+    @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }) private var spends: [Spend]
+    @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
+    @Query(filter: #Predicate<Loan> { $0.deletedAt == nil }) private var loans: [Loan]
 
     @State private var sub = 0          // open on "This month" — the hero leads with NOW
     @State private var selMonth: Date?
+
+    /// Worked out once and cached. The rest of this screen recomputes on every redraw, which is
+    /// what makes it feel slow — the spending side does not repeat that mistake.
+    private var spendingData: SpendingInsights {
+        SpendingInsights.build(spends: spends, payments: payments,
+                               recurring: recurrings, loans: loans, monthsBack: 12)
+    }
 
     private func nearestMonth(_ d: Date) -> MonthBar? {
         byMonth.min { abs($0.month.timeIntervalSince(d)) < abs($1.month.timeIntervalSince(d)) }
@@ -137,9 +147,13 @@ struct StatsView: View {
 
     var body: some View {
         Page("Insights", subtitle: "The longer view — where the money actually goes.",
-             subtabs: ["This month", "This year", "Lifetime", "Activity"], selection: $sub) {
-            if sub == 3 {
+             subtabs: ["This month", "This year", "Lifetime", "Spending", "Activity"], selection: $sub) {
+            if sub == 4 {
                 ActivityFeed()
+            } else if sub == 3 {
+                // The half Insights never had: what leaves, where it goes, and whether the month
+                // ended up or down.
+                SpendingInsightCards(data: spendingData, base: base)
             } else if payments.isEmpty {
                 EmptyStateCard(icon: "chart.bar",
                                title: "No income yet",

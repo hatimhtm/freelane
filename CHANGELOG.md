@@ -3,6 +3,30 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.24
+
+**Insights gets the half it never had.** It only ever showed income — what landed, from whom,
+through which rail. You can earn well and still be going backwards, and nothing on that screen
+would have told you.
+
+- **In and out** — net landed against everything spent, twelve months side by side on one axis.
+  Hover any month and it says whether you finished up or down.
+- **Where it goes** — this month by tag, ranked, with each category's share.
+- **Who you pay** — the same by vendor.
+- **Already spoken for** — monthly commitments, money lent out, the single biggest spend, and which
+  weekday actually costs the most on average.
+- Chart colour is now stepped for charts rather than borrowed from the UI palette, whose muted inks
+  sit far too close together to tell apart in a chart. Validated for colour-blind separation and
+  contrast in both light and dark.
+
+## 2.23
+
+- **Fixed: sync died after an hour with "JWT expired".** Access tokens last one hour and the app
+  never renewed its own — so it synced perfectly until the token aged out and then failed silently
+  until you relaunched. It now renews a few minutes before expiry, and recovers automatically if a
+  request is ever refused. A session that quietly dies is worse than one that never starts, because
+  you go on believing your devices agree.
+
 ## 2.22
 
 - **Sync in the sidebar.** A chip pinned at the bottom, next to everything else you reach for:

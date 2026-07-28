@@ -50,6 +50,8 @@ final class CloudSync {
     private var pendingPush: Task<Void, Never>?
     /// True while sync is writing. Saves it makes must not trigger another sync.
     private var applyingRemote = false
+    /// When the current access token stops being accepted. Supabase issues them for one hour.
+    private var tokenExpiresAt: Date?
 
     private let watermarkKey = "cloud.watermark"
     /// How far the pull has got. Internal so the mapping extension can read and advance it.
@@ -143,6 +145,7 @@ final class CloudSync {
             }
             accessToken = token
             userId = (json["user"] as? [String: Any])?["id"] as? String
+            noteExpiry(json)
             if let refresh = json["refresh_token"] as? String {
                 Keychain.set(refresh, for: "cloud.refreshToken")
             }
@@ -172,10 +175,51 @@ final class CloudSync {
             else { return }
             accessToken = json["access_token"] as? String
             userId = (json["user"] as? [String: Any])?["id"] as? String
+            noteExpiry(json)
             if let r = json["refresh_token"] as? String { Keychain.set(r, for: "cloud.refreshToken") }
             status = "Connected"
         } catch {
             // Stay local. The data is all here; the user can reconnect from Settings.
+        }
+    }
+
+    private func noteExpiry(_ json: [String: Any]) {
+        // `expires_in` is seconds. Default to an hour, which is what Supabase issues.
+        let seconds = (json["expires_in"] as? Double) ?? 3600
+        tokenExpiresAt = Date().addingTimeInterval(seconds)
+    }
+
+    /// Swap the refresh token for a new access token.
+    ///
+    /// Without this the app worked for exactly one hour and then failed with "JWT expired" until it
+    /// was relaunched — a session that silently dies is worse than one that never starts, because
+    /// you go on believing your devices agree.
+    ///
+    /// Refresh tokens ROTATE: each use invalidates the previous one, so the replacement must be
+    /// stored or the next refresh fails too.
+    @discardableResult
+    private func refreshAccessToken() async -> Bool {
+        guard let refresh = Keychain.get("cloud.refreshToken") else { return false }
+        do {
+            let body = try JSONSerialization.data(withJSONObject: ["refresh_token": refresh])
+            var req = URLRequest(url: baseURL.appending(path: "auth/v1/token"))
+            req.url?.append(queryItems: [URLQueryItem(name: "grant_type", value: "refresh_token")])
+            req.httpMethod = "POST"
+            req.setValue(apiKey, forHTTPHeaderField: "apikey")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = body
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true,
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let token = json["access_token"] as? String
+            else { return false }
+            accessToken = token
+            userId = (json["user"] as? [String: Any])?["id"] as? String ?? userId
+            noteExpiry(json)
+            if let r = json["refresh_token"] as? String { Keychain.set(r, for: "cloud.refreshToken") }
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -204,6 +248,11 @@ final class CloudSync {
             running = false
             busy = false
             if queued { queued = false; Task { await syncNow() } }
+        }
+
+        // Renew a few minutes early rather than waiting to be refused.
+        if let exp = tokenExpiresAt, exp.timeIntervalSinceNow < 300 {
+            await refreshAccessToken()
         }
 
         applyingRemote = true
@@ -243,12 +292,15 @@ final class CloudSync {
     // MARK: - HTTP
 
     private func request(_ path: String, method: String, token: String, body: Data? = nil,
-                         query: [URLQueryItem] = [], prefer: String? = nil) async throws -> Data {
+                         query: [URLQueryItem] = [], prefer: String? = nil,
+                         isRetry: Bool = false) async throws -> Data {
+        // Always the live token — the one handed in may have expired mid-sync.
+        let bearer = accessToken ?? token
         var req = URLRequest(url: baseURL.appending(path: "rest/v1/\(path)"))
         if !query.isEmpty { req.url?.append(queryItems: query) }
         req.httpMethod = method
         req.setValue(apiKey, forHTTPHeaderField: "apikey")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let prefer { req.setValue(prefer, forHTTPHeaderField: "Prefer") }
         req.httpBody = body
@@ -256,6 +308,13 @@ final class CloudSync {
 
         let (data, resp) = try await URLSession.shared.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+
+        // An expired token is recoverable, so recover rather than reporting failure.
+        if code == 401, !isRetry, await refreshAccessToken() {
+            return try await request(path, method: method, token: accessToken ?? token,
+                                     body: body, query: query, prefer: prefer, isRetry: true)
+        }
+
         guard (200..<300).contains(code) else {
             let text = String(data: data, encoding: .utf8) ?? ""
             throw NSError(domain: "CloudSync", code: code,
