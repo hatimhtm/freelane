@@ -310,7 +310,6 @@ struct AgendaView: View {
                             .font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                     }
                 }
-                .chartPlotStyle { $0.padding(.top, 16).padding(.bottom, 2) }
                 .frame(height: 180)
             }
         }

@@ -609,7 +609,6 @@ private struct CashFlowCard: View {
                             .foregroundStyle(Palette.textTertiary)
                     }
                 }
-                .chartPlotStyle { $0.padding(.top, 20).padding(.bottom, 2) }
                 .frame(height: 220)
             }
         }

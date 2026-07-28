@@ -2,414 +2,451 @@ import Charts
 import SwiftData
 import SwiftUI
 
-/// The spending half of Insights.
+/// The spending half of Insights, and its own page rather than the income page with the sign
+/// flipped.
 ///
-/// Insights only ever showed income — what landed, from whom, through which rail. That answers
-/// half of "how am I doing": you can earn well and still be going backwards. These cards are the
-/// other half, and the one that matters most is `inOutCard`, because nothing else on the screen
-/// tells you whether a month ended up or down.
-///
-/// **Chart colour is not the app palette.** Palette v6 is a set of muted printerly inks — lovely
-/// for UI, and adjacent hues sit 4–6 ΔE apart, where a categorical chart needs 15 before a
-/// full-colour reader can tell two series apart at a glance. `ChartInk` below is stepped for charts
-/// specifically and validated: lightness band, chroma floor, colour-blind separation and contrast,
-/// in BOTH light and dark. Every category also carries its name and figure as text, so identity is
-/// never colour alone.
-enum ChartInk {
-    /// Fixed order, never cycled. A ninth category folds into "Other" rather than inventing a hue.
-    static let categorical: [Color] = [
-        Color(hex: 0x2AAE70), // green
-        Color(hex: 0xC08A1E), // amber
-        Color(hex: 0x4880D8), // blue
-        Color(hex: 0xAE5AA6), // plum
-        Color(hex: 0xD65940), // coral
-        Color(hex: 0x12A199), // teal
-    ]
-    static func slot(_ i: Int) -> Color { categorical[min(i, categorical.count - 1)] }
-
-    /// Money in and money out. Two poles, so they read as opposites rather than as two categories.
-    static let income = Color(hex: 0x2AAE70)
-    static let outgo = Color(hex: 0xD65940)
-    static let neutral = Color(hex: 0x8A8F98)
-}
-
-extension Color {
-    init(hex: UInt32) {
-        self.init(
-            .sRGB,
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255,
-            opacity: 1)
-    }
-}
-
-// MARK: - The numbers, computed once
-
-/// Everything the spending cards need, worked out in one pass.
-///
-/// The old view recomputed a dozen derived properties on every redraw — every hover, every window
-/// resize — each one walking the whole payment and spend history. That is why it felt slow. This is
-/// built once per data change and read from.
-struct SpendingInsights {
-    struct MonthPoint: Identifiable {
-        let id = UUID()
-        let month: Date
-        let income: Double
-        let outgo: Double
-        var net: Double { income - outgo }
-    }
-    struct Slice: Identifiable {
-        let id = UUID()
-        let name: String
-        let total: Double
-        let share: Double
-        let colorIndex: Int
-    }
-
-    var months: [MonthPoint] = []
-    var categories: [Slice] = []
-    var vendors: [Slice] = []
-    var spentThisMonth: Double = 0
-    var earnedThisMonth: Double = 0
-    var everydayThisMonth: Double = 0
-    var investedThisMonth: Double = 0
-    var monthlyCommitments: Double = 0
-    var loansOut: Double = 0
-    var biggestSingle: (name: String, amount: Double)?
-    var busiestDay: (label: String, amount: Double)?
-
-    static func build(spends: [Spend], payments: [Payment], recurring: [Recurring],
-                      loans: [Loan], monthsBack: Int) -> SpendingInsights {
-        var out = SpendingInsights()
-        let cal = PHT.calendar
-        let now = Date()
-        guard let windowStart = cal.date(byAdding: .month, value: -(monthsBack - 1), to: PHT.startOfMonth(now))
-        else { return out }
-
-        // One bucket per month, so a month with no activity still shows as a gap rather than
-        // silently closing up and making the trend look denser than it is.
-        var buckets: [Date: (inc: Double, out: Double)] = [:]
-        for offset in 0..<monthsBack {
-            if let m = cal.date(byAdding: .month, value: offset, to: windowStart) {
-                buckets[PHT.startOfMonth(m)] = (0, 0)
-            }
-        }
-        for p in payments where p.paidAt >= windowStart {
-            let k = PHT.startOfMonth(p.paidAt)
-            buckets[k]?.inc += p.netAmountBase ?? 0
-        }
-        for s in spends where s.spentAt >= windowStart {
-            let k = PHT.startOfMonth(s.spentAt)
-            buckets[k]?.out += s.amountBase
-        }
-        out.months = buckets.keys.sorted().map {
-            MonthPoint(month: $0, income: buckets[$0]?.inc ?? 0, outgo: buckets[$0]?.out ?? 0)
-        }
-
-        let monthStart = PHT.startOfMonth(now)
-        let thisMonth = spends.filter { $0.spentAt >= monthStart }
-        out.spentThisMonth = thisMonth.reduce(0) { $0 + $1.amountBase }
-        out.investedThisMonth = thisMonth.filter(\.isInvestment).reduce(0) { $0 + $1.amountBase }
-        out.everydayThisMonth = out.spentThisMonth - out.investedThisMonth
-        out.earnedThisMonth = payments.filter { $0.paidAt >= monthStart }
-            .reduce(0) { $0 + ($1.netAmountBase ?? 0) }
-
-        out.categories = rank(thisMonth) { $0.category ?? $0.tags.first ?? "Untagged" }
-        out.vendors = rank(thisMonth.filter { !($0.vendorName ?? "").isEmpty }) { $0.vendorName ?? "" }
-
-        out.monthlyCommitments = recurring
-            .filter { $0.active && $0.deletedAt == nil && $0.kind == .expense }
-            .reduce(0) { $0 + $1.amountBase }
-        out.loansOut = loans
-            .filter { $0.deletedAt == nil && ($0.status == .open || $0.status == .partiallyReturned) }
-            .reduce(0) { $0 + $1.outstandingBase }
-
-        if let big = thisMonth.max(by: { $0.amountBase < $1.amountBase }) {
-            out.biggestSingle = (big.spendDescription ?? big.vendorName ?? big.category ?? "Spend",
-                                 big.amountBase)
-        }
-
-        // Which weekday costs most — an average, not a total, or the answer is just "the day you
-        // happened to pay rent".
-        var byWeekday: [Int: (sum: Double, days: Set<Date>)] = [:]
-        for s in spends where s.spentAt >= windowStart {
-            let wd = cal.component(.weekday, from: s.spentAt)
-            var e = byWeekday[wd] ?? (0, [])
-            e.sum += s.amountBase
-            e.days.insert(cal.startOfDay(for: s.spentAt))
-            byWeekday[wd] = e
-        }
-        if let worst = byWeekday.max(by: { a, b in
-            (a.value.sum / Double(max(1, a.value.days.count))) < (b.value.sum / Double(max(1, b.value.days.count)))
-        }) {
-            let avg = worst.value.sum / Double(max(1, worst.value.days.count))
-            out.busiestDay = (cal.weekdaySymbols[worst.key - 1], avg)
-        }
-        return out
-    }
-
-    /// Top six by value, everything else folded into "Other" — never a seventh invented hue.
-    private static func rank(_ spends: [Spend], by key: (Spend) -> String) -> [Slice] {
-        var totals: [String: Double] = [:]
-        for s in spends { totals[key(s), default: 0] += s.amountBase }
-        let all = totals.map { (name: $0.key, total: $0.value) }.sorted { $0.total > $1.total }
-        let grand = all.reduce(0) { $0 + $1.total }
-        guard grand > 0 else { return [] }
-
-        var slices = all.prefix(6).enumerated().map { i, e in
-            Slice(name: e.name, total: e.total, share: e.total / grand, colorIndex: i)
-        }
-        let rest = all.dropFirst(6).reduce(0) { $0 + $1.total }
-        if rest > 0 {
-            slices.append(Slice(name: "Other", total: rest, share: rest / grand, colorIndex: 5))
-        }
-        return slices
-    }
-}
-
-// MARK: - The cards
-
+/// Insights only ever showed income — what landed, from whom, through which rail. That answers half
+/// of "how am I doing": you can earn well and still be going backwards. Every figure here comes from
+/// the same `InsightsModel` the income tabs read, built once per data change, and every figure says
+/// what it is made of — how many purchases, over what window, against what.
 struct SpendingInsightCards: View {
-    let data: SpendingInsights
+    let model: InsightsModel
     let base: String
 
-    @State private var hoverMonth: Date?
-    @State private var hoverCategory: String?
-
     var body: some View {
-        inOutCard
-        categoriesCard
-        vendorsCard
+        SpendHeaderCard(model: model, base: base)
+        BurnCard(model: model, base: base)
+        InOutCard(model: model, base: base)
+        BalancedColumns(cards: [
+            (model.categories.count * 2 + 2, AnyView(CategoriesCard(model: model, base: base))),
+            (model.vendors.count * 2, AnyView(VendorsCard(model: model, base: base))),
+        ].filter { $0.0 > 2 })
         commitmentsCard
     }
 
-    // MARK: In vs out
+    /// Not a chart. Four numbers, and a chart of four numbers is decoration.
+    private var commitmentsCard: some View {
+        SectionCard(title: "Already spoken for", subtitle: "What leaves before you decide anything",
+                    accent: Palette.warning) {
+            StatRow {
+                StatCell(label: "Every month",
+                         value: CurrencyFormat.string(model.monthlyCommitments, base, compact: true),
+                         note: "active recurring bills, per month")
+                StatDivider()
+                StatCell(label: "Owed to you",
+                         value: CurrencyFormat.string(model.loansOut, base, compact: true),
+                         note: "lent out and not back yet")
+                StatDivider()
+                StatCell(label: "Biggest this month",
+                         value: model.biggestSpend.map { CurrencyFormat.string($0.amount, base, compact: true) } ?? "—",
+                         note: model.biggestSpend?.name ?? "nothing logged")
+                StatDivider()
+                StatCell(label: "Priciest weekday",
+                         value: model.busiestWeekday.map { CurrencyFormat.string($0.amount, base, compact: true) } ?? "—",
+                         note: model.busiestWeekday.map { "\($0.label)s · average of \($0.samples) such days" }
+                             ?? "not enough days logged")
+            }
+        }
+    }
+}
 
-    /// The one chart that answers "did this month end up or down".
-    ///
-    /// Two series on ONE axis — never a second y-scale, which would let any pair of shapes be made
-    /// to look correlated. Income and outgo are opposite poles rather than two categories, so they
-    /// take the diverging pair, and the net line beneath states the answer in words for the month
-    /// under the cursor.
-    private var inOutCard: some View {
-        SectionCard(title: "In and out", subtitle: "Net landed against everything spent · last 12 months",
-                    accent: Palette.azure,
-                    trailing: AnyView(legend)) {
-            if data.months.allSatisfy({ $0.income == 0 && $0.outgo == 0 }) {
-                Text("Nothing to compare yet.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
-            } else {
-                let focus = data.months.first { point in
-                    guard let h = hoverMonth else { return false }
-                    return PHT.calendar.isDate(point.month, equalTo: h, toGranularity: .month)
-                } ?? data.months.last
+// MARK: - Header
 
-                HStack(spacing: 10) {
-                    if let f = focus {
-                        Text(f.month.formatted(.dateTime.month(.abbreviated).year()))
-                            .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textSecondary)
-                        Text(f.net >= 0
-                             ? "up " + CurrencyFormat.string(f.net, base)
-                             : "down " + CurrencyFormat.string(abs(f.net), base))
-                            .font(Typo.rowFigure(13))
-                            .foregroundStyle(f.net >= 0 ? ChartInk.income : ChartInk.outgo)
-                    }
-                    Spacer()
+/// The month in figures before any chart. Every number on this page is one of these or made from
+/// them, so they lead.
+private struct SpendHeaderCard: View {
+    let model: InsightsModel
+    let base: String
+
+    var body: some View {
+        // Like-for-like: month-to-date against the same day of last month, never against a whole
+        // finished month — that comparison always reads as a collapse on the 3rd and a surge on
+        // the 30th, and says nothing either time.
+        let priorToDate = model.spendPrior.last { $0.step <= model.stepCursor }?.running ?? 0
+        let delta = priorToDate > 0
+            ? (model.spentThisMonth - priorToDate) / priorToDate : nil
+
+        SectionCard(title: "This month", subtitle: "Everything logged since the 1st",
+                    accent: Palette.warning,
+                    trailing: AnyView(
+                        Text(model.spendWindow.basis)
+                            .font(.system(size: 11)).foregroundStyle(Palette.textTertiary))) {
+            StatRow {
+                StatCell(label: "Spent so far",
+                         value: CurrencyFormat.string(model.spentThisMonth, base, compact: true),
+                         note: "\(model.spendCountThisMonth) purchase\(model.spendCountThisMonth == 1 ? "" : "s") across \(model.daysLogged) day\(model.daysLogged == 1 ? "" : "s")",
+                         tone: Palette.negative)
+                StatDivider()
+                StatCell(label: "Per day so far",
+                         value: CurrencyFormat.string(model.dailyAverage, base, compact: true),
+                         note: "total ÷ \(model.daysElapsed) days elapsed")
+                StatDivider()
+                StatCell(label: "Last month by day \(model.stepCursor)",
+                         value: priorToDate > 0
+                             ? CurrencyFormat.string(priorToDate, base, compact: true) : "—",
+                         note: delta.map { String(format: "you are %+.0f%% on it", $0 * 100) }
+                             ?? "nothing logged by then",
+                         tone: (delta ?? 0) > 0 ? Palette.negative : Palette.textPrimary)
+                StatDivider()
+                StatCell(label: "Typical month",
+                         value: model.avgSpend.map { CurrencyFormat.string($0, base, compact: true) } ?? "—",
+                         note: model.avgSpend != nil ? model.spendWindow.basis : "no complete month yet")
+            }
+        }
+    }
+}
+
+// MARK: - Burn
+
+/// This month, day by day, against last month's line.
+///
+/// The bars are what each day cost; the line below is the running total, with last month's running
+/// total behind it. Same units, one axis each. It's the chart that tells you on the 14th whether
+/// you can afford the rest of the month.
+private struct BurnCard: View {
+    let model: InsightsModel
+    let base: String
+    @State private var hover: Int?
+
+    private struct Point: Identifiable {
+        var id: String { "\(series)-\(step)" }
+        let step: Int
+        let value: Double
+        let series: String
+    }
+
+    private var lines: [Point] {
+        model.spendNow.prefix(model.stepCursor).map {
+            Point(step: $0.step, value: $0.running, series: "This month")
+        } + model.spendPrior.map {
+            Point(step: $0.step, value: $0.running, series: "Last month")
+        }
+    }
+
+    var body: some View {
+        let priorFinal = model.spendPrior.last?.running ?? 0
+        let soFar = model.spendNow.first { $0.step == model.stepCursor }?.running ?? 0
+        let days = Array(model.spendNow.prefix(model.stepCursor))
+        let dailyMax = max(1, days.map(\.amount).max() ?? 1)
+        let runMax = max(1, max(priorFinal, days.last?.running ?? 1))
+
+        SectionCard(title: "Day by day", subtitle: "What each day cost, and the running total",
+                    accent: Palette.warning,
+                    trailing: AnyView(ChartLegend(items: [
+                        ("This month", ChartInk.outgo), ("Last month", ChartInk.prior),
+                    ]))) {
+            BasisNote(text: verdict(soFar: soFar))
+
+            Text("EACH DAY").font(.system(size: 9, weight: .semibold)).tracking(0.6)
+                .foregroundStyle(Palette.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 6)
+
+            Chart {
+                ForEach(days) { d in
+                    // A fixed width, not a ratio. `.ratio` is a fraction of the band a mark sits
+                    // in, and a continuous numeric x has no bands — the ratio resolved to nothing
+                    // and the bars never drew at all.
+                    BarMark(x: .value("Day", Double(d.step)), y: .value("Spent", d.amount), width: .fixed(7))
+                        .foregroundStyle(ChartInk.outgo)
+                        .cornerRadius(2)
                 }
-
-                Chart {
-                    ForEach(data.months) { m in
-                        BarMark(x: .value("Month", m.month, unit: .month),
-                                y: .value("In", m.income),
-                                width: .fixed(9))
-                            .position(by: .value("Kind", "In"), axis: .horizontal, span: .ratio(0.9))
-                            .foregroundStyle(ChartInk.income)
-                            .cornerRadius(3)
-                        BarMark(x: .value("Month", m.month, unit: .month),
-                                y: .value("Out", m.outgo),
-                                width: .fixed(9))
-                            .position(by: .value("Kind", "Out"), axis: .horizontal, span: .ratio(0.9))
-                            .foregroundStyle(ChartInk.outgo)
-                            .cornerRadius(3)
+                RuleMark(y: .value("Average day", model.dailyAverage))
+                    .foregroundStyle(Palette.textTertiary.opacity(0.55))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 4]))
+                    .annotation(position: .trailing, alignment: .leading, spacing: 4) {
+                        Text("avg day").font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
                     }
-                    if let f = focus {
-                        RuleMark(x: .value("Month", f.month, unit: .month))
-                            .foregroundStyle(Palette.hairline)
-                            .lineStyle(StrokeStyle(lineWidth: 1))
-                            .zIndex(-1)
-                    }
-                }
-                .chartXAxis { AxisMarks(values: .stride(by: .month, count: 2)) { v in
-                    AxisValueLabel(format: .dateTime.month(.narrow))
-                        .font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
-                } }
-                .chartYAxis { AxisMarks(position: .leading) { v in
+            }
+            .chartXScale(domain: 0.5...Double(model.stepCount) + 0.5)
+            .chartYScale(domain: 0...dailyMax * 1.25)
+            .chartXAxis(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
                     AxisGridLine().foregroundStyle(Palette.hairline)
                     AxisValueLabel {
-                        if let d = v.as(Double.self) {
+                        if let d = value.as(Double.self) {
                             Text(CurrencyFormat.abbreviated(d, base))
-                                .font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
+                                .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
                         }
                     }
-                } }
-                .chartOverlay { proxy in
-                    GeometryReader { geo in
-                        Rectangle().fill(.clear).contentShape(Rectangle())
-                            .onContinuousHover { phase in
-                                switch phase {
-                                case .active(let pt):
-                                    guard let plot = proxy.plotFrame else { return }
-                                    let x = pt.x - geo[plot].origin.x
-                                    hoverMonth = proxy.value(atX: x, as: Date.self)
-                                case .ended:
-                                    hoverMonth = nil
-                                }
-                            }
+                }
+            }
+            .stepCursor(model.stepCount, hover: $hover) { step in tip(step) }
+            .frame(height: 130)
+
+            Text("ADDING UP").font(.system(size: 9, weight: .semibold)).tracking(0.6)
+                .foregroundStyle(Palette.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 12)
+
+            Chart {
+                ForEach(lines) { p in
+                    LineMark(x: .value("Day", Double(p.step)), y: .value("Running total", p.value),
+                             series: .value("Period", p.series))
+                        .foregroundStyle(p.series == "This month" ? ChartInk.outgo : ChartInk.prior)
+                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round,
+                                               dash: p.series == "This month" ? [] : [4, 3]))
+                        .interpolationMethod(.monotone)
+                }
+            }
+            .chartXScale(domain: 0.5...Double(model.stepCount) + 0.5)
+            .chartYScale(domain: 0...runMax * 1.12)
+            .chartXAxis {
+                AxisMarks(values: xTicks) { value in
+                    AxisValueLabel {
+                        if let d = value.as(Double.self) {
+                            Text("\(Int(d))").font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                        }
                     }
                 }
-                .frame(height: 190)
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
+                    AxisGridLine().foregroundStyle(Palette.hairline)
+                    AxisValueLabel {
+                        if let d = value.as(Double.self) {
+                            Text(CurrencyFormat.abbreviated(d, base))
+                                .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                        }
+                    }
+                }
+            }
+            .stepCursor(model.stepCount, hover: $hover) { step in tip(step) }
+            .frame(height: 150)
+
+            Divider().overlay(Palette.hairline).padding(.vertical, 10)
+
+            StatRow {
+                StatCell(label: "Spent so far", value: CurrencyFormat.string(soFar, base, compact: true),
+                         note: "day \(model.stepCursor) of \(model.stepCount)")
+                StatDivider()
+                StatCell(label: "Last month by now",
+                         value: CurrencyFormat.string(priorAtSamePoint, base, compact: true),
+                         note: "same day, one month back")
+                StatDivider()
+                StatCell(label: "On this pace",
+                         value: model.canProject
+                             ? CurrencyFormat.string(model.projectedSpend, base, compact: true) : "—",
+                         note: model.canProject ? "by month end, at today's rate" : "too early to project",
+                         tone: model.canProject && priorFinal > 0 && model.projectedSpend > priorFinal
+                             ? Palette.negative : Palette.textPrimary)
+                StatDivider()
+                StatCell(label: "Last month, whole",
+                         value: priorFinal > 0 ? CurrencyFormat.string(priorFinal, base, compact: true) : "—",
+                         note: priorFinal > 0 ? "what it finished at" : "nothing logged")
             }
         }
     }
 
-    /// Two series, so a legend is always present — identity never rests on colour alone.
-    private var legend: AnyView {
-        AnyView(HStack(spacing: 12) {
-            ForEach([("In", ChartInk.income), ("Out", ChartInk.outgo)], id: \.0) { name, colour in
-                HStack(spacing: 5) {
-                    RoundedRectangle(cornerRadius: 2).fill(colour).frame(width: 9, height: 9)
-                    Text(name).font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                }
-            }
-        })
+    private var priorAtSamePoint: Double {
+        model.spendPrior.last { $0.step <= model.stepCursor }?.running ?? 0
     }
 
-    // MARK: Where it goes
+    private func tip(_ step: Int) -> some View {
+        let day = model.spendNow.first { $0.step == step }
+        let ahead = step > model.stepCursor
+        return ChartTip {
+            Text(dayLabel(step)).font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(Palette.textSecondary)
+            ChartTipRow(color: ChartInk.outgo, name: "That day",
+                        value: ahead ? "hasn't happened yet"
+                                     : CurrencyFormat.string(day?.amount ?? 0, base, compact: true))
+            ChartTipRow(color: nil, name: "Running total",
+                        value: ahead ? "—" : CurrencyFormat.string(day?.running ?? 0, base, compact: true),
+                        emphasise: true)
+            ChartTipRow(color: ChartInk.prior, name: "Last month by then",
+                        value: CurrencyFormat.string(
+                            model.spendPrior.last { $0.step <= step }?.running ?? 0, base, compact: true))
+        }
+    }
 
-    private var categoriesCard: some View {
-        SectionCard(title: "Where it goes", subtitle: "This month by tag", accent: Palette.violet,
-                    trailing: AnyView(
-                        Text(CurrencyFormat.string(data.spentThisMonth, base))
-                            .font(Typo.rowFigure(12)).foregroundStyle(Palette.textSecondary))) {
-            if data.categories.isEmpty {
-                Text("Nothing logged this month.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+    private func dayLabel(_ step: Int) -> String {
+        let cal = PHT.calendar
+        let start = PHT.startOfMonth()
+        if let d = cal.date(byAdding: .day, value: step - 1, to: start) {
+            return ChartLabel.dayMonth.string(from: d)
+        }
+        return "Day \(step)"
+    }
+
+    private var xTicks: [Double] {
+        Array(stride(from: 1.0, through: Double(model.stepCount), by: 5))
+    }
+
+    private func verdict(soFar: Double) -> String {
+        let prior = priorAtSamePoint
+        guard prior > 0 else {
+            return "Bars are what each day cost. The line below adds them up, with last month dashed behind it."
+        }
+        let pct = (soFar - prior) / prior * 100
+        return String(format: "By day %d you had spent %@; last month by the same day it was %@ — %.0f%% %@.",
+                      model.stepCursor,
+                      CurrencyFormat.string(soFar, base, compact: true),
+                      CurrencyFormat.string(prior, base, compact: true),
+                      abs(pct), pct >= 0 ? "more" : "less")
+    }
+}
+
+// MARK: - In and out
+
+/// The one chart that answers "did that month end up or down".
+///
+/// Two series on ONE axis — never a second y-scale, which would let any pair of shapes be made to
+/// look correlated. Income and outgo are opposite poles rather than two categories, so they take
+/// the diverging pair. The series starts at the first record, not twelve months back.
+private struct InOutCard: View {
+    let model: InsightsModel
+    let base: String
+    @State private var hover: Date?
+
+    var body: some View {
+        SectionCard(title: "In and out", subtitle: "Net landed against everything spent, month by month",
+                    accent: Palette.azure,
+                    trailing: AnyView(ChartLegend(items: [("In", ChartInk.income), ("Out", ChartInk.outgo)]))) {
+            if model.months.allSatisfy({ $0.income == 0 && $0.outgo == 0 }) {
+                Text("Nothing to compare yet.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(data.categories.enumerated()), id: \.element.id) { _, slice in
-                        let hot = hoverCategory == slice.name
-                        HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(ChartInk.slot(slice.colorIndex))
-                                .frame(width: 9, height: 9)
-                            Text(slice.name)
-                                .font(.system(size: 12.5, weight: hot ? .semibold : .regular))
-                                .foregroundStyle(Palette.textPrimary)
-                                .frame(width: 120, alignment: .leading).lineLimit(1)
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Palette.wellFill).frame(height: 7)
-                                    Capsule().fill(ChartInk.slot(slice.colorIndex))
-                                        .frame(width: max(3, geo.size.width * slice.share), height: 7)
-                                }
-                                .frame(maxHeight: .infinity, alignment: .center)
-                            }
-                            .frame(height: 16)
-                            Text("\(Int((slice.share * 100).rounded()))%")
-                                .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
-                                .frame(width: 36, alignment: .trailing)
-                            Text(CurrencyFormat.string(slice.total, base))
-                                .font(Typo.rowFigure(12)).foregroundStyle(Palette.textSecondary)
-                                .frame(width: 92, alignment: .trailing)
-                        }
-                        .padding(.vertical, 7)
-                        .background(hot ? Palette.wellFillHover : .clear)
-                        .onHover { hoverCategory = $0 ? slice.name : nil }
+                BasisNote(text: headline)
+
+                let ceiling = max(1, model.months.flatMap { [$0.income, $0.outgo] }.max() ?? 1)
+                Chart {
+                    ForEach(model.months) { m in
+                        BarMark(x: .value("Month", m.month, unit: .month),
+                                y: .value("Landed", m.income),
+                                width: .ratio(0.32))
+                            .position(by: .value("Direction", "In"), axis: .horizontal, span: .ratio(0.76))
+                            .foregroundStyle(ChartInk.income.opacity(m.incomePartial || m.isCurrent ? 0.45 : 1))
+                            .cornerRadius(3)
+                        BarMark(x: .value("Month", m.month, unit: .month),
+                                y: .value("Spent", m.outgo),
+                                width: .ratio(0.32))
+                            .position(by: .value("Direction", "Out"), axis: .horizontal, span: .ratio(0.76))
+                            .foregroundStyle(ChartInk.outgo.opacity(m.spendPartial || m.isCurrent ? 0.45 : 1))
+                            .cornerRadius(3)
                     }
                 }
+                .chartYScale(domain: 0...(ceiling * 1.14))
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .month)) { value in
+                        AxisValueLabel(centered: true) {
+                            if let d = value.as(Date.self) {
+                                Text(ChartLabel.monthShort.string(from: d))
+                                    .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                            }
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
+                        AxisGridLine().foregroundStyle(Palette.hairline)
+                        AxisValueLabel {
+                            if let d = value.as(Double.self) {
+                                Text(CurrencyFormat.abbreviated(d, base))
+                                    .font(.system(size: 9.5)).foregroundStyle(Palette.textTertiary)
+                            }
+                        }
+                    }
+                }
+                .monthCursor(model.months.map(\.month), hover: $hover) { month in
+                    if let p = model.months.first(where: { $0.month == month }) {
+                        let q = p.isCurrent ? "so far" : (p.isPartial ? "partial month" : "")
+                        ChartTip {
+                            Text(p.longLabel + (q.isEmpty ? "" : " · \(q)"))
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(Palette.textSecondary)
+                            ChartTipRow(color: ChartInk.income, name: "In",
+                                        value: CurrencyFormat.string(p.income, base, compact: true))
+                            ChartTipRow(color: ChartInk.outgo, name: "Out",
+                                        value: CurrencyFormat.string(p.outgo, base, compact: true))
+                            ChartTipRow(color: nil,
+                                        name: p.net >= 0 ? "Kept" : "Short by",
+                                        value: CurrencyFormat.string(abs(p.net), base, compact: true),
+                                        emphasise: true)
+                        }
+                    }
+                }
+                .frame(height: 240)
+            }
+        }
+    }
 
-                if data.investedThisMonth > 0 {
+    private var headline: String {
+        let judged = model.months.filter { !$0.isPartial && !$0.isCurrent && ($0.income > 0 || $0.outgo > 0) }
+        guard !judged.isEmpty else {
+            return "No month has run start to finish with logging in place yet — the faded bars are months that can't be judged."
+        }
+        let up = judged.filter { $0.net > 0 }.count
+        return "\(up) of \(judged.count) complete month\(judged.count == 1 ? "" : "s") finished up. Faded bars are partial or still running."
+    }
+}
+
+// MARK: - Where it goes
+
+private struct CategoriesCard: View {
+    let model: InsightsModel
+    let base: String
+
+    var body: some View {
+        SectionCard(title: "Where it goes", subtitle: "This month by tag, with last month beside it",
+                    accent: Palette.violet,
+                    trailing: AnyView(
+                        Text(CurrencyFormat.string(model.spentThisMonth, base, compact: true))
+                            .font(Typo.rowFigure(12)).foregroundStyle(Palette.textSecondary))) {
+            if model.categories.isEmpty {
+                Text("Nothing logged this month.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+            } else {
+                BasisNote(text: "Each tag counts in full — a spend with two tags appears under both, so the shares describe emphasis, not a split of the total.")
+                VStack(spacing: 2) {
+                    ForEach(Array(model.categories.enumerated()), id: \.element.id) { i, slice in
+                        RankBar(index: i, name: slice.name, note: slice.note,
+                                value: CurrencyFormat.string(slice.value, base, compact: true),
+                                share: slice.share, color: ChartInk.slot(slice.slot),
+                                trailing: "\(Int((slice.share * 100).rounded()))%",
+                                delta: slice.delta, deltaNote: slice.deltaNote)
+                    }
+                }
+                if model.investedThisMonth > 0 {
                     Divider().overlay(Palette.hairline).padding(.vertical, 8)
                     HStack {
                         Text("Of that, investment — gear, home, things that last")
                             .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
                         Spacer()
-                        Text(CurrencyFormat.string(data.investedThisMonth, base))
+                        Text(CurrencyFormat.string(model.investedThisMonth, base, compact: true))
                             .font(Typo.rowFigure(12)).foregroundStyle(Palette.textSecondary)
                     }
                 }
             }
         }
     }
+}
 
-    // MARK: Who you pay
+private struct VendorsCard: View {
+    let model: InsightsModel
+    let base: String
 
-    private var vendorsCard: some View {
-        SectionCard(title: "Who you pay", subtitle: "This month by vendor", accent: Palette.cyan) {
-            if data.vendors.isEmpty {
-                Text("No vendors recorded this month.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
+    var body: some View {
+        SectionCard(title: "Who you pay", subtitle: "This month by vendor, with last month beside it",
+                    accent: Palette.cyan,
+                    trailing: AnyView(
+                        Text("\(model.vendors.count) vendor\(model.vendors.count == 1 ? "" : "s")")
+                            .font(.system(size: 11)).foregroundStyle(Palette.textTertiary))) {
+            if model.vendors.isEmpty {
+                Text("No vendors recorded this month.")
+                    .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
             } else {
-                VStack(spacing: 0) {
-                    ForEach(data.vendors) { v in
-                        HStack(spacing: 12) {
-                            Text(v.name).font(.system(size: 12.5)).foregroundStyle(Palette.textPrimary)
-                                .frame(width: 150, alignment: .leading).lineLimit(1)
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Palette.wellFill).frame(height: 7)
-                                    // One hue here: these are ranked magnitudes of the same thing,
-                                    // not different kinds of thing.
-                                    Capsule().fill(ChartInk.slot(2).opacity(0.85))
-                                        .frame(width: max(3, geo.size.width * v.share), height: 7)
-                                }
-                                .frame(maxHeight: .infinity, alignment: .center)
-                            }
-                            .frame(height: 16)
-                            Text(CurrencyFormat.string(v.total, base))
-                                .font(Typo.rowFigure(12)).foregroundStyle(Palette.textSecondary)
-                                .frame(width: 92, alignment: .trailing)
-                        }
-                        .padding(.vertical, 7)
+                VStack(spacing: 2) {
+                    ForEach(Array(model.vendors.enumerated()), id: \.element.id) { i, v in
+                        // One hue: these are ranked magnitudes of the same thing, not different
+                        // kinds of thing.
+                        RankBar(index: i, name: v.name, note: v.note,
+                                value: CurrencyFormat.string(v.value, base, compact: true),
+                                share: v.share, color: ChartInk.slot(2),
+                                trailing: "\(Int((v.share * 100).rounded()))% of vendor spend",
+                                delta: v.delta, deltaNote: v.deltaNote)
                     }
                 }
             }
         }
-    }
-
-    // MARK: What is already spoken for
-
-    /// Not a chart. Four numbers, and a chart of four numbers is decoration.
-    private var commitmentsCard: some View {
-        SectionCard(title: "Already spoken for", subtitle: "What leaves before you decide anything",
-                    accent: Palette.warning) {
-            HStack(spacing: 0) {
-                stat("Every month", CurrencyFormat.string(data.monthlyCommitments, base),
-                     "rent, wifi, water, power")
-                divider
-                stat("Owed to you", CurrencyFormat.string(data.loansOut, base), "lent and not back yet")
-                divider
-                stat("Biggest this month",
-                     data.biggestSingle.map { CurrencyFormat.string($0.amount, base) } ?? "—",
-                     data.biggestSingle?.name ?? "nothing logged")
-                divider
-                stat("Priciest day",
-                     data.busiestDay.map { CurrencyFormat.string($0.amount, base) } ?? "—",
-                     data.busiestDay.map { "\($0.label)s, on average" } ?? "not enough data")
-            }
-        }
-    }
-
-    private var divider: some View {
-        Rectangle().fill(Palette.hairline).frame(width: 1, height: 44).padding(.horizontal, 14)
-    }
-
-    private func stat(_ label: String, _ value: String, _ note: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
-                .font(.system(size: 9, weight: .semibold)).tracking(0.6)
-                .foregroundStyle(Palette.textTertiary)
-            Text(value).font(Typo.rowFigure(16)).foregroundStyle(Palette.textPrimary).lineLimit(1)
-            Text(note).font(.system(size: 10)).foregroundStyle(Palette.textTertiary).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

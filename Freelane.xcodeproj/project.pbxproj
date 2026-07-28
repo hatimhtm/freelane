@@ -317,7 +317,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.24;
+				MARKETING_VERSION = 2.25;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -353,7 +353,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.24;
+				MARKETING_VERSION = 2.25;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -381,7 +381,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 2.24;
+				MARKETING_VERSION = 2.25;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac.FreelaneWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -413,7 +413,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 2.24;
+				MARKETING_VERSION = 2.25;
 				PRODUCT_BUNDLE_IDENTIFIER = app.freelane.mac.FreelaneWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

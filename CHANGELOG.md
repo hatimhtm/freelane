@@ -3,6 +3,46 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.25
+
+**Insights now refuses to average months it wasn't there for.** The old "12-month average" divided
+four months of income by twelve — a number about nothing, which was then used to colour the bars, so
+the colours meant nothing either. Every average on this screen now covers **complete months only**
+and says which ones out loud.
+
+- **Averages have a stated basis.** "The average of 2 complete months · May–Jun." The month logging
+  started in is excluded because it's partial; the month in progress is excluded because it hasn't
+  finished. Both are drawn faded and are never judged good or bad.
+- **The charts start where the records start.** No more twelve slots with eight of them empty.
+- **Like-for-like comparisons.** Month-to-date is compared against the *same day* of last month, not
+  against a whole finished one — that comparison reads as a collapse on the 3rd and a surge on the
+  30th, and says nothing either time. Where last month wasn't logged in full, it says so instead of
+  inventing a percentage.
+- **The three tabs now answer three different questions.** This month leads with pace and what's
+  still owed; This year adds the year in quarters; Lifetime replaces the bars with the whole climb,
+  plus the record — best month, biggest payment, all-time in and out.
+- **Spending is its own page.** Every figure carries what it's made of: how many purchases, over how
+  many days, the per-purchase average, and what the same tag or vendor cost last month.
+- **Day by day.** What each day of this month cost, and the running total against last month's.
+
+**Fixes**
+
+- Hovering a bar chart picked the month whose *start* was nearest the pointer. A bar is a whole month
+  wide, so from the 16th onward the next month was closer — the right half of every bar highlighted
+  the wrong month. It now maps the pointer to the band it's inside.
+- The readout could slide under the pointer, which stopped the chart receiving hover, which hid the
+  readout — several times a second. That was the flicker.
+- Charts no longer redraw their bars on hover at all; the guide and readout live in an overlay. That
+  was the lag when moving across a chart.
+- Bars sat on top of the month names on every chart in the app. `chartPlotStyle` padding grows the
+  plot's frame rather than insetting it, sliding the marks down over the axis. Headroom now comes
+  from the scale.
+- The daily-spend bars never drew: a `.ratio` bar width is a fraction of a band, and a continuous
+  day axis has no bands.
+- Insights recomputed a dozen derived figures on every redraw, each walking the whole payment,
+  project and allocation history. It's built once per data change now. Money labels also stopped
+  building a fresh `NumberFormatter` per figure — forty of those per redraw was real time.
+
 ## 2.24
 
 **Insights gets the half it never had.** It only ever showed income — what landed, from whom,

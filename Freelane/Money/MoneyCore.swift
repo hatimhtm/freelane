@@ -59,15 +59,30 @@ enum CurrencyFormat {
 
     static func symbol(_ code: String) -> String { symbols[code] ?? code }
 
+    /// Building a `NumberFormatter` is expensive — it parses locale data every time. This ran once
+    /// per money label, and an analytics screen prints forty of them per redraw, so the cost showed
+    /// up as scroll and hover lag. Two shared instances instead; main-thread UI only.
+    private static let decimalFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 2
+        f.minimumFractionDigits = 2
+        return f
+    }()
+    private static let wholeFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        f.minimumFractionDigits = 0
+        return f
+    }()
+
     /// "₱12,340.50" style. Drops the decimals when whole and `compact` is true.
     static func string(_ amount: Double, _ code: String, compact: Bool = false) -> String {
         // Snap floating-point dust to zero so a balance that rounds to 0.00 never
         // renders as "-0.00" (anything under half a cent is zero at 2-decimal display).
         let amount = abs(amount) < 0.005 ? 0 : amount
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.maximumFractionDigits = (compact && amount == amount.rounded()) ? 0 : 2
-        f.minimumFractionDigits = (compact && amount == amount.rounded()) ? 0 : 2
+        let f = (compact && amount == amount.rounded()) ? wholeFormatter : decimalFormatter
         let n = f.string(from: NSNumber(value: amount)) ?? "\(amount)"
         return symbol(code) + n
     }
