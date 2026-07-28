@@ -71,10 +71,17 @@ private struct SpendHeaderCard: View {
                     trailing: AnyView(
                         Text(model.spendWindow.basis)
                             .font(.system(size: 11)).foregroundStyle(Palette.textTertiary))) {
+            if model.unaccountedThisMonth > 0 {
+                BasisNote(text: Unaccounted.explain(model.unaccountedThisMonth,
+                                                    days: model.unaccountedDays, base: base)
+                          + " It can't be tagged or itemised, but it was spent, so it counts here and everywhere else.")
+            }
             StatRow {
-                StatCell(label: "Spent so far",
+                StatCell(label: "Everything that left",
                          value: CurrencyFormat.string(model.spentThisMonth, base, compact: true),
-                         note: "\(model.spendCountThisMonth) purchase\(model.spendCountThisMonth == 1 ? "" : "s") across \(model.daysLogged) day\(model.daysLogged == 1 ? "" : "s")",
+                         note: model.unaccountedThisMonth > 0
+                             ? "\(CurrencyFormat.abbreviated(model.loggedThisMonth, base)) logged + \(CurrencyFormat.abbreviated(model.unaccountedThisMonth, base)) unaccounted"
+                             : "\(model.spendCountThisMonth) purchase\(model.spendCountThisMonth == 1 ? "" : "s") across \(model.daysLogged) day\(model.daysLogged == 1 ? "" : "s")",
                          tone: Palette.negative)
                 StatDivider()
                 StatCell(label: "Per day so far",
@@ -133,7 +140,8 @@ private struct BurnCard: View {
         SectionCard(title: "Day by day", subtitle: "What each day cost, and the running total",
                     accent: Palette.warning,
                     trailing: AnyView(ChartLegend(items: [
-                        ("This month", ChartInk.outgo), ("Last month", ChartInk.prior),
+                        ("Logged", ChartInk.outgo), ("Unaccounted", ChartInk.slot(1)),
+                        ("Last month", ChartInk.prior),
                     ]))) {
             BasisNote(text: verdict(soFar: soFar))
 
@@ -147,8 +155,11 @@ private struct BurnCard: View {
                     // A fixed width, not a ratio. `.ratio` is a fraction of the band a mark sits
                     // in, and a continuous numeric x has no bands — the ratio resolved to nothing
                     // and the bars never drew at all.
-                    BarMark(x: .value("Day", Double(d.step)), y: .value("Spent", d.amount), width: .fixed(7))
+                    BarMark(x: .value("Day", Double(d.step)), y: .value("Logged", d.logged), width: .fixed(7))
                         .foregroundStyle(ChartInk.outgo)
+                        .cornerRadius(2)
+                    BarMark(x: .value("Day", Double(d.step)), y: .value("Unaccounted", d.unaccounted), width: .fixed(7))
+                        .foregroundStyle(ChartInk.slot(1))
                         .cornerRadius(2)
                 }
                 RuleMark(y: .value("Average day", model.dailyAverage))
@@ -249,9 +260,13 @@ private struct BurnCard: View {
         return ChartTip {
             Text(dayLabel(step)).font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(Palette.textSecondary)
-            ChartTipRow(color: ChartInk.outgo, name: "That day",
+            ChartTipRow(color: ChartInk.outgo, name: "Logged that day",
                         value: ahead ? "hasn't happened yet"
-                                     : CurrencyFormat.string(day?.amount ?? 0, base, compact: true))
+                                     : CurrencyFormat.string(day?.logged ?? 0, base, compact: true))
+            if (day?.unaccounted ?? 0) > 0 {
+                ChartTipRow(color: ChartInk.slot(1), name: "Unaccounted",
+                            value: CurrencyFormat.string(day?.unaccounted ?? 0, base, compact: true))
+            }
             ChartTipRow(color: nil, name: "Running total",
                         value: ahead ? "—" : CurrencyFormat.string(day?.running ?? 0, base, compact: true),
                         emphasise: true)
@@ -303,7 +318,10 @@ private struct InOutCard: View {
     var body: some View {
         SectionCard(title: "In and out", subtitle: "Net landed against everything spent, month by month",
                     accent: Palette.azure,
-                    trailing: AnyView(ChartLegend(items: [("In", ChartInk.income), ("Out", ChartInk.outgo)]))) {
+                    trailing: AnyView(ChartLegend(items: [
+                        ("In", ChartInk.income), ("Logged out", ChartInk.outgo),
+                        ("Unaccounted", ChartInk.slot(1)),
+                    ]))) {
             if model.months.allSatisfy({ $0.income == 0 && $0.outgo == 0 }) {
                 Text("Nothing to compare yet.").font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
             } else {
@@ -319,10 +337,18 @@ private struct InOutCard: View {
                             .foregroundStyle(ChartInk.income.opacity(m.incomePartial || m.isCurrent ? 0.45 : 1))
                             .cornerRadius(3)
                         BarMark(x: .value("Month", m.month, unit: .month),
-                                y: .value("Spent", m.outgo),
+                                y: .value("Spent", m.outgoLogged),
                                 width: .ratio(0.32))
                             .position(by: .value("Direction", "Out"), axis: .horizontal, span: .ratio(0.76))
                             .foregroundStyle(ChartInk.outgo.opacity(m.spendPartial || m.isCurrent ? 0.45 : 1))
+                            .cornerRadius(3)
+                        // Money that left with no record, stacked on what you logged rather than
+                        // hidden. Same bar, because it is the same money leaving.
+                        BarMark(x: .value("Month", m.month, unit: .month),
+                                y: .value("Unaccounted", m.unaccounted),
+                                width: .ratio(0.32))
+                            .position(by: .value("Direction", "Out"), axis: .horizontal, span: .ratio(0.76))
+                            .foregroundStyle(ChartInk.slot(1).opacity(m.spendPartial || m.isCurrent ? 0.45 : 1))
                             .cornerRadius(3)
                     }
                 }
@@ -357,8 +383,12 @@ private struct InOutCard: View {
                                 .foregroundStyle(Palette.textSecondary)
                             ChartTipRow(color: ChartInk.income, name: "In",
                                         value: CurrencyFormat.string(p.income, base, compact: true))
-                            ChartTipRow(color: ChartInk.outgo, name: "Out",
-                                        value: CurrencyFormat.string(p.outgo, base, compact: true))
+                            ChartTipRow(color: ChartInk.outgo, name: "Logged out",
+                                        value: CurrencyFormat.string(p.outgoLogged, base, compact: true))
+                            if p.unaccounted > 0 {
+                                ChartTipRow(color: ChartInk.slot(1), name: "Unaccounted",
+                                            value: CurrencyFormat.string(p.unaccounted, base, compact: true))
+                            }
                             ChartTipRow(color: nil,
                                         name: p.net >= 0 ? "Kept" : "Short by",
                                         value: CurrencyFormat.string(abs(p.net), base, compact: true),

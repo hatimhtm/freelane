@@ -22,6 +22,9 @@ struct SpendingView: View {
     @State private var showBudgets = false
     @State private var categoryFilter: String? = nil
     @Query private var budgets: [CategoryBudget]
+    /// Balance corrections. Money that left with no record is still money that left, so it counts
+    /// in every total on this page — see `Unaccounted`.
+    @Query private var ledgerEntries: [LedgerEntry]
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
     /// Full-text filter over description / vendor / category / tags. Empty = everything.
@@ -62,6 +65,13 @@ struct SpendingView: View {
     }
     private var monthTotal: Double {
         spends.filter { $0.spentAt >= PHT.startOfMonth() }.reduce(0) { $0 + $1.amountBase }
+            + unaccountedThisMonth
+    }
+    private var unaccountedThisMonth: Double {
+        Unaccounted.spent(since: PHT.startOfMonth(), ledger: ledgerEntries)
+    }
+    private var unaccountedDaysThisMonth: Int {
+        Unaccounted.days(since: PHT.startOfMonth(), ledger: ledgerEntries)
     }
     private var monthSpends: [Spend] { spends.filter { $0.spentAt >= PHT.startOfMonth() } }
     private var investMonth: Double { monthSpends.filter { $0.isInvestment }.reduce(0) { $0 + $1.amountBase } }
@@ -122,6 +132,11 @@ struct SpendingView: View {
         }
         if investMonth > 0 {
             chips.append(("Investments " + CurrencyFormat.abbreviated(investMonth, base), "arrow.up.forward.circle", Palette.textSecondary))
+        }
+        // Named, never blended in silently. This is the part of the month you cannot itemise.
+        if unaccountedThisMonth > 0 {
+            chips.append((CurrencyFormat.abbreviated(unaccountedThisMonth, base) + " unaccounted",
+                          "questionmark.circle", Palette.warning))
         }
         return HeroTile(label: "Spent this month", value: monthTotal, code: base,
                         accent: Palette.azure, spark: spark.count > 1 ? spark : [0, 0], chips: chips)
@@ -237,6 +252,7 @@ struct SpendingView: View {
             guard let start = cal.date(byAdding: .month, value: -i, to: PHT.startOfMonth()),
                   let end = cal.date(byAdding: .month, value: 1, to: start) else { return nil }
             let sum = spends.filter { $0.spentAt >= start && $0.spentAt < end }.reduce(0) { $0 + $1.amountBase }
+                + Unaccounted.spent(from: start, to: end, ledger: ledgerEntries)
             return (f.string(from: start), sum, start)
         }
     }

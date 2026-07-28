@@ -153,7 +153,12 @@ struct InsightsModel: Equatable {
         var id: Date { month }
         let month: Date
         let income: Double
-        let outgo: Double
+        /// What you logged as spends.
+        let outgoLogged: Double
+        /// What left your wallets with no record, from balance corrections.
+        let unaccounted: Double
+        /// Everything that left. This is the figure every chart and total uses.
+        var outgo: Double { outgoLogged + unaccounted }
         /// Partial months are never compared to an average and never coloured as good or bad.
         ///
         /// Income and spending were not necessarily logged from the same day, so they get a flag
@@ -178,8 +183,10 @@ struct InsightsModel: Equatable {
     struct StepPoint: Identifiable, Equatable {
         var id: Int { step }
         let step: Int
-        let amount: Double   // this step alone
-        let running: Double  // cumulative through this step
+        let amount: Double       // this step alone, everything included
+        let unaccounted: Double  // of which, money that left with no record
+        let running: Double      // cumulative through this step
+        var logged: Double { amount - unaccounted }
     }
 
     struct RankRow: Identifiable, Equatable {
@@ -236,7 +243,13 @@ struct InsightsModel: Equatable {
     var feePct: Double = 0
     var avgPayment: Double = 0
     var paymentCount: Int = 0
+    /// Everything that left: what you logged, plus what balance corrections say went missing.
     var spentInScope: Double = 0
+    var loggedInScope: Double = 0
+    var unaccountedInScope: Double = 0
+    var unaccountedDays: Int = 0
+    /// Money that turned up unexplained. Reported, never netted off the missing side.
+    var foundInScope: Double = 0
     var netInScope: Double { landed - spentInScope }
 
     /// Like-for-like: this period so far against the same number of days into the previous one.
@@ -314,6 +327,8 @@ struct InsightsModel: Equatable {
     var categories: [RankRow] = []
     var vendors: [RankRow] = []
     var spentThisMonth: Double = 0
+    var loggedThisMonth: Double = 0
+    var unaccountedThisMonth: Double = 0
     var spentLastMonth: Double = 0
     var spendCountThisMonth: Int = 0
     var investedThisMonth: Double = 0
@@ -333,12 +348,21 @@ struct InsightsModel: Equatable {
     static func build(scope: Scope, stamp: Int, now: Date = .now, rates: Rates,
                       payments: [Payment], withdrawals: [Withdrawal], spends: [Spend],
                       clients: [Client], projects: [Project], allocations: [PaymentAllocation],
-                      recurring: [Recurring], loans: [Loan]) -> InsightsModel {
+                      recurring: [Recurring], loans: [Loan], ledger: [LedgerEntry]) -> InsightsModel {
         var m = InsightsModel()
         m.scope = scope
         m.stamp = stamp
         let cal = PHT.calendar
         let currentMonth = PHT.startOfMonth(now)
+
+        // Money that left with no record, from balance corrections. Dated to the day the shortfall
+        // was booked — which is a real date, not an invention — and carried through every spending
+        // figure below alongside what was logged.
+        let unaccountedByDay = Unaccounted.spentByDay(ledger)
+        let foundByDay = Unaccounted.foundByDay(ledger)
+        func unaccounted(from: Date, to: Date) -> Double {
+            unaccountedByDay.filter { $0.key >= from && $0.key < to }.values.reduce(0, +)
+        }
 
         // ---- how far back the records actually go
 
@@ -365,9 +389,17 @@ struct InsightsModel: Equatable {
         m.feePct = (m.landed + m.fees) > 0 ? m.fees / (m.landed + m.fees) : 0
         m.paymentCount = scoped.count
         m.avgPayment = scoped.isEmpty ? 0 : m.landed / Double(scoped.count)
-        m.spentInScope = scopedSpends.reduce(0) { $0 + $1.amountBase }
+        let loggedInScope = scopedSpends.reduce(0) { $0 + $1.amountBase }
+        m.unaccountedInScope = scopeStart.map { s in Unaccounted.spent(since: s, ledger: ledger) }
+            ?? unaccountedByDay.values.reduce(0, +)
+        m.unaccountedDays = scopeStart.map { s in Unaccounted.days(since: s, ledger: ledger) }
+            ?? unaccountedByDay.count
+        m.foundInScope = scopeStart.map { s in Unaccounted.found(since: s, ledger: ledger) }
+            ?? foundByDay.values.reduce(0, +)
+        m.spentInScope = loggedInScope + m.unaccountedInScope
+        m.loggedInScope = loggedInScope
         m.totalEarned = payments.reduce(0) { $0 + ($1.netAmountBase ?? 0) }
-        m.totalSpent = spends.reduce(0) { $0 + $1.amountBase }
+        m.totalSpent = spends.reduce(0) { $0 + $1.amountBase } + unaccountedByDay.values.reduce(0, +)
 
         // ---- month series, starting where the records start
 
@@ -376,10 +408,10 @@ struct InsightsModel: Equatable {
         if let capped = cal.date(byAdding: .month, value: -17, to: currentMonth), seriesStart < capped {
             seriesStart = capped
         }
-        var buckets: [Date: (inc: Double, out: Double)] = [:]
+        var buckets: [Date: (inc: Double, out: Double, gone: Double)] = [:]
         var cursor = seriesStart
         while cursor <= currentMonth {
-            buckets[cursor] = (0, 0)
+            buckets[cursor] = (0, 0, 0)
             guard let next = cal.date(byAdding: .month, value: 1, to: cursor) else { break }
             cursor = next
         }
@@ -388,6 +420,9 @@ struct InsightsModel: Equatable {
         }
         for s in spends where s.spentAt >= seriesStart {
             buckets[PHT.startOfMonth(s.spentAt)]?.out += s.amountBase
+        }
+        for (day, gone) in unaccountedByDay where day >= seriesStart {
+            buckets[PHT.startOfMonth(day)]?.gone += gone
         }
         // A month is partial for a series only if that series started mid-month, or if the series
         // has no record reaching back that far at all.
@@ -404,7 +439,8 @@ struct InsightsModel: Equatable {
         m.months = buckets.keys.sorted().map { key in
             MonthPoint(month: key,
                        income: buckets[key]?.inc ?? 0,
-                       outgo: buckets[key]?.out ?? 0,
+                       outgoLogged: buckets[key]?.out ?? 0,
+                       unaccounted: buckets[key]?.gone ?? 0,
                        incomePartial: incomePartial(key),
                        spendPartial: spendPartial(key),
                        isCurrent: key == currentMonth)
@@ -419,7 +455,9 @@ struct InsightsModel: Equatable {
         }
         let completeSpend = m.spendWindow.completeMonths
         if !completeSpend.isEmpty {
-            let total = completeSpend.reduce(0.0) { $0 + (buckets[$1]?.out ?? 0) }
+            // The typical month includes what went missing, or it describes a version of your
+            // spending that is cheaper than the one you actually lived.
+            let total = completeSpend.reduce(0.0) { $0 + (buckets[$1]?.out ?? 0) + (buckets[$1]?.gone ?? 0) }
             m.avgSpend = total / Double(completeSpend.count)
         }
         let judged = m.months.filter { !$0.incomePartial && !$0.isCurrent }
@@ -431,7 +469,7 @@ struct InsightsModel: Equatable {
         var running = 0.0
         m.cumulative = m.months.enumerated().map { i, p in
             running += p.income
-            return StepPoint(step: i + 1, amount: p.income, running: running)
+            return StepPoint(step: i + 1, amount: p.income, unaccounted: 0, running: running)
         }
 
         // ---- quarters of the current year
@@ -444,7 +482,7 @@ struct InsightsModel: Equatable {
             let inc = payments.filter { $0.paidAt >= from && $0.paidAt < to }
                 .reduce(0.0) { $0 + ($1.netAmountBase ?? 0) }
             let out = spends.filter { $0.spentAt >= from && $0.spentAt < to }
-                .reduce(0.0) { $0 + $1.amountBase }
+                .reduce(0.0) { $0 + $1.amountBase } + unaccounted(from: from, to: to)
             return QuarterRow(id: "Q\(q + 1)", name: "Q\(q + 1)", income: inc, outgo: out,
                               complete: q < thisQuarter)
         }
@@ -468,10 +506,12 @@ struct InsightsModel: Equatable {
                                        date: { $0.paidAt }, value: { $0.netAmountBase ?? 0 })
             m.spendNow = accumulate(spends, from: start, to: cal.date(byAdding: .month, value: 1, to: start) ?? now,
                                     steps: days, cal: cal, unit: .day,
-                                    date: { $0.spentAt }, value: { $0.amountBase })
+                                    date: { $0.spentAt }, value: { $0.amountBase },
+                                    extra: unaccountedByDay)
             m.spendPrior = accumulate(spends, from: priorStart, to: start, steps: priorDays,
                                       cal: cal, unit: .day,
-                                      date: { $0.spentAt }, value: { $0.amountBase })
+                                      date: { $0.spentAt }, value: { $0.amountBase },
+                                      extra: unaccountedByDay)
             // Only compare against a month that was actually being logged in full — and never on
             // the lifetime tab, where "the previous period" isn't a thing.
             if scope == .month, m.incomeWindow.completeMonths.contains(priorStart) {
@@ -491,9 +531,11 @@ struct InsightsModel: Equatable {
                                        date: { $0.paidAt }, value: { $0.netAmountBase ?? 0 })
             m.spendNow = accumulate(spends, from: start, to: cal.date(byAdding: .year, value: 1, to: start) ?? now,
                                     steps: 12, cal: cal, unit: .month,
-                                    date: { $0.spentAt }, value: { $0.amountBase })
+                                    date: { $0.spentAt }, value: { $0.amountBase },
+                                    extra: unaccountedByDay)
             m.spendPrior = accumulate(spends, from: priorStart, to: start, steps: 12, cal: cal, unit: .month,
-                                      date: { $0.spentAt }, value: { $0.amountBase })
+                                      date: { $0.spentAt }, value: { $0.amountBase },
+                                      extra: unaccountedByDay)
             if let f = firstMonth, f <= priorStart {
                 m.priorToDate = m.incomePrior.last { $0.step <= m.stepCursor }?.running
                 m.priorComplete = m.incomePrior.last?.running
@@ -651,8 +693,12 @@ struct InsightsModel: Equatable {
         let lastMonthStart = cal.date(byAdding: .month, value: -1, to: currentMonth) ?? currentMonth
         let thisMonth = spends.filter { $0.spentAt >= currentMonth }
         let lastMonth = spends.filter { $0.spentAt >= lastMonthStart && $0.spentAt < currentMonth }
-        m.spentThisMonth = thisMonth.reduce(0) { $0 + $1.amountBase }
+        m.unaccountedThisMonth = unaccounted(from: currentMonth,
+                                            to: cal.date(byAdding: .month, value: 1, to: currentMonth) ?? now)
+        m.loggedThisMonth = thisMonth.reduce(0) { $0 + $1.amountBase }
+        m.spentThisMonth = m.loggedThisMonth + m.unaccountedThisMonth
         m.spentLastMonth = lastMonth.reduce(0) { $0 + $1.amountBase }
+            + unaccounted(from: lastMonthStart, to: currentMonth)
         m.spendCountThisMonth = thisMonth.count
         m.investedThisMonth = thisMonth.filter(\.isInvestment).reduce(0) { $0 + $1.amountBase }
         m.categories = rank(thisMonth, against: lastMonth) { $0.category ?? $0.tags.first ?? "Untagged" }
@@ -696,20 +742,31 @@ struct InsightsModel: Equatable {
     /// Running total across a period, one entry per step, gaps included.
     private static func accumulate<T>(_ items: [T], from start: Date, to end: Date, steps: Int,
                                       cal: Calendar, unit: Calendar.Component,
-                                      date: (T) -> Date, value: (T) -> Double) -> [StepPoint] {
+                                      date: (T) -> Date, value: (T) -> Double,
+                                      extra: [Date: Double] = [:]) -> [StepPoint] {
         guard steps > 0 else { return [] }
+        func index(_ d: Date) -> Int? {
+            let i = (unit == .day ? cal.component(.day, from: d) : cal.component(.month, from: d)) - 1
+            return (i >= 0 && i < steps) ? i : nil
+        }
         var perStep = [Double](repeating: 0, count: steps)
+        var extraStep = [Double](repeating: 0, count: steps)
         for item in items {
             let d = date(item)
-            guard d >= start, d < end else { continue }
-            let idx = (unit == .day ? cal.component(.day, from: d) : cal.component(.month, from: d)) - 1
-            guard idx >= 0, idx < steps else { continue }
-            perStep[idx] += value(item)
+            guard d >= start, d < end, let i = index(d) else { continue }
+            perStep[i] += value(item)
+        }
+        // Money with no record rides the same series, kept separately so a chart can name it
+        // rather than quietly folding it into what you logged.
+        for (day, amount) in extra {
+            guard day >= start, day < end, let i = index(day) else { continue }
+            perStep[i] += amount
+            extraStep[i] += amount
         }
         var running = 0.0
         return (0..<steps).map { i in
             running += perStep[i]
-            return StepPoint(step: i + 1, amount: perStep[i], running: running)
+            return StepPoint(step: i + 1, amount: perStep[i], unaccounted: extraStep[i], running: running)
         }
     }
 

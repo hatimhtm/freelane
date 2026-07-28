@@ -3,6 +3,22 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.26
+
+**Money you adjusted away now counts as spent.** Recalibrating a wallet wrote a balancing entry and
+deliberately kept it out of the spending figures — "an adjustment, not a spend". That is correct
+bookkeeping and a wrong description of what happened: the money is gone. Across your ledger that is
+**₱39,815 over 40 corrections** that every "spent", "kept" and "net" figure was quietly ignoring.
+
+- Balance corrections are netted **per day** — a recalibration is often corrected minutes later, and
+  same-day pairs cancel — and every net shortfall counts as spending from that day.
+- It is never blended in silently. Charts and totals name it **Unaccounted**, in its own colour,
+  with the number of days it came from. You can see exactly how much of your spending isn't logged.
+- Money that turns up unexplained is reported separately and never netted off the missing side.
+- Nothing is fabricated to do this: no invented spend rows. The figure is read from the ledger
+  entries that already record it, so it stays correct if you edit or undo a correction.
+- Applies to Insights, the Spending page hero and its 6-month trend, and the typical-month average.
+
 ## 2.25
 
 **Insights now refuses to average months it wasn't there for.** The old "12-month average" divided

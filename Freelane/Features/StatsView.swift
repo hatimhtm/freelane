@@ -24,6 +24,7 @@ struct StatsView: View {
     @Query(filter: #Predicate<Spend> { $0.deletedAt == nil }) private var spends: [Spend]
     @Query(filter: #Predicate<Recurring> { $0.deletedAt == nil }) private var recurrings: [Recurring]
     @Query(filter: #Predicate<Loan> { $0.deletedAt == nil }) private var loans: [Loan]
+    @Query private var ledger: [LedgerEntry]
 
     @State private var sub = 0          // open on "This month" — the hero leads with NOW
     @State private var model = InsightsModel()
@@ -41,6 +42,7 @@ struct StatsView: View {
         h.combine(payments.reduce(0.0) { $0 + ($1.netAmountBase ?? 0) })
         h.combine(spends.reduce(0.0) { $0 + $1.amountBase })
         h.combine(allocations.reduce(0.0) { $0 + $1.allocationBase })
+        h.combine(ledger.count)
         return h.finalize()
     }
 
@@ -51,7 +53,7 @@ struct StatsView: View {
             scope: scope, stamp: stamp, rates: Rates(base: base, rates: rateRows),
             payments: payments, withdrawals: withdrawals, spends: spends,
             clients: clients, projects: projects, allocations: allocations,
-            recurring: recurrings, loans: loans)
+            recurring: recurrings, loans: loans, ledger: ledger)
     }
 
     // MARK: Body
