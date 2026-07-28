@@ -333,6 +333,9 @@ struct InsightsModel: Equatable {
     var spendCountThisMonth: Int = 0
     var investedThisMonth: Double = 0
     var monthlyCommitments: Double = 0
+    /// Bills already settled past the next month — excluded from the commitment figure above, and
+    /// named here so the money never just disappears from it.
+    var prepaidNotes: [String] = []
     var loansOut: Double = 0
     var biggestSpend: (name: String, amount: Double)?
     var busiestWeekday: (label: String, amount: Double, samples: Int)?
@@ -704,9 +707,13 @@ struct InsightsModel: Equatable {
         m.categories = rank(thisMonth, against: lastMonth) { $0.category ?? $0.tags.first ?? "Untagged" }
         m.vendors = rank(thisMonth.filter { !($0.vendorName ?? "").isEmpty },
                          against: lastMonth.filter { !($0.vendorName ?? "").isEmpty }) { $0.vendorName ?? "" }
-        m.monthlyCommitments = recurring
-            .filter { $0.active && $0.deletedAt == nil && $0.kind == .expense }
-            .reduce(0) { $0 + $1.amountBase }
+        // What is genuinely still owed over the next month. A bill prepaid a year ahead is not a
+        // monthly commitment — counting it both double-counts the money you already spent and
+        // reserves it again every month until the cover runs out.
+        m.monthlyCommitments = RecurringMath.expectedBase(recurring, kind: .expense, days: 30)
+        m.prepaidNotes = RecurringMath.prepaidBeyond(recurring, kind: .expense, days: 30).map { entry in
+            "\(entry.rule.label) — covered to \(ChartLabel.fullDate.string(from: entry.coveredTo))"
+        }
         m.loansOut = loans
             .filter { $0.deletedAt == nil && ($0.status == .open || $0.status == .partiallyReturned) }
             .reduce(0) { $0 + $1.outstandingBase }

@@ -29,9 +29,11 @@ struct SpendingInsightCards: View {
         SectionCard(title: "Already spoken for", subtitle: "What leaves before you decide anything",
                     accent: Palette.warning) {
             StatRow {
-                StatCell(label: "Every month",
+                StatCell(label: "Still owed, next 30 days",
                          value: CurrencyFormat.string(model.monthlyCommitments, base, compact: true),
-                         note: "active recurring bills, per month")
+                         note: model.prepaidNotes.isEmpty
+                             ? "recurring bills actually due"
+                             : "bills due · " + model.prepaidNotes.joined(separator: " · "))
                 StatDivider()
                 StatCell(label: "Owed to you",
                          value: CurrencyFormat.string(model.loansOut, base, compact: true),

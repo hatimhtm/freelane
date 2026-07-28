@@ -3,6 +3,24 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.27
+
+**Prepaid bills no longer get charged to you twice.** Paying a year of wifi up front was recorded
+correctly — but every forward-looking figure kept reserving a month of wifi money, every month, for
+the next twelve. The money was counted once when you spent it and again as a standing commitment.
+
+- `RecurringMath.expectedBase` now counts the occurrences actually still **owed**, starting from the
+  next unpaid one, instead of pro-rating the rule's amount across the window regardless of what had
+  been paid. That single function feeds safe-to-spend, the 30-day bills tile and the assistant's
+  figures, so all of them are corrected together.
+- "Already spoken for" now reads **Still owed, next 30 days**, and names anything excluded —
+  "Wifi — covered to 9 Aug 2027" — so money never just disappears from the total without a reason.
+- A bill settled far ahead reads **"covered to 9 Aug 2027"** in the recurring list rather than
+  "due 9 Aug (in 377d)", which was true and required arithmetic to understand.
+- Side effect: safe-to-spend reserves whole upcoming bills rather than a smooth daily fraction, so
+  it can step by a bill's daily share on the day that bill enters or leaves the 30-day window. That
+  is the honest shape — you either owe it inside the window or you don't.
+
 ## 2.26
 
 **Money you adjusted away now counts as spent.** Recalibrating a wallet wrote a balancing entry and

@@ -135,19 +135,47 @@ enum RecurringMath {
         return PHT.calendar.startOfDay(for: occ)
     }
 
-    /// Expected total (base) of a kind over the next `days`, pro-rated by cadence.
+    /// Expected total (base) of a kind over the next `days`.
+    ///
+    /// Counts the occurrences that are actually still **owed** in the window, starting from
+    /// `nextDue` — so a bill settled months in advance contributes nothing until its cover runs out.
+    ///
+    /// The previous version pro-rated the rule's amount across the window regardless of what had
+    /// been paid. Prepay a year of wifi and it still reserved a month of wifi money every month for
+    /// the next twelve, in safe-to-spend, in the 30-day bills tile, and in the assistant's figures.
+    /// Anything that asks "what is still coming" now gets an answer that knows what you already
+    /// paid. Arrears are deliberately excluded: an overdue bill is money owed *now*, surfaced on
+    /// the Agenda, not part of a forward forecast.
     static func expectedBase(_ recs: [Recurring], kind: RecurringKind, days: Int) -> Double {
-        recs.filter { $0.active && $0.kind == kind && $0.deletedAt == nil }.reduce(0) { acc, r in
-            let perWindow: Double
-            switch r.cadence {
-            case .weekly:  perWindow = Double(days) / 7
-            case .monthly:
-                // Pro-rate by the actual length of the current month, not a flat 30.
-                let dim = PHT.calendar.range(of: .day, in: .month, for: .now)?.count ?? 30
-                perWindow = Double(days) / Double(dim)
-            case .yearly:  perWindow = Double(days) / 365
+        let cal = PHT.calendar
+        let from = PHT.startOfDay()
+        guard let to = cal.date(byAdding: .day, value: days, to: from) else { return 0 }
+        return recs.filter { $0.active && $0.kind == kind && $0.deletedAt == nil }.reduce(0) { acc, r in
+            var occ = nextDue(r) ?? firstOccurrence(r, onOrAfter: from)
+            if occ < from { occ = firstOccurrence(r, onOrAfter: from) }
+            var total = 0.0, n = 0
+            while occ < to, n < 400 {
+                total += r.amountBase
+                occ = occurrence(r, after: occ)
+                n += 1
             }
-            return acc + r.amountBase * perWindow
+            return acc + total
         }
+    }
+
+    /// Bills already settled beyond `days` — what you have bought yourself out of, and until when.
+    /// Reported rather than silently dropped, so money that vanishes from the commitment figure
+    /// always has a visible reason.
+    static func prepaidBeyond(_ recs: [Recurring], kind: RecurringKind, days: Int)
+        -> [(rule: Recurring, coveredTo: Date)] {
+        let cal = PHT.calendar
+        let from = PHT.startOfDay()
+        guard let to = cal.date(byAdding: .day, value: days, to: from) else { return [] }
+        return recs.filter { $0.active && $0.kind == kind && $0.deletedAt == nil }
+            .compactMap { r in
+                guard let next = nextDue(r), next >= to else { return nil }
+                return (r, next)
+            }
+            .sorted { $0.coveredTo > $1.coveredTo }
     }
 }

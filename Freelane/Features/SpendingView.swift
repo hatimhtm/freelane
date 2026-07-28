@@ -387,9 +387,15 @@ struct SpendingView: View {
         var dueTone = Palette.textTertiary
         if r.kind == .expense, let due = RecurringMath.nextDue(r) {
             let days = PHT.calendar.dateComponents([.day], from: PHT.startOfDay(), to: PHT.startOfDay(due)).day ?? 0
-            let tag = days < 0 ? "overdue" : (days == 0 ? "today" : "in \(days)d")
-            meta += " · due \(due.formatted(.dateTime.month().day())) (\(tag))"
-            if days <= 2 { dueTone = Palette.negative }
+            // A bill paid a year ahead read as "due 9 Aug (in 377d)", which is true and useless —
+            // you have to do the arithmetic to work out you are covered. Say the covered part.
+            if days > 45 {
+                meta += " · covered to \(due.formatted(.dateTime.month().day().year()))"
+            } else {
+                let tag = days < 0 ? "overdue" : (days == 0 ? "today" : "in \(days)d")
+                meta += " · due \(due.formatted(.dateTime.month().day())) (\(tag))"
+                if days <= 2 { dueTone = Palette.negative }
+            }
         }
         return RecurringRow(recurring: r, tone: tone, meta: meta, metaTone: dueTone,
                             amount: CurrencyFormat.string(r.amountBase, base, compact: true),
