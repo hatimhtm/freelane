@@ -135,7 +135,7 @@ struct FreelaneApp: App {
     var body: some Scene {
         WindowGroup(id: "main") {
             rootView
-                .frame(minWidth: 1100, minHeight: 720)
+                .frame(minWidth: isV2 ? 1240 : 1100, minHeight: 720)   // v2: rail + both panes at their minimums
                 .preferredColorScheme(scheme)
                 .task { UpdaterModel.shared.checkSilently() }   // quiet probe → surfaces an Update badge if newer
         }

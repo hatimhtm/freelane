@@ -94,28 +94,16 @@ struct Shell: View {
         let money = self.money
         ZStack(alignment: .topLeading) {
             Surface.window.ignoresSafeArea()
+            // The page and the overlays read the navigation state in their own views, so moving between pages
+            // or opening a menu never rebuilds the money picture; only a change in the records does.
             HStack(spacing: 12) {
                 Rail(app: app, needs: money.needs.count)
                     .frame(width: 232)
-                pages(money)
+                ShellPages(app: app, money: money)
                     .padding([.top, .bottom, .trailing], 12)
             }
-            if app.newMenuOpen {
-                NewMenu(app: app)
-                    .transition(.opacity)
-                    .zIndex(10)
-            }
-            if let f = app.form {
-                FormHost(kind: f, state: money) { withAnimation(Flow.spatial) { app.form = nil } }
-                    .id(f.id)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    .zIndex(12)
-            }
-            if app.counting {
-                CountSheet(state: money)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    .zIndex(11)
-            }
+            ShellOverlays(app: app, money: money)
+                .zIndex(10)
             Snackbar()
                 .padding(.leading, 232 + 12)
                 .zIndex(20)
@@ -124,9 +112,6 @@ struct Shell: View {
         .environment(app)
         .environment(ai)
         .environment(undo)
-        .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.newMenuOpen)
-        .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.counting)
-        .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.form)
         .background(PageShortcuts(app: app))
         .task { await LaunchV2.run(context, ai: ai) }
         .onChange(of: scenePhase) { _, phase in LaunchV2.phaseChanged(phase, context: context) }
@@ -165,8 +150,14 @@ struct Shell: View {
             }
         }
     }
+}
 
-    @ViewBuilder private func pages(_ money: MoneyState) -> some View {
+/// The current page, cross-fading on change.
+private struct ShellPages: View {
+    let app: AppState
+    let money: MoneyState
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    var body: some View {
         ZStack {
             switch app.page {
             case .now: NowPage(state: money)
@@ -184,6 +175,37 @@ struct Shell: View {
         .id(app.page)
         .transition(.opacity.combined(with: .offset(y: reduce ? 0 : 6)))
         .animation(Flow.pick(Flow.slow, reduce: reduce), value: app.page)
+    }
+}
+
+/// What opens over the page: the New menu, a form, counting.
+private struct ShellOverlays: View {
+    let app: AppState
+    let money: MoneyState
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if app.newMenuOpen {
+                NewMenu(app: app)
+                    .transition(.opacity)
+                    .zIndex(10)
+            }
+            if let f = app.form {
+                FormHost(kind: f, state: money) { withAnimation(Flow.spatial) { app.form = nil } }
+                    .id(f.id)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(12)
+            }
+            if app.counting {
+                CountSheet(state: money)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(11)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.newMenuOpen)
+        .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.counting)
+        .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.form)
     }
 }
 
