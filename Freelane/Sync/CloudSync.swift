@@ -76,6 +76,7 @@ final class CloudSync {
     }
 
     func start() async {
+        guard !DevMode.isSandboxed else { status = "Offline copy"; return }
         await restoreSession()
         guard isSignedIn else {
             status = "Sign in to sync"

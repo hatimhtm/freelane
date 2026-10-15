@@ -14,6 +14,11 @@ enum AppPaths {
                 .appendingPathComponent("Library/Application Support", isDirectory: true)
     }
     static var root: URL {
+        if let dev = DevMode.dataDir {
+            let dir = URL(fileURLWithPath: dev, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        }
         let dir = appSupportBase.appendingPathComponent("Freelane", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
@@ -23,6 +28,36 @@ enum AppPaths {
         let dir = root.appendingPathComponent("Cache", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
+    }
+}
+
+/// Development only: `FREELANE_DATA_DIR=/path` runs the app on a copy of the data with sync, notifications
+/// and the global hotkey off, so a test build can never touch the real store or push to the phone.
+enum DevMode {
+    static let dataDir: String? = {
+        let v = ProcessInfo.processInfo.environment["FREELANE_DATA_DIR"]
+        return (v?.isEmpty == false) ? v : nil
+    }()
+    static var isSandboxed: Bool { dataDir != nil }
+}
+
+/// Test builds only: host the v2 shell in a plain AppKit window, placed behind everything so it never
+/// covers what you're doing, at the size the mockups were drawn at.
+enum DevWindow {
+    static var window: NSWindow?
+    @MainActor static func open() {
+        guard window == nil else { return }
+        let dark = ProcessInfo.processInfo.environment["FREELANE_DEV_DARK"] == "1"
+        let root = Shell().modelContainer(AppContainer.shared).preferredColorScheme(dark ? .dark : .light)
+        let w = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 1440, height: 900),
+                         styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        w.titlebarAppearsTransparent = true
+        w.titleVisibility = .hidden
+        w.isReleasedWhenClosed = false
+        w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        w.contentView = NSHostingView(rootView: root)
+        w.orderBack(nil)
+        window = w
     }
 }
 
@@ -56,13 +91,25 @@ struct FreelaneApp: App {
     // tried and rejected on sight — "it almost blinded me" — so light is now an opt-in variant,
     // retuned to warm grey rather than paper white. See `Palette` for the light values.
     @AppStorage("appearance") private var appearance = "dark"
+    /// v2 has its own appearance setting: white (light) is the default.
+    @AppStorage("appearance.v2") private var appearanceV2 = "light"
+    private var isV2: Bool { ProcessInfo.processInfo.environment["FREELANE_V2"] == "1" }
     private var scheme: ColorScheme? {
+        if isV2 {
+            if DevMode.isSandboxed, ProcessInfo.processInfo.environment["FREELANE_DEV_DARK"] == "1" { return .dark }
+            switch appearanceV2 { case "dark": return .dark; case "system": return nil; default: return .light }
+        }
         switch appearance { case "light": return .light; case "system": return nil; default: return .dark }
+    }
+
+    /// v2 (Material 3 Expressive) while it's being built: on with FREELANE_V2=1.
+    @ViewBuilder private var rootView: some View {
+        if isV2 { Shell() } else { RootView() }
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            rootView
                 .frame(minWidth: 1100, minHeight: 720)
                 .preferredColorScheme(scheme)
                 .task { UpdaterModel.shared.checkSilently() }   // quiet probe → surfaces an Update badge if newer
@@ -108,6 +155,11 @@ struct FreelaneApp: App {
 /// Handles OS notification taps (brings the app forward, routes to a page).
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !DevMode.isSandboxed else {
+            // A test build launched in the background may restore zero windows; open one, behind everything.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { DevWindow.open() }
+            return
+        }
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.registerCategories()
         HotkeyManager.shared.apply()   // register the global capture hotkey if enabled
