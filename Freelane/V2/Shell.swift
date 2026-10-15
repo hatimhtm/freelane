@@ -140,6 +140,7 @@ struct Shell: View {
             if cmd == "close" { app.newMenuOpen = false; app.counting = false; app.form = nil }
             if cmd == "menubar" { DevWindow.openMenuBar() }
             if cmd == "toast" { undo.announce("Spent ₱450.00 from Maya") {} }
+            if cmd == "dump" { DevDump.run(context) }
             if cmd == "form:editLast", let s = spends.first(where: { $0.deletedAt == nil && $0.recurringId == nil }) { app.form = .editSpend(s.id) }
             switch cmd {
             case "form:spending": app.form = .spending
