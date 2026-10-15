@@ -165,7 +165,7 @@ private struct BillsSummary: View {
     var body: some View {
         Band {
             VStack(alignment: .leading, spacing: 0) {
-                Money(value: due.total, role: .summary, decimals: false, estimate: due.estimate, color: MD.onPrimaryContainer)
+                Money(value: due.total, role: .summary, decimals: false, color: MD.onPrimaryContainer)
                     .contentTransition(.numericText(value: due.total))
                 Text("comes due in \(Day.month(due.month))").role(.summaryLabel, MD.onPrimaryContainer).padding(.top, 4)
                 Text(due.sentence).role(.body, MD.onPrimaryContainer).padding(.top, 2)
@@ -315,9 +315,12 @@ private struct BillsDetail: View {
         let pays = history?.payments ?? []
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
-                Badge(subject: .bill(card.line.label), size: 48)
-                Text(card.line.label).role(.pane).lineLimit(1)
-                Spacer(minLength: 8)
+                Badge(subject: .bill(card.line.label), size: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(card.line.label).role(.pane).lineLimit(1)
+                    Text(card.subtitle).role(.supporting, MD.onSurfaceVariant).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
                 Menu {
                     Button("Edit bill…", action: onEdit)
                     Divider()
@@ -329,10 +332,8 @@ private struct BillsDetail: View {
                 .menuStyle(.button).buttonStyle(PlainButtonStyle2()).menuIndicator(.hidden).fixedSize()
                 .help("More")
             }
-            .frame(height: 48)
+            .frame(minHeight: 48)
             .padding(.top, 20)
-            Text(card.subtitle).role(.supporting, MD.onSurfaceVariant).lineLimit(1)
-                .padding(.leading, 62).padding(.top, 6)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
                     BillsCameTo(payments: Array(pays.suffix(6)), cadence: history?.cadence ?? card.bill.cadence,

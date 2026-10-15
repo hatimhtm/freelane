@@ -41,10 +41,7 @@ enum WorkText {
     static func list(_ items: [String]) -> String { BillsText.list(items) }
 
     /// What a client is called on screen: the company if there is one, else the person.
-    static func title(_ c: Client) -> String {
-        if let co = c.company?.trimmingCharacters(in: .whitespacesAndNewlines), !co.isEmpty { return co }
-        return c.name
-    }
+    static func title(_ c: Client) -> String { ClientName.display(c) }
 }
 
 struct WorkMonth: Identifiable {

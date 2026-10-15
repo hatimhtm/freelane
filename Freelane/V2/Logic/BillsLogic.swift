@@ -228,7 +228,12 @@ struct BillsPicture {
 
         var picture = BillsPicture(dueNext: dueNext(state: state, now: now))
         picture.histories = histories
-        picture.cards = state.bills.map { card($0, history: histories[BillsHistory.key($0.label)], today: today, now: now) }
+        // The bills you pay every month first, largest first; one paid far ahead goes last.
+        let ordered = state.bills.sorted { a, b in
+            if (a.coveredUntil == nil) != (b.coveredUntil == nil) { return a.coveredUntil == nil }
+            return a.amount > b.amount
+        }
+        picture.cards = ordered.map { card($0, history: histories[BillsHistory.key($0.label)], today: today, now: now) }
 
         // Paid this year: one row per month from the first bill payment this year.
         let yearStart = PHT.startOfYear(now)

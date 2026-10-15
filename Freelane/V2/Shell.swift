@@ -166,6 +166,8 @@ struct Shell: View {
             case .wallets: WalletsPage(state: money)
             case .settings: SettingsPage(state: money)
             case .journal: JournalPage()
+            case .bills: BillsPage(state: money)
+            case .work: WorkPage(state: money)
             case .insights: InsightsPage(state: money)
             case .giving: GivingPage(state: money)
             default: PlaceholderPage(page: app.page)

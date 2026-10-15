@@ -101,6 +101,9 @@ struct MoneyState {
         // Bills
         let liveSpends = spends.filter { $0.deletedAt == nil }
         let bills = recurring.filter { $0.active && $0.deletedAt == nil && $0.kind == .expense }
+        // A bill's payments by its name, so a bill that was deleted and set up again keeps its history.
+        let ruleName = Dictionary(recurring.map { ($0.id, $0.label.lowercased()) }, uniquingKeysWith: { a, _ in a })
+        let paidByName = Dictionary(grouping: liveSpends.filter { $0.recurringId != nil }) { ruleName[$0.recurringId!] ?? "" }
         s.bills = bills.map { r in
             let next = RecurringMath.nextDue(r, now: now)
             let paidFor = liveSpends.filter { $0.recurringId == r.id }.max { $0.spentAt < $1.spentAt }
@@ -108,7 +111,11 @@ struct MoneyState {
             if let pt = r.paidThroughDate, let n = next, n > (cal.date(byAdding: .month, value: 2, to: today) ?? today) { covered = pt }
             let from = next.flatMap { cal.date(byAdding: .day, value: -SetAside.days, to: $0) }
             let aside = covered == nil && (from.map { today >= cal.startOfDay(for: $0) } ?? false)
-            return BillLine(bill: r, key: IdentityKey.bill(r.label), nextDue: next, amount: r.amountBase, estimate: r.isVariableAmount,
+            // An estimate when the bill says so, or when its last few single payments haven't agreed.
+            let recent = (paidByName[r.label.lowercased()] ?? []).sorted { $0.spentAt > $1.spentAt }
+                .map(\.amountBase).filter { r.amountBase <= 0 || $0 < r.amountBase * 2 }.prefix(3)
+            let drifts = recent.count >= 2 && (recent.max()! - recent.min()!) / max(recent.max()!, 1) > 0.03
+            return BillLine(bill: r, key: IdentityKey.bill(r.label), nextDue: next, amount: r.amountBase, estimate: r.isVariableAmount || drifts,
                             setAsideFrom: from, isSetAside: aside, coveredUntil: covered,
                             lastPaid: paidFor.map { ($0.spentAt, $0.amountBase, $0.walletId) })
         }
@@ -126,7 +133,7 @@ struct MoneyState {
             guard let d = line.lastCounted else { return true }
             return (cal.dateComponents([.day], from: d, to: now).day ?? 0) >= 21
         }) { needs.append(NeedItem(id: "count-\(w.id)", kind: .count(w))) }
-        let clientName = Dictionary(clients.map { ($0.id, $0.company?.isEmpty == false ? $0.company! : $0.name) }, uniquingKeysWith: { a, _ in a })
+        let clientName = Dictionary(clients.map { ($0.id, ClientName.display($0)) }, uniquingKeysWith: { a, _ in a })
         for p in projects where p.deletedAt == nil && (p.status == .unpaid || p.status == .partiallyPaid) {
             guard let done = p.workCompletedAt, (cal.dateComponents([.day], from: done, to: now).day ?? 0) >= 14 else { continue }
             let name = p.clientId.flatMap { clientName[$0] } ?? "A client"
@@ -225,5 +232,25 @@ enum Feed {
                                 badge: .neutral(Sym.accountBalance), related: e.id, inTotals: !notIn, walletIds: e.walletId.map { [$0] } ?? []))
         }
         return out.sorted { $0.date > $1.date }
+    }
+}
+
+/// How a client is named on screen: the company if there is one, else the person. A company typed as one
+/// joined word ("AcmeStudio") reads the way project titles write it ("Acme Studio").
+enum ClientName {
+    static func display(_ c: Client) -> String {
+        if let co = c.company?.trimmingCharacters(in: .whitespacesAndNewlines), !co.isEmpty { return spaced(co) }
+        return c.name
+    }
+    static func spaced(_ s: String) -> String {
+        guard !s.contains(" ") else { return s }
+        var out = ""
+        let chars = Array(s)
+        for (i, ch) in chars.enumerated() {
+            // A capital that follows a lowercase letter and starts a lowercase run begins a new word.
+            if i > 0, ch.isUppercase, chars[i - 1].isLowercase, i + 1 < chars.count, chars[i + 1].isLowercase { out.append(" ") }
+            out.append(ch)
+        }
+        return out
     }
 }

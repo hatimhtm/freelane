@@ -34,7 +34,7 @@ struct WorkPage: View {
                         if !w.owed.isEmpty {
                             SectionHeader(title: "Owed to you", count: w.owed.count)
                             Segmented(items: w.owed) { o in
-                                WorkOwedRow(owed: o) { withAnimation(Flow.spatial) { app.start(.moneyIn) } }
+                                WorkOwedRow(owed: o) { withAnimation(Flow.spatial) { app.form = .moneyIn(projectId: o.project.id) } }
                             }
                         }
                         SectionHeader(title: "Clients")

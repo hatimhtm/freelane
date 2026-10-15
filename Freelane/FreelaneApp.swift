@@ -56,6 +56,9 @@ enum DevWindow {
         w.isReleasedWhenClosed = false
         w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         w.contentView = NSHostingView(rootView: root)
+        // The size the mockups were drawn at, whole window, kept on screen.
+        let vis = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1512, height: 944)
+        w.setFrame(NSRect(x: vis.minX + 20, y: vis.minY, width: 1440, height: min(900, vis.height)), display: false)
         w.orderBack(nil)
         window = w
     }
@@ -137,7 +140,7 @@ struct FreelaneApp: App {
         }
         .modelContainer(AppContainer.shared)
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1320, height: 860)
+        .defaultSize(width: isV2 ? 1440 : 1320, height: isV2 ? 900 : 860)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(after: .appInfo) {

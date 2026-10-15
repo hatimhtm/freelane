@@ -178,7 +178,7 @@ private struct MoneyInForm: View {
 
     private func clientTitle(_ id: UUID) -> String {
         let c = clients.first { $0.id == id }
-        return c?.company?.isEmpty == false ? c!.company! : (c?.name ?? "")
+        return c.map(ClientName.display) ?? ""
     }
 
     private var suggestedReceived: String {
