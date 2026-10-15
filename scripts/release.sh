@@ -82,14 +82,23 @@ if [ -x "$GENAPPCAST" ] && [ -f "$KEYFILE" ]; then
     ' "$CHANGELOG" | sed '/^[[:space:]]*$/d' > "$NOTES_MD"
     if [ -s "$NOTES_MD" ]; then
       NOTES_HTML="$DIST/relnotes.html"
-      {
-        echo "<h3 style=\"margin:0 0 8px;font:600 14px -apple-system\">What&rsquo;s new in Freelane $VERSION</h3>"
-        echo "<ul style=\"margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5\">"
-        sed -E 's/^[[:space:]]*[-*][[:space:]]+//' "$NOTES_MD" \
-          | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' \
-          | while IFS= read -r line; do [ -n "$line" ] && echo "  <li>$line</li>"; done
-        echo "</ul>"
-      } > "$NOTES_HTML"
+      # Wrapped lines join their bullet (or the opening paragraph); **bold** stays bold.
+      python3 - "$NOTES_MD" "$VERSION" > "$NOTES_HTML" <<'PY'
+import html, re, sys
+lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+intro, items = [], []
+for l in lines:
+    if re.match(r"^\s*[-*]\s+", l): items.append(re.sub(r"^\s*[-*]\s+", "", l))
+    elif items and l.startswith((" ", "\t")): items[-1] += " " + l.strip()
+    elif items: items[-1] += " " + l.strip()
+    else: intro.append(l.strip())
+def fmt(t): return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(t, quote=False))
+print('<h3 style="margin:0 0 8px;font:600 14px -apple-system">What&rsquo;s new in Freelane %s</h3>' % sys.argv[2])
+if intro: print('<p style="margin:0 0 8px;font:13px -apple-system;line-height:1.5">%s</p>' % fmt(" ".join(intro)))
+print('<ul style="margin:0;padding-left:20px;font:13px -apple-system;line-height:1.5">')
+for i in items: print("  <li>%s</li>" % fmt(i))
+print("</ul>")
+PY
       TMP="$APPCAST.tmp"
       awk -v notesfile="$NOTES_HTML" '
         /<item>/ && !done {

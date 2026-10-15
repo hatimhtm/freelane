@@ -3,6 +3,37 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 3.0
+
+**A new Freelane.** Every page is redrawn in one calm, rounded style, white by default with a dark
+option, in a typeface made for numbers. Under it, the money rules are simpler and the numbers agree
+everywhere: the app, the menu bar and the widget show the same free money.
+
+- **Bills follow one rule.** A bill's money is set aside only in the week before it's due (you can
+  change the week in Settings). Once this month's bills are paid, next month's don't touch what's
+  free until they come close. Each bill shows when it's due, when its money is set aside and what it
+  came to; a bill whose amount moves shows as an estimate (~), and when it drifts Freelane offers the
+  new figure with one click.
+- **Now** shows what's free, the next 30 days of bills on a track, what needs you, and the latest
+  activity. **Ledger** lists every movement by day, with search and filters, and explains each one,
+  down to how a client's payment reached you and what it cost on the way. **Bills**, **Wallets**,
+  **Work**, **Insights** and **Giving** each have their own page; **Journal** still asks you questions
+  first, and you can write freely when you'd rather.
+- **Wallets in their own currency, totals in pesos.** Count each wallet in what it really holds; any
+  difference becomes one line you can label or leave as found by counting. Everything adds up in
+  pesos at the day's rate.
+- **New, from anywhere.** ⌘N opens New: spending, money in, a move between wallets, counting, paying
+  a bill, a journal entry. ⌥⌘N and ⇧⌘N go straight to spending and money in. Every save can be undone
+  from the bar at the bottom; spending can be edited or deleted from the Ledger.
+- **The menu bar** shows what's free, the next bill and every wallet, and logs "450 jollibee" or
+  "received 5000 acme" in one line, telling you what it understood before you press Return.
+- **The widgets** use the new look and the same numbers as the app.
+- **Your records, put right.** On first launch, after a backup, three client payments that landed in
+  no wallet are attached to the wallet they reached, the corrections that stood in for them retire,
+  and seven loans that were really spending become spending. Every wallet balance stays exactly as
+  your counts left it.
+- **A new icon:** the same three rising bars, in glass.
+
 ## 2.29
 
 **A pass over everything that was wrong, ahead of v2.** Four audits read the whole app and your
