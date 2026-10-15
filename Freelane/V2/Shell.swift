@@ -68,6 +68,7 @@ enum NewAction: String, CaseIterable, Identifiable {
 struct Shell: View {
     @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduce
+    @Environment(\.scenePhase) private var scenePhase
     @State private var app = AppState()
     @State private var ai = AIManager()
     @State private var undo = UndoCenter()
@@ -128,6 +129,7 @@ struct Shell: View {
         .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.form)
         .background(PageShortcuts(app: app))
         .task { await LaunchV2.run(context, ai: ai) }
+        .onChange(of: scenePhase) { _, phase in LaunchV2.phaseChanged(phase, context: context) }
         .onAppear { if DevMode.isSandboxed, let p = ProcessInfo.processInfo.environment["FREELANE_DEV_PAGE"].flatMap(Place.init(rawValue:)) { app.page = p } }
         // Menu commands, the menu-bar window, the capture hotkey and notification actions all arrive here.
         .onReceive(NotificationCenter.default.publisher(for: .flNew)) { n in
@@ -306,6 +308,20 @@ enum LaunchV2 {
         JournalWell.shared.pruneStale(context)
         if !DevMode.isSandboxed { JournalWell.shared.topUp(context, ai: ai) }
         Task { await FXService.refreshIfStale(context) }
+        // Bills coming due, an overdrawn wallet, a project unpaid for three weeks: macOS banners, deduped.
+        if !DevMode.isSandboxed { Signals.sweep(context) }
         WidgetBridge.update(context)
+    }
+
+    /// Coming back to the app re-checks what needs you; leaving it refreshes the widget.
+    @MainActor static func phaseChanged(_ phase: ScenePhase, context: ModelContext) {
+        guard !DevMode.isSandboxed else { return }
+        if phase == .active {
+            Signals.sweep(context)
+            CloudSync.shared.syncSoon()
+            Task(priority: .background) { await SiriIndex.reindex() }
+        } else {
+            WidgetBridge.update(context)
+        }
     }
 }

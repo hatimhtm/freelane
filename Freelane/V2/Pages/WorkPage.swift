@@ -30,14 +30,15 @@ struct WorkPage: View {
                 }
                 PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
-                        WorkBand(w: w).padding(.top, 16)
+                        WorkBand(w: w).padding(.top, 16).appear(0)
                         if !w.owed.isEmpty {
-                            SectionHeader(title: "Owed to you", count: w.owed.count)
+                            SectionHeader(title: "Owed to you", count: w.owed.count).appear(1)
                             Segmented(items: w.owed) { o in
                                 WorkOwedRow(owed: o) { withAnimation(Flow.spatial) { app.form = .moneyIn(projectId: o.project.id) } }
                             }
+                            .appear(2)
                         }
-                        SectionHeader(title: "Clients")
+                        SectionHeader(title: "Clients").appear(3)
                         if w.clients.isEmpty {
                             Text("No payments from clients yet this year.").role(.supporting, MD.onSurfaceVariant).padding(.horizontal, 4)
                         } else {
@@ -46,6 +47,7 @@ struct WorkPage: View {
                                     Money(value: c.total, role: .row, decimals: false)
                                 }
                             }
+                            .appear(4)
                         }
                         if let u = w.unlinked {
                             Text(u).role(.supporting, MD.onSurfaceVariant).padding(.horizontal, 4).padding(.top, 10)
@@ -60,14 +62,15 @@ struct WorkPage: View {
                 PaneHeader(title: "Getting paid", big: false)
                 PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
-                        WorkFeeCard(w: w).padding(.top, 16)
+                        WorkFeeCard(w: w).padding(.top, 16).appear(1)
                         SectionHeader(title: "Latest payments", small: true) {
                             M3Button(title: "See all", kind: .text) { withAnimation(Flow.slow) { app.go(.ledger) } }
                         }
+                        .appear(2)
                         if w.latest.isEmpty {
                             Text("No payments yet.").role(.supporting, MD.onSurfaceVariant).padding(.horizontal, 4)
                         }
-                        ForEach(w.latest) { WorkLatestRow(item: $0) }
+                        ForEach(Array(w.latest.enumerated()), id: \.element.id) { i, item in WorkLatestRow(item: item).appear(3 + i) }
                     }
                 }
             }

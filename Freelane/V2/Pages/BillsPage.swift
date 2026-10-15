@@ -29,13 +29,13 @@ struct BillsPage: View {
                 }
                 PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
-                        BillsSummary(due: picture.dueNext).padding(.top, 16)
+                        BillsSummary(due: picture.dueNext).padding(.top, 16).appear(0)
                         if picture.cards.isEmpty {
                             BillsNoBills().padding(.top, 16)
                         } else {
-                            grid(picture.cards, current: current?.id).padding(.top, 16)
+                            grid(picture.cards, current: current?.id).padding(.top, 16).appear(1)
                         }
-                        BillsYear(months: picture.year, legend: picture.legend, total: picture.yearTotal, since: picture.yearSince)
+                        BillsYear(months: picture.year, legend: picture.legend, total: picture.yearTotal, since: picture.yearSince).appear(3)
                     }
                     .padding(.bottom, 4)
                 }
@@ -47,6 +47,7 @@ struct BillsPage: View {
                                 onUse: { use($0, on: current.bill) },
                                 onEdit: { editing = .edit(current.bill) },
                                 onDelete: { deleting = current.bill })
+                        .appear(2)
                 } else {
                     PaneHeader(title: "No bills yet", big: false)
                     Text("Bills you add show here: when each is due, when its money is set aside and what it came to.")
@@ -518,8 +519,8 @@ private struct BillsEditor: View {
                             .disabled(day >= 28).opacity(day >= 28 ? 0.38 : 1)
                     }
                     .padding(.leading, 16).padding(.trailing, 4)
-                    .frame(height: 48)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BillsWorkSheetStyle.field))
+                    .frame(height: 52)
+                    .fieldOutline()
                 }
             }
             Toggle(isOn: $variable.animation(Flow.effects)) {

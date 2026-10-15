@@ -26,7 +26,7 @@ struct GivingPage: View {
                 ScrollViewReader { proxy in
                     PaneScroll {
                         VStack(alignment: .leading, spacing: 0) {
-                            GivingBand(picture: p).padding(.top, 16)
+                            GivingBand(picture: p).padding(.top, 16).appear(0)
                             SectionHeader(title: "Gifts") {
                                 if p.gifts.count > latest {
                                     M3Button(title: showAll ? "Show latest \(latest)" : "See all \(p.gifts.count)", kind: .text) {
@@ -40,7 +40,7 @@ struct GivingPage: View {
                                     .role(.body, MD.onSurfaceVariant)
                                     .padding(.horizontal, 4)
                             } else {
-                                GivingList(gifts: showAll ? p.gifts : Array(p.gifts.prefix(latest)))
+                                GivingList(gifts: showAll ? p.gifts : Array(p.gifts.prefix(latest))).appear(2)
                             }
                         }
                         .padding(.bottom, 8)
@@ -56,7 +56,7 @@ struct GivingPage: View {
                 }
             }
             .frame(minWidth: 560)
-            Pane { GivingSide(picture: p) }
+            Pane { GivingSide(picture: p).appear(1) }
                 .frame(width: 384)
         }
         .onReceive(DistributedNotificationCenter.default().publisher(for: .init("app.freelane.dev." + (ProcessInfo.processInfo.environment["FREELANE_DEV_CHANNEL"] ?? "main")))) { n in

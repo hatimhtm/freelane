@@ -34,10 +34,10 @@ struct InsightsPage: View {
                 }
                 PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
-                        InsightsBand(picture: p).padding(.top, 16)
+                        InsightsBand(picture: p).padding(.top, 16).appear(0)
                         InsightsInOut(months: p.months, pinned: pinnedMonth.flatMap { p.months.indices.contains($0) ? p.months[$0].id : nil })
-                            .padding(.top, 16)
-                        InsightsCategories(picture: p)
+                            .padding(.top, 16).appear(1)
+                        InsightsCategories(picture: p).appear(2)
                     }
                     .padding(.bottom, 8)
                 }
@@ -510,7 +510,7 @@ private struct InsightsSide: View {
                 .role(.body, MD.onSurfaceVariant)
                 .padding(.horizontal, 4).padding(.top, 12)
         } else {
-            Segmented(items: findings) { InsightsFindingRow(finding: $0) }
+            Segmented(items: findings) { InsightsFindingRow(finding: $0) }.appear(2)
                 .padding(.top, 12)
         }
         Text("Each figure here comes straight from your ledger and counts. Nothing is estimated.")

@@ -117,7 +117,8 @@ struct FreelaneApp: App {
     @AppStorage("appearance") private var appearance = "dark"
     /// v2 has its own appearance setting: white (light) is the default.
     @AppStorage("appearance.v2") private var appearanceV2 = "light"
-    private var isV2: Bool { ProcessInfo.processInfo.environment["FREELANE_V2"] == "1" }
+    /// v2 is the app. FREELANE_V1=1 brings back the old window for one launch, as an escape hatch.
+    private var isV2: Bool { ProcessInfo.processInfo.environment["FREELANE_V1"] != "1" }
     private var scheme: ColorScheme? {
         if isV2 {
             if DevMode.isSandboxed, ProcessInfo.processInfo.environment["FREELANE_DEV_DARK"] == "1" { return .dark }
@@ -126,7 +127,7 @@ struct FreelaneApp: App {
         switch appearance { case "light": return .light; case "system": return nil; default: return .dark }
     }
 
-    /// v2 (Material 3 Expressive) while it's being built: on with FREELANE_V2=1.
+    /// v2 (Material 3 Expressive); v1's RootView only with FREELANE_V1=1.
     @ViewBuilder private var rootView: some View {
         if isV2 { Shell() } else { RootView() }
     }

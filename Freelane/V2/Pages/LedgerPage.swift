@@ -38,12 +38,13 @@ struct LedgerPage: View {
                     PaneHeader(title: "Ledger") {
                         LedgerSearchField(text: $query, focus: $focus) { move($0, days: days, proxy: proxy) }
                     }
-                    chips(months: months, period: period)
+                    chips(months: months, period: period).appear(0)
                     LedgerSummary(figures: LedgerModel.figures(period, payments: payments, spends: spends, withdrawals: withdrawals,
                                                                ledger: ledger, wallets: wallets))
-                        .padding(.top, 12)
+                        .padding(.top, 12).appear(1)
                     LedgerList(days: days, listKey: listKey, selection: selection, empty: emptyLine(period),
                                widen: widen(from: period)) { click($0) }
+                        .appear(2)
                         .focusable()
                         .focused($focus, equals: .list)
                         .focusEffectDisabled()
@@ -56,6 +57,7 @@ struct LedgerPage: View {
                 LedgerDetail(lines: Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }), selection: selection,
                              ctx: LedgerContext(payments: payments, spends: spends, withdrawals: withdrawals, ledger: ledger, wallets: wallets,
                                                 recurring: recurring, projects: projects, clients: clients, steps: steps))
+                    .appear(1)
             }
             .frame(width: 384)
         }

@@ -20,8 +20,17 @@ enum WidgetBridge {
         var nextPrayerName: String? = nil
         var nextPrayerTime: String? = nil
         var hijri: String? = nil
+        // v2: free money under the bill rule, what's set aside and for what, and whether this month's bills are paid.
+        var free: Double? = nil
+        var setAside: Double? = nil
+        var setAsideFor: String? = nil
+        var billsPaidMonth: String? = nil
     }
-    struct WBill: Codable { var label: String; var amount: Double; var due: String }
+    struct WBill: Codable {
+        var label: String; var amount: Double; var due: String
+        var until: String? = nil      // "in 16 days"
+        var estimate: Bool? = nil
+    }
 
     static func update(_ context: ModelContext) {
         guard !DevMode.isSandboxed else { return }   // a test copy must never repaint the real widget
@@ -43,20 +52,40 @@ enum WidgetBridge {
             .min { $0.0 < $1.0 }
         // Faith — cached prayer times for the saved location + the next upcoming prayer.
         let prayer = Self.prayerInfo()
-        let payload = Payload(
-            safeToday: safe.liveRemaining, initialToday: safe.initialForToday, walletTotal: safe.walletTotal,
+        // v2's picture, the same numbers the app and the menu bar show.
+        let v2 = picture(context)
+        let upcoming = v2.bills.filter { $0.coveredUntil == nil && $0.nextDue != nil }.prefix(4).map { b in
+            WBill(label: b.label, amount: b.amount, due: Day.dayMonth(b.nextDue!), until: Day.until(b.nextDue!), estimate: b.estimate)
+        }
+        let reserved = v2.bills.filter(\.isSetAside).map(\.label)
+        var payload = Payload(
+            safeToday: safe.liveRemaining, initialToday: safe.initialForToday, walletTotal: v2.total,
             outstanding: d.metrics.outstandingBase, landedMTD: d.metrics.landedMTD,
-            symbol: CurrencyFormat.symbol(d.baseCurrency), updatedAt: .now, bills: Array(bills),
+            symbol: CurrencyFormat.symbol(d.baseCurrency), updatedAt: .now, bills: upcoming.isEmpty ? Array(bills) : Array(upcoming),
             nextPayLabel: nextInc?.1, nextPayAmount: nextInc?.2,
             nextPayDue: nextInc.map { $0.0.formatted(.dateTime.month().day()) },
             prayerTimes: prayer?.times, nextPrayerName: prayer?.nextName, nextPrayerTime: prayer?.nextTime,
             hijri: FaithService.hijriToday())
+        payload.free = v2.free
+        payload.setAside = v2.setAside
+        payload.setAsideFor = reserved.isEmpty ? nil : ListFormatter.localizedString(byJoining: reserved)
+        payload.billsPaidMonth = v2.monthBillsPaid ? Day.month(.now) : nil
         if let data = try? JSONEncoder().encode(payload) {
             try? data.write(to: Self.widgetFileURL)
             // Mirror to the plain app-support path too (harmless), so either resolver finds it.
             try? data.write(to: AppPaths.root.appendingPathComponent("widget.json"))
         }
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// The v2 money picture, built from the store the same way the window builds it.
+    private static func picture(_ context: ModelContext) -> MoneyState {
+        func all<T: PersistentModel>(_ t: T.Type) -> [T] { (try? context.fetch(FetchDescriptor<T>())) ?? [] }
+        let base = all(AppSettings.self).first?.baseCurrency ?? "PHP"
+        return MoneyState.build(wallets: all(Wallet.self), ledger: all(LedgerEntry.self), recurring: all(Recurring.self),
+                                spends: all(Spend.self).sorted { $0.spentAt > $1.spentAt }, payments: all(Payment.self),
+                                withdrawals: all(Withdrawal.self), projects: all(Project.self), clients: all(Client.self),
+                                rates: Rates(base: base, rates: all(ExchangeRate.self)))
     }
 
     /// Cached prayer times for the saved Faith location + the next upcoming prayer of the five.

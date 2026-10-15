@@ -55,7 +55,7 @@ struct JournalPage: View {
                 }
             }
             .frame(minWidth: 560)
-            Pane { answered }.frame(width: 384)
+            Pane { answered.appear(1) }.frame(width: 384)
         }
         .onAppear { if !DevMode.isSandboxed { JournalWell.shared.topUp(context, ai: ai) } }
     }
