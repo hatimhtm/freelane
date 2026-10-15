@@ -20,10 +20,8 @@ enum WidgetBridge {
         var nextPrayerName: String? = nil
         var nextPrayerTime: String? = nil
         var hijri: String? = nil
-        // v2: free money under the bill rule, what's set aside and for what, and whether this month's bills are paid.
+        // v2: what's yours to spend (everything in the wallets in your totals) and whether this month's bills are paid.
         var free: Double? = nil
-        var setAside: Double? = nil
-        var setAsideFor: String? = nil
         var billsPaidMonth: String? = nil
     }
     struct WBill: Codable {
@@ -57,7 +55,6 @@ enum WidgetBridge {
         let upcoming = v2.bills.filter { $0.coveredUntil == nil && $0.nextDue != nil }.prefix(4).map { b in
             WBill(label: b.label, amount: b.amount, due: Day.dayMonth(b.nextDue!), until: Day.until(b.nextDue!), estimate: b.estimate)
         }
-        let reserved = v2.bills.filter(\.isSetAside).map(\.label)
         var payload = Payload(
             safeToday: safe.liveRemaining, initialToday: safe.initialForToday, walletTotal: v2.total,
             outstanding: d.metrics.outstandingBase, landedMTD: d.metrics.landedMTD,
@@ -67,8 +64,6 @@ enum WidgetBridge {
             prayerTimes: prayer?.times, nextPrayerName: prayer?.nextName, nextPrayerTime: prayer?.nextTime,
             hijri: FaithService.hijriToday())
         payload.free = v2.free
-        payload.setAside = v2.setAside
-        payload.setAsideFor = reserved.isEmpty ? nil : ListFormatter.localizedString(byJoining: reserved)
         payload.billsPaidMonth = v2.monthBillsPaid ? Day.month(.now) : nil
         if let data = try? JSONEncoder().encode(payload) {
             try? data.write(to: Self.widgetFileURL)

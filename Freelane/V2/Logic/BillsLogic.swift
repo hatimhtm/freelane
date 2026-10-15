@@ -79,12 +79,6 @@ enum BillsText {
         return "\(periods(n, cadence)) of \(what)"
     }
 
-    /// "a week", "3 days".
-    static var setAsideSpan: String {
-        let d = SetAside.days
-        return d == 7 ? "a week" : d == 14 ? "two weeks" : d == 1 ? "a day" : "\(d) days"
-    }
-
     /// Whole pesos with grouping and no symbol, for chart values: "2,203".
     static func figure(_ v: Double) -> String { MoneyFormat.parts(v, wholeOnly: true).whole }
 }
@@ -134,14 +128,12 @@ struct BillsCard: Identifiable {
     let statusTone: StatusTone
     /// "on the 15th", or "a month" when it's paid far ahead.
     let rhythm: String
-    /// "Next Sun 15 Nov · set aside from 8 Nov"
+    /// "Next Sun 15 Nov", "Due Sun 15 Nov · in 3 days"
     let footer: String
     /// "Due on the 15th · October is paid"
     let subtitle: String
     /// "15th of each month"
     let dueFact: String
-    /// "a week before, from 8 Nov"
-    let setAsideFact: String
     let estimate: BillsEstimate?
     var id: UUID { line.id }
     var bill: Recurring { line.bill }
@@ -351,10 +343,11 @@ struct BillsPicture {
                 status = "Due \(BillsText.date(due, now: now))"; glyph = Sym.schedule; tone = .note
                 standing = "was due \(BillsText.shortDate(due, now: now))"
                 footer = "Was due \(BillsText.shortDate(due, now: now)) · \(Day.until(due, from: now))"
-            } else if b.isSetAside {
-                status = "Set aside"; glyph = Sym.savings; tone = .note
+            } else if (cal.dateComponents([.day], from: today, to: dueDay).day ?? 99) < 7 {
+                // Due within the week: worth a glance, though nothing is held back for it.
+                status = "Due \(BillsText.date(due, now: now))"; glyph = Sym.schedule; tone = .note
                 standing = "due \(BillsText.shortDate(due, now: now))"
-                footer = "Due \(BillsText.shortDate(due, now: now)) · set aside since \(b.setAsideFrom.map { BillsText.date($0, now: now) } ?? "today")"
+                footer = "Due \(BillsText.shortDate(due, now: now)) · \(Day.until(due, from: now))"
             } else {
                 status = "Due \(BillsText.date(due, now: now))"; glyph = nil; tone = .quiet
                 standing = "next due \(BillsText.shortDate(due, now: now))"
@@ -362,11 +355,6 @@ struct BillsPicture {
             }
         } else {
             status = "No date"; glyph = nil; tone = .quiet; standing = "no date"; footer = "No due date"
-        }
-
-        var setAsideFact = "\(BillsText.setAsideSpan) before"
-        if let from = b.setAsideFrom {
-            setAsideFact += cal.startOfDay(for: from) <= today ? ", since \(BillsText.date(from, now: now))" : ", from \(BillsText.date(from, now: now))"
         }
 
         // The estimate: the last payment and the rule disagree by more than 3%.
@@ -380,14 +368,12 @@ struct BillsPicture {
 
         return BillsCard(line: b, status: status, statusGlyph: glyph, statusTone: tone,
                          rhythm: b.coveredUntil != nil ? per : rhythm, footer: footer,
-                         subtitle: "\(schedule) · \(standing)", dueFact: dueFact, setAsideFact: setAsideFact, estimate: estimate)
+                         subtitle: "\(schedule) · \(standing)", dueFact: dueFact, estimate: estimate)
     }
 
     private static func nextFooter(_ b: BillLine, today: Date, now: Date) -> String {
         guard let due = b.nextDue else { return "No due date" }
-        var s = "Next \(BillsText.shortDate(due, now: now))"
-        if let from = b.setAsideFrom, PHT.calendar.startOfDay(for: from) > today { s += " · set aside from \(BillsText.date(from, now: now))" }
-        return s
+        return "Next \(BillsText.shortDate(due, now: now))"
     }
 
     /// "October", "2026" — the period a payment settled, in the bill's own rhythm.

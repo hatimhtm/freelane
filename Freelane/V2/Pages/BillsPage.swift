@@ -50,7 +50,7 @@ struct BillsPage: View {
                         .appear(2)
                 } else {
                     PaneHeader(title: "No bills yet", big: false)
-                    Text("Bills you add show here: when each is due, when its money is set aside and what it came to.")
+                    Text("Bills you add show here: when each is due and what it came to.")
                         .role(.body, MD.onSurfaceVariant).padding(.top, 8)
                 }
             }
@@ -180,7 +180,7 @@ private struct BillsNoBills: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("No bills yet").role(.row)
-            Text("Add rent, electricity or anything else that repeats. Freelane sets its money aside in the \(BillsText.setAsideSpan) before it’s due.")
+            Text("Add rent, electricity or anything else that repeats. Freelane shows when each is due, and it comes off what you have when you pay it.")
                 .role(.supporting, MD.onSurfaceVariant)
         }
         .padding(20)
@@ -347,7 +347,6 @@ private struct BillsDetail: View {
                     }
                     VStack(spacing: 0) {
                         BillsFact(label: "Due", value: card.dueFact)
-                        BillsFact(label: "Set aside", value: card.setAsideFact)
                         BillsFact(label: "Paid from", value: pays.last.map { p in p.wallet.map { "\($0) last time" } ?? "no wallet recorded" } ?? "not paid yet", last: true)
                     }
                     .padding(.top, 12)

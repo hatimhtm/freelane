@@ -100,7 +100,7 @@ struct MenuBarV2: View {
 
     private func billLine(_ b: BillLine) -> String {
         guard let due = b.nextDue else { return "next bill" }
-        return "next bill · \(Day.until(due))" + (b.isSetAside ? " · set aside" : "")
+        return "next bill · \(Day.until(due))"
     }
 
     // MARK: Capture
@@ -405,7 +405,7 @@ private struct FreeBand: View {
                     .pop(delay: 0.2)
                 }
             }
-            Text(state.setAside > 0 ? "free to spend" : "yours to spend").role(.summaryLabel, MD.onPrimaryContainer)
+            Text("yours to spend").role(.summaryLabel, MD.onPrimaryContainer)
             Text(sentence).role(.supporting, MD.onPrimaryContainer).padding(.top, 6).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 16)
@@ -414,10 +414,12 @@ private struct FreeBand: View {
     }
 
     private var sentence: String {
-        let held = "\(MoneyFormat.string(state.total, decimals: false)) in your wallets"
-        let reserved = state.bills.filter(\.isSetAside)
-        guard !reserved.isEmpty else { return held + ". Nothing due this week." }
-        return held + ", \(MoneyFormat.string(state.setAside, decimals: false)) set aside for \(reserved.map(\.label).joined(separator: ", "))."
+        guard let next = state.nextBill, let due = next.nextDue else { return "No bills on the calendar." }
+        let amount = (next.estimate ? "~" : "") + MoneyFormat.string(next.amount, decimals: false)
+        let days = Day.daysBetween(.now, due)
+        if days < 0 { return "\(next.label) was due \(Day.until(due)): \(amount)." }
+        if days < 7 { return "\(next.label) is due \(Day.until(due)): \(amount)." }
+        return "Nothing due this week. \(next.label) is next, \(Day.dayMonth(due))."
     }
 }
 

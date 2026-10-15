@@ -4,14 +4,6 @@ import SwiftData
 // One snapshot of where the money stands, computed from the store. Pages read this instead of each
 // re-deriving balances and bills their own way, so every screen shows the same numbers.
 
-/// How many days before its due date a bill's money stops counting as free. His rule: a week.
-enum SetAside {
-    static var days: Int {
-        let v = UserDefaults.standard.integer(forKey: "bills.setAsideDays")
-        return v > 0 ? v : 7
-    }
-}
-
 struct WalletLine: Identifiable {
     let wallet: Wallet
     let key: IdentityKey?
@@ -28,10 +20,7 @@ struct BillLine: Identifiable {
     let nextDue: Date?
     let amount: Double
     let estimate: Bool
-    /// The day its money starts being set aside.
-    let setAsideFrom: Date?
-    let isSetAside: Bool
-    /// Paid more than a cycle ahead (wifi paid for a year): shown as covered, never reserved.
+    /// Paid more than a cycle ahead (wifi paid for a year): shown as covered.
     let coveredUntil: Date?
     let lastPaid: (date: Date, amount: Double, walletId: UUID?)?
     var id: UUID { bill.id }
@@ -69,8 +58,9 @@ struct MoneyState {
     var wallets: [WalletLine] = []
     var total = 0.0
     var bills: [BillLine] = []
-    var setAside = 0.0
-    var free: Double { total - setAside }
+    /// What you can spend: everything in the wallets in your totals. A bill comes off only when you
+    /// pay it — nothing is held back ahead of its due date.
+    var free: Double { total }
     var needs: [NeedItem] = []
     var feed: [FeedItem] = []
     var month = MonthFigures()
@@ -109,18 +99,15 @@ struct MoneyState {
             let paidFor = liveSpends.filter { $0.recurringId == r.id }.max { $0.spentAt < $1.spentAt }
             var covered: Date? = nil
             if let pt = r.paidThroughDate, let n = next, n > (cal.date(byAdding: .month, value: 2, to: today) ?? today) { covered = pt }
-            let from = next.flatMap { cal.date(byAdding: .day, value: -SetAside.days, to: $0) }
-            let aside = covered == nil && (from.map { today >= cal.startOfDay(for: $0) } ?? false)
             // An estimate when the bill says so, or when its last few single payments haven't agreed.
             let recent = (paidByName[r.label.lowercased()] ?? []).sorted { $0.spentAt > $1.spentAt }
                 .map(\.amountBase).filter { r.amountBase <= 0 || $0 < r.amountBase * 2 }.prefix(3)
             let drifts = recent.count >= 2 && (recent.max()! - recent.min()!) / max(recent.max()!, 1) > 0.03
             return BillLine(bill: r, key: IdentityKey.bill(r.label), nextDue: next, amount: r.amountBase, estimate: r.isVariableAmount || drifts,
-                            setAsideFrom: from, isSetAside: aside, coveredUntil: covered,
+                            coveredUntil: covered,
                             lastPaid: paidFor.map { ($0.spentAt, $0.amountBase, $0.walletId) })
         }
         .sorted { ($0.nextDue ?? .distantFuture) < ($1.nextDue ?? .distantFuture) }
-        s.setAside = s.bills.filter(\.isSetAside).reduce(0) { $0 + $1.amount }
         s.monthBillsPaid = !bills.isEmpty && bills.allSatisfy { r in
             let occ = RecurringMath.anchored(r, in: today)
             guard cal.isDate(occ, equalTo: today, toGranularity: .month) else { return true }

@@ -46,14 +46,13 @@ enum DevDump {
         func id(_ u: UUID) -> String { u.uuidString.lowercased() }
         let pictures: [String: Any] = [
             "now": iso(.now),
-            "setAsideDays": SetAside.days,
             "money": [
-                "total": m.total, "setAside": m.setAside, "free": m.free, "monthBillsPaid": m.monthBillsPaid,
+                "total": m.total, "free": m.free, "monthBillsPaid": m.monthBillsPaid,
                 "wallets": m.wallets.map { ["id": id($0.id), "name": $0.name, "balance": $0.balance,
                                             "lastCounted": iso($0.lastCounted), "inTotals": $0.inTotals] },
                 "bills": m.bills.map { b in
                     ["id": id(b.id), "label": b.label, "nextDue": iso(b.nextDue), "amount": b.amount, "estimate": b.estimate,
-                     "setAsideFrom": iso(b.setAsideFrom), "isSetAside": b.isSetAside, "coveredUntil": iso(b.coveredUntil),
+                     "coveredUntil": iso(b.coveredUntil),
                      "lastPaid": b.lastPaid.map { ["date": iso($0.date), "amount": $0.amount] } as Any? ?? NSNull()] as [String: Any]
                 },
                 "needs": m.needs.map(\.id),

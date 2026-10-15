@@ -6,7 +6,6 @@ struct SettingsPage: View {
     let state: MoneyState
     @AppStorage("appearance.v2") private var appearance = "light"
     @AppStorage("v2.openOn") private var openOn = "now"
-    @AppStorage("bills.setAsideDays") private var setAsideDays = 7
     @State private var section = "General"
     @State private var legacy = false
     @State private var backups: [DataBackup.Item] = []
@@ -112,16 +111,6 @@ struct SettingsPage: View {
         VStack(spacing: 0) {
             row("Counted in", "Every wallet, whatever its currency, adds up in pesos at the day’s rate") {
                 Text("Philippine peso · ₱").role(.row)
-            }
-            row("Set bills aside", "How long before a bill is due its money stops counting as free") {
-                HStack(spacing: 4) {
-                    stepButton(Sym.remove) { setAsideDays = max(1, setAsideDays - 1) }
-                    Text(setAsideDays == 1 ? "1 day" : "\(setAsideDays) days").font(FS.font(15, 600)).monospacedDigit().frame(minWidth: 64)
-                        .contentTransition(.numericText(value: Double(setAsideDays)))
-                    stepButton(Sym.add) { setAsideDays = min(30, setAsideDays + 1) }
-                }
-                .padding(2).background(Capsule().fill(Surface.well2))
-                .animation(Flow.fast, value: setAsideDays)
             }
             row("Wallet currencies", "What each wallet is counted in. Totals stay in pesos.", last: true) {
                 FlowCurrencies(wallets: state.wallets)

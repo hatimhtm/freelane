@@ -61,7 +61,7 @@ private struct Hero: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Money(value: state.free, role: .hero, color: MD.onPrimaryContainer)
                             .contentTransition(.numericText(value: state.free))
-                        Text(state.setAside > 0 ? "free to spend" : "yours to spend").role(.heroLabel, MD.onPrimaryContainer)
+                        Text("yours to spend").role(.heroLabel, MD.onPrimaryContainer)
                         sentence.role(.body, MD.onPrimaryContainer).padding(.top, 2)
                     }
                     Spacer(minLength: 16)
@@ -71,32 +71,23 @@ private struct Hero: View {
                     }
                 }
                 BillTrack(bills: state.bills).padding(.top, 20).appear(1, dy: 4)
-                HStack(spacing: 8) {
-                    Capsule().fill(MD.onPrimaryContainer.opacity(0.32)).frame(width: 22, height: 8)
-                    Text("Each bill is set aside in the \(SetAside.days == 7 ? "week" : "\(SetAside.days) days") before it’s due")
-                        .font(FS.font(12, 400)).foregroundStyle(MD.onPrimaryContainer)
-                }
-                .padding(.top, 8)
             }
         }
     }
 
+    /// The next bill, said plainly. Nothing comes off what's yours until a bill is paid.
     private var sentence: Text {
-        let reserved = state.bills.filter(\.isSetAside)
-        if !reserved.isEmpty {
-            let names = reserved.map(\.label).joined(separator: ", ")
-            return Text("\(MoneyFormat.string(state.setAside, decimals: false)) is set aside for \(names).")
-        }
-        if let next = state.nextBill, let due = next.nextDue {
-            return Text("Nothing is due this week. \(next.label) is next: ")
-                + Text(verbatim: (next.estimate ? "~" : "") + MoneyFormat.string(next.amount, decimals: false)).font(FS.font(14, 600))
-                + Text(" on \(Day.long(due).replacingOccurrences(of: " ", with: "\u{00A0}", options: [], range: nil)).")
-        }
-        return Text("No bills on the calendar.")
+        guard let next = state.nextBill, let due = next.nextDue else { return Text("No bills on the calendar.") }
+        let amount = Text(verbatim: (next.estimate ? "~" : "") + MoneyFormat.string(next.amount, decimals: false)).font(FS.font(14, 600))
+        let days = Day.daysBetween(.now, due)
+        if days < 0 { return Text("\(next.label) was due \(Day.until(due)): ") + amount + Text(".") }
+        if days < 7 { return Text("\(next.label) is due \(Day.until(due)): ") + amount + Text(".") }
+        return Text("Nothing is due this week. \(next.label) is next: ") + amount
+            + Text(" on \(Day.long(due).replacingOccurrences(of: " ", with: "\u{00A0}", options: [], range: nil)).")
     }
 }
 
-/// The next 30 days with each bill on its day and its set-aside week drawn on the track.
+/// The next 30 days with each bill on its day.
 private struct BillTrack: View {
     let bills: [BillLine]
     private let span = 30.0
@@ -113,10 +104,6 @@ private struct BillTrack: View {
             let x = { (d: Date) -> CGFloat in 9 + CGFloat(min(max(Double(Day.daysBetween(.now, d)) / span, 0), 1)) * w }
             ZStack(alignment: .topLeading) {
                 Capsule().fill(MD.onPrimaryContainer.opacity(0.13)).frame(width: w + 5, height: 10).offset(x: 9, y: 9)
-                ForEach(groups, id: \.date) { g in
-                    let x0 = 9 + CGFloat(Double(max(Day.daysBetween(.now, g.date) - SetAside.days, 0)) / span) * w
-                    Capsule().fill(MD.onPrimaryContainer.opacity(0.32)).frame(width: max(x(g.date) - x0, 10), height: 10).offset(x: x0, y: 9)
-                }
                 Circle().fill(MD.primary).frame(width: 18, height: 18).overlay(Circle().stroke(MD.primaryContainer, lineWidth: 4)).offset(y: 5)
                 pin(label(title: "Today", sub: Day.short(.now), align: .leading), x: 0, y: 34, .topLeading)
                 ForEach(Array(groups.enumerated()), id: \.element.date) { i, g in
@@ -244,9 +231,7 @@ private struct WalletsSide: View {
                 }
                 let upcoming = state.bills
                 if !upcoming.isEmpty {
-                    SectionHeader(title: "Coming up", small: true) {
-                        Text(state.setAside > 0 ? "\(MoneyFormat.string(state.setAside, decimals: false)) set aside" : "not set aside yet").role(.supporting, MD.onSurfaceVariant)
-                    }
+                    SectionHeader(title: "Coming up", small: true)
                     ForEach(upcoming) { b in
                         ListRow(badge: Badge(subject: .bill(b.label)), title: b.label, subtitle: billSub(b), height: 52) {
                             if b.coveredUntil == nil { Money(value: b.amount, decimals: false, estimate: b.estimate) }
@@ -275,7 +260,7 @@ private struct WalletsSide: View {
     private func billSub(_ b: BillLine) -> String {
         if let c = b.coveredUntil { return "paid up to \(Day.full(c))" }
         guard let d = b.nextDue else { return "no date" }
-        return "\(Day.short(d)) · \(Day.until(d))" + (b.isSetAside ? " · set aside" : "")
+        return "\(Day.short(d)) · \(Day.until(d))"
     }
 }
 

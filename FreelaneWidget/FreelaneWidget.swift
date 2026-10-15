@@ -29,8 +29,6 @@ struct FreelaneSnapshot: Codable {
     var hijri: String? = nil
     // v2
     var free: Double? = nil
-    var setAside: Double? = nil
-    var setAsideFor: String? = nil
     var billsPaidMonth: String? = nil
 }
 
@@ -153,10 +151,9 @@ struct FreelaneWidgetView: View {
 
     private func small(_ s: FreelaneSnapshot, fill: Bool = true) -> some View {
         let free = s.free ?? s.safeToday
-        let setAside = s.setAside ?? 0
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
-                Text(setAside > 0 ? "Free to spend" : "Yours to spend").font(WFont.font(13, 600)).foregroundStyle(WTone.onBand)
+                Text("Yours to spend").font(WFont.font(13, 600)).foregroundStyle(WTone.onBand)
                 Spacer(minLength: 0)
             }
             WMoney(value: free, symbol: s.symbol, size: family == .systemSmall ? 32 : 38).padding(.top, 2)
@@ -170,11 +167,10 @@ struct FreelaneWidgetView: View {
         .frame(maxWidth: family == .systemMedium ? 150 : .infinity, maxHeight: fill ? .infinity : nil, alignment: .topLeading)
     }
 
+    /// The next bill, since the figure above already is everything in your wallets.
     private func line(_ s: FreelaneSnapshot) -> String {
-        if let a = s.setAside, a > 0 {
-            return "\(fmtMoney(a, s.symbol)) set aside" + (s.setAsideFor.map { " for \($0)" } ?? "")
-        }
-        return "\(fmtMoney(s.walletTotal, s.symbol)) in your wallets"
+        guard let b = s.bills?.first else { return "No bills on the calendar." }
+        return "\(b.label) next: \(b.estimate == true ? "~" : "")\(fmtMoney(b.amount, s.symbol)), \(b.until ?? b.due)"
     }
 
     @ViewBuilder private func bills(_ s: FreelaneSnapshot, max n: Int, short: Bool = false) -> some View {
@@ -210,7 +206,7 @@ struct SafeToSpendWidget: Widget {
                 .containerBackground(WTone.band, for: .widget)
         }
         .configurationDisplayName("Free to spend")
-        .description("What's free after the week's bills are set aside, and what's coming up.")
+        .description("What's yours to spend, and the bills coming up.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
