@@ -76,7 +76,10 @@ struct Money: View {
     var symbol = "₱"
 
     var body: some View {
-        text.accessibilityLabel((estimate ? "about " : "") + MoneyFormat.string(value, decimals: decimals, sign: sign, symbol: symbol))
+        text
+            .contentTransition(.numericText(value: value))
+            .animation(Flow.spatial, value: value)
+            .accessibilityLabel((estimate ? "about " : "") + MoneyFormat.string(value, decimals: decimals, sign: sign, symbol: symbol))
     }
 
     var text: Text {

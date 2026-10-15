@@ -59,6 +59,8 @@ struct FeedItem: Identifiable {
     var native: (amount: Double, currency: String)? = nil
     var related: UUID? = nil
     var inTotals = true
+    /// Wallets this item touched (for "last activity" on a wallet).
+    var walletIds: [UUID] = []
 }
 
 struct MonthFigures { var cameIn = 0.0, wentOut = 0.0, fees = 0.0, countsFound = 0.0 }
@@ -168,23 +170,24 @@ enum Feed {
             let from = w.map { "from \($0.name)" } ?? "no wallet"
             if let rid = s.recurringId, let r = bill[rid] {
                 out.append(FeedItem(id: "s-\(s.id)", date: s.spentAt, kind: .spend, title: r.label, subtitle: from, amount: -s.amountBase,
-                                    badge: .bill(r.label), related: s.id, inTotals: !(s.walletId.map(excluded.contains) ?? false)))
+                                    badge: .bill(r.label), related: s.id, inTotals: !(s.walletId.map(excluded.contains) ?? false), walletIds: s.walletId.map { [$0] } ?? []))
             } else {
                 let title = (s.spendDescription?.isEmpty == false ? s.spendDescription! : (s.vendorName ?? s.category ?? "Spending"))
                 let sub = [s.category, from].compactMap { $0 }.joined(separator: " · ")
                 out.append(FeedItem(id: "s-\(s.id)", date: s.spentAt, kind: s.isSadaka ? .gift : .spend, title: title, subtitle: sub, amount: -s.amountBase,
                                     badge: s.isSadaka ? .neutral(Sym.volunteerActivism) : .neutral(Sym.shoppingBag), related: s.id,
-                                    inTotals: !(s.walletId.map(excluded.contains) ?? false)))
+                                    inTotals: !(s.walletId.map(excluded.contains) ?? false), walletIds: s.walletId.map { [$0] } ?? []))
             }
         }
         for p in payments where p.deletedAt == nil {
             let proj = p.projectId.flatMap { project[$0] }
             let client = proj?.clientId.flatMap { clientName[$0] } ?? "Payment"
-            let landed = ledger.first { $0.relatedId == p.id && $0.kind == .income }?.walletId.flatMap { wallet[$0]?.name }
+            let landedId = ledger.first { $0.relatedId == p.id && $0.kind == .income }?.walletId
+            let landed = landedId.flatMap { wallet[$0]?.name }
             let native = "\(CurrencyFormat.symbol(p.currency))\(MoneyFormat.parts(p.amount).whole)" + (p.amount.truncatingRemainder(dividingBy: 1) == 0 ? "" : ".\(MoneyFormat.parts(p.amount).cents)")
             let sub = [proj?.title, native + (landed.map { " into \($0)" } ?? "")].compactMap { $0 }.joined(separator: " · ")
             out.append(FeedItem(id: "p-\(p.id)", date: p.paidAt, kind: .payment, title: client, subtitle: sub, amount: p.netAmountBase ?? 0,
-                                badge: .person(client), native: (p.amount, p.currency), related: p.id))
+                                badge: .person(client), native: (p.amount, p.currency), related: p.id, walletIds: landedId.map { [$0] } ?? []))
         }
         for w in withdrawals where w.deletedAt == nil {
             let from = w.fromMethodId.flatMap { wallet[$0] }, to = w.toMethodId.flatMap { wallet[$0] }
@@ -192,7 +195,7 @@ enum Feed {
             let sub = w.feeBase > 0.004 ? "moved · \(MoneyFormat.string(w.feeBase)) in fees" : "moved"
             let badge: BadgeSubject = to.map { .wallet($0) } ?? .neutral(Sym.swapHoriz)
             out.append(FeedItem(id: "w-\(w.id)", date: w.withdrawnAt, kind: .move, title: title, subtitle: sub, amount: w.netBase,
-                                badge: badge, badgeGlyph: Sym.swapHoriz, related: w.id))
+                                badge: badge, badgeGlyph: Sym.swapHoriz, related: w.id, walletIds: [w.fromMethodId, w.toMethodId].compactMap { $0 }))
         }
         // Counts: one line per day, sub-peso rounding left out.
         let counts = ledger.filter { $0.kind == .adjustment && $0.relatedKindRaw == nil && abs($0.amountBase) >= 1 && $0.walletId.flatMap { wallet[$0] } != nil }
@@ -212,14 +215,14 @@ enum Feed {
             }
             let latest = entries.map(\.eventAt).max() ?? day
             out.append(FeedItem(id: "c-\(Int(day.timeIntervalSince1970))", date: latest, kind: .count, title: title, subtitle: sub, amount: total,
-                                badge: .wallet(first.w), badgeGlyph: Sym.factCheck, inTotals: !first.w.excludedFromTotals))
+                                badge: .wallet(first.w), badgeGlyph: Sym.factCheck, inTotals: !first.w.excludedFromTotals, walletIds: perWallet.map(\.w.id)))
         }
         for e in ledger where e.kind == .outflow && e.relatedKindRaw == nil {
             let w = e.walletId.flatMap { wallet[$0] }
             let notIn = w?.excludedFromTotals ?? false
             out.append(FeedItem(id: "f-\(e.id)", date: e.eventAt, kind: .fee, title: (w.map { "\($0.name) fee" } ?? "Fee"),
                                 subtitle: notIn ? "monthly · not in your totals" : "monthly", amount: e.amountBase,
-                                badge: .neutral(Sym.accountBalance), related: e.id, inTotals: !notIn))
+                                badge: .neutral(Sym.accountBalance), related: e.id, inTotals: !notIn, walletIds: e.walletId.map { [$0] } ?? []))
         }
         return out.sorted { $0.date > $1.date }
     }

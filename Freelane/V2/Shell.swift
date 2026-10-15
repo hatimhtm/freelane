@@ -46,14 +46,21 @@ enum NewAction: String, CaseIterable, Identifiable {
 
 /// App-wide navigation and sheet state for v2.
 @Observable final class AppState {
-    var page: Place = .now
+    var page: Place = Place(rawValue: UserDefaults.standard.string(forKey: "v2.openOn") ?? "now") ?? .now
     var newMenuOpen = false
     var counting = false
-    var sheet: NewAction? = nil
+    var form: FormKind? = nil
     func go(_ p: Place) { page = p; newMenuOpen = false }
     func start(_ a: NewAction) {
         newMenuOpen = false
-        if a == .count { counting = true } else if a == .journal { page = .journal } else { sheet = a }
+        switch a {
+        case .count: counting = true
+        case .journal: page = .journal
+        case .spending: form = .spending
+        case .moneyIn: form = .moneyIn(projectId: nil)
+        case .move: form = .move
+        case .payBill: form = .payBill(billId: nil)
+        }
     }
 }
 
@@ -62,6 +69,7 @@ struct Shell: View {
     @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduce
     @State private var app = AppState()
+    @State private var ai = AIManager()
     @Query private var wallets: [Wallet]
     @Query private var ledger: [LedgerEntry]
     @Query private var recurring: [Recurring]
@@ -95,12 +103,26 @@ struct Shell: View {
                     .transition(.opacity)
                     .zIndex(10)
             }
+            if let f = app.form {
+                FormHost(kind: f, state: money) { withAnimation(Flow.spatial) { app.form = nil } }
+                    .id(f.id)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(12)
+            }
+            if app.counting {
+                CountSheet(state: money)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(11)
+            }
         }
         .ignoresSafeArea()
         .environment(app)
+        .environment(ai)
         .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.newMenuOpen)
+        .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.counting)
+        .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.form)
         .background(PageShortcuts(app: app))
-        .task { await LaunchV2.run(context) }
+        .task { await LaunchV2.run(context, ai: ai) }
         .onAppear { if DevMode.isSandboxed, let p = ProcessInfo.processInfo.environment["FREELANE_DEV_PAGE"].flatMap(Place.init(rawValue:)) { app.page = p } }
         .onReceive(DistributedNotificationCenter.default().publisher(for: .init("app.freelane.dev." + (ProcessInfo.processInfo.environment["FREELANE_DEV_CHANNEL"] ?? "main")))) { n in
             // Test builds only: drive the window from a script ("page:ledger", "new", "count", "close").
@@ -108,7 +130,15 @@ struct Shell: View {
             if cmd.hasPrefix("page:"), let p = Place(rawValue: String(cmd.dropFirst(5))) { app.go(p) }
             if cmd == "new" { app.newMenuOpen = true }
             if cmd == "count" { app.counting = true }
-            if cmd == "close" { app.newMenuOpen = false; app.counting = false }
+            if cmd == "close" { app.newMenuOpen = false; app.counting = false; app.form = nil }
+            switch cmd {
+            case "form:spending": app.form = .spending
+            case "form:moneyIn": app.form = .moneyIn(projectId: nil)
+            case "form:move": app.form = .move
+            case "form:payBill": app.form = .payBill(billId: nil)
+            case "form:addWallet": app.form = .addWallet
+            default: break
+            }
         }
     }
 
@@ -116,6 +146,9 @@ struct Shell: View {
         ZStack {
             switch app.page {
             case .now: NowPage(state: money)
+            case .wallets: WalletsPage(state: money)
+            case .settings: SettingsPage(state: money)
+            case .journal: JournalPage()
             default: PlaceholderPage(page: app.page)
             }
         }
@@ -137,7 +170,7 @@ private struct PageShortcuts: View {
             }
             Button("") { withAnimation(Flow.spatial) { app.newMenuOpen.toggle() } }.keyboardShortcut("n", modifiers: .command)
             Button("") { withAnimation(Flow.slow) { app.go(.settings) } }.keyboardShortcut(",", modifiers: .command)
-            Button("") { withAnimation(Flow.spatial) { app.newMenuOpen = false; app.counting = false } }.keyboardShortcut(.escape, modifiers: [])
+            Button("") { withAnimation(Flow.spatial) { app.newMenuOpen = false; app.counting = false; app.form = nil } }.keyboardShortcut(.escape, modifiers: [])
         }
         .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
     }
@@ -156,7 +189,8 @@ struct PlaceholderPage: View {
 
 /// The work the app does once per launch: the essentials only.
 enum LaunchV2 {
-    @MainActor static func run(_ context: ModelContext) async {
+    @MainActor static func run(_ context: ModelContext, ai: AIManager) async {
+        Repairs.runIfNeeded(context)
         CloudSync.shared.attach(context)
         Reachability.shared.onBecameOnline = { Task { await CloudSync.shared.syncNow() } }
         Task { await CloudSync.shared.start() }
@@ -167,6 +201,7 @@ enum LaunchV2 {
         Audit.prune(context)
         try? context.save()
         JournalWell.shared.pruneStale(context)
+        if !DevMode.isSandboxed { JournalWell.shared.topUp(context, ai: ai) }
         Task { await FXService.refreshIfStale(context) }
         WidgetBridge.update(context)
     }

@@ -13,15 +13,16 @@ struct NowPage: View {
                 PaneHeader(title: "Now", subtitle: Day.long(.now)) { SearchPill() }
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Hero(state: s).padding(.top, 16)
+                        Hero(state: s).padding(.top, 16).appear(0)
                         if !s.needs.isEmpty {
-                            SectionHeader(title: "Needs you", count: s.needs.count)
-                            Segmented(items: s.needs) { NeedRow(item: $0) }
+                            SectionHeader(title: "Needs you", count: s.needs.count).appear(2)
+                            Segmented(items: s.needs) { NeedRow(item: $0) }.appear(3)
                         }
                         SectionHeader(title: "Latest") {
                             M3Button(title: "See all", kind: .text) { withAnimation(Flow.slow) { app.go(.ledger) } }
                         }
-                        Segmented(items: Array(s.feed.prefix(s.needs.count >= 3 ? 2 : 4))) { FeedRow(item: $0) }
+                        .appear(4)
+                        Segmented(items: Array(s.feed.prefix(s.needs.count >= 3 ? 2 : 4))) { FeedRow(item: $0) }.appear(5)
                     }
                 }
             }
@@ -66,10 +67,10 @@ private struct Hero: View {
                     Spacer(minLength: 16)
                     if state.monthBillsPaid {
                         Sticker(glyph: Sym.check, text: "\(Day.month(.now))’s\nbills paid")
-                            .transition(.scale(scale: 0.6).combined(with: .opacity))
+                            .pop(delay: 0.22)
                     }
                 }
-                BillTrack(bills: state.bills).padding(.top, 20)
+                BillTrack(bills: state.bills).padding(.top, 20).appear(1, dy: 4)
                 HStack(spacing: 8) {
                     Capsule().fill(MD.onPrimaryContainer.opacity(0.32)).frame(width: 22, height: 8)
                     Text("Each bill is set aside in the \(SetAside.days == 7 ? "week" : "\(SetAside.days) days") before it’s due")
@@ -164,7 +165,7 @@ private struct NeedRow: View {
             let days = p.workCompletedAt.map { Day.daysBetween($0, .now) } ?? 0
             row(badge: Badge(subject: .person(client), size: 48), title: "\(client) owes you \(CurrencyFormat.symbol(currency))\(MoneyFormat.parts(native).whole)",
                 sub: Text("For \(p.title.lowercased().hasPrefix("the") ? p.title : "the " + p.title.lowercased()), delivered \(Day.dayMonth(p.workCompletedAt ?? p.createdAt)). It’s been \(days) days."),
-                action: "Mark paid") { withAnimation(Flow.slow) { app.go(.work) } }
+                action: "Mark paid") { withAnimation(Flow.spatial) { app.form = .moneyIn(projectId: p.id) } }
         case .estimate(let b, let suggested):
             row(badge: Badge(subject: .bill(b.label), size: 48), title: "\(b.label) came to \(MoneyFormat.string(b.lastPaid?.amount ?? 0, decimals: false))",
                 sub: Text("Use \(MoneyFormat.string(suggested, decimals: false)) as next month’s estimate instead of \(MoneyFormat.string(b.amount, decimals: false))?"),
@@ -225,13 +226,14 @@ private struct WalletsSide: View {
         }
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(state.wallets.filter(\.inTotals)) { w in
+                ForEach(Array(state.wallets.filter(\.inTotals).enumerated()), id: \.element.id) { i, w in
                     ListRow(badge: Badge(subject: .wallet(w.wallet)), title: w.name,
                             subtitle: w.lastCounted.map { "counted \(Day.ago($0))" } ?? "never counted", height: 52) {
                         Money(value: w.balance)
                     }
                     .padding(.horizontal, -8)
                     .pressable(RoundedRectangle(cornerRadius: 12)) { withAnimation(Flow.slow) { app.go(.wallets) } }
+                    .appear(i)
                 }
                 let upcoming = state.bills
                 if !upcoming.isEmpty {
@@ -258,7 +260,7 @@ private struct WalletsSide: View {
                         .padding(.horizontal, -8)
                     }
                 }
-                MonthCard(month: state.month).padding(.top, 24)
+                MonthCard(month: state.month).padding(.top, 24).appear(8)
             }
         }
     }
