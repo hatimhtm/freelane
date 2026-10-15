@@ -205,7 +205,7 @@ private struct SplitBar: View {
                     ForEach(Array(big.enumerated()), id: \.element.id) { i, w in
                         let width = max(geo.size.width * w.balance / max(total, 1) - 3, 64)
                         Text(i == 0 ? "\(w.name) · \(MoneyFormat.string(w.balance, decimals: false))" : MoneyFormat.string(w.balance, decimals: false))
-                            .font(FS.font(14, 600, rond: 60)).foregroundStyle(.white).lineLimit(1)
+                            .font(FS.font(14, 600, rond: 60)).foregroundStyle(Surface.pane).lineLimit(1)   // white on the light theme's dark marks, near-black on the dark theme's light ones
                             .padding(.horizontal, 14)
                             .frame(width: width, height: 40, alignment: .leading)
                             .background(UnevenRoundedRectangle(topLeadingRadius: i == 0 ? 20 : 6, bottomLeadingRadius: i == 0 ? 20 : 6,

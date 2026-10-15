@@ -121,7 +121,7 @@ struct CountSheet: View {
                 .padding(.leading, 10).padding(.trailing, 4).frame(height: 32)
                 .background(RoundedRectangle(cornerRadius: 8).fill(MD.secondaryContainer))
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             TextField("0.00", text: binding(w, index: index))
                 .textFieldStyle(.plain)
                 .multilineTextAlignment(.trailing)

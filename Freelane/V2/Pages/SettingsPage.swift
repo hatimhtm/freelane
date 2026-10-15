@@ -103,7 +103,7 @@ struct SettingsPage: View {
                         .foregroundStyle(MD.onSurface).padding(.leading, 12).padding(.trailing, 6).frame(height: 32)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Surface.well2))
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             }
         }
     }
@@ -147,8 +147,8 @@ struct SettingsPage: View {
             } else {
                 row(DevMode.isSandboxed ? "Not syncing (test copy)" : "Not connected", "Sign in with the same account as the phone", last: true) {
                     HStack(spacing: 8) {
-                        TextField("Email", text: $cloud.email).textFieldStyle(.roundedBorder).frame(width: 180)
-                        SecureField("Password", text: $cloudPassword).textFieldStyle(.roundedBorder).frame(width: 140)
+                        TextField("Email", text: $cloud.email).textFieldStyle(.roundedBorder).frame(width: 170)
+                        SecureField("Password", text: $cloudPassword).textFieldStyle(.roundedBorder).frame(width: 120)
                         M3Button(title: "Connect", kind: .tonal, small: true) {
                             let pw = cloudPassword
                             Task { if await CloudSync.shared.signIn(email: CloudSync.shared.email, password: pw) { cloudPassword = "" } }
@@ -235,22 +235,46 @@ struct ConnectedChoice: View {
 private struct FlowCurrencies: View {
     let wallets: [WalletLine]
     @State private var tick = 0
+    private func key(_ w: WalletLine) -> String { "count.currency.\(w.id)" }
+    private func currency(_ w: WalletLine) -> String {
+        UserDefaults.standard.string(forKey: key(w)) ?? w.wallet.openingBalanceCurrency ?? w.wallet.currencyIn ?? w.wallet.currencyOut ?? "PHP"
+    }
+    /// "Bank wire — CFG Bank" → "CFG Bank".
+    private func short(_ name: String) -> String { name.components(separatedBy: " — ").last ?? name }
+
     var body: some View {
+        let own = wallets.filter { currency($0) != "PHP" }
+        let pesos = wallets.filter { currency($0) == "PHP" }
         ChipFlow(spacing: 6) {
-            ForEach(wallets) { w in
-                let key = "count.currency.\(w.id)"
-                let cur = UserDefaults.standard.string(forKey: key) ?? w.wallet.openingBalanceCurrency ?? w.wallet.currencyIn ?? "PHP"
+            ForEach(own) { w in
+                Menu { picker(w) } label: { chip("\(short(w.name)) · \(currency(w))") }
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                    .help("What \(w.name) is counted in")
+            }
+            if !pesos.isEmpty {
                 Menu {
-                    ForEach(CurrencyFormat.supported, id: \.self) { c in Button(c) { UserDefaults.standard.set(c, forKey: key); tick += 1 } }
-                } label: {
-                    Text("\(w.name) · \(cur)").font(FS.font(12, 600, rond: 60)).foregroundStyle(MD.onSurfaceVariant)
-                        .padding(.horizontal, 8).frame(height: 24)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Surface.well2))
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    ForEach(pesos) { w in Menu(w.name) { picker(w) } }
+                } label: { chip("\(own.isEmpty ? "all" : "others") · PHP") }
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                    .help(pesos.map(\.name).joined(separator: ", "))
             }
         }
-        .frame(maxWidth: 320, alignment: .trailing)
+        .frame(maxWidth: 360, alignment: .trailing)
         .id(tick)
+    }
+
+    @ViewBuilder private func picker(_ w: WalletLine) -> some View {
+        ForEach(CurrencyFormat.supported, id: \.self) { c in
+            Button { UserDefaults.standard.set(c, forKey: key(w)); tick += 1 } label: {
+                if c == currency(w) { Label(c, systemImage: "checkmark") } else { Text(c) }
+            }
+        }
+    }
+
+    private func chip(_ t: String) -> some View {
+        Text(t).font(FS.font(12, 600, rond: 60)).foregroundStyle(MD.onSurfaceVariant)
+            .padding(.horizontal, 8).frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Surface.well2))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
     }
 }

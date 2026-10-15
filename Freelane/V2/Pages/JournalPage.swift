@@ -14,6 +14,8 @@ struct JournalPage: View {
     @State private var freeWriting = false
     @State private var freeText = ""
     @State private var expanded: UUID?
+    /// Months opened in Answered; nil until the first look, when the latest few entries' months open.
+    @State private var openMonths: Set<Date>?
     @FocusState private var focus: UUID?
     private let freeId = UUID()
 
@@ -81,21 +83,16 @@ struct JournalPage: View {
                     Button("Good question") { q.feedback = q.feedback == "up" ? nil : "up"; q.dirty = true; try? context.save() }
                     Button("Not for me") { retire(q) }
                 } label: { Icon(Sym.moreHoriz, size: 20).foregroundStyle(MD.onSurfaceVariant).frame(width: 32, height: 32) }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             }
             if let src = source(q) { Text(src).role(.supporting, MD.onSurfaceVariant).padding(.top, 4) }
-            TextEditor(text: text)
+            // One line to start; it grows as you write.
+            TextField("Write a line or two…", text: text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...12)
                 .font(FS.font(15, 400)).foregroundStyle(MD.onSurface)
-                .scrollContentBackground(.hidden)
                 .focused($focus, equals: q.id)
-                .frame(minHeight: on ? 96 : 26, maxHeight: on ? 220 : 26)
-                .overlay(alignment: .topLeading) {
-                    if (drafts[q.id] ?? "").isEmpty {
-                        Text("Write a line or two…").font(FS.font(15, 400)).foregroundStyle(MD.onSurfaceVariant.opacity(0.6))
-                            .padding(.leading, 5).allowsHitTesting(false)
-                    }
-                }
-                .padding(.top, 10)
+                .padding(.top, 12)
             if on {
                 HStack(spacing: 8) {
                     M3Button(title: "Save answer", kind: .filled, small: true) { answer(q) }
@@ -177,18 +174,42 @@ struct JournalPage: View {
             PaneHeader(title: "Answered", big: false) { Text("\(entries.count)").role(.supporting, MD.onSurfaceVariant) }
             PaneScroll {
                 LazyVStack(alignment: .leading, spacing: 0) {
+                    let open = openMonths ?? defaultOpen(months, byMonth)
                     ForEach(months, id: \.self) { m in
-                        HStack {
-                            Text(Day.month(m)).role(.sub, MD.onSurface)
-                            Spacer()
-                            Text("\(byMonth[m]!.count)").role(.supporting, MD.onSurfaceVariant)
+                        let isOpen = open.contains(m)
+                        Button {
+                            withAnimation(Flow.spatial) {
+                                var o = open
+                                if isOpen { o.remove(m) } else { o.insert(m) }
+                                openMonths = o
+                            }
+                        } label: {
+                            HStack {
+                                Text(Day.month(m)).role(.sub, MD.onSurface)
+                                Spacer()
+                                Text("\(byMonth[m]!.count)").role(.supporting, MD.onSurfaceVariant)
+                            }
+                            .padding(.horizontal, 4).padding(.top, 20).padding(.bottom, 6)
+                            .contentShape(Rectangle())
                         }
-                        .padding(.horizontal, 4).padding(.top, 20).padding(.bottom, 6)
-                        ForEach(byMonth[m]!.prefix(m == months.first ? 8 : 4)) { e in entryRow(e) }
+                        .buttonStyle(.plain)
+                        if isOpen {
+                            ForEach(byMonth[m]!.prefix(m == months.first ? 12 : 4)) { e in entryRow(e) }
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// The months holding the latest five answers start open; older months stay folded to their counts.
+    private func defaultOpen(_ months: [Date], _ byMonth: [Date: [Letter]]) -> Set<Date> {
+        var out = Set<Date>(), shown = 0
+        for m in months where shown < 5 {
+            out.insert(m)
+            shown += min(byMonth[m]?.count ?? 0, m == months.first ? 12 : 4)
+        }
+        return out
     }
 
     private func entryRow(_ e: Letter) -> some View {

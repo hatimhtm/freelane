@@ -41,10 +41,11 @@ struct M3Button: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if let icon { Icon(icon, size: 20) }
-                Text(title)
+                Text(title).lineLimit(1)
             }
         }
         .buttonStyle(M3ButtonStyle(kind: kind, small: small))
+        .fixedSize()   // a button's label never wraps
     }
 }
 
