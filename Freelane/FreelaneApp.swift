@@ -59,6 +59,25 @@ enum DevWindow {
         w.orderBack(nil)
         window = w
     }
+
+    /// The menu-bar window, hosted in a plain window so it can be captured.
+    static var menuBar: NSWindow?
+    @MainActor static func openMenuBar() {
+        menuBar?.close()
+        let dark = ProcessInfo.processInfo.environment["FREELANE_DEV_DARK"] == "1"
+        let root = MenuBarV2().ignoresSafeArea().modelContainer(AppContainer.shared).preferredColorScheme(dark ? .dark : .light)
+        let host = NSHostingView(rootView: root)
+        let size = host.fittingSize
+        let w = NSWindow(contentRect: NSRect(x: 1560, y: 80, width: 360, height: size.height),
+                         styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        w.titlebarAppearsTransparent = true
+        w.titleVisibility = .hidden
+        w.isReleasedWhenClosed = false
+        w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        w.contentView = host
+        w.orderBack(nil)
+        menuBar = w
+    }
 }
 
 /// Single shared SwiftData container — used by the app window, the menu-bar extra,
@@ -80,6 +99,8 @@ extension Notification.Name {
     static let flLogPayment = Notification.Name("freelane.logPayment")
     static let flOpenFeature = Notification.Name("freelane.openFeature")   // userInfo["feature"] = Feature.rawValue
     static let flOpenClient = Notification.Name("freelane.openClient")     // userInfo["clientId"] = UUID string — opens that client's detail
+    static let flNew = Notification.Name("freelane.new")                   // v2: open the New menu
+    static let flGo = Notification.Name("freelane.go")                     // v2: userInfo["page"] = Place.rawValue
 }
 
 @main
@@ -108,7 +129,7 @@ struct FreelaneApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             rootView
                 .frame(minWidth: 1100, minHeight: 720)
                 .preferredColorScheme(scheme)
@@ -122,17 +143,23 @@ struct FreelaneApp: App {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesCommand()   // Freelane ▸ Check for Updates…
             }
-            CommandGroup(after: .newItem) {
-                Button("Log Spend") { NotificationCenter.default.post(name: .flLogSpend, object: nil) }
-                    .keyboardShortcut("n", modifiers: .command)
-                Button("Log Payment") { NotificationCenter.default.post(name: .flLogPayment, object: nil) }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
+            if isV2 { V2Commands() } else {
+                CommandGroup(after: .newItem) {
+                    Button("Log Spend") { NotificationCenter.default.post(name: .flLogSpend, object: nil) }
+                        .keyboardShortcut("n", modifiers: .command)
+                    Button("Log Payment") { NotificationCenter.default.post(name: .flLogPayment, object: nil) }
+                        .keyboardShortcut("n", modifiers: [.command, .shift])
+                }
             }
         }
 
-        // Always-available glance + quick capture from the menu bar.
-        MenuBarExtra {
-            MenuBarView().modelContainer(AppContainer.shared)
+        // Always-available glance + quick capture from the menu bar. Test builds leave the menu bar alone.
+        MenuBarExtra(isInserted: .constant(!DevMode.isSandboxed)) {
+            if isV2 {
+                MenuBarV2().modelContainer(AppContainer.shared).preferredColorScheme(scheme)
+            } else {
+                MenuBarView().modelContainer(AppContainer.shared)
+            }
         } label: {
             Image(systemName: "chart.bar.fill")
         }

@@ -1,0 +1,105 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "extended-srgb:0.16500,0.19500,0.18000,1.00000",
+      "extended-srgb:0.05000,0.06200,0.05600,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.5,
+        "y": 0.0
+      },
+      "stop": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    }
+  },
+  "groups": [
+    {
+      "name": "bars",
+      "layers": [
+        {
+          "name": "tall",
+          "image-name": "bar-tall.svg",
+          "glass": true,
+          "fill": {
+            "solid": "extended-srgb:0.36000,0.85000,0.58000,0.80000"
+          },
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              176,
+              -24
+            ]
+          }
+        },
+        {
+          "name": "mid",
+          "image-name": "bar-mid.svg",
+          "glass": true,
+          "fill": {
+            "solid": "extended-srgb:0.93000,0.96000,0.94500,0.88000"
+          },
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              51
+            ]
+          }
+        },
+        {
+          "name": "short",
+          "image-name": "bar-short.svg",
+          "glass": true,
+          "fill": {
+            "solid": "extended-srgb:0.70000,0.76000,0.73000,0.74000"
+          },
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              -176,
+              111
+            ]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.6
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.62
+      },
+      "specular": true,
+      "lighting": "individual",
+      "refractivity-strength": 1.0,
+      "refractivity-depth": 1.0
+    },
+    {
+      "name": "light",
+      "layers": [
+        {
+          "name": "glow",
+          "image-name": "glow.png",
+          "glass": false,
+          "blend-mode": "plus-lighter",
+          "opacity": 0.9
+        },
+        {
+          "name": "haze",
+          "image-name": "haze.png",
+          "glass": false,
+          "opacity": 1.0
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

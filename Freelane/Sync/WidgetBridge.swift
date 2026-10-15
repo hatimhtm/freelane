@@ -24,6 +24,7 @@ enum WidgetBridge {
     struct WBill: Codable { var label: String; var amount: Double; var due: String }
 
     static func update(_ context: ModelContext) {
+        guard !DevMode.isSandboxed else { return }   // a test copy must never repaint the real widget
         let d = StateSnapshot.load(context)
         let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends, wallets: d.wallets,
                                        ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)

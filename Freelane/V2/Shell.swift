@@ -124,6 +124,21 @@ struct Shell: View {
         .background(PageShortcuts(app: app))
         .task { await LaunchV2.run(context, ai: ai) }
         .onAppear { if DevMode.isSandboxed, let p = ProcessInfo.processInfo.environment["FREELANE_DEV_PAGE"].flatMap(Place.init(rawValue:)) { app.page = p } }
+        // Menu commands, the menu-bar window, the capture hotkey and notification actions all arrive here.
+        .onReceive(NotificationCenter.default.publisher(for: .flNew)) { n in
+            withAnimation(Flow.spatial) {
+                if let a = (n.userInfo?["action"] as? String).flatMap(NewAction.init(rawValue:)) { app.start(a) } else { app.newMenuOpen.toggle() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .flLogSpend)) { _ in withAnimation(Flow.spatial) { app.start(.spending) } }
+        .onReceive(NotificationCenter.default.publisher(for: .flLogPayment)) { _ in withAnimation(Flow.spatial) { app.start(.moneyIn) } }
+        .onReceive(NotificationCenter.default.publisher(for: .flGo)) { n in
+            if let p = (n.userInfo?["page"] as? String).flatMap(Place.init(rawValue:)) { withAnimation(Flow.slow) { app.go(p) } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .flOpenFeature)) { n in
+            if let f = n.userInfo?["feature"] as? String { withAnimation(Flow.slow) { app.go(Place.forOldFeature(f)) } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .flOpenClient)) { _ in withAnimation(Flow.slow) { app.go(.work) } }
         .onReceive(DistributedNotificationCenter.default().publisher(for: .init("app.freelane.dev." + (ProcessInfo.processInfo.environment["FREELANE_DEV_CHANNEL"] ?? "main")))) { n in
             // Test builds only: drive the window from a script ("page:ledger", "new", "count", "close").
             guard DevMode.isSandboxed, let cmd = n.object as? String else { return }
@@ -131,6 +146,7 @@ struct Shell: View {
             if cmd == "new" { app.newMenuOpen = true }
             if cmd == "count" { app.counting = true }
             if cmd == "close" { app.newMenuOpen = false; app.counting = false; app.form = nil }
+            if cmd == "menubar" { DevWindow.openMenuBar() }
             switch cmd {
             case "form:spending": app.form = .spending
             case "form:moneyIn": app.form = .moneyIn(projectId: nil)
@@ -158,21 +174,55 @@ struct Shell: View {
     }
 }
 
-/// Hidden buttons that give every page a keyboard shortcut, plus ⌘N for the New menu.
+/// Esc closes whatever is open over the page. (Page shortcuts and ⌘N live in the menus: `V2Commands`.)
 private struct PageShortcuts: View {
     let app: AppState
     var body: some View {
-        ZStack {
-            ForEach(Place.allCases) { p in
-                if let k = p.shortcut {
-                    Button("") { withAnimation(Flow.slow) { app.go(p) } }.keyboardShortcut(k, modifiers: .command)
-                }
-            }
-            Button("") { withAnimation(Flow.spatial) { app.newMenuOpen.toggle() } }.keyboardShortcut("n", modifiers: .command)
-            Button("") { withAnimation(Flow.slow) { app.go(.settings) } }.keyboardShortcut(",", modifiers: .command)
-            Button("") { withAnimation(Flow.spatial) { app.newMenuOpen = false; app.counting = false; app.form = nil } }.keyboardShortcut(.escape, modifiers: [])
+        Button("") { withAnimation(Flow.spatial) { app.newMenuOpen = false; app.counting = false; app.form = nil } }
+            .keyboardShortcut(.escape, modifiers: [])
+            .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+    }
+}
+
+/// The v2 menus: New and the two quick forms in File, Settings in the app menu, every place under Go.
+struct V2Commands: Commands {
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New…") { post(.flNew) }.keyboardShortcut("n", modifiers: .command)
+            Divider()
+            Button("Spending…") { post(.flLogSpend) }.keyboardShortcut("n", modifiers: [.command, .option])
+            Button("Money In…") { post(.flLogPayment) }.keyboardShortcut("n", modifiers: [.command, .shift])
+            Button("Move Money…") { post(.flNew, ["action": NewAction.move.rawValue]) }
+            Button("Count Wallets…") { post(.flNew, ["action": NewAction.count.rawValue]) }
+            Button("Pay a Bill…") { post(.flNew, ["action": NewAction.payBill.rawValue]) }
         }
-        .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { post(.flGo, ["page": Place.settings.rawValue]) }.keyboardShortcut(",", modifiers: .command)
+        }
+        CommandMenu("Go") {
+            ForEach(Place.allCases.filter { $0.shortcut != nil }) { p in
+                Button(p.title) { post(.flGo, ["page": p.rawValue]) }.keyboardShortcut(p.shortcut!, modifiers: .command)
+            }
+        }
+    }
+    private func post(_ name: Notification.Name, _ info: [String: String]? = nil) {
+        NotificationCenter.default.post(name: name, object: nil, userInfo: info)
+    }
+}
+
+extension Place {
+    /// Where an older link (Siri, Spotlight, a notification) to a v1 screen lands now.
+    static func forOldFeature(_ raw: String) -> Place {
+        switch raw {
+        case "payments", "projects", "clients": return .work
+        case "wallets": return .wallets
+        case "spending", "activity", "vendors", "loans": return .ledger
+        case "people", "sadaka": return .giving
+        case "letters": return .journal
+        case "stats": return .insights
+        case "settings": return .settings
+        default: return .now
+        }
     }
 }
 
