@@ -8,14 +8,13 @@ import SwiftData
 /// moment they were logged (`fxLocked`), so they NEVER re-convert — changing a rate can't
 /// retroactively move money that's already in your books.
 ///
-/// This service is deliberately conservative: it only touches currencies you actually use,
-/// it never invents a placeholder rate (that produced the bogus "AED = 1.0"), and it never
-/// blows away an existing rate when the feed doesn't return one.
+/// It keeps a rate for every currency the forms offer, so picking one never books 1:1. It never
+/// invents a placeholder rate (that produced the bogus "AED = 1.0"), and never blows away an
+/// existing rate when the feeds don't return one. ECB rates come first; codes the ECB doesn't
+/// publish (MAD, AED) come from a second, keyless feed — MAD sat at April's 5.7 for six months.
 @MainActor
 enum FXService {
     static func refreshIfStale(_ context: ModelContext) async {
-        // Cleanup runs every launch (local, cheap) so junk rows can't linger.
-        pruneUnusedRates(context)
         let last = UserDefaults.standard.double(forKey: "fx.refreshedAt")
         if Date.now.timeIntervalSince1970 - last < 12 * 3600 { return }
         await refresh(context)
@@ -33,24 +32,11 @@ enum FXService {
         return used
     }
 
-    /// Delete rate rows for currencies you don't use (removes junk like the AED=1.0
-    /// placeholder and unused stablecoin rows). Base + anything in use is kept.
-    static func pruneUnusedRates(_ context: ModelContext) {
-        guard let base = (try? context.fetch(FetchDescriptor<AppSettings>()).first)?.baseCurrency else { return }
-        let used = usedCurrencies(context)
-        let rows = (try? context.fetch(FetchDescriptor<ExchangeRate>())) ?? []
-        var changed = false
-        for row in rows where row.code != base && !used.contains(row.code) {
-            context.delete(row); changed = true
-        }
-        if changed { try? context.save() }
-    }
-
     static func refresh(_ context: ModelContext) async {
         guard let settings = try? context.fetch(FetchDescriptor<AppSettings>()).first else { return }
         let base = settings.baseCurrency
         let rows = (try? context.fetch(FetchDescriptor<ExchangeRate>())) ?? []
-        let needed = usedCurrencies(context).subtracting([base])
+        let needed = usedCurrencies(context).union(CurrencyFormat.supported).subtracting([base])
         guard !needed.isEmpty else { return }
 
         // Stablecoins aren't on the fiat feed — peg them to USD (so fetch USD too).
@@ -61,7 +47,7 @@ enum FXService {
 
         var fx: [String: Double] = [:]
         if !fiat.isEmpty,
-           let url = URL(string: "https://api.frankfurter.app/latest?base=\(base)&symbols=\(Array(fiat).joined(separator: ","))"),
+           let url = URL(string: "https://api.frankfurter.dev/v1/latest?base=\(base)&symbols=\(Array(fiat).joined(separator: ","))"),
            let (data, _) = try? await URLSession.shared.data(from: url),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let r = json["rates"] as? [String: Double] {
@@ -69,6 +55,16 @@ enum FXService {
         }
         let usdRate: Double = base == "USD" ? 1.0 : (fx["USD"] ?? 0)
         if usdRate > 0 { for code in pegged { fx[code] = usdRate } }
+
+        // Whatever the ECB feed didn't carry, from a keyless daily feed that has every code.
+        let missing = needed.filter { (fx[$0] ?? 0) <= 0 }
+        if !missing.isEmpty,
+           let url = URL(string: "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/\(base.lowercased()).json"),
+           let (data, _) = try? await URLSession.shared.data(from: url),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let r = json[base.lowercased()] as? [String: Double] {
+            for code in missing { if let v = r[code.lowercased()], v > 0 { fx[code] = v } }
+        }
 
         // Update ONLY when we got a valid fresh rate. A currency the feed didn't return
         // keeps the rate it already had — never overwritten with a placeholder.

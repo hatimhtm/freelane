@@ -285,7 +285,7 @@ struct GiveSadakaSheet: View {
             if let error { Text(error).font(.caption).foregroundStyle(Palette.negative) }
         }
         .onAppear {
-            walletId = wallets.first { $0.isHolding && !$0.archived }?.id
+            walletId = DefaultWallet.forOutflow(context, among: wallets)
             if suggested > 0 { amount = String(format: "%.0f", suggested) }
             DispatchQueue.main.async { amountFocused = true }
         }

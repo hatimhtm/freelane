@@ -348,6 +348,7 @@ struct EntityDetailSheet: View {
                             Text("Track a birthday / anniversary").font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                         }.toggleStyle(.switch).tint(Palette.cyan)
                             .onChange(of: hasImportantDate) { _, on in
+                                guard on != (entity.importantDate != nil) else { return }   // just loaded, not a change
                                 entity.importantDate = on ? importantDate : nil
                                 if on { entity.importantDateLabel = importantLabel }
                                 entity.dirty = true; try? context.save()
@@ -356,10 +357,16 @@ struct EntityDetailSheet: View {
                             HStack(spacing: 12) {
                                 GlassMenuPicker(selection: $importantLabel, options: ["Birthday", "Anniversary", "Other"], label: { $0 })
                                     .frame(width: 130)
-                                    .onChange(of: importantLabel) { _, v in entity.importantDateLabel = v; entity.dirty = true; try? context.save() }
+                                    .onChange(of: importantLabel) { _, v in
+                                        guard v != entity.importantDateLabel else { return }
+                                        entity.importantDateLabel = v; entity.dirty = true; try? context.save()
+                                    }
                                 GlassDateField(date: $importantDate)
                                     .frame(width: 195)
-                                    .onChange(of: importantDate) { _, v in entity.importantDate = v; entity.dirty = true; try? context.save() }
+                                    .onChange(of: importantDate) { _, v in
+                                        guard v != entity.importantDate else { return }
+                                        entity.importantDate = v; entity.dirty = true; try? context.save()
+                                    }
                                 Spacer()
                             }
                             Text("Shows on your Agenda and the AI can remind you.").font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
@@ -369,9 +376,12 @@ struct EntityDetailSheet: View {
                         TextField("Anything worth remembering…", text: $notes, axis: .vertical)
                             .lineLimit(3...8).textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                             .onChange(of: notes) { _, v in
-                                entity.notes = v; entity.dirty = true
-                                saveTask?.cancel()   // debounce: don't hit disk on every keystroke
-                                saveTask = Task { try? await Task.sleep(for: .seconds(0.6)); if !Task.isCancelled { try? context.save() } }
+                                saveTask?.cancel()   // write once typing pauses, and only a real change
+                                saveTask = Task {
+                                    try? await Task.sleep(for: .seconds(0.6))
+                                    guard !Task.isCancelled, v != (entity.notes ?? "") else { return }
+                                    entity.notes = v; entity.dirty = true; try? context.save()
+                                }
                             }
                     }
                     Button(role: .destructive) {

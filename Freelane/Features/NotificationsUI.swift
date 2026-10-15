@@ -108,7 +108,14 @@ enum Notify {
             // notifications settle once read or dismissed.
             let settled = n.isQuestion ? (n.answer != nil) : (n.dismissedAt != nil || n.readAt != nil)
             let stamp = n.dismissedAt ?? n.readAt ?? n.createdAt
-            if settled, stamp < cutoff { context.delete(n); changed = true }
+            guard settled, stamp < cutoff else { continue }
+            // Questions are the asked-log the repeat check reads: deleting them after 3 days is
+            // why the phone question came back ten times. Hide them from the inbox, keep the row.
+            if n.isQuestion {
+                if n.dismissedAt == nil { n.dismissedAt = .now; changed = true }
+            } else {
+                context.delete(n); changed = true
+            }
         }
         if changed { try? context.save() }
     }

@@ -85,6 +85,13 @@ enum FaithService {
         }
     }
 
+    /// Remove the daily prayer reminders. The Faith page is retired, but reminders it scheduled
+    /// in June kept repeating at June's times with no switch left to turn them off.
+    static func clearReminders() {
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: obligatoryPrayers.map { "prayer-\($0)" })
+    }
+
     /// Initial great-circle bearing to the Kaaba, degrees clockwise from true north.
     static func qiblaBearing(lat: Double, lng: Double) -> Double {
         let kLat = 21.4225 * .pi / 180, kLng = 39.8262 * .pi / 180

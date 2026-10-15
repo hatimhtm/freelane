@@ -287,6 +287,7 @@ struct ClientDetailSheet: View {
     @Query private var facts: [AIFact]
 
     @State private var notes = ""
+    @State private var notesAtOpen = ""
     @State private var busyLearn = false
     @State private var showEdit = false
     @State private var confirmDelete = false
@@ -366,8 +367,12 @@ struct ClientDetailSheet: View {
             }
         }
         .frame(width: 500, height: 640).flagshipSheet()
-        .onAppear { notes = client.notes ?? "" }
-        .onDisappear { learnFromNotes() }     // notes feed AI memory when you leave
+        .onAppear { notes = client.notes ?? ""; notesAtOpen = notes }
+        .onDisappear {
+            notesSaveTask?.cancel()
+            if notes != (client.notes ?? "") { client.notes = notes; client.dirty = true; try? context.save() }
+            if notes != notesAtOpen { learnFromNotes() }     // notes feed AI memory when you leave
+        }
         .sheet(isPresented: $showEdit) { EditClientSheet(client: client) }
         .sheet(item: Binding(get: { nudge.map { NudgeText(text: $0) } }, set: { nudge = $0?.text })) { n in
             NudgeSheet(text: n.text)
@@ -473,9 +478,15 @@ struct ClientDetailSheet: View {
             TextField("Anything about this client — how they pay, what they like…", text: $notes, axis: .vertical)
                 .lineLimit(3...10).textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
                 .onChange(of: notes) { _, v in
-                    client.notes = v; client.dirty = true
-                    notesSaveTask?.cancel()   // debounce: don't write to disk on every keystroke
-                    notesSaveTask = Task { try? await Task.sleep(for: .seconds(0.6)); if !Task.isCancelled { try? context.save() } }
+                    // Write the model only once typing pauses, and only if the text changed. Assigning
+                    // on every keystroke re-ran every client query and queued a phone sync each time,
+                    // and opening the sheet alone marked the client changed.
+                    notesSaveTask?.cancel()
+                    notesSaveTask = Task {
+                        try? await Task.sleep(for: .seconds(0.6))
+                        guard !Task.isCancelled, v != (client.notes ?? "") else { return }
+                        client.notes = v; client.dirty = true; try? context.save()
+                    }
                 }
             HStack {
                 Button { learnFromNotes() } label: { Label(busyLearn ? "Learning…" : "Learn from notes", systemImage: "sparkles") }

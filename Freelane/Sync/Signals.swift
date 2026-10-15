@@ -75,8 +75,8 @@ enum Signals {
                               priority: overdue ? 2 : 1, feature: .loans)
         }
 
-        // 3) Living sadaka suggestion — only when it's genuinely affordable and
-        //    nothing's been given yet this month. The amount is computed dynamically.
+        // 3) A sadaka reminder — only when giving is genuinely affordable and nothing's been given
+        //    yet this month. It never names an amount: v1.8 dropped suggested amounts as pressure.
         let monthStart = PHT.startOfMonth()
         let safe = SafeToSpend.compute(payments: d.payments, spends: d.spends, wallets: d.wallets, ledger: d.ledger, recurrings: d.recurrings, plans: d.plans)
         let givenMTD = Sadaka.given(spends: d.spends, loans: d.loans, since: monthStart)
@@ -87,7 +87,7 @@ enum Signals {
             let phtMonth = String(Brain.phtDay().prefix(7))
             Notify.postUnique(context, dedupKey: "sadaka_nudge:\(phtMonth)",
                               kind: "sadaka_nudge", subject: "A small sadaka, if it feels easy",
-                              body: "Around \(money(sug.amount)) would sit comfortably right now — whenever you feel moved, never required.",
+                              body: "Nothing given yet this month. Whenever you feel moved, never required.",
                               priority: 0, feature: .sadaka)
         }
     }

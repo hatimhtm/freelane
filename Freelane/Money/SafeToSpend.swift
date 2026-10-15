@@ -31,6 +31,7 @@ enum SafeToSpend {
     /// explicit one-off, or a single buy far above the daily pace (a couch).
     static func isOneOff(_ s: Spend, rawDaily: Double) -> Bool {
         if s.isInvestment { return true }      // business/home investments aren't everyday spending
+        if s.recurringId != nil { return true } // bills are reserved as bills; counting them in the pace too doubled them
         let tags = (s.tags + [s.category].compactMap { $0 }).map { $0.lowercased() }
         if tags.contains("plan") || tags.contains("one-off") || tags.contains("oneoff") { return true }
         if rawDaily > 0, s.amountBase > rawDaily * 5 { return true }
@@ -87,7 +88,12 @@ enum SafeToSpend {
         let colLow = max(150, colBase * 0.45)
         let colHigh = colBase * 2.5
         let typical = typicalDailySpend(spends)
-        var base = min(max(typical > 0 ? typical : colBase, colLow), colHigh)
+        // A pace needs enough logged days to mean anything. With logging lapsed, one ₱182 water
+        // bill was the whole "pace" and pinned the allowance to its floor beside ₱16k in wallets.
+        let everydayDays = Set(spends.filter { $0.deletedAt == nil && $0.spentAt >= d30 && !isOneOff($0, rawDaily: .infinity) }
+            .map { PHT.startOfDay($0.spentAt) }).count
+        let paceKnown = everydayDays >= 10 && typical >= colLow
+        var base = min(max(paceKnown ? typical : colBase, colLow), colHigh)
 
         // Gentle context: a little room when earning well and under your pace; pull
         // down while recovering from an overspend.
@@ -102,12 +108,12 @@ enum SafeToSpend {
             .reduce(0.0) { $0 + WalletMath.balance(of: $1, ledger: ledger) }
         let walletBalances = max(0, walletTotal)
         let recurringForward = RecurringMath.expectedBase(recurrings, kind: .expense, days: Int(horizon))
-        let fees30 = payments.filter { $0.deletedAt == nil && !$0.feeUnknown && $0.paidAt >= d30 }.reduce(0) { $0 + ($1.impliedFeeBase ?? 0) }
         // Savings goals: each active plan's monthly set-aside is committed money — reserved out
         // of safe-to-spend like a bill, until the goal is reached.
         let setAside = plans.filter { !$0.archived && $0.monthlySetAside > 0 && $0.remaining > 0 }
             .reduce(0) { $0 + $1.monthlySetAside }
-        let committed = recurringForward + fees30 * horizon / 30 + setAside
+        // Not transfer fees: they were already taken out of the income that landed.
+        let committed = recurringForward + setAside
         let sustainablePerDay = (walletBalances - committed) / horizon
         let liveCeiling = max(colLow, sustainablePerDay)
 
@@ -134,6 +140,8 @@ enum SafeToSpend {
         var note: String
         if isLearning && typical <= 0 {
             note = "Starting from your city's typical cost of living until I learn your habits."
+        } else if !paceKnown {
+            note = "Too little spending logged lately to know your pace, so this uses a typical day for your city."
         } else {
             note = "≈ your everyday pace"
             if essDaily > 0 { note += " · ~\(CurrencyFormat.string(essDaily, "PHP", compact: true)) is essentials" }
@@ -160,10 +168,14 @@ enum SafeToSpend {
     /// PHT-day snapshot of the PACE ANCHOR (wallet-independent): written ONCE per day (only
     /// when data is ready) so the anchor is stable; wallet clamps are applied live on read.
     private static func snapshot(_ todayBase: Double, persist: Bool) -> Double {
-        let key = "safe.initial.v4." + dayKey()    // v4 = unclamped anchor (v3 froze the wallet clamp too)
+        let key = "safe.initial.v5." + dayKey()    // v5 = bills out of the pace, unknown pace when logging lapses
         let d = UserDefaults.standard
         if d.object(forKey: key) != nil { return d.double(forKey: key) }
-        if persist { d.set(todayBase, forKey: key) }
+        if persist {
+            // One key per day used to pile up forever (130+ of them); keep only today's.
+            for old in d.dictionaryRepresentation().keys where old.hasPrefix("safe.initial.") { d.removeObject(forKey: old) }
+            d.set(todayBase, forKey: key)
+        }
         return todayBase
     }
 

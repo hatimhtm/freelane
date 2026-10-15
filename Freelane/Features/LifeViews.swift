@@ -205,7 +205,7 @@ struct PersonReturnSheet: View {
                 .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
         }
         .onAppear {
-            walletId = loans.first?.originWalletId ?? wallets.first { $0.isHolding && !$0.archived }?.id
+            walletId = loans.first?.originWalletId ?? DefaultWallet.forOutflow(context, among: wallets)
             amount = String(format: "%.2f", outstanding)
         }
     }
@@ -226,6 +226,7 @@ struct LoanPersonSheet: View {
     @State private var editingLoan: Loan?
     @State private var addMore = false
     @State private var pendingDelete: Loan?
+    @State private var pendingForgive: Loan?
 
     struct PooledContext: Identifiable { let id = UUID(); let loans: [Loan]; let inbound: Bool }
 
@@ -313,6 +314,20 @@ struct LoanPersonSheet: View {
             }
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         } message: { l in Text("\(CurrencyFormat.string(l.outstandingBase, base)) outstanding · removes its wallet movement") }
+        // Forgiving closes the loan and books what's left as sadaka, so it asks first and can be undone.
+        .confirmationDialog("Forgive this loan?", isPresented: Binding(get: { pendingForgive != nil }, set: { if !$0 { pendingForgive = nil } }), presenting: pendingForgive) { l in
+            Button("Forgive") {
+                let before = (l.outstandingBase, l.status)
+                LoanEngine.forgive(context, loan: l)
+                undo.announce("Loan forgiven, counted as sadaka", icon: "heart") {
+                    l.outstandingBase = before.0; l.status = before.1
+                    l.forgivenBase = nil; l.forgivenAt = nil; l.dirty = true
+                    try? context.save()
+                }
+                pendingForgive = nil
+            }
+            Button("Cancel", role: .cancel) { pendingForgive = nil }
+        } message: { l in Text("\(CurrencyFormat.string(l.outstandingBase, base)) is let go and counted as sadaka.") }
     }
 
     /// The persistent, unified timeline — every lend and every repayment for this person, newest
@@ -366,7 +381,7 @@ struct LoanPersonSheet: View {
             }
             HStack(spacing: 8) {
                 if open && l.direction == .given {
-                    Button("Forgive") { LoanEngine.forgive(context, loan: l) }.buttonStyle(.glass).controlSize(.small)
+                    Button("Forgive") { pendingForgive = l }.buttonStyle(.glass).controlSize(.small)
                 }
                 Button("Edit") { editingLoan = l }.buttonStyle(.glass).controlSize(.small)
                 Spacer()
@@ -414,7 +429,7 @@ struct AddLoanSheet: View {
         }
         .onAppear {
             if who.isEmpty { who = prefillName }
-            walletId = wallets.first { $0.isHolding && !$0.archived }?.id
+            walletId = DefaultWallet.forOutflow(context, among: wallets)
         }
     }
 }

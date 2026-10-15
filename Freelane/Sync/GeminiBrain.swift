@@ -36,9 +36,17 @@ enum GeminiConfig {
 
     static var apiKey: String? {
         get { Keychain.get(keychainKey).flatMap { $0.isEmpty ? nil : $0 } }
-        set { Keychain.set(newValue?.trimmingCharacters(in: .whitespacesAndNewlines), for: keychainKey) }
+        set { Keychain.set(newValue?.trimmingCharacters(in: .whitespacesAndNewlines), for: keychainKey); cachedHasKey = nil }
     }
-    static var hasKey: Bool { apiKey != nil }
+    /// Cached: `hasKey` is read from view bodies (the Journal page reads it several times a render),
+    /// and each uncached read was a Keychain round trip on the main thread. Only the setter changes it.
+    private static var cachedHasKey: Bool?
+    static var hasKey: Bool {
+        if let c = cachedHasKey { return c }
+        let v = apiKey != nil
+        cachedHasKey = v
+        return v
+    }
 
     /// The model used for anything a person will read. Stored as a raw string so an unknown value
     /// from a future build degrades to the default instead of crashing.

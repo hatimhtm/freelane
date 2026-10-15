@@ -22,15 +22,18 @@ enum VendorTrends {
         var swing: Double { thisMonth - lastMonth }
     }
 
-    /// Per-vendor this-month vs last-month totals, keyed by vendor name.
+    /// Per-vendor this-month vs last-month totals, keyed by vendor name. Last month is counted only
+    /// up to the same point (month-to-date against a whole month showed every vendor near −90% on
+    /// the 3rd).
     static func movers(_ spends: [Spend]) -> [String: Mover] {
         let monthStart = PHT.startOfMonth()
         let lastStart = PHT.calendar.date(byAdding: .month, value: -1, to: monthStart) ?? monthStart
+        let lastCutoff = lastStart.addingTimeInterval(Date.now.timeIntervalSince(monthStart))
         var thisM: [String: Double] = [:], lastM: [String: Double] = [:]
         for s in spends {
             guard s.deletedAt == nil, let name = s.vendorName, !name.isEmpty else { continue }
             if s.spentAt >= monthStart { thisM[name, default: 0] += s.amountBase }
-            else if s.spentAt >= lastStart { lastM[name, default: 0] += s.amountBase }
+            else if s.spentAt >= lastStart, s.spentAt < lastCutoff { lastM[name, default: 0] += s.amountBase }
         }
         var out: [String: Mover] = [:]
         for name in Set(thisM.keys).union(lastM.keys) {

@@ -153,7 +153,7 @@ struct EditProjectSheet: View {
             LabeledField("Notes") { TextField("optional", text: $notes).fieldWell() }
         }
         .onAppear {
-            title = project.title; amount = String(format: "%g", project.amount)
+            title = project.title; amount = editAmountString(project.amount)
             currency = project.currency; clientId = project.clientId; status = project.status
             notes = project.notes ?? ""
             if let d = project.dueDate { hasDue = true; due = d }
@@ -296,7 +296,7 @@ struct EditWalletSheet: View {
         }
         .onAppear {
             name = wallet.name; kind = wallet.kind
-            opening = wallet.openingBalanceBase.map { String(format: "%g", $0) } ?? ""
+            opening = wallet.openingBalanceBase.map(editAmountString) ?? ""
             isHolding = wallet.isHolding; archived = wallet.archived; notes = wallet.notes ?? ""
             excluded = wallet.excludedFromTotals
         }

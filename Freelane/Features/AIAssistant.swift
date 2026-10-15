@@ -63,7 +63,7 @@ struct AIChatSheet: View {
         case .spending: return ["Where did most of my money go?", "Any unusual spending?", "How do I cut back?"]
         case .payments, .wallets: return ["Best way to withdraw from Wise?", "Which wallet is lowest?", "Summarize my fees"]
         case .projects: return ["What's overdue?", "Who owes me the most?"]
-        case .sadaka: return ["What should I give this month?", "How is my giving trending?"]
+        case .sadaka: return ["What have I given this year?", "How is my giving trending?"]
         default: return ["Give me a quick summary", "What needs my attention?"]
         }
     }
@@ -178,16 +178,13 @@ struct AIChatSheet: View {
             .padding(16)
             HStack(spacing: 6) {
                 Image(systemName: "lock.fill").font(.system(size: 9)).foregroundStyle(Palette.textTertiary)
-                Text("Your figures are read on this Mac; the answer is written by Gemini.")
+                Text("Gemini gets a summary of your figures to write the answer.")
                     .font(.system(size: 10)).foregroundStyle(Palette.textTertiary)
                 Spacer()
             }
             .padding(.horizontal, 16).padding(.bottom, 12)
         }
         .frame(width: 480, height: 580)
-        // Deliberately NOT `flagshipSheet()`: that applies click-outside-to-close, and this is the
-        // only sheet in the app holding unsaved free-form text. A stray click on the sidebar used
-        // to wipe the whole conversation with no warning and no way back.
         .background(AppBackground())
         .appAppearance()
         .sheetEntrance()

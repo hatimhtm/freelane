@@ -90,11 +90,11 @@ struct SettingsView: View {
 
     /// Fix a wallet whose computed balance has drifted from reality. Enter the real balance in the
     /// wallet's OWN currency (MAD bank, USD Wise, USDT…) — it converts to base. Records the difference
-    /// as a one-off "recalibration" adjustment in the ledger — NOT a spend, so it never touches your
-    /// spending totals or safe-to-spend.
+    /// as a one-off "recalibration" adjustment in the ledger. Since 2.26 a shortfall counts as
+    /// unaccounted spending (and a surplus as unexplained money) in the spending figures.
     private var recalibrateCard: some View {
         SectionCard(title: "Recalibrate wallets",
-                    subtitle: "Set a wallet to its real balance, in any currency — recorded as an adjustment, not a spend",
+                    subtitle: "Set a wallet to its real balance, in any currency — a shortfall counts as unaccounted spending",
                     accent: Palette.warning) {
             VStack(alignment: .leading, spacing: 16) {
                 ForEach(wallets.filter { $0.isHolding && !$0.archived }) { w in
@@ -131,7 +131,7 @@ struct SettingsView: View {
                 if let recalFlash {
                     Label(recalFlash, systemImage: "checkmark.circle.fill").font(.system(size: 12)).foregroundStyle(Palette.positive)
                 }
-                Text("Enter what the wallet ACTUALLY holds, in its own currency. The difference (converted to \(base)) is logged as a recalibration adjustment — shows as “ADJ” in the wallet's history; your spending and income numbers are untouched.")
+                Text("Enter what the wallet ACTUALLY holds, in its own currency. The difference (converted to \(base)) is logged as a recalibration adjustment, shown as “ADJ” in the wallet's history. Money missing this way counts as unaccounted spending; money that turned up is shown separately.")
                     .font(.system(size: 11)).foregroundStyle(Palette.textTertiary)
             }
         }
@@ -225,7 +225,7 @@ struct SettingsView: View {
         VStack(spacing: 20) {
             SectionCard(title: "Apple integrations", subtitle: "All off until you turn them on — access is requested here", accent: Palette.cyan) {
                 VStack(alignment: .leading, spacing: 16) {
-                    integToggle($remindersOn, "Reminders", "See and complete your Apple Reminders alongside Tasks. Also feeds the AI's awareness below.", "checklist") {
+                    integToggle($remindersOn, "Reminders", "See and log your Apple Reminders from the menu bar. Also feeds the AI's awareness below.", "checklist") {
                         await EventBridge.requestReminders()
                     }
                     Divider().overlay(Palette.hairline)
@@ -255,7 +255,7 @@ struct SettingsView: View {
         SectionCard(title: "Personal context",
                     subtitle: "Make the AI aware of your life outside the app — on-device only, always") {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Once a day, the on-device model reads the enabled sources and keeps only THEMES — \"apartment hunting\", \"in touch with Sarah a lot\" — never quotes. Those themes make journal questions, insights, and chat aware of your actual life. This digest is produced by Apple's on-device model and stays on this Mac; only the themes it distils are ever included when Gemini writes a question.")
+                Text("Once a day, the on-device model reads the enabled sources and keeps only THEMES — \"apartment hunting\", \"in touch with Sarah a lot\" — never quotes. The digest stays on this Mac and is never included in anything sent to Gemini.")
                     .font(.system(size: 11)).foregroundStyle(Palette.textTertiary).fixedSize(horizontal: false, vertical: true)
                 signalToggle($sigMessages, "Messages", "Who you're in touch with and what's going on — from your iMessage history.", "message")
                 Divider().overlay(Palette.hairline)
@@ -495,11 +495,11 @@ struct SettingsView: View {
                     subtitle: "Where each kind of thinking happens",
                     accent: Palette.violet) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Two models share the work. Apple's built-in one stays on this Mac and handles the small, constant jobs — sorting a spend into a category, working out a bill increase — because it answers instantly and costs nothing. Gemini writes everything you actually read: your journal questions, your reflections, and the chat.")
+                Text("Apple's built-in model tries the small jobs first, on this Mac — sorting a spend, working out a bill increase. When it declines, which is often, Gemini does them. Gemini also writes everything you read: journal questions, reflections, the chat and the bell.")
                     .font(.system(size: 12)).foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Label("Your journal entries are sent to Google when the app writes a question or reads an entry. Your money records are not — those never leave this Mac.", systemImage: "arrow.up.forward.app")
+                Label("Gemini (Google) receives what each job needs: your journal entries for journal questions; a summary of your wallets, recent spends, loans and what the app has learned about you for the chat and the bell; and the words of each spend you log, to sort it.", systemImage: "arrow.up.forward.app")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -791,7 +791,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 infoRow("Version", appVersionString)
                 infoRow("Platform", "macOS · Apple Silicon · Liquid Glass")
-                Text("Freelane is a native app. Your finances never leave this Mac — updates come straight from GitHub.")
+                Text("Freelane is a native app. Your records live on this Mac and sync to your phone through your own Supabase project; the AI features send Gemini what they need. Updates come straight from GitHub.")
                     .font(.system(size: 12)).foregroundStyle(Palette.textTertiary)
                 updateRow
             }

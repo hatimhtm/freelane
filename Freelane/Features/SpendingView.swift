@@ -932,7 +932,7 @@ struct PayRecurringSheet: View {
         }
         .onAppear {
             guard !loaded else { return }; loaded = true
-            walletId = recurring.walletId ?? holding.first?.id
+            walletId = recurring.walletId ?? DefaultWallet.forOutflow(context, among: wallets, recurringId: recurring.id)
             if !recurring.isVariableAmount, recurring.amount > 0 { amount = editAmountString(recurring.amount) }
             DispatchQueue.main.async { amountFocused = true }
         }
@@ -1121,8 +1121,8 @@ fileprivate func parseAmount(_ s: String) -> Double? {
     Double(s.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: " ", with: ""))
 }
 
-/// Clean editable string for a stored amount ("2500", "2500.5" — never "2500.0").
-fileprivate func editAmountString(_ v: Double) -> String {
+/// Clean editable string for a stored amount ("2500", "2500.5" — never "2500.0", never "1.2e+06").
+func editAmountString(_ v: Double) -> String {
     v.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", v) : String(v)
 }
 

@@ -113,6 +113,24 @@ enum Feature: String, CaseIterable, Identifiable {
     static let retired: Set<Feature> = [.today, .people, .vendors, .faith, .activity, .body]
     var isRetired: Bool { Feature.retired.contains(self) }
 
+    /// Where a link to a retired page lands. Notifications and Siri still name them, and opening one
+    /// showed a page with no sidebar row selected.
+    var replacement: Feature {
+        switch self {
+        case .activity: return .stats
+        case .vendors: return .spending
+        case .today, .people, .faith, .body: return .dashboard
+        default: return self
+        }
+    }
+
+    /// The sidebar's rows, top to bottom. ⌘1…⌘9 follow this exact list.
+    static var sidebar: [Feature] {
+        FeatureGroup.allCases.flatMap { g in
+            Feature.allCases.filter { $0.group == g && $0 != .settings && $0 != .wallets && !$0.isRetired }
+        }
+    }
+
     var group: FeatureGroup {
         switch self {
         case .dashboard, .today, .agenda: return .overview
@@ -158,7 +176,7 @@ struct RootView: View {
                                                                    // real entrance, so the outer swap stays quiet
             }
             .overlay(alignment: .topTrailing) {
-                BellButton(onOpenFeature: { f in withAnimation(Motion.page) { feature = f } })
+                BellButton(onOpenFeature: { f in withAnimation(Motion.page) { feature = f.replacement } })
                     .padding(.top, 16).padding(.trailing, 20)
             }
             .overlay(alignment: .bottomTrailing) {
@@ -182,7 +200,7 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .flLogPayment)) { _ in quickPayment = true }
         .onReceive(NotificationCenter.default.publisher(for: .flOpenFeature)) { note in
             if let raw = note.userInfo?["feature"] as? String, let f = Feature(rawValue: raw) {
-                withAnimation(Motion.page) { feature = f }
+                withAnimation(Motion.page) { feature = f.replacement }
             }
         }
         .overlay {
@@ -217,7 +235,7 @@ struct RootView: View {
                 WidgetBridge.update(context)   // keep the desktop widget fresh
             }
         }
-        .environment(\.navigate, { f in withAnimation(Motion.page) { feature = f } })
+        .environment(\.navigate, { f in withAnimation(Motion.page) { feature = f.replacement } })
         .environment(sync)
         .environment(ai)
         .environment(undo)
@@ -246,6 +264,7 @@ struct RootView: View {
             }
             // Drop read/dismissed notifications past the retention window (default 3 days).
             Notify.purgeOld(context)
+            if Feature.faith.isRetired { FaithService.clearReminders() }
             // Permanently clear anything that's been in Trash longer than 30 days.
             TrashSweep.run(context)
             // Charge any stored monthly wallet fees, once per month per wallet.
@@ -695,9 +714,9 @@ private func staggered<V: View>(_ v: V) -> some View {
 /// Lives in its own view so RootView's body stays type-checkable.
 struct SectionJumpShortcuts: View {
     var jump: (Feature) -> Void
-    private var jumps: [Feature] {
-        Array(Feature.allCases.filter { !$0.isRetired && $0 != .settings }.prefix(9))
-    }
+    // Built from the sidebar itself: the old list counted the hidden Wallets page, so ⌘4–⌘9
+    // each opened the page one row off.
+    private var jumps: [Feature] { Array(Feature.sidebar.prefix(9)) }
     var body: some View {
         ZStack {
             ForEach(Array(jumps.enumerated()), id: \.element) { pair in

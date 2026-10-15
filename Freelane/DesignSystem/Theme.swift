@@ -256,21 +256,19 @@ extension View {
 
     /// Content springs up + fades in when it appears (optionally staggered by `index`).
     /// The app-wide "fluid" entrance; respects Reduce Motion.
-    func fluidAppear(_ index: Int = 0) -> some View { modifier(FluidAppear(index: index)) }
+    func fluidAppear(_ index: Int = 0) -> some View { modifier(FluidAppear()) }
 }
 
 struct FluidAppear: ViewModifier {
-    let index: Int
     @State private var shown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func body(content: Content) -> some View {
+        // A short fade only: this cascade replays on every navigation (see RiseIn).
         content
             .opacity(shown || reduceMotion ? 1 : 0)
-            .scaleEffect(shown || reduceMotion ? 1 : 0.975, anchor: .top)
-            .offset(y: shown || reduceMotion ? 0 : 12)
             .onAppear {
                 guard !shown else { return }
-                withAnimation(Motion.appear.delay(Double(index) * 0.045)) { shown = true }
+                withAnimation(.easeOut(duration: 0.15)) { shown = true }
             }
     }
 }

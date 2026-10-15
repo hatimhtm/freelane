@@ -189,6 +189,9 @@ extension CloudSync {
                 "amount_base": l.amountBase, "event_at": iso(l.eventAt),
                 "related_kind": strOrNull(l.relatedKindRaw), "related_id": uuidOrNull(l.relatedId),
                 "note": strOrNull(l.note), "archived_at": iso(l.archivedAt),
+                // The phone retires legs with deleted_at, which this side reads as archived. A leg
+                // restored here must clear it, or the next pull archives the restored money again.
+                "deleted_at": NSNull(),
                 "created_at": iso(l.createdAt),
                 // No updatedAt on this model — derived, never now().
                 "updated_at": iso(l.archivedAt ?? l.createdAt),
@@ -264,7 +267,7 @@ extension CloudSync {
         switch table {
         case "fl_wallets":
             let existing = first(ctx, #Predicate<Wallet> { $0.id == id })
-            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt >= remoteAt { return }
             let w = existing ?? { let n = Wallet(id: id, name: ""); ctx.insert(n); return n }()
             w.name = row["name"] as? String ?? w.name
             w.kindRaw = row["kind"] as? String ?? w.kindRaw
@@ -282,7 +285,7 @@ extension CloudSync {
 
         case "fl_clients":
             let existing = first(ctx, #Predicate<Client> { $0.id == id })
-            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt >= remoteAt { return }
             let c = existing ?? { let n = Client(id: id, name: ""); ctx.insert(n); return n }()
             c.name = row["name"] as? String ?? c.name
             c.defaultCurrency = row["default_currency"] as? String
@@ -296,7 +299,7 @@ extension CloudSync {
 
         case "fl_projects":
             let existing = first(ctx, #Predicate<Project> { $0.id == id })
-            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt >= remoteAt { return }
             let p = existing ?? {
                 let n = Project(id: id, title: "", amount: 0, currency: "PHP"); ctx.insert(n); return n
             }()
@@ -317,7 +320,7 @@ extension CloudSync {
 
         case "fl_payments":
             let existing = first(ctx, #Predicate<Payment> { $0.id == id })
-            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt >= remoteAt { return }
             let p = existing ?? {
                 let n = Payment(id: id, projectId: nil, amount: 0, currency: "PHP", paidAt: .now)
                 ctx.insert(n); return n
@@ -335,10 +338,17 @@ extension CloudSync {
             p.deletedAt = parseDate(row["deleted_at"])
             p.updatedAt = remoteAt
             p.dirty = false
+            // Project status is derived from allocations, which this sync doesn't carry. A payment
+            // the phone booked against a project arrives without one, so the next recompute here
+            // flipped the project back to unpaid and "mark paid" booked the income twice.
+            if let pid = p.projectId, first(ctx, #Predicate<PaymentAllocation> { $0.paymentId == id }) == nil {
+                ctx.insert(PaymentAllocation(paymentId: id, projectId: pid, allocationAmount: p.amount,
+                                             allocationCurrency: p.currency, allocationBase: p.netAmountBase ?? 0))
+            }
 
         case "fl_recurring":
             let existing = first(ctx, #Predicate<Recurring> { $0.id == id })
-            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt >= remoteAt { return }
             let r = existing ?? { let n = Recurring(id: id, label: "", amount: 0, currency: "PHP", amountBase: 0)
                 ctx.insert(n); return n }()
             r.label = row["label"] as? String ?? r.label
@@ -359,7 +369,7 @@ extension CloudSync {
 
         case "fl_loans":
             let existing = first(ctx, #Predicate<Loan> { $0.id == id })
-            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt >= remoteAt { return }
             let l = existing ?? {
                 let n = Loan(id: id, counterparty: "", direction: .given, principalBase: 0)
                 ctx.insert(n); return n
@@ -382,7 +392,7 @@ extension CloudSync {
 
         case "fl_spends":
             let existing = first(ctx, #Predicate<Spend> { $0.id == id })
-            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt >= remoteAt { return }
             let s = existing ?? {
                 let n = Spend(id: id, walletId: nil, spentAt: .now, amount: 0, currency: "PHP", amountBase: 0)
                 ctx.insert(n); return n
@@ -412,6 +422,14 @@ extension CloudSync {
             // immutable in practice, so first write wins and re-applying is harmless. Except over
             // an unpushed local archive: re-applying would put a deleted spend's money back.
             if let e = existing, e.dirty { return }
+            // Skip a leg that's identical to what we hold. Re-assigning the same values on every
+            // fetch was most of the 410,790 ledger writes behind the old sync loop. (The phone edits
+            // a leg's amount in place, so the amount and wallet are compared too.)
+            if let e = existing,
+               e.archivedAt == (parseDate(row["archived_at"]) ?? parseDate(row["deleted_at"])),
+               e.amountBase == (row["amount_base"] as? Double ?? e.amountBase),
+               e.walletId == parseUUID(row["wallet_id"]),
+               e.kindRaw == (row["kind"] as? String ?? e.kindRaw) { return }
             let l = existing ?? {
                 let n = LedgerEntry(id: id, kind: .adjustment, amountBase: 0, walletId: nil,
                                     relatedKind: nil, relatedId: nil, eventAt: .now)

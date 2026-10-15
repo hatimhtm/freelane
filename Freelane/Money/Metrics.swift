@@ -105,14 +105,22 @@ enum MetricsCompute {
             acc + rates.toBase(ProjectMath.outstandingNative(project: p, allocations: liveAllocations, rates: rates), p.currency)
         }
 
-        // Cash flow: cumulative ledger by day over the window.
+        // Cash flow: what the holding wallets held at the end of each day, counted exactly like
+        // `availableRaw` (same wallets, anchors and openings) so the line ends on that figure. It
+        // used to sum every ledger row of every wallet and ended ₱16.8k away from "Available".
+        let holdingIds = Set(holding.map(\.id))
+        let anchors = Dictionary(uniqueKeysWithValues: holding.map { ($0.id, WalletMath.anchor($0)) })
+        let counted = ledger.filter { e in
+            guard e.archivedAt == nil, let w = e.walletId, holdingIds.contains(w) else { return false }
+            guard let a = anchors[w] ?? nil else { return true }
+            return e.eventAt >= a
+        }
         let windowStart = PHT.daysAgo(windowDays)
-        let priorBalance = ledger
-            .filter { $0.archivedAt == nil && $0.eventAt < windowStart }
-            .reduce(0) { $0 + $1.amountBase }
+        let priorBalance = holding.reduce(0) { $0 + ($1.openingBalanceBase ?? 0) }
+            + counted.filter { $0.eventAt < windowStart }.reduce(0) { $0 + $1.amountBase }
         let cal = PHT.calendar
         var byDay: [Date: Double] = [:]
-        for e in ledger where e.archivedAt == nil && e.eventAt >= windowStart {
+        for e in counted where e.eventAt >= windowStart {
             let day = cal.startOfDay(for: e.eventAt)
             byDay[day, default: 0] += e.amountBase
         }

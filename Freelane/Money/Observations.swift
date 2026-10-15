@@ -61,12 +61,19 @@ enum ObservationEngine {
         // so anything month-on-month is also scaled by how far through the month we are.
         guard let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: now)),
               let lastMonthStart = cal.date(byAdding: .month, value: -1, to: thisMonthStart) else { return [] }
-        let daysIntoMonth = max(1, cal.dateComponents([.day], from: thisMonthStart, to: now).day ?? 1)
+        // Fractional days: whole days read 1 at 8pm on the 2nd, so unchanged spending looked up 83%.
+        let daysIntoMonth = max(1.0 / 24, now.timeIntervalSince(thisMonthStart) / 86_400)
         let daysInLastMonth = cal.range(of: .day, in: .month, for: lastMonthStart)?.count ?? 30
-        let monthProgress = min(1.0, Double(daysIntoMonth) / Double(daysInLastMonth))
+        let monthProgress = min(1.0, daysIntoMonth / Double(daysInLastMonth))
 
-        let thisMonth = spends.filter { $0.spentAt >= thisMonthStart }
-        let lastMonth = spends.filter { $0.spentAt >= lastMonthStart && $0.spentAt < thisMonthStart }
+        // Bills and sadaka are planned money, not spending that moves: counting them produced
+        // "Rent is up 114%" on an unchanged rent paid earlier in the month. The trend findings
+        // (1–3) also leave out one-offs; the biggest-spend finding (5) is about one-offs.
+        let unplanned = spends.filter { $0.recurringId == nil && !$0.isSadaka }
+        let thisMonth = unplanned.filter { $0.spentAt >= thisMonthStart }
+        let lastMonth = unplanned.filter { $0.spentAt >= lastMonthStart && $0.spentAt < thisMonthStart }
+        let everydayNow = thisMonth.filter { !SafeToSpend.isOneOff($0, rawDaily: .infinity) }
+        let everydayThen = lastMonth.filter { !SafeToSpend.isOneOff($0, rawDaily: .infinity) }
 
         var out: [Finding] = []
 
@@ -74,8 +81,8 @@ enum ObservationEngine {
         //     to the same fraction of a month we're currently standing in.
         var byCategoryNow: [String: Double] = [:]
         var byCategoryThen: [String: Double] = [:]
-        for s in thisMonth { byCategoryNow[s.category ?? s.tags.first ?? "Other", default: 0] += s.amountBase }
-        for s in lastMonth { byCategoryThen[s.category ?? s.tags.first ?? "Other", default: 0] += s.amountBase }
+        for s in everydayNow { byCategoryNow[s.category ?? s.tags.first ?? "Other", default: 0] += s.amountBase }
+        for s in everydayThen { byCategoryThen[s.category ?? s.tags.first ?? "Other", default: 0] += s.amountBase }
 
         for (cat, nowTotal) in byCategoryNow {
             let thenFull = byCategoryThen[cat] ?? 0
@@ -97,8 +104,8 @@ enum ObservationEngine {
         //     shop moving is a different kind of fact from a whole category moving.
         var byVendorNow: [String: Double] = [:]
         var byVendorThen: [String: Double] = [:]
-        for s in thisMonth { if let v = s.vendorName, !v.isEmpty { byVendorNow[v, default: 0] += s.amountBase } }
-        for s in lastMonth { if let v = s.vendorName, !v.isEmpty { byVendorThen[v, default: 0] += s.amountBase } }
+        for s in everydayNow { if let v = s.vendorName, !v.isEmpty { byVendorNow[v, default: 0] += s.amountBase } }
+        for s in everydayThen { if let v = s.vendorName, !v.isEmpty { byVendorThen[v, default: 0] += s.amountBase } }
         for (vendor, nowTotal) in byVendorNow {
             let thenScaled = (byVendorThen[vendor] ?? 0) * monthProgress
             guard thenScaled >= 200, nowTotal >= 200 else { continue }
@@ -113,8 +120,8 @@ enum ObservationEngine {
         }
 
         // 3 — Overall daily pace.
-        let paceNow = thisMonth.reduce(0.0) { $0 + $1.amountBase } / Double(daysIntoMonth)
-        let paceThen = lastMonth.reduce(0.0) { $0 + $1.amountBase } / Double(daysInLastMonth)
+        let paceNow = everydayNow.reduce(0.0) { $0 + $1.amountBase } / daysIntoMonth
+        let paceThen = everydayThen.reduce(0.0) { $0 + $1.amountBase } / Double(daysInLastMonth)
         if paceThen > 50, paceNow > 0 {
             let pct = Int(((paceNow - paceThen) / paceThen * 100).rounded())
             if abs(pct) >= 25 {

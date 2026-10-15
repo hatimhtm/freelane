@@ -8,6 +8,7 @@ extension MoneyEngine {
                      vendorName: String?, category: String?, isSadaka: Bool, spentAt: Date,
                      tags: [String] = [], isBusiness: Bool = false, isHouse: Bool = false) throws -> UUID {
         guard amount > 0 else { throw EngineError.invalid("Amount must be > 0.") }
+        try requireRate(currency)
         let amountBase = rates.toBase(amount, currency)
         let s = Spend(walletId: walletId, spentAt: spentAt, amount: amount, currency: currency,
                       amountBase: round2(amountBase), spendDescription: description)
@@ -32,6 +33,7 @@ extension MoneyEngine {
                      vendorName: String?, category: String?, isSadaka: Bool, spentAt: Date, tags: [String],
                      isBusiness: Bool = false, isHouse: Bool = false) throws {
         guard amount > 0 else { throw EngineError.invalid("Amount must be > 0.") }
+        try requireRate(currency)
         guard let s = (try? context.fetch(FetchDescriptor<Spend>()))?.first(where: { $0.id == id }) else { return }
         let amountBase = round2(rates.toBase(amount, currency))
         s.walletId = walletId; s.amount = amount; s.currency = currency; s.amountBase = amountBase
@@ -45,7 +47,16 @@ extension MoneyEngine {
             insertLedger(kind: isSadaka ? .sadakaPayment : .outflow, amountBase: -amountBase, walletId: w,
                          relatedKind: .spend, relatedId: id, eventAt: spentAt, note: "updateSpend")
         }
+        RecurringMath.resyncAll(context)   // a moved bill payment can settle a different period
         try context.save()
+    }
+
+    /// A currency with no rate used to convert 1:1 ("100 GBP" booked as ₱100) and stay fx-locked
+    /// that way. Refuse instead; FXService keeps a rate for every currency the forms offer.
+    func requireRate(_ currency: String) throws {
+        guard rates.hasRate(for: currency) else {
+            throw EngineError.invalid("No exchange rate for \(currency) yet. Connect to the internet once so Freelane can fetch it.")
+        }
     }
 
     /// Settle a recurring bill — logs a spend for `amount`(per period) × periods + `fee`,
@@ -109,5 +120,31 @@ extension MoneyEngine {
         }
         RecurringMath.resyncAll(context)       // restoring it re-settles the period
         try context.save()
+    }
+}
+
+/// The wallet a new outflow most likely came from: the one that paid this bill last time, else the
+/// one the last spend came from, else the first holding wallet that counts toward totals. A plain
+/// `.first` picked whatever sorted first, which here is the bank wire excluded from totals.
+enum DefaultWallet {
+    @MainActor
+    static func forOutflow(_ context: ModelContext, among wallets: [Wallet], recurringId: UUID? = nil) -> UUID? {
+        let usable = wallets.filter { $0.isHolding && !$0.archived && $0.deletedAt == nil }
+        var d = FetchDescriptor<Spend>(predicate: #Predicate { $0.deletedAt == nil && $0.walletId != nil },
+                                       sortBy: [SortDescriptor(\.spentAt, order: .reverse)])
+        d.fetchLimit = 200
+        let recent = ((try? context.fetch(d)) ?? []).filter { s in usable.contains { $0.id == s.walletId } }
+        if let rid = recurringId, let w = recent.first(where: { $0.recurringId == rid })?.walletId { return w }
+        return recent.first?.walletId ?? usable.first(where: { !$0.excludedFromTotals })?.id ?? usable.first?.id
+    }
+
+    /// Where income usually lands: the wallet the most recent payment landed in, if it's still live.
+    @MainActor
+    static func forIncome(_ context: ModelContext, among wallets: [Wallet]) -> UUID? {
+        var d = FetchDescriptor<PaymentStep>(predicate: #Predicate { $0.isFinal && $0.methodId != nil },
+                                             sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        d.fetchLimit = 1
+        guard let id = (try? context.fetch(d))?.first?.methodId else { return nil }
+        return wallets.contains { $0.id == id && !$0.archived && $0.deletedAt == nil } ? id : nil
     }
 }

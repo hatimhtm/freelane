@@ -13,8 +13,8 @@ import SwiftData
 ///  · Every source is OFF until enabled in Settings → Integrations.
 ///  · The digest is produced by the ON-DEVICE model directly (never the failover chain), and the
 ///    raw extracts never leave this function.
-///  · Downstream prompts include the digest ONLY while cloud fallback is unreachable — this
-///    content can never ride a prompt to Gemini, even with cloud enabled elsewhere.
+///  · No prompt includes the digest: every prompt chain can reach Gemini, so it is shown in
+///    Settings and nowhere else.
 ///  · Signals, not quotes: the model is instructed to output themes/names, never message text.
 enum LifeSignals {
 
@@ -41,23 +41,6 @@ enum LifeSignals {
         guard anyOn, let raw = Brain.cachedStable(context, key: "life_signals.v2"),
               let data = raw.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(Digest.self, from: data)
-    }
-
-    /// The formatted prompt section. Callers MUST gate on `!ai.cloudReachable` — see privacy rules.
-    @MainActor
-    static func contextSection(_ context: ModelContext) -> String? {
-        guard let d = digest(context),
-              !(d.doing.isEmpty && d.reading.isEmpty && d.people.isEmpty && d.notes.isEmpty) else { return nil }
-        var lines = ["WHAT'S GOING ON IN THEIR LIFE (on-device digest — treat carefully)"]
-        if !d.doing.isEmpty { lines.append("- Life threads (from their real activity): " + d.doing.joined(separator: "; ")) }
-        if !d.reading.isEmpty {
-            lines.append("- Reading/researching lately — things they LOOKED AT, not things they did or plan: "
-                         + d.reading.joined(separator: "; "))
-        }
-        if !d.people.isEmpty { lines.append("- In touch with most: " + d.people.joined(separator: ", ")) }
-        if !d.notes.isEmpty { lines.append(contentsOf: d.notes.map { "- \($0)" }) }
-        lines.append("RULE: never assert anything here as an event or plan in their life unless it's a Life thread — and even those, mention lightly. When unsure, ignore this section entirely.")
-        return lines.joined(separator: "\n")
     }
 
     // MARK: - Refresh (once a day, on-device)

@@ -170,6 +170,8 @@ struct MoneyEngine {
             throw EngineError.invalid("A payment needs at least one step.")
         }
         guard first.amountIn > 0 else { throw EngineError.invalid("Amount must be greater than zero.") }
+        try requireRate(first.currencyIn)
+        try requireRate(final.currencyOut)
         let hasMulti = (input.projects?.isEmpty == false)
         let primaryProjectId: UUID? = hasMulti
             ? input.projects!.max(by: { $0.allocationAmount < $1.allocationAmount })!.projectId
@@ -179,6 +181,11 @@ struct MoneyEngine {
         // those rounded figures, so the stored invariant fee = gross − net always holds exactly
         // (and the ledger below posts the same rounded net — no sub-cent drift).
         let netBase = round2(final.currencyOut == base ? final.amountOut : rates.toBase(final.amountOut, final.currencyOut))
+        // Income that lands nowhere counts as earned but sits in no balance, so the wallet reads short
+        // and gets "corrected" by hand (₱20,754 across three payments had no wallet).
+        guard final.methodId != nil || netBase <= 0 else {
+            throw EngineError.invalid("Choose the wallet this payment landed in.")
+        }
         let grossBase = round2(rates.toBase(first.amountIn, first.currencyIn))
         let feeBase = max(0, round2(grossBase - netBase))
 

@@ -32,12 +32,12 @@ struct CountUpMoney: View {
     var body: some View {
         MoneyText(amount: shown, code: code, size: size, color: color, compact: compact)
             .onAppear {
+                // Shown at once. Pages rebuild on every navigation, so a count-up on appear replayed
+                // 0.85s of tallying each time you switched pages, and that read as lag. A figure
+                // still rolls when its value actually changes.
                 guard !hasAppeared else { return }
                 hasAppeared = true
-                guard !reduceMotion else { shown = amount; return }
-                // A touch under a second: long enough to read as motion, short enough that the
-                // number is legible before you've finished looking at it.
-                withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: 0.85)) { shown = amount }
+                shown = amount
             }
             .onChange(of: amount) { _, new in
                 withAnimation(reduceMotion ? nil : .timingCurve(0.16, 1, 0.3, 1, duration: 0.5)) {
@@ -57,7 +57,6 @@ struct DrawingSparkline: View {
     var lineWidth: CGFloat = 2
 
     @State private var progress: CGFloat = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
@@ -92,10 +91,7 @@ struct DrawingSparkline: View {
                 }
             }
         }
-        .onAppear {
-            guard !reduceMotion else { progress = 1; return }
-            withAnimation(.easeOut(duration: 1.1)) { progress = 1 }
-        }
+        .onAppear { progress = 1 }   // drawn at once: a 1.1s trace replayed on every page switch
     }
 
     private func points(in size: CGSize) -> [CGPoint] {
@@ -189,22 +185,21 @@ extension View {
 /// The existing `fluidAppear` does something similar; this one is tuned for larger blocks — it
 /// moves further, takes slightly longer, and doesn't scale, because scaling big type looks cheap.
 struct RiseIn: ViewModifier {
-    var delay: Double
     @State private var shown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
+        // A short fade, no rise, blur or stagger: this runs on every page switch, and a staggered
+        // 0.6s rise per section took about a second to settle each time, which read as lag.
         content
             .opacity(shown || reduceMotion ? 1 : 0)
-            .offset(y: shown || reduceMotion ? 0 : 18)
-            .blur(radius: shown || reduceMotion ? 0 : 3)
             .onAppear {
                 guard !shown else { return }
-                withAnimation(.timingCurve(0.2, 0.9, 0.2, 1, duration: 0.6).delay(delay)) { shown = true }
+                withAnimation(.easeOut(duration: 0.15)) { shown = true }
             }
     }
 }
 
 extension View {
-    func riseIn(_ index: Int = 0) -> some View { modifier(RiseIn(delay: Double(min(index, 6)) * 0.06)) }
+    func riseIn(_ index: Int = 0) -> some View { modifier(RiseIn()) }
 }

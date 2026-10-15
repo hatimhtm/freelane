@@ -146,7 +146,7 @@ struct AICuriosityAsk: Sendable {
     @Guide(description: "The question: one short interrogative sentence ending in a question mark.")
     var question: String
 
-    @Guide(description: "One short statement — not a question — saying why this is being asked.")
+    @Guide(description: "One short statement — not a question — saying why this is being asked, addressed to the reader as \"you\".")
     var why: String
 
     @Guide(description: "Two to four short ANSWERS the user can tap. Statements only, never questions, at most five words each.", .count(2...4))

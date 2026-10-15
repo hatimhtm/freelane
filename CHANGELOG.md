@@ -3,6 +3,37 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.29
+
+**A pass over everything that was wrong, ahead of v2.** Four audits read the whole app and your
+store; these are the fixes that matter while you keep using it.
+
+- **Privacy.** Settings said your money records never leave this Mac. They do: the chat, the bell and
+  spend sorting send Gemini a summary of your wallets, recent spends and loans. The text now says
+  exactly what goes. The digest built from Messages, Safari and Calendar can no longer reach any
+  prompt; it was only kept out by a length limit.
+- **Money that was booked wrong.** "paid rent 3500" in the menu bar was recorded as income; it's a
+  spend. A currency with no exchange rate was converted 1:1 (100 GBP became ₱100); the app now keeps
+  a rate for every currency it offers, MAD included, and refuses to book one it can't convert.
+  A payment can no longer be saved without the wallet it landed in.
+- **Numbers that contradicted each other.** The Dashboard's balance line ended ₱16.8k away from
+  "Available"; it now ends on it. Safe-to-spend no longer counts bills twice or sinks to its floor
+  when you haven't logged lately. "Spending ran hot, +568%" was your rent: alerts and "noticed"
+  findings now leave bills, sadaka and one-offs out. Partial months are compared with the same
+  point last month.
+- **Things you could lose.** A click outside a sheet discarded it, journal entries included; sheets
+  now close only with Esc, Cancel or ✕. Empty Trash asks first. Forgiving a loan asks first and can
+  be undone.
+- **The bell.** It forgot what it had asked after three days, which is why some questions came back
+  ten times; it now remembers. It no longer talks about you as "he". The sadaka reminder no longer
+  names an amount.
+- **Sync.** A save during sync was missed and a sync started another sync. A row the server rejects
+  no longer stops the Mac hearing from the phone. A project marked paid on the phone stays paid.
+- **Smaller things.** ⌘1–⌘9 now match the sidebar. Prayer reminders from the retired Faith page,
+  still firing at June's times, are cleared. Pages appear at once instead of replaying a second of
+  animation on every switch. Bill payments, loans and sadaka default to the wallet you actually use,
+  not the bank wire excluded from totals.
+
 ## 2.28
 
 **A bill you mark as paid stays paid.** Paying the electricity bill and seeing it come straight

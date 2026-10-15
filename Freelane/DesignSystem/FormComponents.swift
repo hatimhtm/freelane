@@ -1,52 +1,6 @@
 import SwiftUI
 import AppKit
 
-/// macOS sheets don't close when you click outside them — but everyone tries anyway. This
-/// watches for clicks landing on the sheet's PARENT window while the sheet is up and dismisses,
-/// so every panel behaves like a popover. Clicks inside the sheet, its menus, pickers, or
-/// popovers are untouched (those land in other windows than the parent).
-struct ClickOutsideToClose: ViewModifier {
-    @Environment(\.dismiss) private var dismiss
-    @State private var monitor: Any? = nil
-    @State private var hostWindow: NSWindow? = nil
-
-    func body(content: Content) -> some View {
-        content
-            .background(WindowReader { hostWindow = $0 })
-            .onAppear {
-                guard monitor == nil else { return }
-                monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
-                    if let host = hostWindow, let parent = host.sheetParent, event.window === parent {
-                        DispatchQueue.main.async { dismiss() }
-                        return nil   // swallow the click — no system "bonk", no accidental action behind
-                    }
-                    return event
-                }
-            }
-            .onDisappear {
-                if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
-            }
-    }
-}
-
-/// Hands the hosting NSWindow to SwiftUI content (zero-size, invisible).
-private struct WindowReader: NSViewRepresentable {
-    var onWindow: (NSWindow?) -> Void
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async { [weak v] in onWindow(v?.window) }
-        return v
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { [weak nsView] in onWindow(nsView?.window) }
-    }
-}
-
-extension View {
-    /// Click anywhere outside this sheet to close it (Esc still works too).
-    func clickOutsideCloses() -> some View { modifier(ClickOutsideToClose()) }
-}
-
 /// A flagship entrance for sheets — a quick spring scale + fade so every menu
 /// appears with life instead of a hard cut.
 struct SheetEntrance: ViewModifier {
@@ -84,9 +38,10 @@ extension View {
     /// Add a visible ✕ + Esc-to-close to a custom sheet. Pass the sheet's `@Environment(\.dismiss)`.
     func sheetCloseChrome(_ dismiss: DismissAction) -> some View { modifier(SheetCloseChrome(dismiss: dismiss)) }
     /// Wrap a bespoke sheet's content so it matches the app: mesh backdrop, dark, the flagship
-    /// entrance, and click-outside-to-close. (SheetScaffold applies this itself.)
+    /// entrance. (SheetScaffold applies this itself.) Sheets close with Esc, Cancel or ✕, never on
+    /// a click outside: that silently discarded journal entries and half-filled payments.
     func flagshipSheet() -> some View {
-        self.background(AppBackground()).appAppearance().sheetEntrance().clickOutsideCloses()
+        self.background(AppBackground()).appAppearance().sheetEntrance()
     }
 }
 
@@ -200,7 +155,6 @@ struct SheetScaffold<Content: View>: View {
         .background(AppBackground())
         .appAppearance()
         .sheetEntrance()
-        .clickOutsideCloses()
     }
 }
 

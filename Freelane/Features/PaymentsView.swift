@@ -97,7 +97,6 @@ struct PaymentsView: View {
                     // A flat run of 51 rows gives you no sense of period at all — you can't tell
                     // where June ended without reading dates, and "how did last month go" needs
                     // arithmetic. The heading answers it.
-                    let priced = withRunningBalance(list)
                     let groups = monthGroups(list)
                     LazyVStack(spacing: 0) {
                         ForEach(Array(groups.enumerated()), id: \.element.key) { gi, group in
@@ -113,9 +112,9 @@ struct PaymentsView: View {
                             }
                             .padding(.top, gi == 0 ? 2 : 18).padding(.bottom, 4)
 
-                            let inMonth = priced.filter { monthKey($0.row.date) == group.key }
-                            ForEach(Array(inMonth.enumerated()), id: \.element.row.id) { i, entry in
-                                statementRow(entry.row, balance: entry.balance)
+                            let inMonth = list.filter { monthKey($0.date) == group.key }
+                            ForEach(Array(inMonth.enumerated()), id: \.element.id) { i, row in
+                                statementRow(row)
                                 if i < inMonth.count - 1 { Divider().overlay(Palette.hairline) }
                             }
                         }
@@ -195,34 +194,18 @@ struct PaymentsView: View {
         }
     }
 
-    /// History split into months, newest first, each with its net for the period, and each row
-    /// carrying the balance as it stood immediately after it happened.
-    private struct MonthGroup { let key: String; let title: String; let net: String; let rows: [(row: Row, balance: Double)] }
+    /// History split into months, newest first, each with its net for the period.
+    private struct MonthGroup { let key: String; let title: String; let net: String }
 
-    /// The signed effect of one row on the money you hold.
+    /// The signed effect of one row on the money you hold. Between two wallets you hold only the
+    /// fee leaves; counting the whole transfer made October's two Wise→Maya moves read "−₱0".
     private func delta(_ row: Row) -> Double {
         switch row {
         case .payment(let p): return p.netAmountBase ?? 0
-        case .withdrawal(let w): return -w.grossBase
+        case .withdrawal(let w):
+            let toHolding = wallets.contains { $0.id == w.toMethodId && $0.isHolding }
+            return toHolding ? -w.feeBase : -w.grossBase
         }
-    }
-
-    /// A RUNNING BALANCE, which is what makes this a statement rather than a list.
-    ///
-    /// Walked backwards from today's actual wallet total: the newest row's balance is the total
-    /// now, and each older row's is the total minus everything that happened after it. Without this
-    /// column you can see that ₱24,630 landed in July but not what you were sitting on when it did,
-    /// which is usually the thing you're actually trying to remember.
-    private func withRunningBalance(_ rows: [Row]) -> [(row: Row, balance: Double)] {
-        let start = wallets.filter { $0.isHolding && !$0.archived }
-            .reduce(0.0) { $0 + WalletMath.balance(of: $1, ledger: ledger) }
-        var running = start
-        var out: [(Row, Double)] = []
-        for r in rows {                    // rows are newest-first
-            out.append((r, running))
-            running -= delta(r)
-        }
-        return out
     }
 
     private func monthGroups(_ rows: [Row]) -> [MonthGroup] {
@@ -240,8 +223,7 @@ struct PaymentsView: View {
             return MonthGroup(
                 key: ISO8601DateFormatter().string(from: month),
                 title: title,
-                net: (net >= 0 ? "+" : "−") + CurrencyFormat.string(abs(net), base, compact: true),
-                rows: [])
+                net: (net >= -0.005 ? "+" : "−") + CurrencyFormat.string(abs(net), base, compact: true))
         }
     }
 
@@ -251,20 +233,13 @@ struct PaymentsView: View {
         return ISO8601DateFormatter().string(from: m)
     }
 
-    /// A statement line: the entry on the left, what it moved in the middle, and the balance it
-    /// left behind on the right.
+    /// A statement line. The running-balance column that used to follow was walked back from
+    /// today using payments and transfers only, so it ignored every spend and drifted on old rows.
     @ViewBuilder
-    private func statementRow(_ row: Row, balance: Double) -> some View {
-        HStack(spacing: 0) {
-            switch row {
-            case .payment(let p): paymentRow(p)
-            case .withdrawal(let w): withdrawalRow(w)
-            }
-            Text(CurrencyFormat.string(balance, base, compact: true))
-                .font(.system(size: 11)).monospacedDigit()
-                .foregroundStyle(Palette.textTertiary)
-                .frame(width: 92, alignment: .trailing)
-                .padding(.leading, 8)
+    private func statementRow(_ row: Row) -> some View {
+        switch row {
+        case .payment(let p): paymentRow(p)
+        case .withdrawal(let w): withdrawalRow(w)
         }
     }
 
@@ -370,8 +345,12 @@ struct BulkPaymentSheet: View {
 
     private func rowGrossBase(_ r: DraftRow) -> Double { rates.toBase(parsedAmount(r.gross) ?? 0, r.currency) }
     private var mergedLandedBase: Double { rates.toBase(parsedAmount(mergedAmount) ?? 0, mergedCurrency) }
-    /// Mirrors save()'s guard: at least one row with a project AND a positive amount.
-    private var canLog: Bool { draftRows.contains { $0.projectId != nil && (parsedAmount($0.gross) ?? 0) > 0 } }
+    /// A row save() will log: a project and a positive amount.
+    private func ready(_ r: DraftRow) -> Bool { r.projectId != nil && (parsedAmount(r.gross) ?? 0) > 0 }
+    /// Every row being logged must land in a wallet. A payment saved without one counted as income
+    /// but sat in no balance, so the wallet looked short and had to be "corrected" by hand.
+    private var canLog: Bool { draftRows.contains(where: ready) && draftRows.filter(ready).allSatisfy { $0.landing != nil } }
+
 
     /// Net that landed for a row (in base). In merge mode the single landed total is
     /// split across rows by what each is owed. Otherwise it's the row's own landed
@@ -400,12 +379,13 @@ struct BulkPaymentSheet: View {
                         guard !seeded else { return }
                         seeded = true
                         mergedCurrency = base
+                        let landing = DefaultWallet.forIncome(context, among: wallets)
                         guard let pid = prefillProjectId else {
-                            draftRows = [DraftRow(currency: base, landedCurrency: base)]
+                            draftRows = [DraftRow(currency: base, landedCurrency: base, landing: landing)]
                             return
                         }
-                        var r = DraftRow(projectId: pid, currency: prefillCurrency, landedCurrency: prefillCurrency)
-                        if let g = prefillGrossNative { r.gross = String(format: "%g", g) }
+                        var r = DraftRow(projectId: pid, currency: prefillCurrency, landedCurrency: prefillCurrency, landing: landing)
+                        if let g = prefillGrossNative { r.gross = editAmountString(g) }
                         draftRows = [r]
                     }
                 VStack(alignment: .leading, spacing: 2) {
@@ -442,7 +422,7 @@ struct BulkPaymentSheet: View {
                     }
                     ForEach($draftRows) { $row in rowEditor($row) }
                         .transition(.opacity.combined(with: .move(edge: .top)))
-                    Button { withAnimation(Motion.snappy) { draftRows.append(DraftRow(currency: draftRows.last?.currency ?? base, landedCurrency: draftRows.last?.landedCurrency ?? base)) } } label: {
+                    Button { withAnimation(Motion.snappy) { draftRows.append(DraftRow(currency: draftRows.last?.currency ?? base, landedCurrency: draftRows.last?.landedCurrency ?? base, landing: draftRows.last?.landing)) } } label: {
                         Label("Add another payment", systemImage: "plus").font(.system(size: 12, weight: .medium))
                     }.buttonStyle(.glass).padding(.top, 2)
                 }
@@ -470,7 +450,7 @@ struct BulkPaymentSheet: View {
                     .buttonStyle(.glassProminent).tint(Palette.azure)
                     .disabled(!canLog)
                     .keyboardShortcut(.defaultAction)   // ⏎ logs from anywhere in the sheet
-                    .help(canLog ? "Log these payments (⏎)" : "Pick a project and enter an amount first")
+                    .help(canLog ? "Log these payments (⏎)" : "Pick a project, an amount and the wallet it landed in")
             }.padding(16)
         }
         .frame(width: 760, height: 600)
@@ -573,6 +553,7 @@ struct BulkPaymentSheet: View {
                            reference: nil, notes: nil)
         }
         guard !rows.isEmpty else { result = "Pick a project and enter an amount first."; return }
+        guard canLog else { result = "Choose the wallet each payment landed in."; return }
         let outcome = MoneyEngine(context: context).addPaymentsBulk(rows)
         if outcome.errors.isEmpty {
             dismiss()

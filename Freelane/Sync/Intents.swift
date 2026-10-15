@@ -68,11 +68,13 @@ struct GiveSadakaIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let ctx = AppContainer.shared.mainContext
         let base = (try? ctx.fetch(FetchDescriptor<AppSettings>()).first)?.baseCurrency ?? "PHP"
-        guard let wallet = ((try? ctx.fetch(FetchDescriptor<Wallet>())) ?? []).first(where: { $0.deletedAt == nil && $0.isHolding && !$0.archived }) else {
+        // Same default as the app: the last wallet you spent from, never the excluded bank wire.
+        let wallets = ((try? ctx.fetch(FetchDescriptor<Wallet>())) ?? []).filter { $0.deletedAt == nil }
+        guard let wallet = DefaultWallet.forOutflow(ctx, among: wallets) else {
             return .result(dialog: "Add a wallet in Freelane first, then I can log sadaka from here.")
         }
         let id = try MoneyEngine(context: ctx).createSpend(
-            walletId: wallet.id, amount: amount, currency: base, description: "Sadaka",
+            walletId: wallet, amount: amount, currency: base, description: "Sadaka",
             vendorName: nil, category: "Sadaka", isSadaka: true, spentAt: .now)
         await Brain.onSpendLogged(ctx, ai: AIManager(), spendId: id)   // same learning as the in-app path
         WidgetBridge.update(ctx)
@@ -114,7 +116,9 @@ struct QueryOutstandingIntent: AppIntent {
         let rateRows = (try? ctx.fetch(FetchDescriptor<ExchangeRate>())) ?? []
         let rates = Rates(base: base, rates: rateRows)
         let projects = ((try? ctx.fetch(FetchDescriptor<Project>())) ?? []).filter { $0.deletedAt == nil }
-        let allocations = (try? ctx.fetch(FetchDescriptor<PaymentAllocation>())) ?? []
+        // Allocations of trashed payments don't count as paid, as on the Dashboard.
+        let livePayments = ((try? ctx.fetch(FetchDescriptor<Payment>())) ?? []).filter { $0.deletedAt == nil }
+        let allocations = ProjectMath.liveAllocations((try? ctx.fetch(FetchDescriptor<PaymentAllocation>())) ?? [], payments: livePayments)
         let out = projects.filter { $0.status == .unpaid || $0.status == .partiallyPaid }
             .reduce(0.0) { $0 + rates.toBase(ProjectMath.outstandingNative(project: $1, allocations: allocations, rates: rates), $1.currency) }
         return .result(dialog: out > 0 ? "Clients still owe you about \(CurrencyFormat.string(out, base, compact: true)) across open projects." : "You're all paid up — nothing outstanding.")
@@ -138,8 +142,10 @@ struct LogPaymentIntent: AppIntent {
                 ?? projects.first(where: { $0.title.lowercased().contains(q) }) else {
             return .result(dialog: "I couldn't find a project called “\(project)”. Open Freelane to log it there.")
         }
+        let wallets = ((try? ctx.fetch(FetchDescriptor<Wallet>())) ?? []).filter { $0.deletedAt == nil }
         let row = BulkRow(projectId: match.id, paidAt: .now, grossAmount: amount, grossCurrency: match.currency,
-                          feeBase: nil, landingMethodId: nil, fromMethodId: nil, reference: nil, notes: "via Shortcuts")
+                          feeBase: nil, landingMethodId: DefaultWallet.forIncome(ctx, among: wallets),
+                          fromMethodId: nil, reference: nil, notes: "via Shortcuts")
         let result = MoneyEngine(context: ctx).addPaymentsBulk([row])
         WidgetBridge.update(ctx)
         if result.created == 1 {

@@ -5,6 +5,7 @@ import SwiftData
 /// then auto-purges. Money entities restore through their engines so balances + project
 /// status recompute; permanent delete also clears their archived ledger rows.
 struct TrashView: View {
+    @State private var confirmEmpty = false
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query private var settings: [AppSettings]
@@ -116,10 +117,14 @@ struct TrashView: View {
                         .padding(.top, 40)
                 } else {
                     if items.count > 1 {
-                        Button(role: .destructive) { for r in items { r.purge() } } label: {
+                        Button(role: .destructive) { confirmEmpty = true } label: {
                             Label("Empty Trash (\(items.count))", systemImage: "trash")
                         }
                         .buttonStyle(.glass).tint(Palette.negative).controlSize(.small)
+                        .confirmationDialog("Delete \(items.count) items forever?", isPresented: $confirmEmpty) {
+                            Button("Delete forever", role: .destructive) { for r in items { r.purge() } }
+                            Button("Cancel", role: .cancel) {}
+                        } message: { Text("They can't be restored afterwards.") }
                     }
                     LazyVStack(spacing: 8) {
                         ForEach(items) { r in TrashRow(row: r) }

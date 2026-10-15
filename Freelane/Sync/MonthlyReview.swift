@@ -60,7 +60,7 @@ enum MonthlyReview {
         // Where the money went (top category), and what fees ate.
         var cats: [String: Double] = [:]
         for s in spends where s.spentAt >= monthStart && s.spentAt < monthEnd {
-            for t in (s.tags.isEmpty ? [s.category ?? "Untagged"] : s.tags) { cats[t, default: 0] += s.amountBase }
+            for t in (s.isSadaka ? ["Sadaka"] : s.tags.isEmpty ? [s.category ?? "Untagged"] : s.tags) { cats[t, default: 0] += s.amountBase }
         }
         if let top = cats.max(by: { $0.value < $1.value }), top.value > 0 {
             parts.append("most on \(top.key) (\(money(top.value)))")

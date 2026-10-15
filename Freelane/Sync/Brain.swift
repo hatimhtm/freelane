@@ -118,7 +118,7 @@ enum Brain {
 
         let convo = history.suffix(5).map { ($0.mine ? "Them: " : "You: ") + $0.text }.joined(separator: "\n")
         let threaded = convo.isEmpty ? question : "Conversation so far:\n\(convo)\n\nTheir question: \(question)"
-        let snapshot = String(StateSnapshot.text(context, includePersonal: true).prefix(3_000))
+        let snapshot = String(StateSnapshot.text(context).prefix(3_000))
         let prompt = "Current state:\n\(snapshot)\n\n\(threaded)"
 
         let toolData = AIToolData.load(context)
@@ -154,7 +154,7 @@ enum Brain {
             Summarise this person's money today in ONE sentence of at most 22 words. Use their real \
             numbers. State the position; give no advice.
 
-            \(String(StateSnapshot.text(context, includePersonal: false).prefix(2_000)))
+            \(String(StateSnapshot.text(context).prefix(2_000)))
             """
             if let r = try? await ai.fast.object(AISentence.self, AIRequest(prompt, instructions: voice),
                                                  jsonShape: AISentence.jsonShape),
@@ -175,7 +175,7 @@ enum Brain {
         guard ai.isReady else { return "" }
         let prompt = """
         Here is their money state right now:
-        \(String(StateSnapshot.text(context, includePersonal: false).prefix(2_500)))
+        \(String(StateSnapshot.text(context).prefix(2_500)))
 
         In two to four short sentences, say plainly what is going on with their money today, using \
         their real numbers. If things are fine, say so clearly and stop. Note that wallets marked \
@@ -245,9 +245,11 @@ enum Brain {
             return
         }
 
-        // Category — the schema guarantees it's in vocabulary, so only confidence is in question.
+        // Category. Apple's model is held to the vocabulary by its schema; Gemini isn't, and it
+        // returned "Shopping", "Utilities", "Family"… which split category totals. Check in code.
+        let inVocabulary = AIVocab.spendCategories.contains(u.category)
         if spend.tags.isEmpty {
-            if u.confidence >= 0.45 {
+            if inVocabulary, u.confidence >= 0.45 {
                 spend.tags = [u.category]; spend.category = u.category; spend.dirty = true
             } else {
                 await autoCategorize(context, ai: ai, spend: spend)
@@ -256,7 +258,7 @@ enum Brain {
 
         // Merchant — record what KIND of place it is, so the curiosity engine never asks "is
         // <store> a person" and the vendor-identify question skips it for good.
-        if u.merchantKind != "person", u.merchantKind != "unknown" {
+        if u.merchantKind != "person", u.merchantKind != "unknown", AIVocab.merchantKinds.contains(u.merchantKind) {
             if let vn = spend.vendorName?.trimmingCharacters(in: .whitespaces), !vn.isEmpty {
                 setVendorKind(context, name: vn, kind: u.merchantKind, confidence: u.confidence)
                 if !u.domain.isEmpty { VendorLogo.remember(name: vn, domain: u.domain) }
@@ -522,7 +524,7 @@ enum Brain {
     @discardableResult
     static func generateLetter(_ context: ModelContext, ai: AIManager, kind: String) async -> Bool {
         guard ai.isReady else { return false }
-        let snapshot = String(StateSnapshot.text(context, includePersonal: true).prefix(3_000))
+        let snapshot = String(StateSnapshot.text(context).prefix(3_000))
         let beliefs = Memory.brief(context, maxChars: 400)
         let prompt = """
         Write a short reflection on their \(kind) — money and life together — using the real numbers \
@@ -1363,7 +1365,7 @@ enum Brain {
     static func curiosityQuestion(_ context: ModelContext, ai: AIManager) async -> (subject: String, body: String, choices: [String], factKey: String)? {
         guard ai.isReady else { return nil }
 
-        let snapshot = String(StateSnapshot.text(context, includePersonal: false).prefix(2_000))
+        let snapshot = String(StateSnapshot.text(context).prefix(2_000))
         let beliefs = Memory.brief(context, maxChars: 600)
         let rows = ((try? context.fetch(FetchDescriptor<AppNotification>())) ?? [])
             .filter { $0.isQuestion }.sorted { $0.createdAt > $1.createdAt }
@@ -1406,7 +1408,9 @@ enum Brain {
 
             let subject = r.question.trimmingCharacters(in: .whitespaces)
             guard subject.count >= 8, subject.count <= 140, subject.hasSuffix("?"),
-                  subject.filter({ $0 == "?" }).count == 1 else { return nil }
+                  subject.filter({ $0 == "?" }).count == 1,
+                  subject.range(of: #"\b(he|him|his|the user|the writer)\b"#,
+                                options: [.regularExpression, .caseInsensitive]) == nil else { return nil }
 
             let key = r.factKey.trimmingCharacters(in: .whitespaces).lowercased()
             let tokens = Memory.contentTokens(subject)
@@ -1426,7 +1430,11 @@ enum Brain {
             let choices = r.choices.map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty && !$0.contains("?") && $0.count <= 48 }
             guard choices.count >= 2 else { return nil }
-            let why = r.why.trimmingCharacters(in: .whitespaces)
+            // The prompts describe the user as "them", and the model sometimes carries that into
+            // the reason it shows them ("…if he relies on a bike…"). Drop a third-person reason.
+            var why = r.why.trimmingCharacters(in: .whitespaces)
+            if why.range(of: #"\b(he|him|his|she|her|they|them|their|the user|the writer)\b"#,
+                         options: [.regularExpression, .caseInsensitive]) != nil { why = "" }
             return (subject, why, Array(choices.prefix(4)),
                     key.isEmpty ? "curiosity_\(Int(Date.now.timeIntervalSince1970))" : key)
         }

@@ -96,12 +96,12 @@ final class CloudSync {
         saveObserver = NotificationCenter.default.addObserver(
             forName: ModelContext.didSave, object: nil, queue: .main
         ) { _ in
-            Task { @MainActor in
-                // Sync itself ends by saving. Without this guard that save re-triggers sync, which
-                // saves again — the app pulls forever and the status never leaves "Pulling…".
-                guard !CloudSync.shared.applyingRemote else { return }
-                CloudSync.shared.syncSoon()
-            }
+            // Sync itself ends by saving. Without this guard that save re-triggers sync, which
+            // saves again. Read the flag NOW, on the posting (main) thread: inside the Task it was
+            // read after syncNow had already reset it, so every pull scheduled another sync.
+            let fromSync = MainActor.assumeIsolated { CloudSync.shared.applyingRemote }
+            guard !fromSync else { return }
+            Task { @MainActor in CloudSync.shared.syncSoon() }
         }
     }
 
@@ -258,21 +258,28 @@ final class CloudSync {
         applyingRemote = true
         defer { applyingRemote = false }
 
+        // A check that finds nothing says nothing. The poll runs every 20 seconds, so announcing
+        // each one made a resting app look like it was stuck in a loop.
+        // Push and pull fail separately: one row the server rejects used to stop every pull too,
+        // so the Mac quietly stopped hearing from the phone.
+        var pushed = 0, pulled = 0
+        var failure: String?
         do {
-            // A check that finds nothing says nothing. The poll runs every 20 seconds, so
-            // announcing each one made a resting app look like it was stuck in a loop — the
-            // status never settled on "Synced" long enough to read.
-            let pushed = try await push(context: context, token: token, uid: uid)
+            pushed = try await push(context: context, token: token, uid: uid)
             if pushed > 0 { status = "Sending \(pushed)…" }
-            let pulled = try await pull(context: context, token: token, uid: uid)
+        } catch { failure = error.localizedDescription }
+        do {
+            pulled = try await pull(context: context, token: token, uid: uid)
             if pulled > 0 { status = "Receiving \(pulled)…" }
+        } catch { failure = failure ?? error.localizedDescription }
 
+        if let failure {
+            lastError = failure
+            status = "Sync failed"
+        } else {
             lastSync = .now
             lastError = nil
             status = pushed + pulled > 0 ? "Synced" : "Up to date"
-        } catch {
-            lastError = error.localizedDescription
-            status = "Sync failed"
         }
     }
 

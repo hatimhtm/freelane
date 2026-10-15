@@ -22,8 +22,9 @@ enum NaturalCapture {
     struct WalletRef { let id: UUID; let name: String }
 
     // Deliberately NOT just "client" (would mis-flag "client lunch 200" as income) — require a
-    // real payment verb/noun.
-    private static let paymentWords: Set<String> = ["payment", "paid", "invoice", "landed", "received"]
+    // real payment verb/noun. Not "paid" either: "paid rent 3500" is a spend, and matching it as a
+    // substring also caught "prepaid load" and "unpaid". Matched as whole words, or a leading "+".
+    private static let paymentWords: Set<String> = ["payment", "invoice", "landed", "received"]
 
     static func parse(_ raw: String, wallets: [WalletRef], currencies: [String], base: String) -> Draft? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -31,13 +32,21 @@ enum NaturalCapture {
         let lower = text.lowercased()
         var tokens = text.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
 
-        // 1) Amount — the first token that reads as a number (strip ₱ $ , etc.).
+        // 1) Amount — prefer a token that is only a number (once ₱ $ , etc. are stripped), so
+        //    "7-eleven 85" reads 85, not 7. Fall back to the first token containing digits.
         var amount: Double?
         var amountIdx: Int?
-        for (i, tok) in tokens.enumerated() {
+        func value(_ tok: String) -> Double? {
             let cleaned = tok.filter { $0.isNumber || $0 == "." }
-            if !cleaned.isEmpty, cleaned.contains(where: { $0.isNumber }), let v = Double(cleaned), v > 0 {
-                // ignore pure years / 4-digit that are clearly not money? keep simple: accept.
+            guard cleaned.contains(where: { $0.isNumber }), let v = Double(cleaned), v > 0 else { return nil }
+            return v
+        }
+        let symbols = Set("₱$€¥£+,")
+        for pass in 0..<2 where amount == nil {
+            for (i, tok) in tokens.enumerated() {
+                let bare = tok.filter { !symbols.contains($0) }
+                guard pass == 1 || (!bare.isEmpty && bare.allSatisfy { $0.isNumber || $0 == "." }),
+                      let v = value(tok) else { continue }
                 amount = v; amountIdx = i; break
             }
         }
@@ -68,7 +77,8 @@ enum NaturalCapture {
             tokens.removeAll { matchedWalletWords.contains($0.lowercased()) }
         }
 
-        let isPayment = paymentWords.contains { lower.contains($0) }
+        let words = Set(lower.split(whereSeparator: { !$0.isLetter }).map(String.init))
+        let isPayment = text.hasPrefix("+") || !paymentWords.isDisjoint(with: words)
         // Drop connective noise so the leftover reads cleanly as a vendor/description.
         let noise: Set<String> = ["from", "at", "in", "to", "for", "the", "a", "of", "on", "landed"]
         let rest = tokens.filter { !noise.contains($0.lowercased()) }.joined(separator: " ").trimmingCharacters(in: .whitespaces)

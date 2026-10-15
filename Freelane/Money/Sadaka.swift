@@ -20,12 +20,21 @@ enum Sadaka {
     enum AutoReason: String { case pet = "Pet care", charity = "Charity", giving = "Given to someone", manual = "Marked sadaka", none = "" }
 
     static func autoReason(_ s: Spend) -> AutoReason {
-        let hay = ([s.category, s.vendorName, s.spendDescription, s.notes].compactMap { $0 } + s.tags)
+        let hay = ([s.category, s.vendorName, s.spendDescription].compactMap { $0 } + s.tags)
             .joined(separator: " ").lowercased()
-        if charityKeywords.contains(where: hay.contains) { return .charity }
-        if petKeywords.contains(where: hay.contains) { return .pet }
-        if givingKeywords.contains(where: hay.contains) { return .giving }
+        if mentions(hay, charityKeywords) { return .charity }
+        if mentions(hay, petKeywords) { return .pet }
+        if mentions(hay, givingKeywords) { return .giving }
         return .none
+    }
+
+    /// Whole words only. As substrings, "dog" matched "hotdogs" (a ₱114 snack counted as sadaka),
+    /// "pet" matched petrol and carpet, "ngo" mango, "cat" education.
+    private static func mentions(_ hay: String, _ words: [String]) -> Bool {
+        words.contains { w in
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: w.trimmingCharacters(in: .whitespaces)) + "\\b"
+            return hay.range(of: pattern, options: .regularExpression) != nil
+        }
     }
 
     /// A spend counts toward sadaka if you marked it, or it matches an auto-rule.

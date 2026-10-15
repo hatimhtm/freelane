@@ -46,7 +46,9 @@ struct StatsView: View {
         return h.finalize()
     }
 
-    private var scope: InsightsModel.Scope { InsightsModel.Scope(rawValue: min(sub, 2)) ?? .month }
+    // The Spending tab (3) is a this-month view; it used to inherit whichever scope the previous
+    // tab built, so coming from "This year" drew twelve monthly totals labelled as days.
+    private var scope: InsightsModel.Scope { sub == 3 ? .month : InsightsModel.Scope(rawValue: min(sub, 2)) ?? .month }
 
     private func rebuild() {
         model = InsightsModel.build(
@@ -83,7 +85,7 @@ struct StatsView: View {
         }
         .onAppear { rebuild() }
         .onChange(of: stamp) { _, _ in rebuild() }
-        .onChange(of: sub) { _, _ in if sub < 3 { rebuild() } }
+        .onChange(of: sub) { _, _ in if sub < 4 { rebuild() } }
     }
 
     // MARK: Tab compositions
