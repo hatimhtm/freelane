@@ -36,12 +36,14 @@ extension CloudSync {
         return n
     }
 
-    /// Moves and payment routes didn't sync before 3.1, so the first sync after the update sends all
-    /// of them once.
+    /// Moves and payment routes didn't sync before 3.1, and wallets and clients gained fields, so the
+    /// first sync after the update sends all of them once.
     private func backfillOnce(_ ctx: ModelContext) {
         let key = "sync.backfill.v31"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
         ((try? ctx.fetch(FetchDescriptor<Withdrawal>())) ?? []).forEach { $0.dirty = true }
+        ((try? ctx.fetch(FetchDescriptor<Wallet>())) ?? []).forEach { $0.dirty = true }
+        ((try? ctx.fetch(FetchDescriptor<Client>())) ?? []).forEach { $0.dirty = true }
         ((try? ctx.fetch(FetchDescriptor<PaymentStep>())) ?? []).forEach { $0.dirty = true }
         try? ctx.save()
         UserDefaults.standard.set(true, forKey: key)
@@ -124,6 +126,11 @@ extension CloudSync {
             w.overdraftToleranceBase = row["overdraft_tolerance_base"] as? Double ?? w.overdraftToleranceBase
             w.archived = row["archived"] as? Bool ?? w.archived
             w.excludedFromTotals = row["excluded_from_totals"] as? Bool ?? w.excludedFromTotals
+            // Identity and currencies are the Mac's to set; a copy that never had them sends nothing to keep.
+            // (The monthly fee and opening-balance currency are never taken from the server.)
+            if let v = row["brand_key"] as? String { w.brandKey = v }
+            if let v = row["currency_in"] as? String { w.currencyIn = v }
+            if let v = row["currency_out"] as? String { w.currencyOut = v }
             w.notes = row["notes"] as? String
             w.deletedAt = parseDate(row["deleted_at"])
             w.updatedAt = remoteAt
@@ -134,6 +141,7 @@ extension CloudSync {
             if let e = existing, e.dirty || e.updatedAt >= remoteAt { return }
             let c = existing ?? { let n = Client(id: id, name: ""); ctx.insert(n); return n }()
             c.name = row["name"] as? String ?? c.name
+            if let v = row["company"] as? String { c.company = v }
             c.defaultCurrency = row["default_currency"] as? String
             c.email = row["email"] as? String
             c.notes = row["notes"] as? String
@@ -371,6 +379,12 @@ enum CloudRows {
         [
             "id": w.id.uuidString.lowercased(), "user_id": uid,
             "name": w.name, "kind": w.kindRaw, "is_holding": w.isHolding,
+            "currency_in": strOrNull(w.currencyIn), "currency_out": strOrNull(w.currencyOut),
+            "monthly_fee_base": w.monthlyFeeBase,
+            "opening_balance_amount": numOrNull(w.openingBalanceAmount),
+            "opening_balance_currency": strOrNull(w.openingBalanceCurrency),
+            "brand_key": strOrNull(w.brandKey), "custom_brand_glyph": strOrNull(w.customBrandGlyph),
+            "custom_brand_color": strOrNull(w.customBrandColor),
             "opening_balance_base": numOrNull(w.openingBalanceBase),
             "opening_balance_at": iso(w.openingBalanceAt),
             "opening_balance_set_at": iso(w.openingBalanceSetAt),
@@ -385,7 +399,7 @@ enum CloudRows {
     static func client(_ c: Client, _ uid: String) -> [String: Any] {
         [
             "id": c.id.uuidString.lowercased(), "user_id": uid,
-            "name": c.name, "default_currency": strOrNull(c.defaultCurrency),
+            "name": c.name, "company": strOrNull(c.company), "default_currency": strOrNull(c.defaultCurrency),
             "email": strOrNull(c.email), "notes": strOrNull(c.notes),
             "accent_color": strOrNull(c.accentColor), "archived": c.archived,
             "created_at": iso(c.createdAt), "updated_at": iso(c.updatedAt),
