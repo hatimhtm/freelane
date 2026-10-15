@@ -144,6 +144,22 @@ struct Pane<Content: View>: View {
     }
 }
 
+/// A pane's scrolling body. It runs into the pane's 24pt foot, and rows fade out there instead of being cut.
+struct PaneScroll<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) { content }
+            .contentMargins(.bottom, 24, for: .scrollContent)
+            .mask {
+                VStack(spacing: 0) {
+                    Color.black
+                    LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 24)
+                }
+            }
+            .padding(.bottom, -24)
+    }
+}
+
 /// The 48pt header row that starts 20pt from the top of every pane.
 struct PaneHeader<Trailing: View>: View {
     let title: String

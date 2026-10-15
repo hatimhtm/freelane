@@ -24,7 +24,7 @@ struct GivingPage: View {
                     .help("Record a gift as spending marked sadaka")
                 }
                 ScrollViewReader { proxy in
-                    ScrollView(.vertical, showsIndicators: false) {
+                    PaneScroll {
                         VStack(alignment: .leading, spacing: 0) {
                             GivingBand(picture: p).padding(.top, 16)
                             SectionHeader(title: "Gifts") {

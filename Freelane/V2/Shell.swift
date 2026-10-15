@@ -70,6 +70,7 @@ struct Shell: View {
     @Environment(\.accessibilityReduceMotion) private var reduce
     @State private var app = AppState()
     @State private var ai = AIManager()
+    @State private var undo = UndoCenter()
     @Query private var wallets: [Wallet]
     @Query private var ledger: [LedgerEntry]
     @Query private var recurring: [Recurring]
@@ -114,10 +115,14 @@ struct Shell: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     .zIndex(11)
             }
+            Snackbar()
+                .padding(.leading, 232 + 12)
+                .zIndex(20)
         }
         .ignoresSafeArea()
         .environment(app)
         .environment(ai)
+        .environment(undo)
         .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.newMenuOpen)
         .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.counting)
         .animation(Flow.pick(Flow.spatial, reduce: reduce), value: app.form)
@@ -163,6 +168,7 @@ struct Shell: View {
         ZStack {
             switch app.page {
             case .now: NowPage(state: money)
+            case .ledger: LedgerPage(state: money)
             case .wallets: WalletsPage(state: money)
             case .settings: SettingsPage(state: money)
             case .journal: JournalPage()
@@ -179,13 +185,55 @@ struct Shell: View {
     }
 }
 
-/// Esc closes whatever is open over the page. (Page shortcuts and ⌘N live in the menus: `V2Commands`.)
+/// Esc closes whatever is open over the page. It only listens while something is open, so a search field
+/// keeps its own Esc. (Page shortcuts and ⌘N live in the menus: `V2Commands`.)
 private struct PageShortcuts: View {
     let app: AppState
     var body: some View {
-        Button("") { withAnimation(Flow.spatial) { app.newMenuOpen = false; app.counting = false; app.form = nil } }
-            .keyboardShortcut(.escape, modifiers: [])
-            .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+        if app.newMenuOpen || app.counting || app.form != nil {
+            Button("") { withAnimation(Flow.spatial) { app.newMenuOpen = false; app.counting = false; app.form = nil } }
+                .keyboardShortcut(.escape, modifiers: [])
+                .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+        }
+    }
+}
+
+/// The v2 snackbar: what just happened, with Undo when it can be taken back. Bottom centre of the pages.
+struct Snackbar: View {
+    @Environment(UndoCenter.self) private var undo
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    var body: some View {
+        VStack {
+            Spacer()
+            if let t = undo.toast {
+                HStack(spacing: 4) {
+                    Text(t.message).font(FS.font(14, 500)).foregroundStyle(MD.inverseOnSurface).lineLimit(1)
+                        .padding(.trailing, 20)
+                    Spacer(minLength: 0)
+                    if t.canUndo {
+                        Button { withAnimation(Flow.spatial) { undo.performUndo() } } label: {
+                            Text("Undo").font(FS.font(14, 600, rond: 60)).foregroundStyle(MD.primaryContainer)
+                                .padding(.horizontal, 12).frame(height: 36).contentShape(Capsule())
+                        }
+                        .buttonStyle(PressScale())
+                    }
+                    Button { withAnimation(Flow.spatial) { undo.clear() } } label: {
+                        Icon(Sym.close, size: 20).foregroundStyle(MD.inverseOnSurface).frame(width: 36, height: 36).contentShape(Circle())
+                    }
+                    .buttonStyle(PressScale())
+                }
+                .padding(.leading, 16).padding(.trailing, 6)
+                .frame(minWidth: 344, maxWidth: 560, minHeight: 48)
+                .fixedSize()
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(MD.inverseSurface))
+                .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+                .padding(.bottom, 28)
+                .id(t.id)
+                .transition(reduce ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .animation(Flow.pick(Flow.spatial, reduce: reduce), value: undo.toast?.id)
     }
 }
 

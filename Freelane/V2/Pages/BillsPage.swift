@@ -27,7 +27,7 @@ struct BillsPage: View {
                 PaneHeader(title: "Bills") {
                     M3Button(title: "Add a bill", icon: Sym.add, kind: .tonal) { editing = .new }
                 }
-                ScrollView(.vertical, showsIndicators: false) {
+                PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
                         BillsSummary(due: picture.dueNext).padding(.top, 16)
                         if picture.cards.isEmpty {
@@ -334,7 +334,7 @@ private struct BillsDetail: View {
             }
             .frame(minHeight: 48)
             .padding(.top, 20)
-            ScrollView(.vertical, showsIndicators: false) {
+            PaneScroll {
                 VStack(alignment: .leading, spacing: 0) {
                     BillsCameTo(payments: Array(pays.suffix(6)), cadence: history?.cadence ?? card.bill.cadence,
                                 chart: history?.chart ?? MD.outline, past: history?.past ?? MD.outlineVariant)

@@ -33,7 +33,7 @@ struct JournalPage: View {
                     }
                     .disabled(JournalWell.shared.filling)
                 }
-                ScrollView(.vertical, showsIndicators: false) {
+                PaneScroll {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(intro).role(.body, MD.onSurfaceVariant).padding(.horizontal, 4).padding(.top, 4)
                         ForEach(Array(questions.enumerated()), id: \.element.id) { i, q in card(q).appear(i + 1) }
@@ -175,7 +175,7 @@ struct JournalPage: View {
         let months = byMonth.keys.sorted(by: >)
         return VStack(alignment: .leading, spacing: 0) {
             PaneHeader(title: "Answered", big: false) { Text("\(entries.count)").role(.supporting, MD.onSurfaceVariant) }
-            ScrollView(.vertical, showsIndicators: false) {
+            PaneScroll {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(months, id: \.self) { m in
                         HStack {

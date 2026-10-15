@@ -6,10 +6,11 @@ import SwiftData
 
 /// Which form is open, with an optional prefill.
 enum FormKind: Identifiable, Equatable {
-    case spending, gift, moneyIn(projectId: UUID?), move, payBill(billId: UUID?), addWallet
+    case spending, gift, editSpend(UUID), moneyIn(projectId: UUID?), move, payBill(billId: UUID?), addWallet
     var id: String {
         switch self {
-        case .spending: return "spending"; case .gift: return "gift"; case .moneyIn: return "moneyIn"; case .move: return "move"
+        case .spending: return "spending"; case .gift: return "gift"; case .editSpend(let id): return "edit-\(id)"
+        case .moneyIn: return "moneyIn"; case .move: return "move"
         case .payBill: return "payBill"; case .addWallet: return "addWallet"
         }
     }
@@ -23,6 +24,7 @@ struct FormHost: View {
         switch kind {
         case .spending: SpendingForm(state: state, close: close)
         case .gift: SpendingForm(state: state, close: close, startAsGift: true)
+        case .editSpend(let id): SpendingForm(state: state, close: close, editing: id)
         case .moneyIn(let p): MoneyInForm(state: state, projectId: p, close: close)
         case .move: MoveForm(state: state, close: close)
         case .payBill(let b): PayBillForm(state: state, billId: b, close: close)
@@ -35,9 +37,12 @@ struct FormHost: View {
 
 private struct SpendingForm: View {
     @Environment(\.modelContext) private var context
+    @Environment(UndoCenter.self) private var undo
     let state: MoneyState
     let close: () -> Void
     var startAsGift = false
+    /// Editing an existing spend instead of logging a new one.
+    var editing: UUID? = nil
     @Query(sort: \Spend.spentAt, order: .reverse) private var spends: [Spend]
     @State private var amount = ""
     @State private var currency = "PHP"
@@ -58,7 +63,8 @@ private struct SpendingForm: View {
     }
 
     var body: some View {
-        M3Dialog(title: startAsGift ? "A gift" : "Spending", subtitle: startAsGift ? "Sadaka, or anything you gave. It counts as spending and shows on Giving." : nil, onClose: close) {
+        M3Dialog(title: editing != nil ? "Edit spending" : startAsGift ? "A gift" : "Spending",
+                 subtitle: startAsGift ? "Sadaka, or anything you gave. It counts as spending and shows on Giving." : nil, onClose: close) {
             OutlinedField(label: "Amount", text: $amount, prompt: "0.00", numeric: true, focused: $focus, id: "amount",
                           leading: AnyView(CurrencyChip(currency: $currency)))
             OutlinedField(label: "What was it?", text: $what, prompt: "Groceries, Grab, a gift…", focused: $focus, id: "what")
@@ -86,17 +92,49 @@ private struct SpendingForm: View {
             focus = "amount"
             gift = startAsGift
             wallet = spends.first(where: { $0.deletedAt == nil && $0.walletId != nil })?.walletId ?? state.wallets.first?.id
+            if let id = editing, let s = spends.first(where: { $0.id == id }) {
+                amount = String(format: s.amount == s.amount.rounded() ? "%.0f" : "%.2f", s.amount)
+                currency = s.currency
+                what = s.spendDescription ?? s.vendorName ?? ""
+                category = s.category
+                wallet = s.walletId
+                date = s.spentAt
+                gift = s.isSadaka
+            }
         }
     }
 
     private func save() {
         guard let v = Parse.amount(amount), v > 0 else { error = "Type an amount."; focus = "amount"; return }
         guard let wallet else { error = "Choose the wallet it came from."; return }
+        let ctx = context
+        let from = state.wallets.first { $0.id == wallet }?.name ?? "your wallet"
+        let shown = CurrencyFormat.string(v, currency, compact: true)
         do {
-            _ = try MoneyEngine(context: context).createSpend(walletId: wallet, amount: v, currency: currency,
-                                                             description: what.isEmpty ? nil : what, vendorName: nil,
-                                                             category: category, isSadaka: gift, spentAt: date)
-            try? context.save()
+            if let id = editing, let s = spends.first(where: { $0.id == id }) {
+                // Keep what the form doesn't show (vendor, tags) and remember the old values for Undo.
+                let old = (s.walletId, s.amount, s.currency, s.spendDescription, s.vendorName, s.category, s.isSadaka, s.spentAt, s.tags)
+                var tags = s.tags
+                if let oldCat = s.category, let i = tags.firstIndex(of: oldCat) { tags.remove(at: i) }
+                if let category, !tags.contains(category) { tags.insert(category, at: 0) }
+                try MoneyEngine(context: ctx).updateSpend(id, walletId: wallet, amount: v, currency: currency,
+                                                          description: what.isEmpty ? nil : what, vendorName: s.vendorName,
+                                                          category: category, isSadaka: gift, spentAt: date, tags: tags,
+                                                          isBusiness: s.isBusiness, isHouse: s.isHouse)
+                try? ctx.save()
+                undo.announce("Saved \(shown) from \(from)") {
+                    try? MoneyEngine(context: ctx).updateSpend(id, walletId: old.0, amount: old.1, currency: old.2, description: old.3,
+                                                               vendorName: old.4, category: old.5, isSadaka: old.6, spentAt: old.7, tags: old.8)
+                    try? ctx.save()
+                }
+            } else {
+                let id = try MoneyEngine(context: ctx).createSpend(walletId: wallet, amount: v, currency: currency,
+                                                                  description: what.isEmpty ? nil : what, vendorName: nil,
+                                                                  category: category, isSadaka: gift, spentAt: date)
+                try? ctx.save()
+                undo.announce((gift ? "Gave " : "Spent ") + "\(shown) from \(from)") { try? MoneyEngine(context: ctx).deleteSpend(id) }
+            }
+            WidgetBridge.update(ctx)
             close()
         } catch { self.error = error.localizedDescription }
     }
@@ -106,6 +144,7 @@ private struct SpendingForm: View {
 
 private struct MoneyInForm: View {
     @Environment(\.modelContext) private var context
+    @Environment(UndoCenter.self) private var undo
     let state: MoneyState
     let projectId: UUID?
     let close: () -> Void
@@ -215,9 +254,13 @@ private struct MoneyInForm: View {
             context.insert(p); projectId = p.id
         }
         let step = ChainStepInput(fromMethodId: nil, methodId: wallet, amountIn: amount, currencyIn: currency, amountOut: net, currencyOut: "PHP", notes: nil)
+        let ctx = context
+        let into = state.wallets.first { $0.id == wallet }?.name ?? "your wallet"
         do {
-            _ = try MoneyEngine(context: context).addPayment(PaymentChainInput(projectId: projectId, projects: nil, paidAt: date, steps: [step], reference: nil, notes: nil))
-            try? context.save()
+            let id = try MoneyEngine(context: ctx).addPayment(PaymentChainInput(projectId: projectId, projects: nil, paidAt: date, steps: [step], reference: nil, notes: nil))
+            try? ctx.save()
+            undo.announce("\(MoneyFormat.string(net)) came in to \(into)") { try? MoneyEngine(context: ctx).deletePayment(id); try? ctx.save() }
+            WidgetBridge.update(ctx)
             close()
         } catch { self.error = error.localizedDescription }
     }
@@ -227,6 +270,7 @@ private struct MoneyInForm: View {
 
 private struct MoveForm: View {
     @Environment(\.modelContext) private var context
+    @Environment(UndoCenter.self) private var undo
     let state: MoneyState
     let close: () -> Void
     @State private var from: UUID?
@@ -277,9 +321,15 @@ private struct MoveForm: View {
         guard let s = Parse.amount(sent), s > 0 else { error = "Type what left the wallet."; focus = "sent"; return }
         guard let from, let to, from != to else { error = "Choose two different wallets."; return }
         let r = Parse.amount(received) ?? s
+        let ctx = context
+        let names = state.wallets.reduce(into: [UUID: String]()) { $0[$1.id] = $1.name }
         do {
-            _ = try MoneyEngine(context: context).createWithdrawal(fromMethodId: from, toMethodId: to, withdrawnAt: date, grossBase: s, netBase: r, notes: nil)
-            try? context.save()
+            let id = try MoneyEngine(context: ctx).createWithdrawal(fromMethodId: from, toMethodId: to, withdrawnAt: date, grossBase: s, netBase: r, notes: nil)
+            try? ctx.save()
+            undo.announce("Moved \(MoneyFormat.string(s)) from \(names[from] ?? "a wallet") to \(names[to] ?? "a wallet")") {
+                try? MoneyEngine(context: ctx).deleteWithdrawal(id); try? ctx.save()
+            }
+            WidgetBridge.update(ctx)
             close()
         } catch { self.error = error.localizedDescription }
     }
@@ -289,6 +339,7 @@ private struct MoveForm: View {
 
 private struct PayBillForm: View {
     @Environment(\.modelContext) private var context
+    @Environment(UndoCenter.self) private var undo
     let state: MoneyState
     let billId: UUID?
     let close: () -> Void
@@ -344,9 +395,13 @@ private struct PayBillForm: View {
     private func save() {
         guard let b = bill else { error = "Choose a bill."; return }
         guard let v = Parse.amount(amount), v > 0 else { error = "Type the amount."; focus = "amount"; return }
+        let ctx = context
+        let label = state.bills.first { $0.id == b }?.label ?? "the bill"
         do {
-            _ = try MoneyEngine(context: context).markRecurringPaid(recurringId: b, amount: v, periods: periods, walletId: wallet, on: date)
-            try? context.save()
+            let id = try MoneyEngine(context: ctx).markRecurringPaid(recurringId: b, amount: v, periods: periods, walletId: wallet, on: date)
+            try? ctx.save()
+            undo.announce("Paid \(label), \(MoneyFormat.string(v))") { try? MoneyEngine(context: ctx).deleteSpend(id) }
+            WidgetBridge.update(ctx)
             close()
         } catch { self.error = error.localizedDescription }
     }

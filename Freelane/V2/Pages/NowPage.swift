@@ -11,7 +11,7 @@ struct NowPage: View {
         HStack(spacing: 12) {
             Pane {
                 PaneHeader(title: "Now", subtitle: Day.long(.now)) { SearchPill() }
-                ScrollView(.vertical, showsIndicators: false) {
+                PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
                         Hero(state: s).padding(.top, 16).appear(0)
                         if !s.needs.isEmpty {
@@ -153,6 +153,7 @@ private struct BillTrack: View {
 
 private struct NeedRow: View {
     @Environment(AppState.self) private var app
+    @Environment(UndoCenter.self) private var undo
     let item: NeedItem
     var body: some View {
         switch item.kind {
@@ -168,9 +169,15 @@ private struct NeedRow: View {
                 action: "Mark paid") { withAnimation(Flow.spatial) { app.form = .moneyIn(projectId: p.id) } }
         case .estimate(let b, let suggested):
             row(badge: Badge(subject: .bill(b.label), size: 48), title: "\(b.label) came to \(MoneyFormat.string(b.lastPaid?.amount ?? 0, decimals: false))",
-                sub: Text("Use \(MoneyFormat.string(suggested, decimals: false)) as next month’s estimate instead of \(MoneyFormat.string(b.amount, decimals: false))?"),
+                sub: Text("Use \(MoneyFormat.string(suggested, decimals: false)) as \(b.nextDue.map { Day.month($0) + "’s" } ?? "the next") estimate instead of \(MoneyFormat.string(b.amount, decimals: false))?"),
                 action: "Use \(MoneyFormat.string(suggested, decimals: false))") {
+                    let old = (b.bill.amount, b.bill.amountBase)
                     b.bill.amount = suggested; b.bill.amountBase = suggested; b.bill.updatedAt = .now; b.bill.dirty = true
+                    try? b.bill.modelContext?.save()
+                    undo.announce("\(b.label) is now \(MoneyFormat.string(suggested, decimals: false)) a month") {
+                        b.bill.amount = old.0; b.bill.amountBase = old.1; b.bill.updatedAt = .now; b.bill.dirty = true
+                        try? b.bill.modelContext?.save()
+                    }
                 }
         }
     }
@@ -224,7 +231,7 @@ private struct WalletsSide: View {
         PaneHeader(title: "Wallets", big: false) {
             Text(verbatim: MoneyFormat.string(state.total)).font(FS.font(16, 600, rond: 100)).foregroundStyle(MD.onSurfaceVariant)
         }
-        ScrollView(.vertical, showsIndicators: false) {
+        PaneScroll {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(state.wallets.filter(\.inTotals).enumerated()), id: \.element.id) { i, w in
                     ListRow(badge: Badge(subject: .wallet(w.wallet)), title: w.name,

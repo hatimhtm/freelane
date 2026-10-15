@@ -490,15 +490,15 @@ private struct LedgerDetailFrame<Trailing: View, Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
                 badge
-                Text(title).role(.pane).lineLimit(1).truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .help(title)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).role(.pane).lineLimit(1).truncationMode(.tail).help(title)
+                    Text(subtitle).role(.supporting, MD.onSurfaceVariant).lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 trailing
             }
-            .frame(height: 48)
+            .frame(minHeight: 48)
             .padding(.top, 20)
-            Text(subtitle).role(.supporting, MD.onSurfaceVariant).lineLimit(1)
-                .padding(.leading, 62).padding(.top, 6)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) { content }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -561,24 +561,40 @@ private struct LedgerPaymentDetail: View {
     }
 }
 
-/// ⋮ on a payment. Edit is a placeholder for now. Delete appears only where the app's undo is available,
-/// and then goes through the engine's soft delete (to the Trash, ledger archived, project status recomputed).
+/// ⋮ on a payment: Delete, through the engine's soft delete (to the Trash, ledger archived, project status
+/// recomputed), with Undo.
 private struct LedgerPaymentMenu: View {
     let payment: Payment
     let wallet: String?
     @Environment(\.modelContext) private var context
     @Environment(UndoCenter.self) private var undo: UndoCenter?
+
+    var body: some View {
+        LedgerActions(edit: nil, what: "payment",
+                      message: wallet.map { "It moves to the Trash and comes off \($0)’s balance." } ?? "It moves to the Trash.") {
+            let id = payment.id, ctx = context
+            try? MoneyEngine(context: ctx).deletePayment(id)
+            try? ctx.save()
+            undo?.offer("payment") { try? MoneyEngine(context: ctx).restorePayment(id); try? ctx.save() }
+        }
+    }
+}
+
+/// ⋮ in a detail header: Edit when there's a form for it, and Delete after a confirmation.
+private struct LedgerActions: View {
+    var edit: (() -> Void)?
+    let what: String
+    let message: String
+    let delete: () -> Void
     @State private var confirming = false
 
     var body: some View {
         Menu {
-            Button("Edit") {}
-                .disabled(true)
-                .help("Editing a payment isn’t built into this version yet")
-            if undo != nil {
+            if let edit {
+                Button("Edit…", action: edit)
                 Divider()
-                Button("Delete…") { confirming = true }
             }
+            Button("Delete…", role: .destructive) { confirming = true }
         } label: {
             Icon(Sym.moreVert, size: 24).foregroundStyle(MD.onSurfaceVariant)
                 .frame(width: 40, height: 40)
@@ -589,19 +605,12 @@ private struct LedgerPaymentMenu: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("More")
-        .confirmationDialog("Delete this payment?", isPresented: $confirming) {
-            Button("Delete", role: .destructive) { delete() }
+        .confirmationDialog(what.first?.isNumber == true ? "Delete these \(what)?" : "Delete this \(what)?", isPresented: $confirming) {
+            Button("Delete", role: .destructive, action: delete)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(wallet.map { "It moves to the Trash and comes off \($0)’s balance." } ?? "It moves to the Trash.")
+            Text(message)
         }
-    }
-
-    private func delete() {
-        let id = payment.id
-        let ctx = context
-        try? MoneyEngine(context: ctx).deletePayment(id)
-        undo?.offer("payment") { try? MoneyEngine(context: ctx).restorePayment(id) }
     }
 }
 
@@ -711,13 +720,22 @@ private struct LedgerSpendDetail: View {
     let spend: Spend
     let line: LedgerLine
     let ctx: LedgerContext
+    @Environment(AppState.self) private var app
+    @Environment(\.modelContext) private var modelContext
+    @Environment(UndoCenter.self) private var undo: UndoCenter?
 
     var body: some View {
         let s = spend
         let verb = s.recurringId != nil ? "paid" : s.isSadaka ? "given" : "spent"
         LedgerDetailFrame(badge: Badge(subject: line.badge, size: 48, glyph: line.badgeGlyph), title: line.title,
                           subtitle: "\(verb) \(LedgerText.dayTitle(s.spentAt))") {
-            EmptyView()
+            LedgerActions(edit: s.recurringId == nil ? { app.form = .editSpend(s.id) } : nil,
+                          what: s.isSadaka ? "gift" : s.recurringId != nil ? "bill payment" : "spend",
+                          message: ctx.wallet(s.walletId).map { "It moves to the Trash and goes back into \($0.name)’s balance." } ?? "It moves to the Trash.") {
+                let id = s.id, mc = modelContext
+                try? MoneyEngine(context: mc).deleteSpend(id)
+                undo?.offer(s.isSadaka ? "gift" : "spend") { try? MoneyEngine(context: mc).restoreSpend(id) }
+            }
         } content: {
             Money(value: s.amountBase, role: .detail, sign: .minus, color: line.inTotals ? MD.onSurface : MD.onSurfaceVariant)
                 .padding(.top, 20)
@@ -760,6 +778,8 @@ private struct LedgerMoveDetail: View {
     let moves: [Withdrawal]
     let line: LedgerLine
     let ctx: LedgerContext
+    @Environment(\.modelContext) private var modelContext
+    @Environment(UndoCenter.self) private var undo: UndoCenter?
 
     var body: some View {
         let first = moves[0]
@@ -768,7 +788,16 @@ private struct LedgerMoveDetail: View {
         let day = LedgerText.dayTitle(first.withdrawnAt)
         LedgerDetailFrame(badge: Badge(subject: line.badge, size: 48, glyph: line.badgeGlyph), title: line.title,
                           subtitle: moves.count == 1 ? "moved \(day)" : "\(moves.count) moves · \(day)") {
-            EmptyView()
+            LedgerActions(edit: nil, what: moves.count == 1 ? "move" : "\(moves.count) moves",
+                          message: "It moves to the Trash, and both wallets go back to what they held before.") {
+                let ids = moves.map(\.id), mc = modelContext
+                for id in ids { try? MoneyEngine(context: mc).deleteWithdrawal(id) }
+                try? mc.save()
+                undo?.offer(ids.count == 1 ? "move" : "\(ids.count) moves") {
+                    for id in ids { try? MoneyEngine(context: mc).restoreWithdrawal(id) }
+                    try? mc.save()
+                }
+            }
         } content: {
             Money.moved(received, .detail).padding(.top, 20)
             Text(to.map { "received in \($0.name)" } ?? "received").role(.supporting, MD.onSurfaceVariant).padding(.top, 4)

@@ -17,11 +17,12 @@ struct WalletsPage: View {
                 M3Button(title: "Count", icon: Sym.factCheck, kind: .filled) { withAnimation(Flow.spatial) { app.counting = true } }
                     .keyboardShortcut("k", modifiers: [.command, .shift])
             }
-            ScrollView(.vertical, showsIndicators: false) {
+            PaneScroll {
                 VStack(alignment: .leading, spacing: 0) {
                     summary.padding(.top, 16).appear(0)
                     grid.padding(.top, 16)
                     recentCounts.appear(6)
+                    outsideTotals.appear(7)
                 }
             }
         }
@@ -60,12 +61,12 @@ struct WalletsPage: View {
     // MARK: Cards
 
     private var grid: some View {
-        let lines = counted + outside
+        let lines = counted
         return Grid(horizontalSpacing: 12, verticalSpacing: 12) {
             if let first = lines.first {
                 GridRow {
-                    WalletCard(line: first, big: true, activity: activity(for: first)).gridCellColumns(2).appear(1)
-                    if lines.count > 1 { WalletCard(line: lines[1], activity: activity(for: lines[1])).appear(2) } else { Color.clear }
+                    WalletCard(line: first, role: role(first), big: true, activity: activity(for: first)).gridCellColumns(2).appear(1)
+                    if lines.count > 1 { WalletCard(line: lines[1], role: role(lines[1]), activity: activity(for: lines[1])).appear(2) } else { Color.clear }
                 }
             }
             let rest = Array(lines.dropFirst(2))
@@ -73,15 +74,85 @@ struct WalletsPage: View {
                 GridRow {
                     ForEach(0..<3, id: \.self) { c in
                         let i = r * 3 + c
-                        if i < rest.count { WalletCard(line: rest[i], activity: activity(for: rest[i])).appear(3 + i) } else { Color.clear }
+                        if i < rest.count { WalletCard(line: rest[i], role: role(rest[i]), activity: activity(for: rest[i])).appear(3 + i) } else { Color.clear }
                     }
                 }
             }
         }
     }
 
-    private func activity(for line: WalletLine) -> FeedItem? {
-        state.feed.first { $0.walletIds.contains(line.id) && $0.kind != .count }
+    /// What a wallet is for, when the records make it plain: the one holding most of the money, and the
+    /// one clients' payments land in.
+    private func role(_ line: WalletLine) -> String? {
+        if line.id == counted.first?.id, line.balance / max(state.total, 1) >= 0.5 { return "your main wallet" }
+        let since = Calendar.current.date(byAdding: .day, value: -120, to: .now) ?? .distantPast
+        let landings = Dictionary(grouping: ledger.filter { $0.archivedAt == nil && $0.kind == .income && $0.relatedKindRaw == LedgerRelatedKind.payment.rawValue && $0.eventAt >= since },
+                                  by: { $0.walletId })
+        if let top = landings.max(by: { $0.value.count < $1.value.count }), top.key == line.id, top.value.count >= 2 { return "where client money lands" }
+        return nil
+    }
+
+    /// The latest thing that happened in a wallet, said the way you'd say it.
+    private func activity(for line: WalletLine) -> (glyph: String, text: String)? {
+        // The latest real money event; a count stands in for it only when it came on a later day and found
+        // a real amount (₱100 or more), so small top-ups don't hide what actually happened.
+        let mine = state.feed.filter { $0.walletIds.contains(line.id) && $0.kind != .fee }
+        let event = mine.first { $0.kind != .count }
+        let countNet = { (d: Date) in
+            ledger.filter { PHT.calendar.isDate($0.eventAt, inSameDayAs: d) && $0.walletId == line.id && $0.archivedAt == nil
+                && $0.kind == .adjustment && $0.note == Unaccounted.marker }.reduce(0) { $0 + $1.amountBase }
+        }
+        let count = mine.first { $0.kind == .count }.flatMap { c in
+            abs(countNet(c.date)) >= 100 && (event.map { !PHT.calendar.isDate(c.date, inSameDayAs: $0.date) && c.date > $0.date } ?? true) ? c : nil
+        }
+        guard let a = count ?? event ?? mine.first else { return nil }
+        let when = Day.ago(a.date)
+        let day = { (e: LedgerEntry) in PHT.calendar.isDate(e.eventAt, inSameDayAs: a.date) && e.walletId == line.id && e.archivedAt == nil }
+        switch a.kind {
+        case .count:
+            let net = countNet(a.date)
+            return (Sym.factCheck, "Counted \(MoneyFormat.string(abs(net))) \(net >= 0 ? "more" : "less") than Freelane had")
+        case .move:
+            if a.walletIds.first == line.id {
+                let sent = -ledger.filter { day($0) && $0.relatedKindRaw == LedgerRelatedKind.withdrawal.rawValue && $0.amountBase < 0 }.reduce(0) { $0 + $1.amountBase }
+                let to = a.walletIds.last.flatMap { id in state.wallets.first { $0.id == id }?.name } ?? "another wallet"
+                return (Sym.swapHoriz, "Moved \(MoneyFormat.string(sent > 0 ? sent : abs(a.amount))) to \(to) \(when)")
+            }
+            let from = a.walletIds.first.flatMap { id in state.wallets.first { $0.id == id }?.name } ?? "another wallet"
+            return (Sym.swapHoriz, "\(MoneyFormat.string(abs(a.amount))) from \(from) \(when)")
+        case .payment:
+            return (Sym.southWest, "\(a.title) paid \(MoneyFormat.string(abs(a.amount))) \(when)")
+        case .gift:
+            return (Sym.volunteerActivism, "Gave \(MoneyFormat.string(abs(a.amount))) \(when)")
+        default:
+            if case .bill(let label) = a.badge {
+                let bill = label.lowercased()
+                let glyph = IdentityKey.bill(label)?.billGlyph ?? Sym.receiptLong
+                return Day.daysBetween(a.date, .now) < 7
+                    ? (glyph, "Paid \(bill) \(when), \(MoneyFormat.string(abs(a.amount)))")
+                    : (glyph, "Paid \(Day.month(a.date))’s \(bill)")
+            }
+            // "Bike connector" reads as "bike connector" mid-sentence; names ("Perfect Ratio Cafe", "Jollibee") keep their capitals.
+            let words = a.title.split(separator: " ")
+            let plain = words.count >= 2 && words[1].first?.isLowercase == true
+            return (Sym.history, "Last spent \(when), " + (plain ? a.title.prefix(1).lowercased() + a.title.dropFirst() : a.title))
+        }
+    }
+
+    // MARK: Outside your totals
+
+    @ViewBuilder private var outsideTotals: some View {
+        if !outside.isEmpty {
+            SectionHeader(title: "Not in your totals") {
+                Text("kept apart from what you can spend").role(.supporting, MD.onSurfaceVariant)
+            }
+            Segmented(items: outside) { w in
+                ListRow(badge: Badge(subject: .wallet(w.wallet)), title: w.name,
+                        subtitle: w.lastCounted.map { "counted \(Day.ago($0))" } ?? "never counted") {
+                    Money(value: w.balance, color: MD.onSurfaceVariant)
+                }
+            }
+        }
     }
 
     // MARK: Recent counts
@@ -165,36 +236,30 @@ private struct SplitBar: View {
 private struct WalletCard: View {
     @Environment(AppState.self) private var app
     let line: WalletLine
+    var role: String? = nil
     var big = false
-    let activity: FeedItem?
+    let activity: (glyph: String, text: String)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 12) {
-                    Badge(subject: .wallet(line.wallet), size: 48)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(line.name).role(.row)
-                        Text(kindLine).role(.supporting, MD.onSurfaceVariant)
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Badge(subject: .wallet(line.wallet), size: 48)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(line.name).role(.row)
+                    Text(kindLine).role(.supporting, MD.onSurfaceVariant).lineLimit(1)
                 }
-                Money(value: line.balance, role: .card).padding(.top, 2)
-                status
-                Spacer(minLength: 0)
-                if !big { footer }
             }
+            Money(value: line.balance, role: .card).padding(.top, 2)
+            status
             if big {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 32) {
-                        flow("In this month", monthIn)
-                        flow("Out this month", monthOut)
-                    }
-                    .padding(.top, 6)
-                    Spacer(minLength: 0)
-                    footer
+                HStack(spacing: 32) {
+                    flow("In this month", monthIn)
+                    flow("Out this month", monthOut)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
             }
+            Spacer(minLength: 0)
+            footer
         }
         .padding(.horizontal, 20).padding(.vertical, 16)
         .frame(maxWidth: .infinity, minHeight: 172, alignment: .topLeading)
@@ -221,12 +286,15 @@ private struct WalletCard: View {
     }
 
     private var kindLine: String {
+        if role == "where client money lands" { return role! }
+        let kind: String
         switch line.wallet.kind {
-        case .cash: return "in hand"
-        case .bank: return "bank"
-        case .exchange: return "exchange"
-        default: return "e-wallet"
+        case .cash: kind = "in hand"
+        case .bank: kind = "bank"
+        case .exchange: kind = "exchange"
+        default: kind = "e-wallet"
         }
+        return role.map { "\(kind) · \($0)" } ?? kind
     }
 
     @ViewBuilder private var status: some View {
@@ -244,20 +312,9 @@ private struct WalletCard: View {
     @ViewBuilder private var footer: some View {
         if let a = activity {
             HStack(spacing: 6) {
-                Icon(glyph(for: a), size: 20).foregroundStyle(MD.onSurfaceVariant)
-                Text(describe(a)).role(.supporting, MD.onSurfaceVariant).lineLimit(1)
+                Icon(a.glyph, size: 20).foregroundStyle(MD.onSurfaceVariant)
+                Text(a.text).role(.supporting, MD.onSurfaceVariant).lineLimit(1)
             }
-        }
-    }
-    private func glyph(for a: FeedItem) -> String {
-        switch a.kind { case .move: return Sym.swapHoriz; case .payment: return Sym.southWest; case .gift: return Sym.volunteerActivism; case .fee: return Sym.accountBalance; default: return Sym.history }
-    }
-    private func describe(_ a: FeedItem) -> String {
-        let when = Day.ago(a.date)
-        switch a.kind {
-        case .move: return "\(a.title) \(when), \(MoneyFormat.string(abs(a.amount)))"
-        case .payment: return "\(a.title) paid \(when), \(MoneyFormat.string(abs(a.amount)))"
-        default: return "\(a.title) \(when), \(MoneyFormat.string(abs(a.amount)))"
         }
     }
 }

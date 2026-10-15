@@ -28,7 +28,7 @@ struct SettingsPage: View {
                 }
                 .frame(width: 220)
                 ScrollViewReader { proxy in
-                    ScrollView(.vertical, showsIndicators: false) {
+                    PaneScroll {
                         VStack(alignment: .leading, spacing: 16) {
                             group("General", "Look") { look }.appear(0)
                             group("Money", "Money") { money }.appear(1)

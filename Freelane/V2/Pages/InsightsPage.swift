@@ -32,7 +32,7 @@ struct InsightsPage: View {
                     }
                     .anchorPreference(key: InsightsChipAnchor.self, value: .bounds) { $0 }
                 }
-                ScrollView(.vertical, showsIndicators: false) {
+                PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
                         InsightsBand(picture: p).padding(.top, 16)
                         InsightsInOut(months: p.months, pinned: pinnedMonth.flatMap { p.months.indices.contains($0) ? p.months[$0].id : nil })

@@ -28,7 +28,7 @@ struct WorkPage: View {
                 PaneHeader(title: "Work") {
                     M3Button(title: "New project", icon: Sym.add, kind: .tonal) { addingProject = true }
                 }
-                ScrollView(.vertical, showsIndicators: false) {
+                PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
                         WorkBand(w: w).padding(.top, 16)
                         if !w.owed.isEmpty {
@@ -58,7 +58,7 @@ struct WorkPage: View {
             .frame(minWidth: 560)
             Pane {
                 PaneHeader(title: "Getting paid", big: false)
-                ScrollView(.vertical, showsIndicators: false) {
+                PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
                         WorkFeeCard(w: w).padding(.top, 16)
                         SectionHeader(title: "Latest payments", small: true) {

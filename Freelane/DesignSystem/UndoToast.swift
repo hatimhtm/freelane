@@ -10,6 +10,7 @@ final class UndoCenter {
         let message: String        // the whole sentence, e.g. "Deleted spend"
         let icon: String
         let undo: () -> Void
+        var canUndo = true
     }
     private(set) var toast: Toast?
     private var timer: Task<Void, Never>?
@@ -46,6 +47,18 @@ final class UndoCenter {
         offer(label) {
             SoftDelete.restore(entity, ownsLedger: false, context: context)
             try? context.save()
+        }
+    }
+
+    /// A plain confirmation with nothing to take back (v2's snackbar shows it without an Undo button).
+    func notify(_ message: String) {
+        timer?.cancel()
+        let shown = Toast(message: message, icon: "checkmark", undo: {}, canUndo: false)
+        toast = shown
+        timer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            if self?.toast?.id == shown.id { self?.toast = nil }
         }
     }
 
