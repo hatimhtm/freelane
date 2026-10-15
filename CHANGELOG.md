@@ -3,6 +3,18 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 3.1
+
+**Ready for Freelane on Android.** The new phone app sees everything the Mac does, and what you do on
+either one reaches the other on its own.
+
+- **Moves and payment routes sync.** Moves between your wallets, and the steps a client's payment took
+  to reach a wallet, now go to your phone and come back from it. The first sync after this update
+  sends them all once.
+- **Wallets and clients arrive whole.** A wallet's brand and currencies and a client's company name
+  now sync too, so the phone names and draws them the way the Mac does. An older copy on the phone
+  that lacks them can't wipe them here.
+
 ## 3.0
 
 **A new Freelane.** Every page is redrawn in one calm, rounded style, white by default with a dark
