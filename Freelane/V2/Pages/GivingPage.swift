@@ -19,7 +19,7 @@ struct GivingPage: View {
             Pane {
                 PaneHeader(title: "Giving") {
                     M3Button(title: "Record a gift", icon: Sym.add, kind: .tonal) {
-                        withAnimation(Flow.pick(Flow.spatial, reduce: reduce)) { app.start(.spending) }
+                        withAnimation(Flow.pick(Flow.spatial, reduce: reduce)) { app.form = .gift }
                     }
                     .help("Record a gift as spending marked sadaka")
                 }
@@ -210,7 +210,7 @@ private struct GivingSide: View {
                     GivingFact(label: "Most given", value: Text("\(Text(verbatim: Day.month(m.start) + (m.isCurrent ? " so far" : "") + " · "))\(money(m.total, decimals: false))"))
                 }
                 if let last = p.inPeriod.first {
-                    GivingFact(label: "Last gift", value: Text(Day.long(last.date)))
+                    GivingFact(label: "Last gift", value: Text(Day.dayMonthLong(last.date)))
                 }
                 if let w = p.usualWallet {
                     GivingFact(label: "Usually from", value: Text("\(w.name), \(w.count) of \(p.inPeriod.count)"))
@@ -222,8 +222,17 @@ private struct GivingSide: View {
                 }
             }
             .padding(.top, 8)
-            let top = p.top
-            if top.count >= 2 {
+            let who = p.recipients
+            if who.filter({ !$0.isOthers }).count >= 1 && who.count >= 2 {
+                SectionHeader(title: "Who you gave to", small: true)
+                VStack(spacing: 10) {
+                    let most = who.map(\.total).max() ?? 1
+                    ForEach(Array(who.enumerated()), id: \.element.id) { i, r in
+                        GivingWho(recipient: r, fraction: r.total / max(most, 1)).appear(i + 4)
+                    }
+                }
+            } else if p.top.count >= 2 {
+                let top = p.top
                 SectionHeader(title: "Largest gifts", small: true)
                 VStack(spacing: 10) {
                     ForEach(top) { g in GivingLargest(gift: g, fraction: g.amount / max(top[0].amount, 1)) }
@@ -252,6 +261,32 @@ private struct GivingFact: View {
         .frame(height: 44)
         .overlay(alignment: .bottom) { if !last { Rectangle().fill(Surface.hairline).frame(height: 1) } }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A person he gave to, with what they received this year.
+private struct GivingWho: View {
+    let recipient: GivingRecipient
+    let fraction: Double
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(recipient.name).role(.body).lineLimit(1)
+                Spacer(minLength: 8)
+                Money(value: recipient.total, role: .row, decimals: false)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Surface.well2)
+                    Capsule().fill(recipient.isOthers ? MD.primary.opacity(0.55) : MD.primary).frame(width: max(8, geo.size.width * fraction))
+                        .grow(axis: .horizontal)
+                }
+            }
+            .frame(height: 8)
+        }
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(recipient.name): \(MoneyFormat.string(recipient.total)) in \(recipient.count) \(recipient.count == 1 ? "gift" : "gifts")")
     }
 }
 

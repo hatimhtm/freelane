@@ -153,6 +153,7 @@ struct Shell: View {
             case "form:move": app.form = .move
             case "form:payBill": app.form = .payBill(billId: nil)
             case "form:addWallet": app.form = .addWallet
+            case "form:gift": app.form = .gift
             default: break
             }
         }
@@ -165,6 +166,8 @@ struct Shell: View {
             case .wallets: WalletsPage(state: money)
             case .settings: SettingsPage(state: money)
             case .journal: JournalPage()
+            case .insights: InsightsPage(state: money)
+            case .giving: GivingPage(state: money)
             default: PlaceholderPage(page: app.page)
             }
         }

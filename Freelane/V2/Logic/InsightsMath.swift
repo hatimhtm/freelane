@@ -224,7 +224,7 @@ enum InsightsMath {
         // 3. A bill that grew a lot: its first payment in the period against its latest, one period each.
         if let bill = grownBill(spends, rules: rules) {
             let a = Day.month(bill.first.date), b = Day.month(bill.last.date)
-            out.append(InsightsFinding(id: "bill", glyph: Sym.calendarMonth, title: [.text(grew(bill.label, bill.last.amount / bill.first.amount, since: a))],
+            out.append(InsightsFinding(id: "bill", glyph: IdentityKey.bill(bill.label)?.billGlyph ?? Sym.calendarMonth, title: [.text(grew(bill.label, bill.last.amount / bill.first.amount, since: a))],
                                        detail: [.money(bill.first.amount), .text(" in \(a), "), .money(bill.last.amount), .text(" in \(b).")]))
         }
 
@@ -297,7 +297,7 @@ enum InsightsMath {
     static func compact(_ v: Double) -> String {
         let a = abs(v)
         if a < 999.5 { return "\(Int(a.rounded()))" }
-        if a < 99_950 {
+        if a < 9_950 {
             let s = String(format: "%.1f", a / 1000)
             return (s.hasSuffix(".0") ? String(s.dropLast(2)) : s) + "k"
         }

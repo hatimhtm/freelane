@@ -5,7 +5,7 @@ enum Day {
     private static func fmt(_ f: String) -> DateFormatter {
         let d = DateFormatter(); d.locale = Locale(identifier: "en_GB"); d.timeZone = PHT.zone; d.dateFormat = f; return d
     }
-    private static let long = fmt("EEEE d MMMM"), short = fmt("EEE d MMM"), dayMonth = fmt("d MMM"), month = fmt("MMMM"), monthYear = fmt("MMMM yyyy"), dmy = fmt("d MMM yyyy")
+    private static let long = fmt("EEEE d MMMM"), short = fmt("EEE d MMM"), dayMonth = fmt("d MMM"), month = fmt("MMMM"), monthYear = fmt("MMMM yyyy"), dmy = fmt("d MMM yyyy"), dML = fmt("d MMMM")
 
     /// "Friday 16 October"
     static func long(_ d: Date) -> String { long.string(from: d) }
@@ -18,6 +18,8 @@ enum Day {
     static func monthYear(_ d: Date) -> String { monthYear.string(from: d) }
     /// "9 Jul 2027"
     static func full(_ d: Date) -> String { dmy.string(from: d) }
+    /// "1 September"
+    static func dayMonthLong(_ d: Date) -> String { dML.string(from: d) }
 
     static func daysBetween(_ a: Date, _ b: Date) -> Int {
         PHT.calendar.dateComponents([.day], from: PHT.calendar.startOfDay(for: a), to: PHT.calendar.startOfDay(for: b)).day ?? 0

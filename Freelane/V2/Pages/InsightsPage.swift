@@ -420,9 +420,9 @@ private struct InsightsMonthBars: View {
 }
 
 private enum InsightsInOutColors {
-    static let came = MD.primary
-    static let logged = MD.onSurfaceVariant.opacity(0.7)
-    static let found = MD.onSurfaceVariant.opacity(0.3)
+    static let came = MD.tertiary
+    static let logged = MD.primary
+    static let found = MD.primary.opacity(0.35)
 }
 
 // MARK: - Where logged money went
@@ -480,11 +480,11 @@ private struct InsightsCategoryRow: View {
     let strong: Bool
     var body: some View {
         HStack(spacing: 12) {
-            Text(category.name).role(.body).lineLimit(1)
+            Text(category.name.prefix(1).uppercased() + category.name.dropFirst()).role(.body).lineLimit(1)
                 .frame(width: 140, alignment: .leading)
             GeometryReader { geo in
                 Capsule()
-                    .fill(MD.onSurfaceVariant.opacity(strong ? 0.7 : 0.35))
+                    .fill(MD.primary.opacity(strong ? 1 : 0.55))
                     .frame(width: max(14, geo.size.width * fraction), height: 14)
                     .frame(maxHeight: .infinity, alignment: .center)
             }

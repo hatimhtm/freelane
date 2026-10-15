@@ -6,10 +6,10 @@ import SwiftData
 
 /// Which form is open, with an optional prefill.
 enum FormKind: Identifiable, Equatable {
-    case spending, moneyIn(projectId: UUID?), move, payBill(billId: UUID?), addWallet
+    case spending, gift, moneyIn(projectId: UUID?), move, payBill(billId: UUID?), addWallet
     var id: String {
         switch self {
-        case .spending: return "spending"; case .moneyIn: return "moneyIn"; case .move: return "move"
+        case .spending: return "spending"; case .gift: return "gift"; case .moneyIn: return "moneyIn"; case .move: return "move"
         case .payBill: return "payBill"; case .addWallet: return "addWallet"
         }
     }
@@ -22,6 +22,7 @@ struct FormHost: View {
     var body: some View {
         switch kind {
         case .spending: SpendingForm(state: state, close: close)
+        case .gift: SpendingForm(state: state, close: close, startAsGift: true)
         case .moneyIn(let p): MoneyInForm(state: state, projectId: p, close: close)
         case .move: MoveForm(state: state, close: close)
         case .payBill(let b): PayBillForm(state: state, billId: b, close: close)
@@ -36,6 +37,7 @@ private struct SpendingForm: View {
     @Environment(\.modelContext) private var context
     let state: MoneyState
     let close: () -> Void
+    var startAsGift = false
     @Query(sort: \Spend.spentAt, order: .reverse) private var spends: [Spend]
     @State private var amount = ""
     @State private var currency = "PHP"
@@ -56,7 +58,7 @@ private struct SpendingForm: View {
     }
 
     var body: some View {
-        M3Dialog(title: "Spending", onClose: close) {
+        M3Dialog(title: startAsGift ? "A gift" : "Spending", subtitle: startAsGift ? "Sadaka, or anything you gave. It counts as spending and shows on Giving." : nil, onClose: close) {
             OutlinedField(label: "Amount", text: $amount, prompt: "0.00", numeric: true, focused: $focus, id: "amount",
                           leading: AnyView(CurrencyChip(currency: $currency)))
             OutlinedField(label: "What was it?", text: $what, prompt: "Groceries, Grab, a gift…", focused: $focus, id: "what")
@@ -82,6 +84,7 @@ private struct SpendingForm: View {
         }
         .onAppear {
             focus = "amount"
+            gift = startAsGift
             wallet = spends.first(where: { $0.deletedAt == nil && $0.walletId != nil })?.walletId ?? state.wallets.first?.id
         }
     }
