@@ -3,6 +3,24 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 2.28
+
+**A bill you mark as paid stays paid.** Paying the electricity bill and seeing it come straight
+back as due had two causes, both fixed.
+
+- **Sync was undoing local changes.** The server records times to the microsecond; the Mac kept
+  its place in milliseconds, so it re-downloaded the newest rows every couple of seconds, forever.
+  Each pass wrote the server's older copy over anything not yet sent. A payment made while a pass
+  was in flight was erased before it could sync. The Mac now keeps the server's exact time, and a
+  pull never overwrites a change that hasn't been sent yet. The app also stops rewriting its
+  database every two seconds while idle.
+- **"Paid through" is re-derived whenever its inputs change**: after every sync (bills paid on the
+  phone now settle on the Mac), when you change a bill's day or cadence (moving the electricity bill
+  from the 13th to the 15th had left September looking unpaid), and at launch.
+- **A bill's first payment settles the period nearest to it.** A bill set up mid-stream no longer
+  counts the months before you started tracking as overdue, and a bill set up just after its due day
+  no longer skips the next month.
+
 ## 2.27
 
 **Prepaid bills no longer get charged to you twice.** Paying a year of wifi up front was recorded

@@ -250,15 +250,9 @@ struct RootView: View {
             TrashSweep.run(context)
             // Charge any stored monthly wallet fees, once per month per wallet.
             MoneyEngine(context: context).applyMonthlyFees()
-            // One-time: re-derive every bill's "paid through" from its linked spends, healing
-            // rows saved under the old payment-date math (which could skip a month).
-            if !UserDefaults.standard.bool(forKey: "recurring.paidThroughBackfilled") {
-                UserDefaults.standard.set(true, forKey: "recurring.paidThroughBackfilled")
-                let engine = MoneyEngine(context: context)
-                for r in (try? context.fetch(FetchDescriptor<Recurring>())) ?? [] where r.deletedAt == nil {
-                    engine.resyncRecurring(r.id)
-                }
-            }
+            // Re-derive every bill's "paid through" from its linked spends, healing any drift
+            // (a schedule edited after payments, a sync that landed stale).
+            RecurringMath.resyncAll(context)
             // Trim the audit trail to the last 90 days.
             Audit.prune(context)
             // Turn money state into notifications (aging projects, wallet alerts, sadaka).

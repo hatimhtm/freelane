@@ -1109,6 +1109,7 @@ struct AddRecurringSheet: View {
                               currency: currency, amountBase: ab)
             r.dayOfMonth = day; r.isVariableAmount = isVariable; r.dirty = true; context.insert(r)
         }
+        RecurringMath.resyncAll(context)   // a new day or cadence moves which periods the payments settle
         try? context.save(); dismiss()
     }
 }

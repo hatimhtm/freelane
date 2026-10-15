@@ -358,7 +358,7 @@ private let isoFormatter: ISO8601DateFormatter = {
 /// `+00:00` and `Z` mean the same instant, but only one of them survives being put in a URL: `+`
 /// is a legal query character meaning space, so the server reads the timestamp as malformed and
 /// rejects the whole request. Everything this app emits ends in `Z`.
-private func zulu(_ s: String) -> String {
+func zulu(_ s: String) -> String {
     s.replacingOccurrences(of: "+00:00", with: "Z").replacingOccurrences(of: "+0000", with: "Z")
 }
 
@@ -377,9 +377,6 @@ func parseDate(_ v: Any?) -> Date? {
     guard let s = v as? String else { return nil }
     return isoFormatter.date(from: s) ?? isoPlain.date(from: s)
 }
-
-/// Always UTC, always `Z`, never an offset — the form that survives a URL round trip.
-func isoString(_ d: Date) -> String { zulu(isoFormatter.string(from: d)) }
 
 func parseUUID(_ v: Any?) -> UUID? {
     guard let s = v as? String else { return nil }

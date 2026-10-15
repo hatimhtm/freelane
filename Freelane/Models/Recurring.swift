@@ -120,19 +120,33 @@ enum RecurringMath {
     }
 
     /// DERIVE `paidThroughDate` from the live spends linked to this rule — the single source of
-    /// truth. The model is deliberately DATE-INDEPENDENT: N periods of payment settle the first
-    /// N consecutive scheduled occurrences starting at the rule's first occurrence. WHEN you pay
-    /// (early, on time, or weeks late) never changes which period a payment covers — that was the
-    /// root of the "paid late → skipped a month" bug. Deleting/restoring a spend changes the
-    /// count and re-derives automatically. Returns nil when nothing live is linked.
+    /// truth. N periods of payment settle N consecutive scheduled occurrences, starting at the
+    /// occurrence NEAREST the first payment. After that first one, WHEN you pay (early, on time,
+    /// or weeks late) never changes which period a payment covers — that was the root of the
+    /// "paid late → skipped a month" bug. Starting at the first payment rather than the rule's
+    /// creation is what lets a bill be set up mid-stream, or after its due day, without the app
+    /// treating the periods before it as owed. Returns nil when nothing live is linked.
     static func recomputePaidThrough(_ r: Recurring, spends: [Spend]) -> Date? {
         let live = spends.filter { $0.recurringId == r.id && $0.deletedAt == nil }
-        guard !live.isEmpty else { return nil }
+        guard let firstPaid = live.map(\.spentAt).min() else { return nil }
         let total = live.reduce(0) { $0 + max(1, $1.coversPeriods) }
-        var occ = firstOccurrence(r, onOrAfter: r.createdAt)
+        let before = occurrence(r, onOrBefore: firstPaid), after = occurrence(r, after: firstPaid)
+        var occ = firstPaid.timeIntervalSince(before) <= after.timeIntervalSince(firstPaid) ? before : after
         var i = 1
         while i < total { occ = occurrence(r, after: occ); i += 1 }
         return PHT.calendar.startOfDay(for: occ)
+    }
+
+    /// Re-derive every rule's `paidThroughDate`. Cheap (a handful of rules, a few hundred spends),
+    /// so it runs wherever its inputs can change: paying, deleting or restoring a spend, editing a
+    /// rule's schedule, every sync pull (the phone pays bills without touching the rule), and launch.
+    /// Does not save.
+    static func resyncAll(_ context: ModelContext) {
+        let spends = (try? context.fetch(FetchDescriptor<Spend>())) ?? []
+        for r in (try? context.fetch(FetchDescriptor<Recurring>())) ?? [] {
+            let derived = recomputePaidThrough(r, spends: spends)
+            if r.paidThroughDate != derived { r.paidThroughDate = derived; r.dirty = true }
+        }
     }
 
     /// Expected total (base) of a kind over the next `days`.

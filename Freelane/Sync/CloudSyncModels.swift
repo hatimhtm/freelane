@@ -218,14 +218,15 @@ extension CloudSync {
     /// Returns how many rows came down, so a no-op sync can stay silent.
     @discardableResult
     func pull(context ctx: ModelContext, token: String, uid: String) async throws -> Int {
-        // Track the high-water mark as a DATE, not as the string Postgres sent.
+        // Keep the high-water mark as the server's own string, at its full precision.
         //
-        // Postgres returns `2026-06-04T19:52:48.927989+00:00`. Stored verbatim and put back into a
-        // query, the `+` is read as a space by every URL parser on earth, so the server saw
-        // "…927989 00:00" and rejected it. The first sync worked because the initial watermark is
-        // Z-suffixed; every sync after it failed, permanently. Re-emitting through the formatter
-        // guarantees a `Z` and no offset.
-        var newestDate = parseDate(watermarkValue) ?? .distantPast
+        // Postgres stamps `updated_at` to the MICROSECOND (`…04.619491+00:00`); a Date round trip
+        // through ISO8601DateFormatter keeps milliseconds. Re-emitted as `…04.619Z`, the watermark
+        // sat just below the newest row, so `updated_at > watermark` matched it on every pull,
+        // forever: the newest rows came back every couple of seconds and were re-applied over any
+        // local edit not yet pushed — which is how a bill marked paid turned back to due.
+        // `zulu` keeps the `+00:00` out of the URL, where `+` reads as a space.
+        var newest = watermarkValue
         var received = 0
 
         for table in ["fl_wallets", "fl_clients", "fl_projects", "fl_payments", "fl_recurring",
@@ -234,20 +235,28 @@ extension CloudSync {
             for row in rows {
                 apply(table: table, row: row, ctx: ctx)
                 received += 1
-                if let d = parseDate(row["updated_at"]), d > newestDate { newestDate = d }
+                if let s = row["updated_at"] as? String, micros(s) > micros(newest) { newest = zulu(s) }
             }
         }
 
-        if received > 0 { try ctx.save() }
+        // The phone pays bills without touching the rule, so "paid through" is re-derived here.
+        if received > 0 { RecurringMath.resyncAll(ctx); try ctx.save() }
         // Advance only once every table is in — a failure halfway would otherwise skip whatever the
         // later tables changed, permanently.
-        if newestDate > (parseDate(watermarkValue) ?? .distantPast) {
-            setWatermark(isoString(newestDate))
-        }
+        if newest != watermarkValue { setWatermark(newest) }
         return received
     }
 
-    /// Write a server row into SwiftData, unless what we hold is newer.
+    /// Seconds since 1970 at the full precision of the string, which `parseDate` rounds to ms.
+    private func micros(_ s: String) -> Double {
+        let whole = parseDate(s).map { floor($0.timeIntervalSince1970) } ?? 0
+        let frac = s.split(separator: ".").dropFirst().first?.prefix(while: \.isNumber) ?? ""
+        return whole + (Double("0." + frac) ?? 0)
+    }
+
+    /// Write a server row into SwiftData, unless what we hold is newer — or is a local edit not
+    /// yet pushed (`dirty`). A pull is async, so an edit can land between its fetch and this
+    /// apply; overwriting it would also clear `dirty`, and the edit would never reach the server.
     private func apply(table: String, row: [String: Any], ctx: ModelContext) {
         guard let id = parseUUID(row["id"]) else { return }
         let remoteAt = parseDate(row["updated_at"]) ?? .distantPast
@@ -255,7 +264,7 @@ extension CloudSync {
         switch table {
         case "fl_wallets":
             let existing = first(ctx, #Predicate<Wallet> { $0.id == id })
-            if let e = existing, e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
             let w = existing ?? { let n = Wallet(id: id, name: ""); ctx.insert(n); return n }()
             w.name = row["name"] as? String ?? w.name
             w.kindRaw = row["kind"] as? String ?? w.kindRaw
@@ -273,7 +282,7 @@ extension CloudSync {
 
         case "fl_clients":
             let existing = first(ctx, #Predicate<Client> { $0.id == id })
-            if let e = existing, e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
             let c = existing ?? { let n = Client(id: id, name: ""); ctx.insert(n); return n }()
             c.name = row["name"] as? String ?? c.name
             c.defaultCurrency = row["default_currency"] as? String
@@ -287,7 +296,7 @@ extension CloudSync {
 
         case "fl_projects":
             let existing = first(ctx, #Predicate<Project> { $0.id == id })
-            if let e = existing, e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
             let p = existing ?? {
                 let n = Project(id: id, title: "", amount: 0, currency: "PHP"); ctx.insert(n); return n
             }()
@@ -308,7 +317,7 @@ extension CloudSync {
 
         case "fl_payments":
             let existing = first(ctx, #Predicate<Payment> { $0.id == id })
-            if let e = existing, e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
             let p = existing ?? {
                 let n = Payment(id: id, projectId: nil, amount: 0, currency: "PHP", paidAt: .now)
                 ctx.insert(n); return n
@@ -329,7 +338,7 @@ extension CloudSync {
 
         case "fl_recurring":
             let existing = first(ctx, #Predicate<Recurring> { $0.id == id })
-            if let e = existing, e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
             let r = existing ?? { let n = Recurring(id: id, label: "", amount: 0, currency: "PHP", amountBase: 0)
                 ctx.insert(n); return n }()
             r.label = row["label"] as? String ?? r.label
@@ -350,7 +359,7 @@ extension CloudSync {
 
         case "fl_loans":
             let existing = first(ctx, #Predicate<Loan> { $0.id == id })
-            if let e = existing, e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
             let l = existing ?? {
                 let n = Loan(id: id, counterparty: "", direction: .given, principalBase: 0)
                 ctx.insert(n); return n
@@ -373,7 +382,7 @@ extension CloudSync {
 
         case "fl_spends":
             let existing = first(ctx, #Predicate<Spend> { $0.id == id })
-            if let e = existing, e.updatedAt > remoteAt { return }
+            if let e = existing, e.dirty || e.updatedAt > remoteAt { return }
             let s = existing ?? {
                 let n = Spend(id: id, walletId: nil, spentAt: .now, amount: 0, currency: "PHP", amountBase: 0)
                 ctx.insert(n); return n
@@ -400,7 +409,9 @@ extension CloudSync {
         case "fl_ledger_entries":
             let existing = first(ctx, #Predicate<LedgerEntry> { $0.id == id })
             // No updatedAt on this model, so there is nothing to compare — but a ledger row is
-            // immutable in practice, so first write wins and re-applying is harmless.
+            // immutable in practice, so first write wins and re-applying is harmless. Except over
+            // an unpushed local archive: re-applying would put a deleted spend's money back.
+            if let e = existing, e.dirty { return }
             let l = existing ?? {
                 let n = LedgerEntry(id: id, kind: .adjustment, amountBase: 0, walletId: nil,
                                     relatedKind: nil, relatedId: nil, eventAt: .now)

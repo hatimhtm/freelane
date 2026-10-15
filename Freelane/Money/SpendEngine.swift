@@ -75,7 +75,7 @@ extension MoneyEngine {
             let smoothed = prior > 0 ? (prior + perPeriod) / 2 : perPeriod
             r.amount = (smoothed / 10).rounded() * 10            // a clean approximate figure
             r.amountBase = round2(rates.toBase(r.amount, r.currency))
-            r.dirty = true   // invariant: the learned amount must sync on its own, not ride resyncRecurring's flag
+            r.dirty = true   // invariant: the learned amount must sync on its own, not ride resyncAll's flag
         } else if updateRule {
             r.amount = perPeriod; r.amountBase = round2(rates.toBase(perPeriod, r.currency))
             r.dirty = true
@@ -83,13 +83,13 @@ extension MoneyEngine {
         // "Paid through" is DERIVED from the linked spends — never advanced from the payment
         // date — so a bill paid late settles the period it belongs to, and deleting the spend
         // later rolls it straight back. One source of truth, no separate counter to drift.
-        resyncRecurring(r.id)
+        RecurringMath.resyncAll(context)
+        try context.save()
         return id
     }
 
     func deleteSpend(_ id: UUID) throws {
         guard let s = (try? context.fetch(FetchDescriptor<Spend>()))?.first(where: { $0.id == id }) else { return }
-        let recurringId = s.recurringId        // capture before we tombstone it
         // Reversible: tombstone the spend and archive its ledger together (restorable from Trash/Undo).
         SoftDelete.trash(s, ownsLedger: true, context: context)
         // Hide its line-items too, so price-memory / good-deal stats stop counting a deleted receipt.
@@ -97,7 +97,7 @@ extension MoneyEngine {
         for item in (try? context.fetch(FetchDescriptor<SpendItem>(predicate: #Predicate { $0.spendId == id }))) ?? [] {
             item.deletedAt = stamp; item.dirty = true
         }
-        resyncRecurring(recurringId)           // a deleted bill payment makes the period due again
+        RecurringMath.resyncAll(context)       // a deleted bill payment makes the period due again
         try context.save()
     }
 
@@ -107,19 +107,7 @@ extension MoneyEngine {
         for item in (try? context.fetch(FetchDescriptor<SpendItem>(predicate: #Predicate { $0.spendId == id && $0.deletedAt != nil }))) ?? [] {
             item.deletedAt = nil; item.dirty = true
         }
-        resyncRecurring(s.recurringId)         // restoring it re-settles the period
+        RecurringMath.resyncAll(context)       // restoring it re-settles the period
         try context.save()
-    }
-
-    /// Re-derive a recurring rule's `paidThroughDate` from its live linked spends. Called
-    /// after any change to a spend that settles a bill (pay / delete / restore), so the
-    /// Recurring tab always reflects what's actually been recorded. Saves the context.
-    func resyncRecurring(_ recurringId: UUID?) {
-        guard let rid = recurringId,
-              let r = (try? context.fetch(FetchDescriptor<Recurring>()))?.first(where: { $0.id == rid }) else { return }
-        let spends = (try? context.fetch(FetchDescriptor<Spend>())) ?? []
-        let derived = RecurringMath.recomputePaidThrough(r, spends: spends)
-        if r.paidThroughDate != derived { r.paidThroughDate = derived; r.dirty = true }
-        try? context.save()
     }
 }
