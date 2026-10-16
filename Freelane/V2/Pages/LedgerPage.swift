@@ -570,9 +570,10 @@ private struct LedgerPaymentMenu: View {
     let wallet: String?
     @Environment(\.modelContext) private var context
     @Environment(UndoCenter.self) private var undo: UndoCenter?
+    @Environment(AppState.self) private var app
 
     var body: some View {
-        LedgerActions(edit: nil, what: "payment",
+        LedgerActions(edit: { app.form = .editPayment(payment.id) }, what: "payment",
                       message: wallet.map { "It moves to the Trash and comes off \($0)’s balance." } ?? "It moves to the Trash.") {
             let id = payment.id, ctx = context
             try? MoneyEngine(context: ctx).deletePayment(id)
@@ -731,7 +732,7 @@ private struct LedgerSpendDetail: View {
         let verb = s.recurringId != nil ? "paid" : s.isSadaka ? "given" : "spent"
         LedgerDetailFrame(badge: Badge(subject: line.badge, size: 48, glyph: line.badgeGlyph), title: line.title,
                           subtitle: "\(verb) \(LedgerText.dayTitle(s.spentAt))") {
-            LedgerActions(edit: s.recurringId == nil ? { app.form = .editSpend(s.id) } : nil,
+            LedgerActions(edit: { app.form = .editSpend(s.id) },
                           what: s.isSadaka ? "gift" : s.recurringId != nil ? "bill payment" : "spend",
                           message: ctx.wallet(s.walletId).map { "It moves to the Trash and goes back into \($0.name)’s balance." } ?? "It moves to the Trash.") {
                 let id = s.id, mc = modelContext
@@ -782,6 +783,7 @@ private struct LedgerMoveDetail: View {
     let ctx: LedgerContext
     @Environment(\.modelContext) private var modelContext
     @Environment(UndoCenter.self) private var undo: UndoCenter?
+    @Environment(AppState.self) private var app
 
     var body: some View {
         let first = moves[0]
@@ -790,7 +792,7 @@ private struct LedgerMoveDetail: View {
         let day = LedgerText.dayTitle(first.withdrawnAt)
         LedgerDetailFrame(badge: Badge(subject: line.badge, size: 48, glyph: line.badgeGlyph), title: line.title,
                           subtitle: moves.count == 1 ? "moved \(day)" : "\(moves.count) moves · \(day)") {
-            LedgerActions(edit: nil, what: moves.count == 1 ? "move" : "\(moves.count) moves",
+            LedgerActions(edit: moves.count == 1 ? { app.form = .editMove(first.id) } : nil, what: moves.count == 1 ? "move" : "\(moves.count) moves",
                           message: "It moves to the Trash, and both wallets go back to what they held before.") {
                 let ids = moves.map(\.id), mc = modelContext
                 for id in ids { try? MoneyEngine(context: mc).deleteWithdrawal(id) }
@@ -879,6 +881,8 @@ private struct LedgerCountDetail: View {
     let day: Date
     let line: LedgerLine
     let ctx: LedgerContext
+    @Environment(\.modelContext) private var modelContext
+    @Environment(UndoCenter.self) private var undo: UndoCenter?
 
     var body: some View {
         let counted = LedgerCounts.detail(day: day, ledger: ctx.ledger, wallets: ctx.walletMap)
@@ -886,7 +890,12 @@ private struct LedgerCountDetail: View {
         let what = total >= 0 ? "more than Freelane had" : "less than Freelane had"
         LedgerDetailFrame(badge: Badge(subject: line.badge, size: 48, glyph: line.badgeGlyph), title: line.title,
                           subtitle: "counted \(LedgerText.dayTitle(day))") {
-            EmptyView()
+            LedgerActions(edit: nil, what: "count", message: "Each wallet goes back to what Freelane had before you counted.") {
+                let mc = modelContext
+                guard let at = try? MoneyEngine(context: mc).deleteCount(day: day) else { return }
+                undo?.offer("count") { try? MoneyEngine(context: mc).restoreCount(archivedAt: at) }
+                WidgetBridge.update(mc)
+            }
         } content: {
             Group {
                 if !line.inTotals {

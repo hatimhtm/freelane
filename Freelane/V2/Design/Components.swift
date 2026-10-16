@@ -5,7 +5,7 @@ import SwiftUI
 
 // MARK: - Buttons
 
-enum ButtonKind { case filled, tonal, text, plain }
+enum ButtonKind { case filled, tonal, text, plain, danger }
 
 struct M3ButtonStyle: ButtonStyle {
     var kind: ButtonKind = .tonal
@@ -17,12 +17,13 @@ struct M3ButtonStyle: ButtonStyle {
             case .tonal: return (MD.secondaryContainer, MD.onSecondaryContainer)
             case .text: return (.clear, MD.primary)
             case .plain: return (.clear, MD.onSurfaceVariant)
+            case .danger: return (.clear, MD.error)
             }
         }()
         return configuration.label
             .font(TextRole.label.font)
             .foregroundStyle(fg)
-            .padding(.horizontal, kind == .text || kind == .plain ? 12 : (small ? 16 : 20))
+            .padding(.horizontal, kind == .text || kind == .plain || kind == .danger ? 12 : (small ? 16 : 20))
             .frame(height: small ? 36 : 40)
             .background(Capsule().fill(bg))
             .modifier(StateLayer(color: fg, pressed: configuration.isPressed))

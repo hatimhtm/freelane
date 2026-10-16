@@ -194,10 +194,21 @@ extension CloudSync {
             p.dirty = false
             // Project status is derived from allocations, which this sync doesn't carry. A payment
             // the phone booked against a project arrives without one, so the next recompute here
-            // flipped the project back to unpaid and "mark paid" booked the income twice.
-            if let pid = p.projectId, first(ctx, #Predicate<PaymentAllocation> { $0.paymentId == id }) == nil {
-                ctx.insert(PaymentAllocation(paymentId: id, projectId: pid, allocationAmount: p.amount,
-                                             allocationCurrency: p.currency, allocationBase: p.netAmountBase ?? 0))
+            // flipped the project back to unpaid and "mark paid" booked the income twice. A payment
+            // the phone edited arrives with a new project or amount: its one allocation follows it.
+            let allocs = (try? ctx.fetch(FetchDescriptor<PaymentAllocation>(predicate: #Predicate { $0.paymentId == id }))) ?? []
+            if allocs.count <= 1 {
+                if let pid = p.projectId {
+                    if let a = allocs.first {
+                        a.projectId = pid; a.allocationAmount = p.amount; a.allocationCurrency = p.currency
+                        a.allocationBase = p.netAmountBase ?? 0
+                    } else {
+                        ctx.insert(PaymentAllocation(paymentId: id, projectId: pid, allocationAmount: p.amount,
+                                                     allocationCurrency: p.currency, allocationBase: p.netAmountBase ?? 0))
+                    }
+                } else {
+                    for a in allocs { ctx.delete(a) }
+                }
             }
 
         case "fl_recurring":

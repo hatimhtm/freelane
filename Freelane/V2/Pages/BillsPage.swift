@@ -454,6 +454,7 @@ private struct BillsPaidRow: View {
     let payment: BillsPayment
     let cadence: RecurringCadence
     let last: Bool
+    @Environment(AppState.self) private var app
     /// "from Wise, incl. ₱5 fee", "from Wise · 12 months"
     private var from: String {
         var s = payment.wallet.map { "from \($0)" } ?? "no wallet"
@@ -471,6 +472,8 @@ private struct BillsPaidRow: View {
         }
         .padding(.horizontal, 4)
         .frame(height: 44)
+        .pressable(RoundedRectangle(cornerRadius: 8)) { withAnimation(Flow.spatial) { app.form = .editSpend(payment.id) } }
+        .help("Edit this payment")
         .overlay(alignment: .bottom) { if !last { Rectangle().fill(Surface.hairline).frame(height: 1) } }
     }
 }

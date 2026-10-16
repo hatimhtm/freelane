@@ -3,6 +3,25 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 3.2
+
+**Change anything, delete anything.** Whatever you put in, you can now open, edit or remove from the
+page it shows on, and Undo brings back what you delete.
+
+- **Bills wait for you to pay them.** A bill no longer comes off what's yours in the week before it's
+  due; what's free stays what you have until you mark it paid.
+- **Work**: a project, open or paid, opens its editor (name, client, agreed amount, delivered) with
+  Delete. Clients open theirs, and you can add one from the Clients header. A payment in Latest
+  opens it to edit.
+- **Wallets**: a wallet's card opens its editor: name, kind, whether it counts in your totals, and
+  Delete (its history stays in the Ledger).
+- **Ledger**: a payment and a move can be edited, not only deleted; a bill's payment can be edited
+  like any spending; a count can be deleted, putting each wallet back to what Freelane had.
+- **Giving** and **Bills**: a gift, or a payment in a bill's history, opens to edit.
+- **Smaller things.** The New menu's hover takes each pill's own shape, and the rail steps back
+  while the menu is open. A client's name is spelled the same everywhere. A payment edited on your
+  phone moves its project with it here.
+
 ## 3.1
 
 **Ready for Freelane on Android.** The new phone app sees everything the Mac does, and what you do on

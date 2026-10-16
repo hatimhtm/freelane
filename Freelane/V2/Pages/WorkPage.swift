@@ -15,7 +15,8 @@ struct WorkPage: View {
     @Query private var wallets: [Wallet]
     @Query private var rateRows: [ExchangeRate]
     @Query private var settings: [AppSettings]
-    @State private var addingProject = false
+    /// Every paid project, not just the latest few.
+    @State private var allPaid = false
 
     private var base: String { settings.first?.baseCurrency ?? "PHP" }
 
@@ -26,7 +27,7 @@ struct WorkPage: View {
         HStack(spacing: 12) {
             Pane {
                 PaneHeader(title: "Work") {
-                    M3Button(title: "New project", icon: Sym.add, kind: .tonal) { addingProject = true }
+                    M3Button(title: "New project", icon: Sym.add, kind: .tonal) { withAnimation(Flow.spatial) { app.form = .project(nil) } }
                 }
                 PaneScroll {
                     VStack(alignment: .leading, spacing: 0) {
@@ -35,22 +36,47 @@ struct WorkPage: View {
                             SectionHeader(title: "Owed to you", count: w.owed.count).appear(1)
                             Segmented(items: w.owed) { o in
                                 WorkOwedRow(owed: o) { withAnimation(Flow.spatial) { app.form = .moneyIn(projectId: o.project.id) } }
+                                    .pressable(Rectangle()) { withAnimation(Flow.spatial) { app.form = .project(o.project.id) } }
+                                    .help("Edit \(o.project.title)")
                             }
                             .appear(2)
                         }
-                        SectionHeader(title: "Clients").appear(3)
-                        if w.clients.isEmpty {
+                        SectionHeader(title: "Clients") {
+                            M3Button(title: "Add", icon: Sym.add, kind: .text) { withAnimation(Flow.spatial) { app.form = .client(nil) } }
+                        }
+                        .appear(3)
+                        let everyone = clientRows(w)
+                        if everyone.isEmpty {
                             Text("No payments from clients yet this year.").role(.supporting, MD.onSurfaceVariant).padding(.horizontal, 4)
                         } else {
-                            Segmented(items: w.clients) { c in
+                            Segmented(items: everyone) { c in
                                 ListRow(badge: Badge(subject: .person(c.title), size: 40), title: c.title, subtitle: c.subtitle) {
-                                    Money(value: c.total, role: .row, decimals: false)
+                                    if let total = c.total { Money(value: total, role: .row, decimals: false) }
                                 }
+                                .pressable(Rectangle()) { withAnimation(Flow.spatial) { app.form = .client(c.id) } }
+                                .help("Edit \(c.title)")
                             }
                             .appear(4)
                         }
                         if let u = w.unlinked {
                             Text(u).role(.supporting, MD.onSurfaceVariant).padding(.horizontal, 4).padding(.top, 10)
+                        }
+                        let paid = paidProjects(w)
+                        if !paid.isEmpty {
+                            SectionHeader(title: "Paid projects") {
+                                if paid.count > 4 {
+                                    M3Button(title: allPaid ? "Show fewer" : "See all \(paid.count)", kind: .text) { withAnimation(Flow.spatial) { allPaid.toggle() } }
+                                }
+                            }
+                            .appear(5)
+                            Segmented(items: allPaid ? paid : Array(paid.prefix(4))) { p in
+                                ListRow(badge: nil, title: p.title, subtitle: paidLine(p)) {
+                                    Money(value: p.amount, role: .row, decimals: p.amount != p.amount.rounded(), symbol: CurrencyFormat.symbol(p.currency))
+                                }
+                                .pressable(Rectangle()) { withAnimation(Flow.spatial) { app.form = .project(p.id) } }
+                                .help("Edit \(p.title)")
+                            }
+                            .appear(6)
                         }
                     }
                     .padding(.bottom, 4)
@@ -70,22 +96,52 @@ struct WorkPage: View {
                         if w.latest.isEmpty {
                             Text("No payments yet.").role(.supporting, MD.onSurfaceVariant).padding(.horizontal, 4)
                         }
-                        ForEach(Array(w.latest.enumerated()), id: \.element.id) { i, item in WorkLatestRow(item: item).appear(3 + i) }
+                        ForEach(Array(w.latest.enumerated()), id: \.element.id) { i, item in
+                            WorkLatestRow(item: item)
+                                .pressable(RoundedRectangle(cornerRadius: 12)) { withAnimation(Flow.spatial) { app.form = .editPayment(item.id) } }
+                                .help("Edit this payment")
+                                .appear(3 + i)
+                        }
                     }
                 }
             }
             .frame(width: 384)
         }
-        .sheet(isPresented: $addingProject) {
-            WorkProjectEditor(clients: clients.filter { $0.deletedAt == nil && !$0.archived }
-                                .sorted { WorkText.title($0).localizedCaseInsensitiveCompare(WorkText.title($1)) == .orderedAscending },
-                              base: base)
-        }
         .onReceive(DistributedNotificationCenter.default().publisher(for: .init("app.freelane.dev." + (ProcessInfo.processInfo.environment["FREELANE_DEV_CHANNEL"] ?? "main")))) { n in
             // Test builds only: open the sheet from a script ("work:new").
             guard DevMode.isSandboxed, let cmd = n.object as? String else { return }
-            if cmd == "work:new" { addingProject = true }
+            if cmd == "work:new" { app.form = .project(nil) }
         }
+    }
+}
+
+/// A client row on Work: this year's clients with their totals, then everyone else, so each can be edited.
+private struct WorkClientRow: Identifiable {
+    let id: UUID
+    let title: String
+    let subtitle: String
+    let total: Double?
+}
+
+extension WorkPage {
+    fileprivate func clientRows(_ w: WorkPicture) -> [WorkClientRow] {
+        let seen = Set(w.clients.map(\.id))
+        let quiet = clients.filter { $0.deletedAt == nil && !$0.archived && !seen.contains($0.id) }
+            .sorted { WorkText.title($0).localizedCaseInsensitiveCompare(WorkText.title($1)) == .orderedAscending }
+        return w.clients.map { WorkClientRow(id: $0.id, title: $0.title, subtitle: $0.subtitle, total: $0.total) }
+            + quiet.map { WorkClientRow(id: $0.id, title: WorkText.title($0), subtitle: "Nothing paid this year", total: nil) }
+    }
+
+    /// Projects already paid (the open ones live under Owed), newest first.
+    fileprivate func paidProjects(_ w: WorkPicture) -> [Project] {
+        let owed = Set(w.owed.map(\.id))
+        return projects.filter { $0.deletedAt == nil && !owed.contains($0.id) }
+            .sorted { ($0.completedAt ?? $0.workCompletedAt ?? $0.createdAt) > ($1.completedAt ?? $1.workCompletedAt ?? $1.createdAt) }
+    }
+
+    fileprivate func paidLine(_ p: Project) -> String {
+        let who = p.clientId.flatMap { id in clients.first { $0.id == id } }.map(WorkText.title) ?? "No client"
+        return [who, p.completedAt.map { "paid \(Day.dayMonth($0))" }].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -257,78 +313,5 @@ private struct WorkLatestRow: View {
         }
         .padding(.horizontal, 4)
         .frame(minHeight: 52)
-    }
-}
-
-// MARK: - New project
-
-private struct WorkProjectEditor: View {
-    let clients: [Client]
-    let base: String
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var clientId: UUID? = nil
-    @State private var amount = ""
-    @State private var currency = ""
-    @State private var delivered = false
-
-    private var client: Client? { clients.first { $0.id == clientId } }
-    private var parsed: Double? { BillsWorkAmount.parse(amount) }
-    private var canSave: Bool { !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (parsed ?? 0) > 0 }
-    private var code: String { currency.isEmpty ? base : currency }
-
-    var body: some View {
-        BillsWorkSheet(title: "New project", action: "Add project", canSave: canSave, onCancel: { dismiss() }, onSave: save) {
-            BillsWorkField(label: "Project") {
-                BillsWorkInput(placeholder: "What you’re making", text: $title, autofocus: true)
-            }
-            BillsWorkField(label: "Client") {
-                BillsWorkMenu(title: client.map(WorkText.title) ?? "No client") {
-                    if let client { Badge(subject: .person(WorkText.title(client)), size: 28) }
-                } items: {
-                    Button("No client") { clientId = nil }
-                    Divider()
-                    ForEach(clients) { c in
-                        Button(WorkText.title(c)) {
-                            clientId = c.id
-                            if let cur = c.defaultCurrency, !cur.isEmpty { currency = cur }
-                        }
-                    }
-                }
-            }
-            HStack(alignment: .top, spacing: 12) {
-                BillsWorkField(label: "Agreed amount") {
-                    BillsWorkInput(placeholder: "0", text: $amount, prefix: CurrencyFormat.symbol(code))
-                }
-                BillsWorkField(label: "Currency") {
-                    BillsWorkMenu(title: code) { EmptyView() } items: {
-                        ForEach(CurrencyFormat.supported, id: \.self) { c in
-                            Button("\(c) · \(WorkText.currencyWord(c))") { currency = c }
-                        }
-                    }
-                }
-                .frame(width: 140)
-            }
-            Toggle(isOn: $delivered.animation(Flow.effects)) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("The work is delivered").role(.row)
-                    Text("The days you’ve been waiting to be paid count from today.").role(.supporting, MD.onSurfaceVariant)
-                }
-            }
-            .toggleStyle(.switch)
-            .tint(MD.primary)
-            .padding(.vertical, 4)
-        }
-    }
-
-    private func save() {
-        guard canSave, let amt = parsed else { return }
-        let p = Project(clientId: clientId, title: title.trimmingCharacters(in: .whitespacesAndNewlines), amount: amt, currency: code)
-        if delivered { p.workCompletedAt = .now }
-        p.dirty = true
-        context.insert(p)
-        try? context.save()
-        dismiss()
     }
 }

@@ -174,6 +174,7 @@ enum GivingFormat {
 /// The gifts as one segmented group. Rows fold in and out in place when the list expands.
 private struct GivingList: View {
     let gifts: [GivingGift]
+    @Environment(AppState.self) private var app
     var body: some View {
         VStack(spacing: 3) {
             ForEach(Array(gifts.enumerated()), id: \.element.id) { i, g in
@@ -184,6 +185,7 @@ private struct GivingList: View {
                     Money(value: g.amount, role: .row)
                 }
                 .background(shape.fill(Surface.well))
+                .pressable(Rectangle()) { withAnimation(Flow.spatial) { app.form = .editSpend(g.id) } }
                 .clipShape(shape)
                 .id(g.id)
                 .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: -6)), removal: .opacity))

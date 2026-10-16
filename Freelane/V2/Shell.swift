@@ -149,6 +149,21 @@ struct Shell: View {
             case "form:payBill": app.form = .payBill(billId: nil)
             case "form:addWallet": app.form = .addWallet
             case "form:gift": app.form = .gift
+            case "form:editPayment":
+                if let p = ((try? context.fetch(FetchDescriptor<Payment>())) ?? []).filter({ $0.deletedAt == nil }).max(by: { $0.paidAt < $1.paidAt }) { app.form = .editPayment(p.id) }
+            case "form:editMove":
+                if let w = ((try? context.fetch(FetchDescriptor<Withdrawal>())) ?? []).filter({ $0.deletedAt == nil }).max(by: { $0.withdrawnAt < $1.withdrawnAt }) { app.form = .editMove(w.id) }
+            case "form:project":
+                if let p = ((try? context.fetch(FetchDescriptor<Project>())) ?? []).first(where: { $0.deletedAt == nil && $0.status != .paid }) { app.form = .project(p.id) }
+            case "form:projectPaid":
+                if let p = ((try? context.fetch(FetchDescriptor<Project>())) ?? []).first(where: { $0.deletedAt == nil && $0.status == .paid }) { app.form = .project(p.id) }
+            case "form:newProject": app.form = .project(nil)
+            case "form:client":
+                if let c = ((try? context.fetch(FetchDescriptor<Client>())) ?? []).first(where: { $0.deletedAt == nil }) { app.form = .client(c.id) }
+            case "form:editWallet":
+                if let w = ((try? context.fetch(FetchDescriptor<Wallet>())) ?? []).first(where: { $0.deletedAt == nil && !$0.excludedFromTotals }) { app.form = .editWallet(w.id) }
+            case "form:editBillPaid":
+                if let s = spends.first(where: { $0.deletedAt == nil && $0.recurringId != nil }) { app.form = .editSpend(s.id) }
             default: break
             }
         }

@@ -151,6 +151,7 @@ struct WalletsPage: View {
                         subtitle: w.lastCounted.map { "counted \(Day.ago($0))" } ?? "never counted") {
                     Money(value: w.balance, color: MD.onSurfaceVariant)
                 }
+                .pressable(Rectangle()) { withAnimation(Flow.spatial) { app.form = .editWallet(w.id) } }
             }
         }
     }
@@ -265,8 +266,10 @@ private struct WalletCard: View {
         .frame(maxWidth: .infinity, minHeight: 172, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Surface.well))
         .opacity(line.inTotals ? 1 : 0.75)
-        .contentShape(RoundedRectangle(cornerRadius: 24))
+        .pressable(RoundedRectangle(cornerRadius: 24, style: .continuous)) { withAnimation(Flow.spatial) { app.form = .editWallet(line.id) } }
+        .help("Edit \(line.name)")
         .contextMenu {
+            Button("Edit \(line.name)…") { withAnimation(Flow.spatial) { app.form = .editWallet(line.id) } }
             Button("Count \(line.name)") { withAnimation(Flow.spatial) { app.counting = true } }
         }
     }
