@@ -189,6 +189,8 @@ extension CloudSync {
             p.fxLocked = row["fx_locked"] as? Bool ?? p.fxLocked
             if let paid = parseDate(row["received_at"]) { p.paidAt = paid }
             p.notes = row["notes"] as? String
+            p.feeAmount = row["fee_amount"] as? Double
+            p.feeCurrency = row["fee_currency"] as? String
             p.deletedAt = parseDate(row["deleted_at"])
             p.updatedAt = remoteAt
             p.dirty = false
@@ -328,6 +330,12 @@ extension CloudSync {
             w.netBase = row["net_base"] as? Double ?? w.netBase
             w.feeBase = row["fee_base"] as? Double ?? w.feeBase
             w.notes = row["notes"] as? String
+            w.grossAmount = row["gross_amount"] as? Double
+            w.grossCurrency = row["gross_currency"] as? String
+            w.netAmount = row["net_amount"] as? Double
+            w.netCurrency = row["net_currency"] as? String
+            w.feeAmount = row["fee_amount"] as? Double
+            w.feeCurrency = row["fee_currency"] as? String
             w.deletedAt = parseDate(row["deleted_at"])
             w.updatedAt = remoteAt
             w.dirty = false
@@ -440,6 +448,7 @@ enum CloudRows {
             "implied_fee_base": numOrNull(p.impliedFeeBase),
             "fee_unknown": p.feeUnknown, "fx_locked": p.fxLocked,
             "received_at": iso(p.paidAt), "notes": strOrNull(p.notes),
+            "fee_amount": numOrNull(p.feeAmount), "fee_currency": strOrNull(p.feeCurrency),
             "created_at": iso(p.createdAt), "updated_at": iso(p.updatedAt),
             "deleted_at": iso(p.deletedAt),
         ]
@@ -463,6 +472,9 @@ enum CloudRows {
             "from_wallet_id": uuidOrNull(w.fromMethodId), "to_wallet_id": uuidOrNull(w.toMethodId),
             "gross_base": w.grossBase, "net_base": w.netBase, "fee_base": w.feeBase,
             "occurred_at": iso(w.withdrawnAt), "notes": strOrNull(w.notes),
+            "gross_amount": numOrNull(w.grossAmount), "gross_currency": strOrNull(w.grossCurrency),
+            "net_amount": numOrNull(w.netAmount), "net_currency": strOrNull(w.netCurrency),
+            "fee_amount": numOrNull(w.feeAmount), "fee_currency": strOrNull(w.feeCurrency),
             "created_at": iso(w.createdAt), "updated_at": iso(w.updatedAt),
             "deleted_at": iso(w.deletedAt),
         ]

@@ -253,6 +253,9 @@ final class Payment {
     var reference: String?
     var notes: String?
     var createdAt: Date
+    /// The fee it paid on the way, as typed and in its own currency (nil before this was kept).
+    var feeAmount: Double? = nil
+    var feeCurrency: String? = nil
 
     var updatedAt: Date
     var dirty: Bool
@@ -346,9 +349,17 @@ final class Withdrawal {
     var withdrawnAt: Date
     var grossBase: Double
     var netBase: Double
+    /// What the move lost in all: the provider's fee and the exchange rate's cut.
     var feeBase: Double
     var notes: String?
     var createdAt: Date
+    /// What left and what arrived in their own currencies, and the fee as typed (nil before these were kept).
+    var grossAmount: Double? = nil
+    var grossCurrency: String? = nil
+    var netAmount: Double? = nil
+    var netCurrency: String? = nil
+    var feeAmount: Double? = nil
+    var feeCurrency: String? = nil
 
     var updatedAt: Date
     var dirty: Bool

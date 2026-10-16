@@ -505,10 +505,11 @@ private struct BillsEditor: View {
     @State private var day = 1
     @State private var variable = false
     @State private var walletId: UUID? = nil
+    @State private var code = ""
     @State private var loaded = false
 
     private var existing: Recurring? { if case .edit(let r) = target { return r }; return nil }
-    private var currency: String { existing?.currency ?? base }
+    private var currency: String { code.isEmpty ? (existing?.currency ?? base) : code }
     private var parsed: Double? { BillsWorkAmount.parse(amount) }
     private var canSave: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (parsed ?? 0) > 0 }
 
@@ -518,8 +519,18 @@ private struct BillsEditor: View {
             BillsWorkField(label: "Name") {
                 BillsWorkInput(placeholder: "Rent, electricity, wifi…", text: $name, autofocus: true)
             }
-            BillsWorkField(label: variable ? "Usual amount" : "Amount") {
-                BillsWorkInput(placeholder: "0", text: $amount, prefix: CurrencyFormat.symbol(currency))
+            HStack(alignment: .top, spacing: 12) {
+                BillsWorkField(label: variable ? "Usual amount" : "Amount") {
+                    BillsWorkInput(placeholder: "0", text: $amount, prefix: CurrencyFormat.symbol(currency))
+                }
+                BillsWorkField(label: "Currency") {
+                    BillsWorkMenu(title: currency) { EmptyView() } items: {
+                        ForEach(CurrencyFormat.supported, id: \.self) { c in
+                            Button("\(c) · \(WorkText.currencyWord(c))") { code = c }
+                        }
+                    }
+                }
+                .frame(width: 140)
             }
             if existing?.cadence ?? .monthly == .monthly {
                 BillsWorkField(label: "Due") {
@@ -562,6 +573,7 @@ private struct BillsEditor: View {
     private func load() {
         guard !loaded else { return }
         loaded = true
+        code = existing?.currency ?? base
         if let e = existing {
             name = e.label
             amount = e.amount > 0 ? BillsWorkAmount.edit(e.amount) : ""
@@ -581,9 +593,10 @@ private struct BillsEditor: View {
             r = e
             r.label = label
             r.amount = amt
-            r.amountBase = round2(rates.toBase(amt, r.currency))
+            r.currency = currency
+            r.amountBase = round2(rates.toBase(amt, currency))
         } else {
-            r = Recurring(label: label, kind: .expense, cadence: .monthly, amount: amt, currency: base, amountBase: round2(amt))
+            r = Recurring(label: label, kind: .expense, cadence: .monthly, amount: amt, currency: currency, amountBase: round2(rates.toBase(amt, currency)))
             context.insert(r)
         }
         if r.cadence == .monthly { r.dayOfMonth = day }

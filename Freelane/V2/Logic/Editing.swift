@@ -73,12 +73,14 @@ extension MoneyEngine {
 
     // MARK: Wallets
 
-    /// Change a wallet: its name, kind and whether it counts in your totals. Its balance changes by counting.
-    func updateWallet(_ id: UUID, name: String, kind: WalletKind, inTotals: Bool) throws {
+    /// Change a wallet: its name, kind, whether it counts in your totals, and (when given) the currency it holds.
+    /// Its balance changes by counting.
+    func updateWallet(_ id: UUID, name: String, kind: WalletKind, inTotals: Bool, currency: String? = nil) throws {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !n.isEmpty else { throw EngineError.invalid("Give it a name.") }
         guard let w = fetchAll(Wallet.self).first(where: { $0.id == id }) else { return }
         w.name = n; w.kindRaw = kind.rawValue; w.excludedFromTotals = !inTotals
+        if let currency { w.currencyIn = currency; w.currencyOut = currency }
         w.updatedAt = .now; w.dirty = true
         try context.save()
     }
@@ -152,6 +154,31 @@ extension MoneyEngine {
         if let oldProject { touched.insert(oldProject) }
         if let projectId { touched.insert(projectId) }
         for pid in touched { recomputeProjectStatus(pid) }
+        try context.save()
+    }
+
+    // MARK: Amounts as typed
+
+    /// A move's amounts in their own currencies (what left, what arrived, the fee as typed), kept beside the
+    /// pesos its balances run on.
+    func setMoveAmounts(_ id: UUID, sent: NativeAmount?, arrived: NativeAmount?, fee: NativeAmount?) throws {
+        guard let w = fetchAll(Withdrawal.self).first(where: { $0.id == id }) else { return }
+        w.grossAmount = sent?.amount; w.grossCurrency = sent?.currency
+        w.netAmount = arrived?.amount; w.netCurrency = arrived?.currency
+        w.feeAmount = fee?.amount; w.feeCurrency = fee?.currency
+        w.updatedAt = .now; w.dirty = true
+        try context.save()
+    }
+
+    /// A payment's arrival in the wallet's own currency (on its last step) and its fee as typed. The pesos it
+    /// counts for stay as they are.
+    func setPaymentAmounts(_ id: UUID, arrived: NativeAmount?, fee: NativeAmount?) throws {
+        guard let p = payment(id) else { return }
+        if let arrived, let last = steps(paymentId: id).last {
+            last.amountOut = arrived.amount; last.currencyOut = arrived.currency; last.dirty = true
+        }
+        p.feeAmount = fee?.amount; p.feeCurrency = fee?.currency
+        p.updatedAt = .now; p.dirty = true
         try context.save()
     }
 

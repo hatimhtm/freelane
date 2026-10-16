@@ -162,6 +162,15 @@ struct Shell: View {
                 if let c = ((try? context.fetch(FetchDescriptor<Client>())) ?? []).first(where: { $0.deletedAt == nil }) { app.form = .client(c.id) }
             case "form:editWallet":
                 if let w = ((try? context.fetch(FetchDescriptor<Wallet>())) ?? []).first(where: { $0.deletedAt == nil && !$0.excludedFromTotals }) { app.form = .editWallet(w.id) }
+            case "test:fxmove":
+                // A move in two currencies, written the way the Move form writes it, then opened to edit.
+                let ws = ((try? context.fetch(FetchDescriptor<Wallet>())) ?? []).filter { $0.deletedAt == nil && !$0.excludedFromTotals }
+                if ws.count >= 2, let id = try? MoneyEngine(context: context).createWithdrawal(fromMethodId: ws[0].id, toMethodId: ws[1].id, withdrawnAt: .now,
+                                                                                                grossBase: 3500, netBase: 3400, notes: nil) {
+                    try? MoneyEngine(context: context).setMoveAmounts(id, sent: NativeAmount(amount: 50, currency: "EUR"),
+                                                                      arrived: NativeAmount(amount: 3400, currency: "PHP"), fee: NativeAmount(amount: 1, currency: "EUR"))
+                    app.form = .editMove(id)
+                }
             case "form:editBillPaid":
                 if let s = spends.first(where: { $0.deletedAt == nil && $0.recurringId != nil }) { app.form = .editSpend(s.id) }
             default: break

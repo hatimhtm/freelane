@@ -182,14 +182,21 @@ private struct MoneyInForm: View {
     @Query private var clients: [Client]
     @Query private var projects: [Project]
     @Query private var payments: [Payment]
+    @Query private var withdrawals: [Withdrawal]
+    @Query private var stepRows: [PaymentStep]
+    @Query private var walletRows: [Wallet]
     @Query private var rateRows: [ExchangeRate]
     @State private var client: UUID?
     @State private var project: UUID?
     @State private var newProject = ""
+    // What they sent, the fee on the way and what reached the wallet, each in its own currency: any two settle
+    // the third.
     @State private var paid = ""
     @State private var currency = "EUR"
+    @State private var fee = ""
+    @State private var feeCur = "EUR"
     @State private var received = ""
-    @State private var receivedTouched = false
+    @State private var receivedCur = "PHP"
     @State private var wallet: UUID?
     @State private var date = Date.now
     @State private var error: String?
@@ -208,8 +215,11 @@ private struct MoneyInForm: View {
     }
 
     var body: some View {
+        let figures = outcome.figures
+        let lostInFee = figures.map { rates.hasRate(for: feeCur) ? $0.lostBase / max(rates.toBase(1, feeCur), 0.000001) : $0.lostBase }
         M3Dialog(title: existing != nil ? "Edit money in" : "Money in",
-                 subtitle: existing != nil ? nil : "A client paid you. Say what they sent and what reached your wallet; the difference is the fee.", onClose: close) {
+                 subtitle: existing != nil ? nil : "A client paid you. Type any two of what they sent, the fee and what reached your wallet, each in its own currency; Freelane works out the third.",
+                 onClose: close) {
             VStack(alignment: .leading, spacing: 8) {
                 FieldLabel(text: "From")
                 ChoiceChips(items: activeClients.prefix(6).map(\.id), selection: $client,
@@ -228,9 +238,12 @@ private struct MoneyInForm: View {
                 .transition(.opacity)
             }
             HStack(spacing: 12) {
-                OutlinedField(label: "They sent", text: $paid, prompt: "0.00", numeric: true, focused: $focus, id: "paid",
+                OutlinedField(label: "They sent", text: $paid, prompt: paid.isEmpty ? hint(figures?.sent.amount) : "0.00", numeric: true, focused: $focus, id: "paid",
                               leading: AnyView(CurrencyChip(currency: $currency)))
-                OutlinedField(label: "Reached your wallet (₱)", text: $received, prompt: suggestedReceived, numeric: true, focused: $focus, id: "received")
+                OutlinedField(label: "Fee", text: $fee, prompt: fee.isEmpty && !paid.isEmpty && !received.isEmpty ? hint(lostInFee) : "0.00", numeric: true,
+                              focused: $focus, id: "fee", leading: AnyView(CurrencyChip(currency: $feeCur)))
+                OutlinedField(label: "Reached your wallet", text: $received, prompt: received.isEmpty ? hint(figures?.arrived.amount) : "0.00", numeric: true,
+                              focused: $focus, id: "received", leading: AnyView(CurrencyChip(currency: $receivedCur)))
             }
             VStack(alignment: .leading, spacing: 8) {
                 FieldLabel(text: "Landed in")
@@ -238,7 +251,10 @@ private struct MoneyInForm: View {
                             title: { id in state.wallets.first { $0.id == id }?.name ?? "" },
                             badge: { id in state.wallets.first { $0.id == id }.map { .wallet($0.wallet) } })
             }
-            HStack { DayChoice(date: $date); Spacer(); feeLine }
+            if let figures, let line = MoveMath.feeLine(figures, feeCurrency: feeCur, rates: rates) {
+                Text(line).role(.label, MD.onSurface).fixedSize(horizontal: false, vertical: true)
+            }
+            DayChoice(date: $date)
             if let error { Text(error).role(.supporting, MD.error) }
             if let p = existing {
                 FormDeleteRow(title: "Delete this payment") {
@@ -259,6 +275,10 @@ private struct MoneyInForm: View {
         .animation(Flow.spatial, value: client)
         .onAppear(perform: prefill)
         .onChange(of: project) { _, p in if let p, let pr = projects.first(where: { $0.id == p }) { currency = pr.currency; if paid.isEmpty { paid = MoneyFormat.parts(pr.amount).whole.replacingOccurrences(of: ",", with: "") } } }
+        .onChange(of: currency) { _, c in if fee.isEmpty { feeCur = c } }
+        .onChange(of: wallet) { _, id in
+            if received.isEmpty { receivedCur = MoveMath.arrivesIn(id, withdrawals: withdrawals, payments: payments, steps: stepRows, wallets: walletRows) }
+        }
     }
 
     private func clientTitle(_ id: UUID) -> String {
@@ -266,17 +286,12 @@ private struct MoneyInForm: View {
         return c.map(ClientName.display) ?? ""
     }
 
-    private var suggestedReceived: String {
-        guard let v = Parse.amount(paid) else { return "0.00" }
-        return String(format: "%.2f", rates.toBase(v, currency))
+    private func typed(_ s: String, _ c: String) -> NativeAmount? { Parse.amount(s).map { NativeAmount(amount: $0, currency: c) } }
+    private var outcome: MoveOutcome {
+        MoveMath.resolve(left: typed(paid, currency), fee: typed(fee, feeCur), arrived: typed(received, receivedCur),
+                         leftCurrency: currency, arrivedCurrency: receivedCur, rates: rates)
     }
-
-    @ViewBuilder private var feeLine: some View {
-        if let p = Parse.amount(paid), let r = Parse.amount(received.isEmpty ? suggestedReceived : received) {
-            let fee = rates.toBase(p, currency) - r
-            if fee > 0.004 { Text("Fee about \(MoneyFormat.string(fee))").role(.supporting, MD.onSurfaceVariant) }
-        }
-    }
+    private func hint(_ v: Double?) -> String { v.map { String(format: "%.2f", $0) } ?? "0.00" }
 
     private func prefill() {
         wallet = state.wallets.first { $0.key == .wise }?.id ?? state.wallets.first?.id
@@ -286,8 +301,13 @@ private struct MoneyInForm: View {
             client = pr?.clientId; project = pr?.id
             currency = pay.currency
             paid = String(format: pay.amount == pay.amount.rounded() ? "%.0f" : "%.2f", pay.amount)
-            if let net = pay.netAmountBase { received = String(format: "%.2f", net) }
-            wallet = MoneyEngine(context: context).steps(paymentId: pay.id).last?.methodId ?? wallet
+            // What arrived as the last step kept it (in the wallet's own currency), else in pesos.
+            let last = MoneyEngine(context: context).steps(paymentId: pay.id).last
+            if let last, last.amountOut > 0 { received = BillsWorkAmount.edit(last.amountOut); receivedCur = last.currencyOut }
+            else if let net = pay.netAmountBase { received = String(format: "%.2f", net); receivedCur = "PHP" }
+            if let f = pay.feeAmount { fee = BillsWorkAmount.edit(f) }
+            feeCur = pay.feeCurrency ?? pay.currency
+            wallet = last?.methodId ?? wallet
             date = pay.paidAt
             focus = "paid"
             return
@@ -298,25 +318,34 @@ private struct MoneyInForm: View {
         } else if let c = activeClients.first {
             client = c.id; currency = c.defaultCurrency ?? "EUR"
         }
+        feeCur = currency
+        receivedCur = MoveMath.arrivesIn(wallet, withdrawals: withdrawals, payments: payments, steps: stepRows, wallets: walletRows)
         focus = "paid"
     }
 
     private func save() {
-        guard let amount = Parse.amount(paid), amount > 0 else { error = "Type what they sent."; focus = "paid"; return }
         guard let wallet else { error = "Choose the wallet it landed in."; return }
-        let net = Parse.amount(received) ?? rates.toBase(amount, currency)
+        let got: MoveFigures
+        switch outcome {
+        case .problem(let m): error = paid.isEmpty && received.isEmpty ? "Type what they sent." : m; focus = "paid"; return
+        case .ok(let f): got = f
+        }
+        let amount = got.sent.amount, sentIn = got.sent.currency
+        let net = got.netBase
         var projectId = project
         if !newProject.trimmingCharacters(in: .whitespaces).isEmpty {
-            let p = Project(clientId: client, title: newProject.trimmingCharacters(in: .whitespaces), amount: amount, currency: currency)
+            let p = Project(clientId: client, title: newProject.trimmingCharacters(in: .whitespaces), amount: amount, currency: sentIn)
             p.workCompletedAt = date; p.dirty = true
             context.insert(p); projectId = p.id
         }
-        let step = ChainStepInput(fromMethodId: nil, methodId: wallet, amountIn: amount, currencyIn: currency, amountOut: net, currencyOut: "PHP", notes: nil)
+        // The pesos decide the balances; what arrived in its own currency and the typed fee are kept beside them.
+        let step = ChainStepInput(fromMethodId: nil, methodId: wallet, amountIn: amount, currencyIn: sentIn, amountOut: net, currencyOut: "PHP", notes: nil)
         let ctx = context
         let into = state.wallets.first { $0.id == wallet }?.name ?? "your wallet"
         if let pay = existing {
             do {
-                try MoneyEngine(context: ctx).updatePayment(pay.id, projectId: projectId, amountIn: amount, currencyIn: currency, netBase: net, walletId: wallet, paidAt: date)
+                try MoneyEngine(context: ctx).updatePayment(pay.id, projectId: projectId, amountIn: amount, currencyIn: sentIn, netBase: net, walletId: wallet, paidAt: date)
+                try MoneyEngine(context: ctx).setPaymentAmounts(pay.id, arrived: got.arrived, fee: got.fee)
                 undo.notify("Saved \(MoneyFormat.string(net)) into \(into)")
                 WidgetBridge.update(ctx)
                 close()
@@ -325,6 +354,7 @@ private struct MoneyInForm: View {
         }
         do {
             let id = try MoneyEngine(context: ctx).addPayment(PaymentChainInput(projectId: projectId, projects: nil, paidAt: date, steps: [step], reference: nil, notes: nil))
+            try MoneyEngine(context: ctx).setPaymentAmounts(id, arrived: got.arrived, fee: got.fee)
             try? ctx.save()
             undo.announce("\(MoneyFormat.string(net)) came in to \(into)") { try? MoneyEngine(context: ctx).deletePayment(id); try? ctx.save() }
             WidgetBridge.update(ctx)
@@ -343,19 +373,39 @@ private struct MoveForm: View {
     var editing: UUID? = nil
     let close: () -> Void
     @Query private var withdrawals: [Withdrawal]
+    @Query private var payments: [Payment]
+    @Query private var steps: [PaymentStep]
+    @Query private var walletRows: [Wallet]
+    @Query private var rateRows: [ExchangeRate]
     @State private var from: UUID?
     @State private var to: UUID?
+    // What left, the fee and what arrived, each in its own currency: any two settle the third.
     @State private var sent = ""
+    @State private var sentCur = "PHP"
+    @State private var fee = ""
+    @State private var feeCur = "PHP"
     @State private var received = ""
+    @State private var receivedCur = "PHP"
     @State private var date = Date.now
     @State private var error: String?
     @FocusState private var focus: String?
 
+    private var rates: Rates { Rates(base: "PHP", rates: rateRows) }
+    private var existing: Withdrawal? { editing.flatMap { id in withdrawals.first { $0.id == id } } }
+    private func typed(_ s: String, _ c: String) -> NativeAmount? { Parse.amount(s).map { NativeAmount(amount: $0, currency: c) } }
+    private var outcome: MoveOutcome {
+        MoveMath.resolve(left: typed(sent, sentCur), fee: typed(fee, feeCur), arrived: typed(received, receivedCur),
+                         leftCurrency: sentCur, arrivedCurrency: receivedCur, rates: rates)
+    }
+    private func hint(_ v: Double?) -> String { v.map { String(format: "%.2f", $0) } ?? "0.00" }
+
     var body: some View {
         let wallets = state.wallets.filter(\.inTotals)
-        let existing = editing.flatMap { id in withdrawals.first { $0.id == id } }
+        let figures = outcome.figures
+        let lostInFee = figures.map { rates.hasRate(for: feeCur) ? $0.lostBase / max(rates.toBase(1, feeCur), 0.000001) : $0.lostBase }
         M3Dialog(title: existing != nil ? "Edit move" : "Move money",
-                 subtitle: existing != nil ? nil : "Between your own wallets. What arrives can be less than what left; the difference is the fee.", onClose: close) {
+                 subtitle: existing != nil ? nil : "Between your own wallets, in any currency. Type any two of what left, the fee and what arrived; Freelane works out the third.",
+                 onClose: close) {
             VStack(alignment: .leading, spacing: 8) {
                 FieldLabel(text: "From")
                 ChoiceChips(items: wallets.map(\.id), selection: $from, title: { id in wallets.first { $0.id == id }?.name ?? "" },
@@ -367,16 +417,18 @@ private struct MoveForm: View {
                             badge: { id in wallets.first { $0.id == id }.map { .wallet($0.wallet) } })
             }
             HStack(spacing: 12) {
-                OutlinedField(label: "Left (₱)", text: $sent, prompt: "0.00", numeric: true, focused: $focus, id: "sent")
-                OutlinedField(label: "Arrived (₱)", text: $received, prompt: sent.isEmpty ? "0.00" : sent, numeric: true, focused: $focus, id: "received")
+                OutlinedField(label: "Left", text: $sent, prompt: sent.isEmpty ? hint(figures?.sent.amount) : "0.00", numeric: true, focused: $focus, id: "sent",
+                              leading: AnyView(CurrencyChip(currency: $sentCur)))
+                OutlinedField(label: "Fee", text: $fee, prompt: fee.isEmpty && !sent.isEmpty && !received.isEmpty ? hint(lostInFee) : "0.00", numeric: true,
+                              focused: $focus, id: "fee", leading: AnyView(CurrencyChip(currency: $feeCur)))
+                OutlinedField(label: "Arrived", text: $received, prompt: received.isEmpty ? hint(figures?.arrived.amount) : "0.00", numeric: true,
+                              focused: $focus, id: "received", leading: AnyView(CurrencyChip(currency: $receivedCur)))
             }
-            HStack {
-                DayChoice(date: $date)
-                Spacer()
-                if let s = Parse.amount(sent), let r = Parse.amount(received), s - r > 0.004 {
-                    Text("Fee \(MoneyFormat.string(s - r))").role(.supporting, MD.onSurfaceVariant)
-                }
+            // The fee, worked out as you type, on its own line under the amounts.
+            if let figures, let line = MoveMath.feeLine(figures, feeCurrency: feeCur, rates: rates) {
+                Text(line).role(.label, MD.onSurface).fixedSize(horizontal: false, vertical: true)
             }
+            DayChoice(date: $date)
             if let error { Text(error).role(.supporting, MD.error) }
             if let w = existing {
                 FormDeleteRow(title: "Delete this move") {
@@ -393,38 +445,56 @@ private struct MoveForm: View {
             M3Button(title: "Cancel", kind: .plain, action: close)
             M3Button(title: "Save", kind: .filled, action: save).keyboardShortcut(.return, modifiers: [])
         }
+        .onChange(of: from) { _, id in
+            // A wallet's last currency, unless an amount is already typed.
+            if sent.isEmpty { sentCur = MoveMath.leavesIn(id, withdrawals: withdrawals, wallets: walletRows); if fee.isEmpty { feeCur = sentCur } }
+            error = nil
+        }
+        .onChange(of: to) { _, id in
+            if received.isEmpty { receivedCur = MoveMath.arrivesIn(id, withdrawals: withdrawals, payments: payments, steps: steps, wallets: walletRows) }
+            error = nil
+        }
+        .onChange(of: sentCur) { _, c in if fee.isEmpty { feeCur = c } }
         .onAppear {
-            from = wallets.first { $0.key == .wise }?.id ?? wallets.first?.id
-            to = wallets.first { $0.key == .maya && $0.id != from }?.id
-            if let id = editing, let w = withdrawals.first(where: { $0.id == id }) {
+            if let w = existing {
                 from = w.fromMethodId; to = w.toMethodId; date = w.withdrawnAt
-                sent = String(format: w.grossBase == w.grossBase.rounded() ? "%.0f" : "%.2f", w.grossBase)
-                received = String(format: w.netBase == w.netBase.rounded() ? "%.0f" : "%.2f", w.netBase)
+                // A move kept before its own currencies were remembered opens in pesos.
+                sent = BillsWorkAmount.edit(w.grossAmount ?? w.grossBase); sentCur = w.grossCurrency ?? "PHP"
+                received = BillsWorkAmount.edit(w.netAmount ?? w.netBase); receivedCur = w.netCurrency ?? "PHP"
+                if let f = w.feeAmount { fee = BillsWorkAmount.edit(f) }
+                feeCur = w.feeCurrency ?? sentCur
+            } else {
+                from = wallets.first { $0.key == .wise }?.id ?? wallets.first?.id
+                to = wallets.first { $0.key == .maya && $0.id != from }?.id
+                sentCur = MoveMath.leavesIn(from, withdrawals: withdrawals, wallets: walletRows); feeCur = sentCur
+                receivedCur = MoveMath.arrivesIn(to, withdrawals: withdrawals, payments: payments, steps: steps, wallets: walletRows)
             }
             focus = "sent"
         }
     }
 
     private func save() {
-        guard let s = Parse.amount(sent), s > 0 else { error = "Type what left the wallet."; focus = "sent"; return }
         guard let from, let to, from != to else { error = "Choose two different wallets."; return }
-        let r = Parse.amount(received) ?? s
+        let got: MoveFigures
+        switch outcome {
+        case .problem(let m): error = m; return
+        case .ok(let f): got = f
+        }
         let ctx = context
         let names = state.wallets.reduce(into: [UUID: String]()) { $0[$1.id] = $1.name }
-        if let id = editing, let w = withdrawals.first(where: { $0.id == id }) {
-            do {
-                try MoneyEngine(context: ctx).updateWithdrawal(id, fromMethodId: from, toMethodId: to, withdrawnAt: date, grossBase: s, netBase: r, notes: w.notes)
-                undo.notify("Saved the move from \(names[from] ?? "a wallet") to \(names[to] ?? "a wallet")")
-                WidgetBridge.update(ctx)
-                close()
-            } catch { self.error = error.localizedDescription }
-            return
-        }
         do {
-            let id = try MoneyEngine(context: ctx).createWithdrawal(fromMethodId: from, toMethodId: to, withdrawnAt: date, grossBase: s, netBase: r, notes: nil)
-            try? ctx.save()
-            undo.announce("Moved \(MoneyFormat.string(s)) from \(names[from] ?? "a wallet") to \(names[to] ?? "a wallet")") {
-                try? MoneyEngine(context: ctx).deleteWithdrawal(id); try? ctx.save()
+            let engine = MoneyEngine(context: ctx)
+            if let w = existing {
+                try engine.updateWithdrawal(w.id, fromMethodId: from, toMethodId: to, withdrawnAt: date, grossBase: got.grossBase, netBase: got.netBase, notes: w.notes)
+                try engine.setMoveAmounts(w.id, sent: got.sent, arrived: got.arrived, fee: got.fee)
+                undo.notify("Saved the move from \(names[from] ?? "a wallet") to \(names[to] ?? "a wallet")")
+            } else {
+                let id = try engine.createWithdrawal(fromMethodId: from, toMethodId: to, withdrawnAt: date, grossBase: got.grossBase, netBase: got.netBase, notes: nil)
+                try engine.setMoveAmounts(id, sent: got.sent, arrived: got.arrived, fee: got.fee)
+                let shown = LedgerText.native(got.sent.amount, got.sent.currency)
+                undo.announce("Moved \(shown) from \(names[from] ?? "a wallet") to \(names[to] ?? "a wallet")") {
+                    try? MoneyEngine(context: ctx).deleteWithdrawal(id); try? ctx.save()
+                }
             }
             WidgetBridge.update(ctx)
             close()
@@ -442,6 +512,8 @@ private struct PayBillForm: View {
     let close: () -> Void
     @State private var bill: UUID?
     @State private var amount = ""
+    /// The suggestion is in pesos; paying in another currency is a click on the chip away.
+    @State private var currency = "PHP"
     @State private var wallet: UUID?
     @State private var periods = 1
     @State private var date = Date.now
@@ -456,7 +528,8 @@ private struct PayBillForm: View {
                 ChoiceChips(items: bills.map(\.id), selection: $bill, title: { id in bills.first { $0.id == id }?.label ?? "" },
                             badge: { id in bills.first { $0.id == id }.map { .bill($0.label) } })
             }
-            OutlinedField(label: periods > 1 ? "Amount per month (₱)" : "Amount (₱)", text: $amount, prompt: "0.00", numeric: true, focused: $focus, id: "amount")
+            OutlinedField(label: periods > 1 ? "Amount per month" : "Amount", text: $amount, prompt: "0.00", numeric: true, focused: $focus, id: "amount",
+                          leading: AnyView(CurrencyChip(currency: $currency)))
             VStack(alignment: .leading, spacing: 8) {
                 FieldLabel(text: "Paid from")
                 ChoiceChips(items: state.wallets.filter(\.inTotals).map(\.id), selection: $wallet,
@@ -486,6 +559,7 @@ private struct PayBillForm: View {
     private func prefillAmount() {
         guard let b = state.bills.first(where: { $0.id == bill }) else { return }
         amount = String(format: "%.2f", b.lastPaid?.amount ?? b.amount)
+        currency = "PHP"
         wallet = b.lastPaid?.walletId ?? b.bill.walletId ?? wallet ?? state.wallets.first?.id
     }
 
@@ -495,9 +569,9 @@ private struct PayBillForm: View {
         let ctx = context
         let label = state.bills.first { $0.id == b }?.label ?? "the bill"
         do {
-            let id = try MoneyEngine(context: ctx).markRecurringPaid(recurringId: b, amount: v, periods: periods, walletId: wallet, on: date)
+            let id = try MoneyEngine(context: ctx).markRecurringPaid(recurringId: b, amount: v, periods: periods, walletId: wallet, on: date, currency: currency)
             try? ctx.save()
-            undo.announce("Paid \(label), \(MoneyFormat.string(v))") { try? MoneyEngine(context: ctx).deleteSpend(id) }
+            undo.announce("Paid \(label), \(LedgerText.native(v, currency))") { try? MoneyEngine(context: ctx).deleteSpend(id) }
             WidgetBridge.update(ctx)
             close()
         } catch { self.error = error.localizedDescription }
@@ -518,6 +592,9 @@ private struct WalletForm: View {
     @State private var currency = "PHP"
     @State private var balance = ""
     @State private var inTotals = true
+    /// What it holds when it was opened, so saving writes the currency only when it was changed.
+    @State private var held: String? = "PHP"
+    @State private var holds: String? = "PHP"
     @State private var confirming = false
     @State private var error: String?
     @FocusState private var focus: String?
@@ -544,6 +621,12 @@ private struct WalletForm: View {
                 OutlinedField(label: "What’s in it now?", text: $balance, prompt: "0.00", numeric: true, focused: $focus, id: "balance",
                               leading: AnyView(CurrencyChip(currency: $currency)))
             } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    FieldLabel(text: "Holds")
+                    // What its money is in: moves and counts start in it. Its balance still adds up in pesos.
+                    let usual = ["PHP", "USD", "EUR", "GBP", "CNY", "MAD", "AED", "USDT"]
+                    ChoiceChips(items: usual.contains(holds ?? "PHP") ? usual : usual + [holds ?? "PHP"], selection: $holds, title: { $0 })
+                }
                 Toggle(isOn: $inTotals) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("In your totals").role(.row)
@@ -564,6 +647,9 @@ private struct WalletForm: View {
         .onAppear {
             if let w = existing {
                 name = w.name; kind = w.kind; inTotals = !w.excludedFromTotals; currency = w.currencyIn ?? "PHP"
+                // What it holds: the currency money comes into it in, else the one it pays out in.
+                held = [w.currencyIn, w.currencyOut].compactMap { $0 }.first { !$0.isEmpty } ?? "PHP"
+                holds = held
             }
             focus = "name"
         }
@@ -580,7 +666,7 @@ private struct WalletForm: View {
         guard !n.isEmpty else { error = "Give it a name."; focus = "name"; return }
         if let w = existing {
             do {
-                try MoneyEngine(context: context).updateWallet(w.id, name: n, kind: kind ?? w.kind, inTotals: inTotals)
+                try MoneyEngine(context: context).updateWallet(w.id, name: n, kind: kind ?? w.kind, inTotals: inTotals, currency: holds != held ? holds : nil)
                 undo.notify("Saved \(n)")
                 WidgetBridge.update(context)
                 close()

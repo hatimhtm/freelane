@@ -3,6 +3,22 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 3.4
+
+**Any currency, and the fee worked out for you.**
+
+- **Moves in any currency.** Move money has three amounts: what left, the fee and what arrived, each in
+  its own currency (euros or dollars out of Wise, pesos into Maya). Type any two and Freelane works out
+  the third. Each wallet remembers the currency you last used with it.
+- **The fee as you type.** Under the amounts, the fee is worked out from what left and what arrived
+  (Fee €0.85 · ₱58.10 · 1.6%), or shown as you typed it, and it's saved with the move.
+- **Money in works the same way.** What they sent, the fee and what reached your wallet, each in its own
+  currency, so a payment that lands in euros stays in euros.
+- **Currency everywhere else too.** Pay a bill and the bill editor take any currency, and a wallet's
+  editor sets the currency it holds.
+- **The Ledger shows it.** A move or a payment shows its own amounts and its fee, and a payment's route
+  shows each wallet in its own currency. Everything still adds up in pesos.
+
 ## 3.3
 
 **The same shapes as the phone, and editing you can find.**

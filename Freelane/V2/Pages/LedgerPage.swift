@@ -558,6 +558,7 @@ private struct LedgerPaymentDetail: View {
             let count = paid.count == 1 ? "1 payment" : "\(paid.count) payments"
             out.append(LedgerFactItem(label, Text("\(money) · \(count)")))
         }
+        if let f = payment.feeAmount, let c = payment.feeCurrency { out.append(LedgerFactItem("Fee", Text(LedgerText.nativeExact(f, c)))) }
         out.append(LedgerFactItem("Landed in", Text(route.landed.isEmpty ? "Not recorded" : route.landed.joined(separator: ", then "))))
         return out
     }
@@ -820,11 +821,21 @@ private struct LedgerMoveDetail: View {
         func name(_ w: Wallet?) -> String { w.map { $0.name + ($0.excludedFromTotals ? " · not in your totals" : "") } ?? "Not recorded" }
         var out = [LedgerFactItem("From", Text(name(from))), LedgerFactItem("To", Text(name(to)))]
         if moves.count == 1, let t = LedgerText.time(moves[0].withdrawnAt) { out.append(LedgerFactItem("At", Text(t))) }
-        out.append(LedgerFactItem("Sent", Money(value: sent, role: .inline(14)).text))
-        out.append(LedgerFactItem("Received", Money(value: received, role: .inline(14)).text))
+        // A single move shows its amounts as typed, with the pesos beside a foreign one.
+        let one = moves.count == 1 ? moves[0] : nil
+        func withBase(_ amount: Double?, _ currency: String?, _ base: Double) -> Text {
+            let pesos = Money(value: base, role: .inline(14)).text
+            guard let amount, let currency, currency != "PHP" else { return pesos }
+            return Text("\(LedgerText.nativeExact(amount, currency)) · ") + pesos
+        }
+        out.append(LedgerFactItem("Sent", one.map { withBase($0.grossAmount, $0.grossCurrency, $0.grossBase) } ?? Money(value: sent, role: .inline(14)).text))
+        out.append(LedgerFactItem("Received", one.map { withBase($0.netAmount, $0.netCurrency, $0.netBase) } ?? Money(value: received, role: .inline(14)).text))
+        // The fee as typed, and what was lost in all (fee and exchange rate) under its own name then.
+        if let one, let f = one.feeAmount, let c = one.feeCurrency { out.append(LedgerFactItem("Fee", Text(LedgerText.nativeExact(f, c)))) }
+        let typed = one?.feeAmount != nil
         let feeMoney = Money(value: fee, role: .inline(14)).text
         let feeShare = LedgerText.percent(fee, of: sent)
-        out.append(LedgerFactItem(moves.count == 1 ? "Fee" : "Fees", fee < 0.005 ? Text("None") : Text("\(feeMoney) · \(feeShare)")))
+        out.append(LedgerFactItem(typed ? "Lost on the way" : moves.count == 1 ? "Fee" : "Fees", fee < 0.005 ? Text("None") : Text("\(feeMoney) · \(feeShare)")))
         return out
     }
 
@@ -856,7 +867,7 @@ private struct LedgerMovesCard: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(LedgerText.time(w.withdrawnAt) ?? "No time").role(.sub)
-                        Text("\(MoneyFormat.string(w.grossBase)) sent").role(.supporting, MD.onSurfaceVariant)
+                        Text("\(w.grossAmount.flatMap { a in w.grossCurrency.map { LedgerText.nativeExact(a, $0) } } ?? MoneyFormat.string(w.grossBase)) sent").role(.supporting, MD.onSurfaceVariant)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .trailing, spacing: 0) {

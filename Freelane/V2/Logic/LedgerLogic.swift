@@ -361,14 +361,18 @@ struct LedgerRoute {
         r.hops.append(LedgerHop(id: 0, mark: client.map { LedgerHop.Mark.person($0) } ?? .unknown, title: client.map { "\($0) paid" } ?? "Paid",
                                 sub: originSub.isEmpty ? nil : originSub, amount: p.amount, symbol: CurrencyFormat.symbol(p.currency), fee: nil))
 
-        let converted = (p.currency != "PHP" && p.amount > 0) ? "converted at \(MoneyFormat.string(net / p.amount))" : nil
+        // What reached the wallet in its own currency, when that was kept and wasn't pesos (€49.60 into Wise).
+        let lastStep = steps.filter { $0.paymentId == p.id }.max { $0.stepOrder < $1.stepOrder }
+        var native: NativeAmount? = lastStep.flatMap { $0.currencyOut != "PHP" && $0.amountOut > 0 ? NativeAmount(amount: $0.amountOut, currency: $0.currencyOut) : nil }
+        let converted: String? = native != nil ? "worth \(MoneyFormat.string(net))"
+            : (p.currency != "PHP" && p.amount > 0) ? "converted at \(MoneyFormat.string(net / p.amount))" : nil
         guard let landing = landingOf(p.id), let lw = wallets[landing] else {
             r.hops.append(LedgerHop(id: 1, mark: .unknown, title: "No wallet recorded", sub: converted ?? "Freelane doesn’t know where it landed",
                                     amount: net, symbol: "₱", fee: implied > 0.004 ? implied : nil))
             return r
         }
-        r.hops.append(LedgerHop(id: 1, mark: .wallet(lw), title: "Landed in \(lw.name)", sub: converted, amount: net, symbol: "₱",
-                                fee: implied > 0.004 ? implied : nil))
+        r.hops.append(LedgerHop(id: 1, mark: .wallet(lw), title: "Landed in \(lw.name)", sub: converted, amount: native?.amount ?? net,
+                                symbol: native.map { CurrencyFormat.symbol($0.currency) } ?? "₱", fee: implied > 0.004 ? implied : nil))
         r.landed = [lw.name]
 
         let moves = withdrawals.filter { $0.deletedAt == nil && $0.toMethodId != nil }
@@ -390,7 +394,12 @@ struct LedgerRoute {
 
             var picked: Withdrawal? = nil
             var joined: [Payment] = []
-            if let w = candidates.first(where: { abs($0.grossBase - amount) < 0.011 }) {
+            // The same amount in pesos, or (when both were kept) the same amount in the same currency.
+            let here = native
+            if let w = candidates.first(where: { w in
+                abs(w.grossBase - amount) < 0.011
+                    || (here != nil && w.grossCurrency == here!.currency && abs((w.grossAmount ?? -1) - here!.amount) < 0.011)
+            }) {
                 // If another payment landed here that day for the same amount, the move could have carried either.
                 if first && others.contains(where: { abs(($0.netAmountBase ?? 0) - w.grossBase) < 0.011 }) { break }
                 picked = w
@@ -407,8 +416,11 @@ struct LedgerRoute {
             used.insert(w.id)
             var sub = Day.daysBetween(time, w.withdrawnAt) == 0 ? "same day" : "next day"
             if !joined.isEmpty { sub += " · \(joined.count + 1) payments" }
-            r.hops.append(LedgerHop(id: r.hops.count, mark: .wallet(to), title: "Moved to \(to.name)", sub: sub, amount: w.netBase,
-                                    symbol: "₱", fee: w.feeBase > 0.004 ? w.feeBase : nil))
+            let arrivedHere: NativeAmount? = (w.netCurrency != nil && w.netCurrency != "PHP" && w.netAmount != nil)
+                ? NativeAmount(amount: w.netAmount!, currency: w.netCurrency!) : nil
+            r.hops.append(LedgerHop(id: r.hops.count, mark: .wallet(to), title: "Moved to \(to.name)", sub: sub, amount: arrivedHere?.amount ?? w.netBase,
+                                    symbol: arrivedHere.map { CurrencyFormat.symbol($0.currency) } ?? "₱", fee: w.feeBase > 0.004 ? w.feeBase : nil))
+            native = (w.netAmount ?? 0) > 0 ? w.netCurrency.map { NativeAmount(amount: w.netAmount!, currency: $0) } : nil
             r.landed.append(to.name)
             r.fees += w.feeBase
             if !joined.isEmpty {

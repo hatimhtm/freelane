@@ -64,31 +64,36 @@ extension MoneyEngine {
     /// (for fixed bills) optionally updates the rule's amount going forward.
     @discardableResult
     func markRecurringPaid(recurringId: UUID, amount: Double, fee: Double = 0, periods: Int = 1,
-                           walletId: UUID?, on date: Date, updateRule: Bool = false) throws -> UUID {
+                           walletId: UUID?, on date: Date, updateRule: Bool = false, currency: String? = nil) throws -> UUID {
         guard let r = (try? context.fetch(FetchDescriptor<Recurring>()))?.first(where: { $0.id == recurringId }) else {
             throw EngineError.invalid("Recurring rule not found.")
         }
+        // Paid in any currency; the bill keeps its own.
+        let paidIn = currency ?? r.currency
+        try requireRate(paidIn)
         let n = max(1, periods)
         let perPeriod = max(0, amount)
         let f = max(0, fee)
         let total = perPeriod * Double(n) + f
         guard total > 0 else { throw EngineError.invalid("Enter the amount you paid.") }
-        let notes = (n > 1 ? " (\(n) periods)" : "") + (f > 0 ? " incl. \(CurrencyFormat.string(f, r.currency, compact: true)) fee" : "")
-        let id = try createSpend(walletId: walletId, amount: total, currency: r.currency,
+        let notes = (n > 1 ? " (\(n) periods)" : "") + (f > 0 ? " incl. \(CurrencyFormat.string(f, paidIn, compact: true)) fee" : "")
+        let id = try createSpend(walletId: walletId, amount: total, currency: paidIn,
                                  description: r.label + notes,
                                  vendorName: nil, category: r.label, isSadaka: false, spentAt: date, tags: [r.label])
         if let sp = (try? context.fetch(FetchDescriptor<Spend>()))?.first(where: { $0.id == id }) {
             sp.recurringId = r.id; sp.coversPeriods = n; sp.dirty = true
         }
         // Learn the typical amount (variable bills always; fixed bills only on request).
+        // What one period came to, in the bill's own currency.
+        let month = paidIn == r.currency ? perPeriod : rates.toBase(perPeriod, paidIn) / max(rates.toBase(1, r.currency), 0.000001)
         if r.isVariableAmount {
             let prior = r.amount
-            let smoothed = prior > 0 ? (prior + perPeriod) / 2 : perPeriod
+            let smoothed = prior > 0 ? (prior + month) / 2 : month
             r.amount = (smoothed / 10).rounded() * 10            // a clean approximate figure
             r.amountBase = round2(rates.toBase(r.amount, r.currency))
             r.dirty = true   // invariant: the learned amount must sync on its own, not ride resyncAll's flag
         } else if updateRule {
-            r.amount = perPeriod; r.amountBase = round2(rates.toBase(perPeriod, r.currency))
+            r.amount = round2(month); r.amountBase = round2(rates.toBase(month, r.currency))
             r.dirty = true
         }
         // "Paid through" is DERIVED from the linked spends — never advanced from the payment
