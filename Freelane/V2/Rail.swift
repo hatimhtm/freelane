@@ -16,13 +16,18 @@ struct Rail: View {
             NewButton { withAnimation(Flow.spatial) { app.newMenuOpen = true } }
                 .padding(.bottom, 24)
                 .opacity(app.newMenuOpen ? 0 : 1)
-            ForEach(Array(groups.enumerated()), id: \.offset) { gi, group in
-                if gi > 0 { Rectangle().fill(Surface.hairline).frame(height: 1).padding(.horizontal, 16).padding(.vertical, 8) }
-                ForEach(group) { p in item(p) }
+            // The New menu unfolds over the places, so they step back while it's open: nothing of the rail
+            // (the selection pill, the dividers) peeks out between or beside its pills.
+            Group {
+                ForEach(Array(groups.enumerated()), id: \.offset) { gi, group in
+                    if gi > 0 { Rectangle().fill(Surface.hairline).frame(height: 1).padding(.horizontal, 16).padding(.vertical, 8) }
+                    ForEach(group) { p in item(p) }
+                }
+                Spacer(minLength: 12)
+                item(.settings)
+                SyncLine()
             }
-            Spacer(minLength: 12)
-            item(.settings)
-            SyncLine()
+            .opacity(app.newMenuOpen ? 0 : 1)
         }
         .padding(.top, 58).padding(.horizontal, 12).padding(.bottom, 10)
     }
@@ -82,8 +87,10 @@ struct NewButton: View {
 }
 
 private struct FabStyle: ButtonStyle {
+    /// The hover and press wash take the button's own shape: the FAB's rounded square, a menu item's capsule.
+    var shape = AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.modifier(StateLayer(color: MD.onPrimaryContainer, shape: AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous)), pressed: configuration.isPressed))
+        configuration.label.contentShape(shape).modifier(StateLayer(color: MD.onPrimaryContainer, shape: shape, pressed: configuration.isPressed))
     }
 }
 
@@ -130,7 +137,7 @@ struct NewMenu: View {
                         .shadow(color: .black.opacity(0.10), radius: 1, y: 1)
                         .shadow(color: .black.opacity(0.10), radius: 6, y: 4)
                     }
-                    .buttonStyle(FabStyle())
+                    .buttonStyle(FabStyle(shape: AnyShape(Capsule())))
                     .scaleEffect(shown || reduce ? 1 : 0.8, anchor: .topLeading)
                     .opacity(shown ? 1 : 0)
                     .offset(y: shown || reduce ? 0 : -8)
