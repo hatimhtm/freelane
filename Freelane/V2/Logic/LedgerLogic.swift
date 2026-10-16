@@ -561,9 +561,9 @@ struct LedgerContext {
     var walletMap: [UUID: Wallet] { Dictionary(wallets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
     func wallet(_ id: UUID?) -> Wallet? { id.flatMap { i in wallets.first { $0.id == i } } }
     func project(_ id: UUID?) -> Project? { id.flatMap { i in projects.first { $0.id == i } } }
-    /// The name the rest of the app shows for a client: the company when there is one.
+    /// The name the rest of the app shows for a client: the company when there is one, spaced as titles write it.
     func clientName(_ id: UUID?) -> String? {
         guard let c = id.flatMap({ i in clients.first { $0.id == i } }) else { return nil }
-        return c.company?.isEmpty == false ? c.company! : c.name
+        return ClientName.display(c)
     }
 }

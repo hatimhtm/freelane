@@ -525,7 +525,7 @@ private struct BillsEditor: View {
             Toggle(isOn: $variable.animation(Flow.effects)) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("The amount changes").role(.row)
-                    Text("Freelane sets aside the usual amount and shows it as an estimate (~).").role(.supporting, MD.onSurfaceVariant)
+                    Text("Freelane shows it as an estimate (~).").role(.supporting, MD.onSurfaceVariant)
                 }
             }
             .toggleStyle(.switch)
