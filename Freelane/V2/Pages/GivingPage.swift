@@ -175,6 +175,8 @@ enum GivingFormat {
 private struct GivingList: View {
     let gifts: [GivingGift]
     @Environment(AppState.self) private var app
+    @Environment(\.modelContext) private var context
+    @Environment(UndoCenter.self) private var undo
     var body: some View {
         VStack(spacing: 3) {
             ForEach(Array(gifts.enumerated()), id: \.element.id) { i, g in
@@ -187,6 +189,16 @@ private struct GivingList: View {
                 .background(shape.fill(Surface.well))
                 .pressable(Rectangle()) { withAnimation(Flow.spatial) { app.form = .editSpend(g.id) } }
                 .clipShape(shape)
+                .contextMenu {
+                    Button("Edit gift…") { withAnimation(Flow.spatial) { app.form = .editSpend(g.id) } }
+                    Divider()
+                    Button("Delete gift", role: .destructive) {
+                        let id = g.id, ctx = context
+                        guard (try? MoneyEngine(context: ctx).deleteSpend(id)) != nil else { return }
+                        undo.offer("gift") { try? MoneyEngine(context: ctx).restoreSpend(id) }
+                        WidgetBridge.update(ctx)
+                    }
+                }
                 .id(g.id)
                 .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: -6)), removal: .opacity))
                 .accessibilityElement(children: .combine)

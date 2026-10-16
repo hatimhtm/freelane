@@ -49,10 +49,14 @@ struct PressableRow: ViewModifier {
             .animation(Flow.effects, value: hovering)
             .animation(Flow.effects, value: pressed)
             .onHover { hovering = $0 }
+            .pointerStyle(.link)
             .simultaneousGesture(DragGesture(minimumDistance: 0)
                 .onChanged { _ in if !pressed { pressed = true } }
                 .onEnded { _ in pressed = false })
             .onTapGesture(perform: action)
+            // VoiceOver reads it as a button and can press it.
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { action() }
     }
 }
 

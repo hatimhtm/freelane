@@ -455,6 +455,8 @@ private struct BillsPaidRow: View {
     let cadence: RecurringCadence
     let last: Bool
     @Environment(AppState.self) private var app
+    @Environment(\.modelContext) private var context
+    @Environment(UndoCenter.self) private var undo
     /// "from Wise, incl. ₱5 fee", "from Wise · 12 months"
     private var from: String {
         var s = payment.wallet.map { "from \($0)" } ?? "no wallet"
@@ -474,6 +476,16 @@ private struct BillsPaidRow: View {
         .frame(height: 44)
         .pressable(RoundedRectangle(cornerRadius: 8)) { withAnimation(Flow.spatial) { app.form = .editSpend(payment.id) } }
         .help("Edit this payment")
+        .contextMenu {
+            Button("Edit payment…") { withAnimation(Flow.spatial) { app.form = .editSpend(payment.id) } }
+            Divider()
+            Button("Delete payment", role: .destructive) {
+                let id = payment.id, ctx = context
+                guard (try? MoneyEngine(context: ctx).deleteSpend(id)) != nil else { return }
+                undo.offer("bill payment") { try? MoneyEngine(context: ctx).restoreSpend(id) }
+                WidgetBridge.update(ctx)
+            }
+        }
         .overlay(alignment: .bottom) { if !last { Rectangle().fill(Surface.hairline).frame(height: 1) } }
     }
 }

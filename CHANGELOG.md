@@ -3,6 +3,17 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 3.3
+
+**The same shapes as the phone, and editing you can find.**
+
+- **Material's own shapes.** The sticker is Material 3's soft burst, rounded at every point, and the
+  wallet and bill badges are drawn from the exact shapes the phone uses.
+- **Right-click to edit or delete.** On Work, a project, a client or a payment has Edit and Delete in
+  its menu; so do gifts on Giving and a bill's payments. A click still opens the editor.
+- **Clickable things look clickable.** Rows and cards that open something show the pointing hand,
+  and VoiceOver reads them as buttons it can press.
+
 ## 3.2
 
 **Change anything, delete anything.** Whatever you put in, you can now open, edit or remove from the

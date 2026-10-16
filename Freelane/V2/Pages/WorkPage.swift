@@ -4,6 +4,8 @@ import SwiftData
 /// Work: what came in this year and from whom, who still owes you, and what getting paid cost.
 struct WorkPage: View {
     @Environment(AppState.self) private var app
+    @Environment(\.modelContext) private var context
+    @Environment(UndoCenter.self) private var undo
     @Environment(\.accessibilityReduceMotion) private var reduce
     let state: MoneyState
     @Query private var payments: [Payment]
@@ -38,6 +40,12 @@ struct WorkPage: View {
                                 WorkOwedRow(owed: o) { withAnimation(Flow.spatial) { app.form = .moneyIn(projectId: o.project.id) } }
                                     .pressable(Rectangle()) { withAnimation(Flow.spatial) { app.form = .project(o.project.id) } }
                                     .help("Edit \(o.project.title)")
+                                    .contextMenu {
+                                        Button("Edit project…") { withAnimation(Flow.spatial) { app.form = .project(o.project.id) } }
+                                        Button("Mark paid…") { withAnimation(Flow.spatial) { app.form = .moneyIn(projectId: o.project.id) } }
+                                        Divider()
+                                        Button("Delete project", role: .destructive) { deleteProject(o.project.id, o.project.title) }
+                                    }
                             }
                             .appear(2)
                         }
@@ -55,6 +63,11 @@ struct WorkPage: View {
                                 }
                                 .pressable(Rectangle()) { withAnimation(Flow.spatial) { app.form = .client(c.id) } }
                                 .help("Edit \(c.title)")
+                                .contextMenu {
+                                    Button("Edit client…") { withAnimation(Flow.spatial) { app.form = .client(c.id) } }
+                                    Divider()
+                                    Button("Delete client", role: .destructive) { deleteClient(c.id, c.title) }
+                                }
                             }
                             .appear(4)
                         }
@@ -75,6 +88,11 @@ struct WorkPage: View {
                                 }
                                 .pressable(Rectangle()) { withAnimation(Flow.spatial) { app.form = .project(p.id) } }
                                 .help("Edit \(p.title)")
+                                .contextMenu {
+                                    Button("Edit project…") { withAnimation(Flow.spatial) { app.form = .project(p.id) } }
+                                    Divider()
+                                    Button("Delete project", role: .destructive) { deleteProject(p.id, p.title) }
+                                }
                             }
                             .appear(6)
                         }
@@ -100,6 +118,11 @@ struct WorkPage: View {
                             WorkLatestRow(item: item)
                                 .pressable(RoundedRectangle(cornerRadius: 12)) { withAnimation(Flow.spatial) { app.form = .editPayment(item.id) } }
                                 .help("Edit this payment")
+                                .contextMenu {
+                                    Button("Edit payment…") { withAnimation(Flow.spatial) { app.form = .editPayment(item.id) } }
+                                    Divider()
+                                    Button("Delete payment", role: .destructive) { deletePayment(item.id) }
+                                }
                                 .appear(3 + i)
                         }
                     }
@@ -137,6 +160,27 @@ extension WorkPage {
         let owed = Set(w.owed.map(\.id))
         return projects.filter { $0.deletedAt == nil && !owed.contains($0.id) }
             .sorted { ($0.completedAt ?? $0.workCompletedAt ?? $0.createdAt) > ($1.completedAt ?? $1.workCompletedAt ?? $1.createdAt) }
+    }
+
+    /// Delete from a row's menu: to the Trash, with Undo, as the editors do.
+    fileprivate func deleteProject(_ id: UUID, _ title: String) {
+        let ctx = context
+        guard (try? MoneyEngine(context: ctx).deleteProject(id)) != nil else { return }
+        undo.announce("Deleted \(title)", icon: "trash") { try? MoneyEngine(context: ctx).restoreProject(id) }
+    }
+
+    fileprivate func deleteClient(_ id: UUID, _ name: String) {
+        let ctx = context
+        guard (try? MoneyEngine(context: ctx).deleteClient(id)) != nil else { return }
+        undo.announce("Deleted \(name)", icon: "trash") { try? MoneyEngine(context: ctx).restoreClient(id) }
+    }
+
+    fileprivate func deletePayment(_ id: UUID) {
+        let ctx = context
+        guard (try? MoneyEngine(context: ctx).deletePayment(id)) != nil else { return }
+        try? ctx.save()
+        undo.offer("payment") { try? MoneyEngine(context: ctx).restorePayment(id); try? ctx.save() }
+        WidgetBridge.update(ctx)
     }
 
     fileprivate func paidLine(_ p: Project) -> String {

@@ -296,12 +296,14 @@ struct Sticker: View {
     var body: some View {
         ZStack {
             ExpressiveShape.burst.shape.fill(Surface.sticker)
+            // The words stay inside the burst's inner circle, clear of its rounded points.
             VStack(spacing: 2) {
                 Icon(glyph, size: 24, filled: true, weight: 500)
                 Text(text).font(FS.font(15, 600, rond: 100)).multilineTextAlignment(.center)
+                    .lineLimit(2).minimumScaleFactor(0.7)
             }
             .foregroundStyle(Surface.onSticker)
-            .padding(18)
+            .padding(.horizontal, size * 0.17).padding(.vertical, size * 0.12)
         }
         .frame(width: size, height: size)
         .accessibilityElement(children: .combine)
