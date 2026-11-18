@@ -79,6 +79,7 @@ extension CloudSync {
         // `zulu` keeps the `+00:00` out of the URL, where `+` reads as a space.
         var newest = watermarkValue
         var received = 0
+        deletedSeen = [:]
         // Ask again for the last five minutes, as the phone does: a write that began before our last
         // pull can commit after it, stamped earlier than rows we've already seen, and a mark that
         // had moved past it would skip that row for good. Re-reading a row we hold changes nothing.
@@ -127,6 +128,7 @@ extension CloudSync {
         switch table {
         case "fl_wallets":
             let existing = first(ctx, #Predicate<Wallet> { $0.id == id })
+            if existing == nil, purgedLongAgo(row) { return false }
             if let e = existing, e.dirty || e.updatedAt >= remoteAt { return false }
             let w = existing ?? { let n = Wallet(id: id, name: ""); ctx.insert(n); return n }()
             w.name = row["name"] as? String ?? w.name
@@ -150,6 +152,7 @@ extension CloudSync {
 
         case "fl_clients":
             let existing = first(ctx, #Predicate<Client> { $0.id == id })
+            if existing == nil, purgedLongAgo(row) { return false }
             if let e = existing, e.dirty || e.updatedAt >= remoteAt { return false }
             let c = existing ?? { let n = Client(id: id, name: ""); ctx.insert(n); return n }()
             c.name = row["name"] as? String ?? c.name
@@ -165,6 +168,7 @@ extension CloudSync {
 
         case "fl_projects":
             let existing = first(ctx, #Predicate<Project> { $0.id == id })
+            if existing == nil, purgedLongAgo(row) { return false }
             if let e = existing, e.dirty || e.updatedAt >= remoteAt { return false }
             let p = existing ?? {
                 let n = Project(id: id, title: "", amount: 0, currency: "PHP"); ctx.insert(n); return n
@@ -186,6 +190,8 @@ extension CloudSync {
 
         case "fl_payments":
             let existing = first(ctx, #Predicate<Payment> { $0.id == id })
+            if let gone = parseDate(row["deleted_at"]) { deletedSeen[id] = gone }
+            if existing == nil, purgedLongAgo(row) { return false }
             if let e = existing, e.dirty || e.updatedAt >= remoteAt { return false }
             let p = existing ?? {
                 let n = Payment(id: id, projectId: nil, amount: 0, currency: "PHP", paidAt: .now)
@@ -227,6 +233,7 @@ extension CloudSync {
 
         case "fl_recurring":
             let existing = first(ctx, #Predicate<Recurring> { $0.id == id })
+            if existing == nil, purgedLongAgo(row) { return false }
             if let e = existing, e.dirty || e.updatedAt >= remoteAt { return false }
             let r = existing ?? { let n = Recurring(id: id, label: "", amount: 0, currency: "PHP", amountBase: 0)
                 ctx.insert(n); return n }()
@@ -248,6 +255,8 @@ extension CloudSync {
 
         case "fl_loans":
             let existing = first(ctx, #Predicate<Loan> { $0.id == id })
+            if let gone = parseDate(row["deleted_at"]) { deletedSeen[id] = gone }
+            if existing == nil, purgedLongAgo(row) { return false }
             if let e = existing, e.dirty || e.updatedAt >= remoteAt { return false }
             let l = existing ?? {
                 let n = Loan(id: id, counterparty: "", direction: .given, principalBase: 0)
@@ -271,6 +280,8 @@ extension CloudSync {
 
         case "fl_spends":
             let existing = first(ctx, #Predicate<Spend> { $0.id == id })
+            if let gone = parseDate(row["deleted_at"]) { deletedSeen[id] = gone }
+            if existing == nil, purgedLongAgo(row) { return false }
             if let e = existing, e.dirty || e.updatedAt >= remoteAt { return false }
             let s = existing ?? {
                 let n = Spend(id: id, walletId: nil, spentAt: .now, amount: 0, currency: "PHP", amountBase: 0)
@@ -301,6 +312,8 @@ extension CloudSync {
             // immutable in practice, so first write wins and re-applying is harmless. Except over
             // an unpushed local archive: re-applying would put a deleted spend's money back.
             if let e = existing, e.dirty { return false }
+            // A retired line we don't hold (its record was purged here) changes no balance: skip it.
+            if existing == nil, row["archived_at"] is String || row["deleted_at"] is String { return false }
             // Skip a leg that's identical to what we hold. Re-assigning the same values on every
             // fetch was most of the 410,790 ledger writes behind the old sync loop. (The phone edits
             // a leg's amount in place, so the amount and wallet are compared too.)
@@ -330,6 +343,8 @@ extension CloudSync {
 
         case "fl_withdrawals":
             let existing = first(ctx, #Predicate<Withdrawal> { $0.id == id })
+            if let gone = parseDate(row["deleted_at"]) { deletedSeen[id] = gone }
+            if existing == nil, purgedLongAgo(row) { return false }
             if let e = existing, e.dirty || e.updatedAt >= remoteAt { return false }
             let w = existing ?? {
                 let n = Withdrawal(id: id, fromMethodId: nil, toMethodId: nil, withdrawnAt: .now, grossBase: 0, netBase: 0, feeBase: 0)
@@ -357,6 +372,8 @@ extension CloudSync {
             let existing = first(ctx, #Predicate<PaymentStep> { $0.id == id })
             if let e = existing, e.dirty { return false }
             guard let paymentId = parseUUID(row["payment_id"]) ?? existing?.paymentId else { return false }
+            // The route of a payment this Mac doesn't hold (deleted long ago and purged here) stays out.
+            if existing == nil, first(ctx, #Predicate<Payment> { $0.id == paymentId }) == nil { return false }
             // Re-reading a step we already hold (the pull overlaps its last few minutes) changes nothing.
             if let e = existing, e.paymentId == paymentId,
                e.stepOrder == (row["step_order"] as? Int ?? e.stepOrder),
@@ -384,6 +401,14 @@ extension CloudSync {
             return false
         }
         return true
+    }
+
+    /// Deleted on the server longer ago than the Trash keeps things. If this Mac doesn't hold it, its
+    /// Trash already purged it: inserting it again only had it purged again at the next launch and
+    /// downloaded again by the next full sync, every time the app opened.
+    private func purgedLongAgo(_ row: [String: Any]) -> Bool {
+        guard let gone = parseDate(row["deleted_at"]) else { return false }
+        return gone < Date().addingTimeInterval(-Double(TrashSweep.retentionDays) * 86_400)
     }
 
     private func first<T: PersistentModel>(_ ctx: ModelContext, _ p: Predicate<T>) -> T? {

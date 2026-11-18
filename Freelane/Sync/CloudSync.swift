@@ -53,6 +53,11 @@ final class CloudSync {
     private var saveObserver: NSObjectProtocol?
     private var pendingPush: Task<Void, Never>?
     private var napGuard: NSObjectProtocol?
+    /// Spends, payments, moves and loans the last pull saw deleted, held here or not: a money line
+    /// pointing at one of them is retired even when its record itself was purged on this Mac.
+    var deletedSeen: [UUID: Date] = [:]
+    /// When the last sync ran, so the poll can stand back while the live link is joined.
+    private var lastPoll = Date.distantPast
     private var wakeObservers: [NSObjectProtocol] = []
     /// True while sync is writing. Saves it makes must not trigger another sync.
     private var applyingRemote = false
@@ -135,7 +140,13 @@ final class CloudSync {
         // Every 10 seconds, whether or not the window is in front: the check is a few small
         // requests, and being wrong about your balance costs more than the traffic.
         let t = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.syncNow() }
+            Task { @MainActor in
+                guard let self else { return }
+                // While the live link is joined it carries the phone's changes; the poll only checks
+                // every 30 seconds then, in case the link went quiet without saying so.
+                if RealtimeLink.shared.joined, Date.now.timeIntervalSince(self.lastPoll) < 30 { return }
+                await self.syncNow()
+            }
         }
         t.tolerance = 1
         // .common so it also fires while a menu or a scroll is tracking the mouse.
@@ -162,6 +173,8 @@ final class CloudSync {
         let ws = NSWorkspace.shared.notificationCenter
         wakeObservers.append(ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in
+                // A socket from before the sleep is dead even if it hasn't said so yet.
+                RealtimeLink.shared.drop()
                 for wait in [2, 6, 15] {
                     try? await Task.sleep(for: .seconds(wait))
                     await CloudSync.shared.syncNow()
@@ -290,6 +303,7 @@ final class CloudSync {
     }
 
     func signOut() {
+        RealtimeLink.shared.drop()
         accessToken = nil
         userId = nil
         Keychain.set(nil, for: "cloud.refreshToken")
@@ -338,6 +352,9 @@ final class CloudSync {
         if let exp = tokenExpiresAt, exp.timeIntervalSinceNow < 300 {
             await refreshAccessToken()
         }
+        // The live link: opened if it dropped, and given the renewed token.
+        if let live = accessToken, let who = userId { RealtimeLink.shared.ensure(token: live, uid: who) }
+        lastPoll = .now
 
         applyingRemote = true
         defer { applyingRemote = false }
@@ -392,6 +409,7 @@ final class CloudSync {
         for x in (try? ctx.fetch(FetchDescriptor<Payment>(predicate: #Predicate { $0.deletedAt != nil }))) ?? [] { gone[x.id] = x.deletedAt }
         for x in (try? ctx.fetch(FetchDescriptor<Withdrawal>(predicate: #Predicate { $0.deletedAt != nil }))) ?? [] { gone[x.id] = x.deletedAt }
         for x in (try? ctx.fetch(FetchDescriptor<Loan>(predicate: #Predicate { $0.deletedAt != nil }))) ?? [] { gone[x.id] = x.deletedAt }
+        for (id, at) in deletedSeen where gone[id] == nil { gone[id] = at }
         guard !gone.isEmpty else { return 0 }
         var n = 0
         for l in live {

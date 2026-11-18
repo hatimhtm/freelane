@@ -347,12 +347,22 @@ enum LaunchV2 {
         Repairs.runIfNeeded(context)
         CloudSync.shared.attach(context)
         Reachability.shared.onBecameOnline = { Task { await CloudSync.shared.syncNow() } }
-        Task { await CloudSync.shared.start() }
         Notify.purgeOld(context)
+        Audit.prune(context)
+        // Bring in the phone's changes before the upkeep below re-derives bills or stamps money rows.
+        // Run on a stale copy, that upkeep marks rows to send, and sending them put back what the phone
+        // had changed while the Mac was closed. It waits for the first sync, or 8 seconds at most, so a
+        // slow network never holds back the bills.
+        let firstSync = Task { await CloudSync.shared.start() }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await firstSync.value }
+            group.addTask { try? await Task.sleep(for: .seconds(8)) }
+            await group.next()
+            group.cancelAll()
+        }
         TrashSweep.run(context)
         MoneyEngine(context: context).applyMonthlyFees()
         RecurringMath.resyncAll(context)
-        Audit.prune(context)
         try? context.save()
         JournalWell.shared.pruneStale(context)
         if !DevMode.isSandboxed { JournalWell.shared.topUp(context, ai: ai) }
