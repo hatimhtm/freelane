@@ -129,7 +129,8 @@ struct SettingsPage: View {
             if cloud.isSignedIn {
                 row("Synced with your Android phone", cloud.lastSync.map { "Last synced \(Day.ago($0)) at \($0.formatted(date: .omitted, time: .shortened))" } ?? cloud.status, last: cloud.lastError == nil) {
                     HStack(spacing: 8) {
-                        M3Button(title: "Sync now", kind: .tonal, small: true) { Task { await CloudSync.shared.syncNow(userInitiated: true) } }
+                        M3Button(title: cloud.busy ? "Syncing…" : "Sync now", kind: .tonal, small: true) { Task { await CloudSync.shared.syncNow(userInitiated: true, full: true) } }
+                            .disabled(cloud.busy)
                         M3Button(title: "Sign out", kind: .plain) { CloudSync.shared.signOut() }
                     }
                 }

@@ -1,6 +1,10 @@
 import AppKit
 import Foundation
+import OSLog
 import SwiftData
+
+/// Counts and errors only, never a row's contents: `log stream --predicate 'subsystem == "app.freelane.mac"'`.
+let syncLog = Logger(subsystem: "app.freelane.mac", category: "sync")
 
 /// Two-way sync between this Mac and the phone, with Postgres in the middle.
 ///
@@ -48,6 +52,8 @@ final class CloudSync {
     private var queued = false
     private var saveObserver: NSObjectProtocol?
     private var pendingPush: Task<Void, Never>?
+    private var napGuard: NSObjectProtocol?
+    private var wakeObservers: [NSObjectProtocol] = []
     /// True while sync is writing. Saves it makes must not trigger another sync.
     private var applyingRemote = false
     /// When the current access token stops being accepted. Supabase issues them for one hour.
@@ -77,14 +83,32 @@ final class CloudSync {
 
     func start() async {
         guard !DevMode.isSandboxed else { status = "Offline copy"; return }
+        hasSavedSignIn = Keychain.get("cloud.refreshToken") != nil
+        // Opening the app is when you look at the numbers, so the first sync is a full one and shows.
+        // With no network yet (straight after a wake), the session comes back on a later tick: the
+        // timer starts whenever a saved sign-in exists, not only when it could be restored now.
         await restoreSession()
-        guard isSignedIn else {
+        guard isSignedIn || hasSavedSignIn else {
             status = "Sign in to sync"
             return
         }
-        await syncNow()
         startTimer()
         observeSaves()
+        await syncNow(userInitiated: true, full: true)
+    }
+
+    /// A sign-in this Mac kept, whether or not it could be renewed yet. Read from the Keychain once
+    /// at launch and kept up to date by sign-in and sign-out, so drawing the button never asks it.
+    private(set) var hasSavedSignIn = false
+
+    /// What the Sync button shows.
+    enum Phase: Equatable { case signedOut, syncing, failed, offline, synced }
+    var phase: Phase {
+        if busy { return .syncing }
+        if !isSignedIn && !hasSavedSignIn { return .signedOut }
+        if !Reachability.shared.online { return .offline }
+        if lastError != nil { return .failed }
+        return .synced
     }
 
     /// Push on every save.
@@ -108,19 +132,57 @@ final class CloudSync {
 
     private func startTimer() {
         timer?.invalidate()
-        // Frequent enough that the phone feels live, rare enough that it is invisible.
-        // Always, whether or not the window is in front. Skipping background windows meant an app
-        // sitting open on a second screen never noticed anything from the phone — the check is
-        // eight small requests, and being wrong about your balance costs more than the traffic.
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        // Every 10 seconds, whether or not the window is in front: the check is a few small
+        // requests, and being wrong about your balance costs more than the traffic.
+        let t = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.syncNow() }
         }
+        t.tolerance = 1
+        // .common so it also fires while a menu or a scroll is tracking the mouse.
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+        keepAwake()
+        observeWakeAndFocus()
+    }
+
+    /// macOS naps an app whose windows are hidden or behind others: its timers slide by minutes,
+    /// which is why the Mac only caught up with the phone after sitting open for ten or twenty
+    /// minutes. While signed in, this opts out of App Nap. It never keeps the Mac itself awake.
+    private func keepAwake() {
+        guard napGuard == nil else { return }
+        napGuard = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep],
+            reason: "Keeping your money in sync with your phone")
+    }
+
+    /// Coming back from sleep, or to the app, syncs at once instead of waiting for the next tick.
+    /// After a wake the network takes a few seconds to return, so it tries again a little later too.
+    private func observeWakeAndFocus() {
+        guard wakeObservers.isEmpty else { return }
+        let ws = NSWorkspace.shared.notificationCenter
+        wakeObservers.append(ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in
+                for wait in [2, 6, 15] {
+                    try? await Task.sleep(for: .seconds(wait))
+                    await CloudSync.shared.syncNow()
+                }
+            }
+        })
+        wakeObservers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in CloudSync.shared.syncSoon() }
+        })
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
         if let o = saveObserver { NotificationCenter.default.removeObserver(o); saveObserver = nil }
+        for o in wakeObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(o)
+            NotificationCenter.default.removeObserver(o)
+        }
+        wakeObservers = []
+        if let g = napGuard { ProcessInfo.processInfo.endActivity(g); napGuard = nil }
     }
 
     // MARK: - Auth
@@ -149,10 +211,13 @@ final class CloudSync {
             noteExpiry(json)
             if let refresh = json["refresh_token"] as? String {
                 Keychain.set(refresh, for: "cloud.refreshToken")
+                hasSavedSignIn = true
             }
             status = "Connected"
-            await syncNow()
+            lastError = nil
             startTimer()
+            observeSaves()
+            await syncNow(userInitiated: true, full: true)
             return true
         } catch {
             lastError = error.localizedDescription
@@ -228,6 +293,7 @@ final class CloudSync {
         accessToken = nil
         userId = nil
         Keychain.set(nil, for: "cloud.refreshToken")
+        hasSavedSignIn = false
         UserDefaults.standard.removeObject(forKey: watermarkKey)
         stop()
         status = "Not connected"
@@ -240,15 +306,32 @@ final class CloudSync {
     /// `userInitiated` is the only thing that shows a spinner. A background poll that finds
     /// nothing should be indistinguishable from the app doing nothing at all — showing progress for
     /// it made a resting app look permanently busy, which is worse than not syncing.
-    func syncNow(userInitiated: Bool = false) async {
-        guard let context, let token = accessToken, let uid = userId else { return }
-        if running { queued = true; return }
+    /// `full` re-reads every row instead of only what changed since the last pull, so anything a
+    /// past sync missed comes back. It's what the Sync button and opening the app do.
+    func syncNow(userInitiated: Bool = false, full: Bool = false) async {
+        guard let context else { return }
+        if running {
+            // A button press must never be swallowed by a background tick that happens to be
+            // running: wait for it, then do the full sync that was asked for.
+            guard userInitiated else { queued = true; return }
+            busy = true
+            while running { try? await Task.sleep(for: .milliseconds(100)) }
+        }
         running = true
         if userInitiated { busy = true }
         defer {
             running = false
             busy = false
             if queued { queued = false; Task { await syncNow() } }
+        }
+        // Launched with no network: the session couldn't be renewed then. Try again now.
+        if accessToken == nil, hasSavedSignIn { await restoreSession() }
+        guard let token = accessToken, let uid = userId else {
+            if userInitiated {
+                lastError = hasSavedSignIn ? "Couldn't reach the server. Check the connection and try again."
+                                           : "Not signed in. Sign in under Settings › Phone."
+            }
+            return
         }
 
         // Renew a few minutes early rather than waiting to be refused.
@@ -270,10 +353,22 @@ final class CloudSync {
             if pushed > 0 { status = "Sending \(pushed)…" }
         } catch { failure = error.localizedDescription }
         do {
-            pulled = try await pull(context: context, token: token, uid: uid)
+            pulled = try await pull(context: context, token: token, uid: uid, full: full)
             if pulled > 0 { status = "Receiving \(pulled)…" }
         } catch { failure = failure ?? error.localizedDescription }
+        // Money lines left live after their spend, payment, move or loan was deleted are retired,
+        // and the retirement goes straight up so the phone drops them too.
+        let retired = retireOrphanLegs(context)
+        if retired > 0 {
+            syncLog.info("retired \(retired) money lines of deleted records")
+            try? context.save()
+            if let more = try? await push(context: context, token: token, uid: uid) { pushed += more }
+        }
 
+        if pushed + pulled > 0 || failure != nil {
+            syncLog.info("sync · sent \(pushed) · received \(pulled)\(failure.map { " · failed: \($0.prefix(160))" } ?? "", privacy: .public)")
+        }
+        if full, failure == nil { logNumbers(context) }
         if let failure {
             lastError = failure
             status = "Sync failed"
@@ -282,6 +377,40 @@ final class CloudSync {
             lastError = nil
             status = pushed + pulled > 0 ? "Synced" : "Up to date"
         }
+    }
+
+    /// A money line belongs to its spend, payment, move or loan: once that record is deleted, the
+    /// line must stop counting. Some deletes in the past retired the record but left its line live on
+    /// the server, so a wallet ran short by that amount on whichever device held the line. This retires
+    /// such lines (dated when their record was deleted) and marks them to send.
+    func retireOrphanLegs(_ ctx: ModelContext) -> Int {
+        let live = ((try? ctx.fetch(FetchDescriptor<LedgerEntry>(predicate: #Predicate { $0.archivedAt == nil }))) ?? [])
+            .filter { $0.relatedId != nil }
+        guard !live.isEmpty else { return 0 }
+        var gone: [UUID: Date] = [:]
+        for x in (try? ctx.fetch(FetchDescriptor<Spend>(predicate: #Predicate { $0.deletedAt != nil }))) ?? [] { gone[x.id] = x.deletedAt }
+        for x in (try? ctx.fetch(FetchDescriptor<Payment>(predicate: #Predicate { $0.deletedAt != nil }))) ?? [] { gone[x.id] = x.deletedAt }
+        for x in (try? ctx.fetch(FetchDescriptor<Withdrawal>(predicate: #Predicate { $0.deletedAt != nil }))) ?? [] { gone[x.id] = x.deletedAt }
+        for x in (try? ctx.fetch(FetchDescriptor<Loan>(predicate: #Predicate { $0.deletedAt != nil }))) ?? [] { gone[x.id] = x.deletedAt }
+        guard !gone.isEmpty else { return 0 }
+        var n = 0
+        for l in live {
+            guard let rid = l.relatedId, let at = gone[rid] else { continue }
+            l.archivedAt = at
+            l.dirty = true
+            n += 1
+        }
+        return n
+    }
+
+    /// After a full sync, each wallet's balance as this Mac counts it, into the system log, so the
+    /// two devices can be compared figure by figure. Local to this Mac, never sent anywhere.
+    private func logNumbers(_ ctx: ModelContext) {
+        let wallets = ((try? ctx.fetch(FetchDescriptor<Wallet>())) ?? []).filter { $0.isHolding && !$0.archived && $0.deletedAt == nil }
+        let ledger = (try? ctx.fetch(FetchDescriptor<LedgerEntry>())) ?? []
+        let parts = wallets.sorted { $0.name < $1.name }
+            .map { "\($0.name) \(String(format: "%.2f", WalletMath.balance(of: $0, ledger: ledger)))" }
+        syncLog.info("check · \(parts.joined(separator: " · "), privacy: .public)")
     }
 
     /// Called right after a local save so an edit reaches the phone in about a second rather than
@@ -341,14 +470,24 @@ final class CloudSync {
         }
     }
 
+    /// Every row changed since `since`, page by page: the server hands back at most 1,000 rows a
+    /// request, and the ledger alone is near that, so a full re-read in one request lost the newest.
     func fetchRows(_ table: String, token: String, uid: String, since: String) async throws -> [[String: Any]] {
-        let data = try await request(table, method: "GET", token: token, query: [
-            URLQueryItem(name: "select", value: "*"),
-            URLQueryItem(name: "user_id", value: "eq.\(uid)"),
-            URLQueryItem(name: "updated_at", value: "gt.\(zulu(since))"),
-            URLQueryItem(name: "order", value: "updated_at.asc"),
-        ])
-        return (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+        let page = 500
+        var all: [[String: Any]] = []
+        while true {
+            let data = try await request(table, method: "GET", token: token, query: [
+                URLQueryItem(name: "select", value: "*"),
+                URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+                URLQueryItem(name: "updated_at", value: "gt.\(zulu(since))"),
+                URLQueryItem(name: "order", value: "updated_at.asc,id.asc"),
+                URLQueryItem(name: "limit", value: "\(page)"),
+                URLQueryItem(name: "offset", value: "\(all.count)"),
+            ])
+            let rows = (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+            all += rows
+            if rows.count < page { return all }
+        }
     }
 }
 

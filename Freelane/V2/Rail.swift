@@ -94,15 +94,78 @@ private struct FabStyle: ButtonStyle {
     }
 }
 
-/// "Synced · just now" at the foot of the rail.
+/// The sync state at the foot of the rail, and the button that syncs now: a full sync, both ways,
+/// with the spinner turning until it's really done and the reason shown when it couldn't.
 private struct SyncLine: View {
     @State private var sync = CloudSync.shared
+    @State private var spin = false
+    @Environment(\.accessibilityReduceMotion) private var reduce
+
     var body: some View {
-        HStack(spacing: 8) {
-            Icon(DevMode.isSandboxed ? Sym.cloudOff : Sym.cloudDone, size: 18).foregroundStyle(MD.primary)
-            Text(DevMode.isSandboxed ? "Offline copy" : "Synced · just now").font(FS.font(12, 400, rond: 40)).foregroundStyle(MD.onSurfaceVariant)
+        Button {
+            guard !DevMode.isSandboxed else { return }
+            Task { await CloudSync.shared.syncNow(userInitiated: true, full: true) }
+        } label: {
+            HStack(spacing: 8) {
+                Icon(glyph, size: 18)
+                    .foregroundStyle(sync.phase == .failed ? MD.error : MD.primary)
+                    .rotationEffect(.degrees(spin ? -360 : 0))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(FS.font(12, 500, rond: 40)).foregroundStyle(MD.onSurface)
+                    // Redrawn now and then so "Synced 2 minutes ago" keeps telling the truth.
+                    TimelineView(.periodic(from: .now, by: 20)) { _ in
+                        Text(detail).font(FS.font(11, 400, rond: 40)).foregroundStyle(MD.onSurfaceVariant).lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 4)
+        .buttonStyle(RailItemStyle())
+        .help(DevMode.isSandboxed ? "Offline copy" : "Sync now: sends this Mac's changes and brings in the phone's")
+        .onChange(of: sync.phase == .syncing, initial: true) { _, on in
+            guard !reduce else { return }
+            if on {
+                withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { spin = true }
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) { spin = false }
+            }
+        }
+    }
+
+    private var glyph: String {
+        if DevMode.isSandboxed { return Sym.cloudOff }
+        switch sync.phase {
+        case .syncing: return Sym.sync
+        case .failed: return Sym.syncProblem
+        case .offline, .signedOut: return Sym.cloudOff
+        case .synced: return Sym.cloudDone
+        }
+    }
+
+    private var title: String {
+        if DevMode.isSandboxed { return "Offline copy" }
+        switch sync.phase {
+        case .syncing: return "Syncing…"
+        case .failed: return "Didn't sync · try again"
+        case .offline: return "Offline · saved here"
+        case .signedOut: return "Not syncing"
+        case .synced: return "Sync now"
+        }
+    }
+
+    private var detail: String {
+        if DevMode.isSandboxed { return "Test data" }
+        switch sync.phase {
+        case .syncing: return "With your phone"
+        case .failed: return sync.lastError ?? "The server didn't answer"
+        case .offline: return "Sends when you're back online"
+        case .signedOut: return "Sign in under Settings"
+        case .synced:
+            guard let d = sync.lastSync else { return "Not synced yet" }
+            return Date.now.timeIntervalSince(d) < 60 ? "Synced just now" : "Synced \(d.formatted(.relative(presentation: .named)))"
+        }
     }
 }
 

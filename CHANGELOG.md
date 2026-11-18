@@ -3,6 +3,23 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 3.5
+
+**Your Mac and your phone always agree.**
+
+- **Opening Freelane syncs everything.** The first sync on opening re-reads every record, so anything an
+  earlier sync missed comes back on its own, and the foot of the rail shows "Syncing…" until it's done.
+- **A Sync button that really syncs.** The line at the foot of the rail is now the Sync now button: it
+  sends this Mac's changes, re-reads everything from the server, keeps turning until it's really done,
+  and says why when it couldn't. It used to read "Synced · just now" whatever had happened.
+- **No more waiting for the Mac to notice.** While Freelane is open it checks every 10 seconds, also in
+  the background (macOS was napping it for minutes at a time), and right after the Mac wakes or you
+  switch to it. Your own changes still go up within a second.
+- **Nothing skipped.** A pull re-reads its last five minutes, so a change saved out of order is never
+  passed over, and long tables are read page by page instead of stopping at 1,000 rows.
+- **Deleted means deleted, on both devices.** A money line left counting after its spend, payment, move
+  or loan was deleted is retired, so a wallet no longer runs short by an amount you already removed.
+
 ## 3.4
 
 **Any currency, and the fee worked out for you.**
