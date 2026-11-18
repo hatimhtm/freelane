@@ -3,6 +3,19 @@
 All notable changes to the Freelane macOS app. The section matching the app's
 version is shown as in-app release notes when you update.
 
+## 3.6
+
+**Your phone's changes, live.**
+
+- **Live while it's open.** A change made on the phone shows up here about a second later: the app keeps
+  a live link to the server and syncs the moment something of yours changes. The regular check stays as a
+  safety net and backs off to every 30 seconds while the link is up.
+- **Opening after a long break is safe.** The upkeep the app does when it opens (bills, monthly fees, the
+  Trash) now waits for the phone's latest changes first, so it never works on an old copy and sends it
+  back over what the phone changed.
+- **Quieter syncs.** Records deleted long ago are no longer downloaded and cleared again every time the
+  app opens, and a burst of changes no longer flashes "Didn't sync" for a moment.
+
 ## 3.5
 
 **Your Mac and your phone always agree.**
