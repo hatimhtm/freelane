@@ -368,11 +368,11 @@ final class CloudSync {
         do {
             pushed = try await push(context: context, token: token, uid: uid)
             if pushed > 0 { status = "Sending \(pushed)…" }
-        } catch { failure = error.localizedDescription }
+        } catch where Self.isCancellation(error) { queued = true } catch { failure = error.localizedDescription }
         do {
             pulled = try await pull(context: context, token: token, uid: uid, full: full)
             if pulled > 0 { status = "Receiving \(pulled)…" }
-        } catch { failure = failure ?? error.localizedDescription }
+        } catch where Self.isCancellation(error) { queued = true } catch { failure = failure ?? error.localizedDescription }
         // Money lines left live after their spend, payment, move or loan was deleted are retired,
         // and the retirement goes straight up so the phone drops them too.
         let retired = retireOrphanLegs(context)
@@ -431,6 +431,13 @@ final class CloudSync {
         syncLog.info("check · \(parts.joined(separator: " · "), privacy: .public)")
     }
 
+    /// A request cut off rather than refused: not a failure to show, just a reason to run again.
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let u = error as? URLError, u.code == .cancelled { return true }
+        return (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled
+    }
+
     /// Called right after a local save so an edit reaches the phone in about a second rather than
     /// on the next tick.
     func syncSoon() {
@@ -440,7 +447,10 @@ final class CloudSync {
         pendingPush = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(600))
             guard !Task.isCancelled else { return }
-            await syncNow()
+            // Only the wait is cancellable. The sync runs in its own task: cancelling this one once it
+            // had started cut its requests off mid-flight ("cancelled"), which happened whenever live
+            // messages came in quick succession.
+            Task { @MainActor in await CloudSync.shared.syncNow() }
         }
     }
 
